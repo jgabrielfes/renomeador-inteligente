@@ -10,14 +10,22 @@ WhatsApp Image 2026-08-07 at 10.18.12.jpeg  ->  CNH - João da Silva.jpeg
 WhatsApp Document 2026-08-07 at 10.22.01.pdf ->  Matrícula 54821.pdf
 ```
 
-## Privacidade
+## Análise: IA ou local
 
-Todo o processamento é **100% local, no navegador**:
+Há três modos de análise, configuráveis no próprio app (a escolha fica no navegador):
 
-- OCR com [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly, idiomas por+eng);
-- Leitura de PDFs com [pdf.js](https://mozilla.github.io/pdf.js/) — usa o texto nativo do PDF quando existe e só faz OCR em PDFs escaneados.
+1. **IA — arquivo inteiro** (padrão): o documento é enviado ao [Google Gemini](https://ai.google.dev) para identificar tipo e nome. É o modo mais preciso. Arquivos acima de ~4 MB caem automaticamente no modo texto (limite de corpo das funções serverless).
+2. **IA — somente texto**: o OCR roda localmente e apenas o texto extraído é enviado ao Gemini.
+3. **Somente local**: nada sai do navegador — OCR + heurísticas locais ([lib/renamer.ts](lib/renamer.ts)).
 
-Os documentos **nunca são enviados a nenhum servidor**. O deploy é um site estático (sem backend, sem banco de dados). Na primeira análise o navegador baixa o motor de OCR (~15 MB) de um CDN; depois disso fica em cache.
+A chamada à IA passa pela rota interna [`POST /api/rename`](app/api/rename/route.ts) — a chave do Gemini fica **apenas no servidor**, na variável de ambiente `GEMINI_API_KEY` (veja [.env.example](.env.example); na Vercel, configure em Settings → Environment Variables). Sem chave configurada, ou em qualquer falha da API (rede, cota), a análise local entra automaticamente como fallback.
+
+> **Privacidade**: nos modos com IA, o conteúdo dos documentos é enviado à Google — e no free tier do Gemini os dados enviados podem ser usados para melhorar os modelos. Para documentos sensíveis de terceiros, use o modo "Somente local", que mantém a promessa original do projeto: **nenhum documento sai da máquina**.
+
+Fora a rota de IA (uma função serverless), a infraestrutura continua estática, sem banco de dados:
+
+- OCR com [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly, idiomas por+eng) — na primeira análise o navegador baixa o motor (~15 MB) de um CDN; depois fica em cache;
+- Leitura de PDFs com [pdf.js](https://mozilla.github.io/pdf.js/) — usa o texto nativo do PDF quando existe e faz OCR da página renderizada em PDFs escaneados ou digitais cujos dados estão em imagem (ex.: CNH-e).
 
 ## Dois modos de uso
 
@@ -42,7 +50,7 @@ npm run dev
 
 ## Deploy
 
-Projeto pronto para a Vercel: `next build` gera páginas estáticas, sem configuração adicional.
+Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a função serverless de `/api/rename`. Única configuração: a variável de ambiente `GEMINI_API_KEY` (sem ela o app funciona só no modo local).
 
 ## Tipos reconhecidos
 

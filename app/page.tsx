@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Loader2,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
 import {
   Table,
   TableBody,
@@ -35,6 +37,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import {
+  aiProposeFromFile,
+  aiProposeFromText,
+  fileEligibleForAi,
+  getAiSettingsServerSnapshot,
+  getAiSettingsSnapshot,
+  saveAiSettings,
+  subscribeAiSettings,
+  type AiMode,
+} from "@/lib/ai";
 import {
   existingNames,
   folderPickerAvailable,
@@ -60,6 +72,24 @@ interface Row {
 
 const subscribeNoop = () => () => {};
 
+const AI_MODES: Array<{ value: AiMode; title: string; description: string }> = [
+  {
+    value: "arquivo",
+    title: "IA — arquivo inteiro",
+    description: "O documento é enviado ao Gemini, que o lê diretamente. Mais preciso.",
+  },
+  {
+    value: "texto",
+    title: "IA — somente texto",
+    description: "O OCR roda no navegador e apenas o texto extraído é enviado.",
+  },
+  {
+    value: "local",
+    title: "Somente local",
+    description: "Nada sai do navegador: OCR e regras de nomeação locais.",
+  },
+];
+
 export default function Home() {
   const [rows, setRows] = React.useState<Row[]>([]);
   const [dirHandle, setDirHandle] =
@@ -79,6 +109,12 @@ export default function Home() {
     () => false
   );
 
+  const aiSettings = React.useSyncExternalStore(
+    subscribeAiSettings,
+    getAiSettingsSnapshot,
+    getAiSettingsServerSnapshot
+  );
+
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }, []);
@@ -92,8 +128,30 @@ export default function Home() {
         if (!next) break;
         patchRow(next.id, { status: "processando" });
         try {
-          const text = await readDocument(next.file);
-          const proposal = proposeName(next.file.name, text);
+          // IA primeiro (conforme configuração); heurística local é o fallback.
+          const { mode } = getAiSettingsSnapshot();
+          let proposal: { name: string; docType: string } | null = null;
+          let text: string | null = null;
+
+          if (mode !== "local") {
+            try {
+              if (mode === "arquivo" && fileEligibleForAi(next.file)) {
+                proposal = await aiProposeFromFile(next.file);
+              } else {
+                text = await readDocument(next.file);
+                proposal = await aiProposeFromText(next.file.name, text);
+              }
+            } catch {
+              setNotice(
+                "IA indisponível no momento — usando análise local como alternativa."
+              );
+            }
+          }
+
+          if (!proposal) {
+            if (text === null) text = await readDocument(next.file);
+            proposal = proposeName(next.file.name, text);
+          }
           setRows((prev) => {
             const used = new Set(
               prev
@@ -300,14 +358,57 @@ export default function Home() {
         </p>
       </header>
 
-      <Alert>
-        <ShieldCheck className="size-4" />
-        <AlertTitle>100% local</AlertTitle>
-        <AlertDescription>
-          O OCR roda dentro do seu navegador. Os documentos não são enviados
-          para nenhum servidor.
-        </AlertDescription>
-      </Alert>
+      {aiSettings.mode === "local" ? (
+        <Alert>
+          <ShieldCheck className="size-4" />
+          <AlertTitle>100% local</AlertTitle>
+          <AlertDescription>
+            O OCR roda dentro do seu navegador. Os documentos não são enviados
+            para nenhum servidor.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <Sparkles className="size-4" />
+          <AlertTitle>Análise com IA (Google Gemini)</AlertTitle>
+          <AlertDescription>
+            {aiSettings.mode === "arquivo"
+              ? "Os documentos são enviados ao Google Gemini para identificação. "
+              : "Apenas o texto extraído pelo OCR local é enviado ao Google Gemini. "}
+            Se a IA falhar, a análise local no navegador é usada como
+            alternativa. Prefere não enviar nada? Escolha o modo
+            &ldquo;Somente local&rdquo; abaixo.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Inteligência artificial</CardTitle>
+          <CardDescription>
+            Como os documentos devem ser analisados. A escolha fica salva neste
+            navegador.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={aiSettings.mode}
+            onValueChange={(value) =>
+              saveAiSettings({ mode: value as AiMode })
+            }
+            className="grid gap-3 sm:grid-cols-3"
+          >
+            {AI_MODES.map((mode) => (
+              <RadioGroupCard key={mode.value} value={mode.value}>
+                <span className="pr-8 font-medium">{mode.title}</span>
+                <span className="text-sm text-muted-foreground">
+                  {mode.description}
+                </span>
+              </RadioGroupCard>
+            ))}
+          </RadioGroup>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
