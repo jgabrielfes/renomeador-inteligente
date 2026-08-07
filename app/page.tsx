@@ -15,8 +15,10 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  ZoomIn,
 } from "lucide-react";
 
+import { DocumentPreview } from "@/components/document-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -157,6 +159,10 @@ export default function Home() {
     getLessonsServerSnapshot
   );
   const importInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Linha em pré-visualização (guarda o id: a linha "viva" vem de rows, então
+  // o nome editado no preview e na tabela ficam sempre em sincronia).
+  const [previewId, setPreviewId] = React.useState<string | null>(null);
 
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -445,6 +451,10 @@ export default function Home() {
       );
     }
   }
+
+  const previewRow = previewId
+    ? (rows.find((r) => r.id === previewId) ?? null)
+    : null;
 
   const total = rows.length;
   const done = rows.filter((r) => r.status !== "aguardando" && r.status !== "processando").length;
@@ -840,7 +850,7 @@ export default function Home() {
                     <TableHead>Arquivo original</TableHead>
                     <TableHead>Nome sugerido</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead className="w-10" />
+                    <TableHead className="w-20" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -927,7 +937,15 @@ export default function Home() {
                           )}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setPreviewId(row.id)}
+                          title="Pré-visualizar o documento"
+                        >
+                          <ZoomIn className="size-4" />
+                        </Button>
                         {(row.status === "ok" || row.status === "renomeado") && (
                           <Button
                             variant="ghost"
@@ -989,6 +1007,22 @@ export default function Home() {
         casamento, óbito), Comprovante de residência, Matrícula de imóvel,
         IPTU, ITBI, Escritura, Procuração e Contrato.
       </footer>
+
+      <DocumentPreview
+        file={previewRow?.file ?? null}
+        onClose={() => setPreviewId(null)}
+        name={previewRow?.status === "ok" ? previewRow.proposed : undefined}
+        onNameChange={(value) =>
+          previewRow && patchRow(previewRow.id, { proposed: value })
+        }
+        onNameBlur={() => previewRow && captureCorrection(previewRow)}
+        onDownload={
+          previewRow &&
+          (previewRow.status === "ok" || previewRow.status === "renomeado")
+            ? () => downloadSingle(previewRow)
+            : undefined
+        }
+      />
     </main>
   );
 }
