@@ -127,4 +127,25 @@
   html {
     @apply font-sans;
   }
+
+  /* Todo elemento interativo usa cursor pointer (o Tailwind v4 deixou botões
+     com cursor default). Cobre nativos, roles ARIA (Base UI) e labels;
+     estados desabilitados ficam de fora. Ver AGENTS.md. */
+  :is(
+      button,
+      a[href],
+      select,
+      summary,
+      label[for],
+      [role="button"],
+      [role="checkbox"],
+      [role="radio"],
+      [role="tab"],
+      [role="menuitem"],
+      [role="option"],
+      [role="combobox"],
+      [role="switch"]
+    ):not(:disabled, [disabled], [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
 }
