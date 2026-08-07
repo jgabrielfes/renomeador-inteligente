@@ -73,6 +73,19 @@ export interface AiProposal {
   docType: string;
 }
 
+export class AiError extends Error {
+  constructor(
+    message: string,
+    // Vindos do 429 do Gemini, via rota: quanto esperar para tentar de novo e
+    // se a cota estourada é a DIÁRIA (esperar não resolve).
+    public retryDelaySeconds: number | null = null,
+    public dailyQuota = false,
+    public geminiStatus: number | null = null
+  ) {
+    super(message);
+  }
+}
+
 // Envia um lote e devolve os resultados alinhados à ordem dos itens
 // (null = o modelo não respondeu aquele item; o chamador faz fallback local).
 export async function aiProposeBatch(
@@ -87,7 +100,12 @@ export async function aiProposeBatch(
   const res = await fetch("/api/rename", { method: "POST", body: form });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(payload?.error ?? `Falha na análise com IA (HTTP ${res.status}).`);
+    throw new AiError(
+      payload?.error ?? `Falha na análise com IA (HTTP ${res.status}).`,
+      typeof payload?.retryDelaySeconds === "number" ? payload.retryDelaySeconds : null,
+      payload?.dailyQuota === true,
+      typeof payload?.geminiStatus === "number" ? payload.geminiStatus : null
+    );
   }
   if (!Array.isArray(payload?.results) || payload.results.length !== items.length) {
     throw new Error("Resposta inválida da análise com IA.");

@@ -82,8 +82,17 @@ export async function POST(request: Request) {
     return Response.json({ results });
   } catch (err) {
     if (err instanceof GeminiError) {
-      // 429 (cota) e demais erros do Gemini viram 502; o cliente decide o fallback.
-      return Response.json({ error: err.message }, { status: 502 });
+      // 429 (cota) e demais erros do Gemini viram 502; o cliente decide o
+      // fallback com base nos campos extras (esperar? desligar IA até amanhã?).
+      return Response.json(
+        {
+          error: err.message,
+          geminiStatus: err.status,
+          retryDelaySeconds: err.retryDelaySeconds ?? null,
+          dailyQuota: err.dailyQuota,
+        },
+        { status: 502 }
+      );
     }
     return Response.json(
       { error: err instanceof Error ? err.message : String(err) },

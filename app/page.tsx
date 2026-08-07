@@ -41,6 +41,7 @@ import {
 import {
   AI_BATCH_MAX_BYTES,
   AI_BATCH_MAX_ITEMS,
+  AiError,
   aiProposeBatch,
   fileEligibleForAi,
   getAiSettingsServerSnapshot,
@@ -109,6 +110,9 @@ export default function Home() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const queueRef = React.useRef<Row[]>([]);
   const processingRef = React.useRef(false);
+  // Ligado quando a cota DIÁRIA do free tier esgota: esperar não resolve,
+  // então a IA fica desligada até recarregar a página (e o aviso sai uma vez).
+  const aiUnavailableRef = React.useRef(false);
 
   const folderSupported = React.useSyncExternalStore(
     subscribeNoop,
@@ -177,7 +181,7 @@ export default function Home() {
       while (queueRef.current.length > 0) {
         const { mode } = getAiSettingsSnapshot();
 
-        if (mode === "local") {
+        if (mode === "local" || aiUnavailableRef.current) {
           const row = queueRef.current.shift()!;
           patchRow(row.id, { status: "processando" });
           await processLocally(row);
@@ -243,20 +247,40 @@ export default function Home() {
           try {
             results = await aiProposeBatch(items);
           } catch (err) {
+            const aiError = err instanceof AiError ? err : null;
             const message = err instanceof Error ? err.message : String(err);
-            const quota = /429|quota/i.test(message);
+
+            // Cota DIÁRIA: esperar não resolve — desliga a IA nesta sessão.
+            if (aiError?.dailyQuota) {
+              aiUnavailableRef.current = true;
+              toast.error("Cota diária gratuita da IA esgotada", {
+                duration: 12000,
+                description:
+                  "O limite do free tier zera à meia-noite (horário do Pacífico). Até lá, os documentos usam a análise local no navegador. Para uso contínuo, habilite billing no projeto Google.",
+              });
+              break;
+            }
+
+            const quota =
+              aiError?.geminiStatus === 429 || /429|quota/i.test(message);
             const unstable = /503|UNAVAILABLE|overload|high demand/i.test(message);
             if (attempt === 0 && (quota || unstable)) {
-              const wait = quota ? 25000 : 8000;
+              // A Google manda no erro quanto esperar (retryDelay).
+              const waitSeconds = Math.min(
+                aiError?.retryDelaySeconds ?? (quota ? 25 : 8),
+                60
+              );
               toast.warning(
                 quota
                   ? "Cota da IA atingida"
                   : "Gemini sobrecarregado no momento",
                 {
-                  description: `Tentando de novo em ${Math.round(wait / 1000)} segundos. Detalhe: ${message.slice(0, 140)}`,
+                  description: `Tentando de novo em ${Math.round(waitSeconds)} segundos. Detalhe: ${message.slice(0, 140)}`,
                 }
               );
-              await new Promise((resolve) => setTimeout(resolve, wait));
+              await new Promise((resolve) =>
+                setTimeout(resolve, waitSeconds * 1000)
+              );
             } else {
               toast.error("IA indisponível — usando análise local", {
                 description: `Este lote foi analisado localmente no navegador. Detalhe: ${message.slice(0, 140)}`,

@@ -3,10 +3,17 @@
 
 import { getExtension, safeFilename, titleCaseName } from "./renamer";
 
-// "gemini-flash-latest" é um alias mantido pela Google apontando para o Flash
-// estável mais recente — evita 404 quando um modelo específico é aposentado
-// (o gemini-2.5-flash, por exemplo, não aceita mais usuários novos).
-export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
+// As cotas do free tier são POR MODELO — quando a de um estoura (429), o
+// próximo da cadeia ainda tem saldo próprio. O flash-lite vem primeiro porque
+// tem cota diária muito maior (o flash-latest dá só ~20 requisições/dia) e é
+// mais que suficiente para "leia o documento e devolva tipo + nome".
+// Os aliases "-latest" evitam 404 quando a Google aposenta um modelo.
+// GEMINI_MODEL (env) troca o modelo principal, mantendo os demais de reserva.
+const DEFAULT_MODEL_CHAIN = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+const primaryModel = process.env.GEMINI_MODEL;
+export const GEMINI_MODELS = primaryModel
+  ? [primaryModel, ...DEFAULT_MODEL_CHAIN.filter((m) => m !== primaryModel)]
+  : DEFAULT_MODEL_CHAIN;
 
 // GEMINI_API_BASE permite apontar para um proxy (ou mock em testes).
 const API_BASE =
@@ -64,7 +71,11 @@ interface AiAnswer {
 export class GeminiError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
+    // Extraídos do corpo do 429: quanto esperar e se a cota é a DIÁRIA
+    // (aí não adianta esperar — só modo local até o reset, à meia-noite PT).
+    public retryDelaySeconds?: number,
+    public dailyQuota = false
   ) {
     super(message);
   }
@@ -72,10 +83,11 @@ export class GeminiError extends Error {
 
 async function callGemini(
   apiKey: string,
+  model: string,
   parts: Array<Record<string, unknown>>
 ): Promise<AiAnswer[]> {
   const res = await fetch(
-    `${API_BASE}/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    `${API_BASE}/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: {
@@ -94,9 +106,26 @@ async function callGemini(
   );
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
+    let retryDelaySeconds: number | undefined;
+    let dailyQuota = false;
+    try {
+      const parsed = JSON.parse(detail);
+      for (const det of parsed?.error?.details ?? []) {
+        if (typeof det?.retryDelay === "string") {
+          retryDelaySeconds = parseFloat(det.retryDelay) || undefined;
+        }
+        for (const violation of det?.violations ?? []) {
+          if (/perday/i.test(violation?.quotaId ?? "")) dailyQuota = true;
+        }
+      }
+    } catch {
+      // corpo não-JSON: segue só com o status
+    }
     throw new GeminiError(
-      `Gemini HTTP ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-      res.status
+      `Gemini HTTP ${res.status} (${model})${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+      res.status,
+      retryDelaySeconds,
+      dailyQuota
     );
   }
   const payload = await res.json();
@@ -169,7 +198,36 @@ export async function geminiProposeBatch(
   });
   parts.push({ text: batchPrompt(items.length) });
 
-  const answers = await callGemini(apiKey, parts);
+  // Tenta cada modelo da cadeia: 429 (cota daquele modelo) ou 404 (modelo
+  // aposentado) passam para o próximo; outros erros interrompem na hora.
+  const failures: GeminiError[] = [];
+  let answers: AiAnswer[] | null = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      answers = await callGemini(apiKey, model, parts);
+      break;
+    } catch (err) {
+      if (
+        err instanceof GeminiError &&
+        (err.status === 429 || err.status === 404)
+      ) {
+        failures.push(err);
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (!answers) {
+    // Prefere um erro recuperável (cota por minuto): o cliente pode esperar e
+    // tentar de novo. "Cota diária" só quando TODOS os modelos esgotaram a sua.
+    const recoverable = failures.find((f) => !f.dailyQuota);
+    throw (
+      recoverable ??
+      failures.at(-1) ??
+      new GeminiError("Nenhum modelo disponível.", 502)
+    );
+  }
+
   return items.map((item, i) => {
     const answer = answers.find((a) => a.indice === i + 1);
     return answer ? assembleProposal(item.fileName, answer) : null;
