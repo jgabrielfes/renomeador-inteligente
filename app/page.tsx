@@ -5,9 +5,11 @@ import JSZip from "jszip";
 import { toast } from "sonner";
 import {
   Check,
+  Cpu,
   Download,
   FileText,
   FolderOpen,
+  GraduationCap,
   Loader2,
   ShieldCheck,
   Sparkles,
@@ -29,6 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -62,6 +65,15 @@ import {
   pickFolder,
   renameInFolder,
 } from "@/lib/fs";
+import {
+  addCorrection,
+  clearCorrections,
+  getLessonsServerSnapshot,
+  getLessonsSnapshot,
+  importLessons,
+  saveRules,
+  subscribeLessons,
+} from "@/lib/lessons";
 import { isSupported, readDocument } from "@/lib/ocr";
 import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
 
@@ -76,6 +88,10 @@ interface Row {
   status: RowStatus;
   use: boolean;
   error?: string;
+  // De onde veio o nome sugerido — e, quando da IA, qual foi a sugestão
+  // original (para detectar edições do usuário e aprender com elas).
+  source?: "ia" | "local";
+  aiProposed?: string;
 }
 
 const subscribeNoop = () => () => {};
@@ -135,12 +151,47 @@ export default function Home() {
     () => false
   );
 
+  const lessons = React.useSyncExternalStore(
+    subscribeLessons,
+    getLessonsSnapshot,
+    getLessonsServerSnapshot
+  );
+  const importInputRef = React.useRef<HTMLInputElement>(null);
+
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }, []);
 
+  // Edição de um nome sugerido pela IA vira "correção": exemplo few-shot que
+  // calibra os próximos lotes (o cliente pediu exatamente isso).
+  const captureCorrection = React.useCallback(
+    (row: Row) => {
+      const final = row.proposed.trim();
+      if (
+        row.source !== "ia" ||
+        !row.aiProposed ||
+        !final ||
+        final === row.aiProposed
+      ) {
+        return;
+      }
+      addCorrection({
+        tipo: row.docType,
+        sugerido: row.aiProposed,
+        corrigido: ensureExtension(final, row.file.name),
+      });
+      // Evita recapturar a mesma edição em blurs seguintes.
+      patchRow(row.id, { aiProposed: final });
+      toast.success("Correção aprendida", {
+        description:
+          "Os próximos documentos parecidos seguirão esse padrão de nome.",
+      });
+    },
+    [patchRow]
+  );
+
   const applyProposal = React.useCallback(
-    (rowId: string, proposal: AiProposal) => {
+    (rowId: string, proposal: AiProposal, source: "ia" | "local") => {
       setRows((prev) => {
         const used = new Set(
           prev
@@ -150,7 +201,14 @@ export default function Home() {
         const name = uniqueName(used, proposal.name);
         return prev.map((r) =>
           r.id === rowId
-            ? { ...r, status: "ok", proposed: name, docType: proposal.docType }
+            ? {
+                ...r,
+                status: "ok",
+                proposed: name,
+                docType: proposal.docType,
+                source,
+                aiProposed: source === "ia" ? name : undefined,
+              }
             : r
         );
       });
@@ -162,7 +220,7 @@ export default function Home() {
     async (row: Row, text?: string | null) => {
       try {
         const extracted = text ?? (await readDocument(row.file));
-        applyProposal(row.id, proposeName(row.file.name, extracted));
+        applyProposal(row.id, proposeName(row.file.name, extracted), "local");
       } catch (err) {
         patchRow(row.id, {
           status: "erro",
@@ -245,7 +303,13 @@ export default function Home() {
         let results: Array<AiProposal | null> | null = null;
         for (let attempt = 0; attempt < 2 && !results; attempt++) {
           try {
-            results = await aiProposeBatch(items);
+            // Regras e correções do escritório calibram cada lote — inclusive
+            // as capturadas há pouco, nesta mesma sessão.
+            const lessons = getLessonsSnapshot();
+            results = await aiProposeBatch(items, {
+              rules: lessons.rules,
+              corrections: lessons.corrections,
+            });
           } catch (err) {
             const aiError = err instanceof AiError ? err : null;
             const message = err instanceof Error ? err.message : String(err);
@@ -292,7 +356,7 @@ export default function Home() {
         for (let i = 0; i < itemRows.length; i++) {
           const row = itemRows[i];
           const proposal = results?.[i] ?? null;
-          if (proposal) applyProposal(row.id, proposal);
+          if (proposal) applyProposal(row.id, proposal, "ia");
           else await processLocally(row, ocrTexts.get(row.id) ?? null);
         }
       }
@@ -540,6 +604,99 @@ export default function Home() {
         </CardContent>
       </Card>
 
+      {hydrated && aiSettings.mode !== "local" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="size-4" />
+              Regras do escritório
+            </CardTitle>
+            <CardDescription>
+              Ensine a IA no seu vocabulário: uma regra por linha, em português
+              mesmo. Além disso, toda vez que você corrigir um nome sugerido, o
+              app aprende o padrão e aplica nos próximos documentos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              value={lessons.rules}
+              onChange={(e) => saveRules(e.target.value)}
+              rows={4}
+              placeholder={
+                "Exemplos:\ncertidão da prefeitura sobre débitos de imóvel → Certidão Negativa de Tributos Imobiliários\ncontrato de honorários → Honorários - {Nome do Cliente}"
+              }
+              className="font-mono text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <span>
+                {lessons.corrections.length > 0
+                  ? `${lessons.corrections.length} correção(ões) aprendida(s) com suas edições.`
+                  : "Nenhuma correção aprendida ainda — edite um nome sugerido pela IA para começar."}
+              </span>
+              {lessons.corrections.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    clearCorrections();
+                    toast.info("Correções aprendidas foram apagadas.");
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                  Esquecer correções
+                </Button>
+              )}
+              <span className="ml-auto inline-flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Baixar regras e correções em JSON"
+                  onClick={() => {
+                    const blob = new Blob(
+                      [JSON.stringify(lessons, null, 2)],
+                      { type: "application/json" }
+                    );
+                    triggerDownload(blob, "regras-renomeador.json");
+                  }}
+                >
+                  <Download className="size-3.5" />
+                  Exportar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Restaurar regras e correções de um JSON exportado"
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  <Upload className="size-3.5" />
+                  Importar
+                </Button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    try {
+                      importLessons(await file.text());
+                      toast.success("Regras e correções importadas.");
+                    } catch (err) {
+                      toast.error("Não foi possível importar", {
+                        description:
+                          err instanceof Error ? err.message : String(err),
+                      });
+                    }
+                  }}
+                />
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>1. Selecione os documentos</CardTitle>
@@ -715,6 +872,7 @@ export default function Home() {
                             onChange={(e) =>
                               patchRow(row.id, { proposed: e.target.value })
                             }
+                            onBlur={() => captureCorrection(row)}
                             className="h-8"
                           />
                         ) : row.status === "renomeado" ? (
@@ -739,6 +897,24 @@ export default function Home() {
                           {(row.status === "ok" || row.status === "renomeado") &&
                             row.docType && (
                               <Badge variant="secondary">{row.docType}</Badge>
+                            )}
+                          {(row.status === "ok" || row.status === "renomeado") &&
+                            row.source && (
+                              <Badge
+                                variant="outline"
+                                title={
+                                  row.source === "ia"
+                                    ? "Nome sugerido pela IA (Gemini)"
+                                    : "Nome gerado pela análise local no navegador (a IA não estava disponível)"
+                                }
+                              >
+                                {row.source === "ia" ? (
+                                  <Sparkles className="size-3" />
+                                ) : (
+                                  <Cpu className="size-3" />
+                                )}
+                                {row.source === "ia" ? "IA" : "Local"}
+                              </Badge>
                             )}
                           {row.status === "renomeado" && (
                             <Badge>

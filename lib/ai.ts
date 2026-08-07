@@ -86,15 +86,24 @@ export class AiError extends Error {
   }
 }
 
+export interface AiLessons {
+  rules?: string;
+  corrections?: Array<{ tipo: string; sugerido: string; corrigido: string }>;
+}
+
 // Envia um lote e devolve os resultados alinhados à ordem dos itens
 // (null = o modelo não respondeu aquele item; o chamador faz fallback local).
 export async function aiProposeBatch(
-  items: AiBatchItem[]
+  items: AiBatchItem[],
+  lessons?: AiLessons
 ): Promise<Array<AiProposal | null>> {
   const form = new FormData();
   for (const item of items) {
     if ("file" in item) form.append("item", item.file);
     else form.append("item", JSON.stringify(item));
+  }
+  if (lessons && (lessons.rules?.trim() || lessons.corrections?.length)) {
+    form.set("lessons", JSON.stringify(lessons));
   }
 
   const res = await fetch("/api/rename", { method: "POST", body: form });

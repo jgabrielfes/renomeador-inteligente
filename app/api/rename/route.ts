@@ -7,7 +7,12 @@
 // ordem das partes do multipart é preservada, então o índice do resultado
 // corresponde ao índice do item enviado.
 
-import { GeminiError, geminiProposeBatch, type BatchItem } from "@/lib/gemini";
+import {
+  GeminiError,
+  geminiProposeBatch,
+  type BatchItem,
+  type Lessons,
+} from "@/lib/gemini";
 
 // Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
 export const maxDuration = 60;
@@ -77,8 +82,29 @@ export async function POST(request: Request) {
     );
   }
 
+  // Regras/correções do escritório (opcional): calibram o prompt.
+  let lessons: Lessons | undefined;
+  const rawLessons = form.get("lessons");
+  if (typeof rawLessons === "string") {
+    try {
+      const parsed = JSON.parse(rawLessons);
+      lessons = {
+        rules: typeof parsed?.rules === "string" ? parsed.rules : undefined,
+        corrections: Array.isArray(parsed?.corrections)
+          ? parsed.corrections.filter(
+              (c: unknown) =>
+                typeof (c as { sugerido?: unknown })?.sugerido === "string" &&
+                typeof (c as { corrigido?: unknown })?.corrigido === "string"
+            )
+          : undefined,
+      };
+    } catch {
+      // lições malformadas não derrubam o lote — só são ignoradas
+    }
+  }
+
   try {
-    const results = await geminiProposeBatch(apiKey, items);
+    const results = await geminiProposeBatch(apiKey, items, lessons);
     return Response.json({ results });
   } catch (err) {
     if (err instanceof GeminiError) {

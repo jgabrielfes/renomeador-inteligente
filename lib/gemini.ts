@@ -28,23 +28,54 @@ export const AI_MIME_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
 };
 
+// Regras e correções do escritório (enviadas pelo cliente) que calibram a
+// nomeação — o "ensinar a IA" é few-shot: as lições entram em todo prompt.
+export interface Lessons {
+  rules?: string;
+  corrections?: Array<{ tipo: string; sugerido: string; corrigido: string }>;
+}
+
+function lessonsSection(lessons: Lessons | undefined): string {
+  if (!lessons) return "";
+  const parts: string[] = [];
+  const rules = lessons.rules?.trim().slice(0, 2000);
+  if (rules) {
+    parts.push(
+      `\n\nREGRAS DESTE ESCRITÓRIO (prioridade máxima — sobrepõem as instruções gerais acima, exceto o formato JSON):\n${rules}`
+    );
+  }
+  const corrections = (lessons.corrections ?? []).slice(0, 20);
+  if (corrections.length > 0) {
+    parts.push(
+      `\n\nCORREÇÕES ANTERIORES DO USUÁRIO (aplique o mesmo padrão a documentos semelhantes):\n` +
+        corrections
+          .map(
+            (c) =>
+              `- Sugerido "${c.sugerido.slice(0, 120)}" → corrigido para "${c.corrigido.slice(0, 120)}"${c.tipo ? ` (tipo: ${c.tipo.slice(0, 60)})` : ""}`
+          )
+          .join("\n")
+    );
+  }
+  return parts.join("");
+}
+
 // Vários documentos vão numa única chamada (lote), cada um precedido por um
 // marcador "DOCUMENTO <índice>". A resposta é um array com o índice de volta —
 // mapeamento garantido mesmo com nomes de arquivo repetidos.
-function batchPrompt(count: number): string {
-  return `Acima estão ${count} documento(s) brasileiro(s) (RG, CNH, CPF, passaporte, certidões de nascimento/casamento/óbito, comprovante de residência, matrícula de imóvel, IPTU, ITBI, escritura, procuração, contratos etc.), cada um precedido pelo marcador "DOCUMENTO <índice>: <nome do arquivo original>".
+function batchPrompt(count: number, lessons?: Lessons): string {
+  return `Acima estão ${count} documento(s) brasileiro(s), típicos de um escritório de advocacia imobiliária (certidões, matrículas, guias, contratos, escrituras, documentos pessoais etc.), cada um precedido pelo marcador "DOCUMENTO <índice>: <nome do arquivo original>".
 
 Para CADA documento, gere um item no array JSON de resposta:
 - "indice": o número do marcador do documento (1 a ${count}).
-- "tipo": tipo do documento, curto e capitalizado. Exemplos: "CNH", "RG", "CPF", "Certidão de Casamento", "Contrato de Compra e Venda", "Contrato de Locação", "Matrícula de Imóvel", "IPTU", "Procuração", "Comprovante de Residência". Se não reconhecer o tipo, use "Documento".
-- "nome": nome completo da pessoa principal do documento, em Formato de Título (ex.: "João da Silva"). No caso de contratos, a parte pessoa física (não a empresa). Em certidão de casamento, os dois cônjuges separados por " e ". Se nenhum nome legível, use null.
-- "identificador": número identificador relevante quando existir — nº da matrícula (para Matrícula de Imóvel), CPF formatado (para documentos pessoais sem nome legível). Senão, null.
+- "tipo": o tipo ESPECÍFICO do documento, curto e capitalizado. Prefira sempre o tipo do documento ao órgão emissor: uma certidão da prefeitura sobre débitos de imóvel é "Certidão Negativa de Tributos Imobiliários", não "Certidão Prefeitura". Tipos frequentes neste contexto: "Certidão de Matrícula", "Certidão Vintenária", "Certidão Negativa de Tributos Imobiliários", "Certidão de Valor Venal", "Certidão de Dados Cadastrais (IPTU)", "Certidão Negativa de Débitos Condominiais", "Certidão de Ônus e Ações", "CND Federal", "Certidão Negativa de Débitos Trabalhistas", "Certidão de Distribuição Cível", "Certidão de Protesto", "Certidão de Casamento", "Certidão de Nascimento", "Certidão de Óbito", "Guia de ITBI", "Comprovante de Pagamento", "Comprovante de Residência", "Habite-se", "Escritura de Venda e Compra", "Contrato de Compromisso de Compra e Venda", "Contrato de Locação", "Termo de Quitação", "Procuração", "Matrícula de Imóvel", "IPTU", "RG", "CNH", "CPF". A lista não é fechada — use o tipo específico correto mesmo que não esteja nela. Se não reconhecer, use "Documento".
+- "nome": nome completo da pessoa principal do documento, em Formato de Título (ex.: "João da Silva"). Em contratos, a parte pessoa física (não a empresa). Em certidão de casamento, os dois cônjuges separados por " e ". Em certidões sobre imóvel sem pessoa identificável, use null.
+- "identificador": número identificador relevante quando existir — nº da matrícula (Certidão de Matrícula / Matrícula de Imóvel), nº do contribuinte (IPTU / Valor Venal), nº do processo (Certidão de Distribuição), CPF formatado (documento pessoal sem nome legível). Senão, null.
 
 Regras:
 - O array deve ter exatamente ${count} item(ns), um por documento, sem repetir índices.
 - Analise cada documento de forma independente.
 - Nunca invente dados que não estejam legíveis no documento.
-- Não inclua rótulos, títulos de seção ou nomes de órgãos como se fossem nome de pessoa.`;
+- Não inclua rótulos, títulos de seção ou nomes de órgãos como se fossem nome de pessoa.${lessonsSection(lessons)}`;
 }
 
 const RESPONSE_SCHEMA = {
@@ -171,7 +202,8 @@ export interface BatchItem {
 // (o cliente cai no fallback local só para ele).
 export async function geminiProposeBatch(
   apiKey: string,
-  items: BatchItem[]
+  items: BatchItem[],
+  lessons?: Lessons
 ): Promise<Array<{ name: string; docType: string } | null>> {
   const parts: Array<Record<string, unknown>> = [];
   items.forEach((item, i) => {
@@ -196,7 +228,7 @@ export async function geminiProposeBatch(
       });
     }
   });
-  parts.push({ text: batchPrompt(items.length) });
+  parts.push({ text: batchPrompt(items.length, lessons) });
 
   // Tenta cada modelo da cadeia: 429 (cota daquele modelo) ou 404 (modelo
   // aposentado) passam para o próximo; outros erros interrompem na hora.
