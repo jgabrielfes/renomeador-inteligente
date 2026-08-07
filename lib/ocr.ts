@@ -71,10 +71,15 @@ function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement 
   return canvas;
 }
 
-async function ocrCanvasSource(source: ImageBitmap | HTMLCanvasElement): Promise<string> {
+async function ocrCanvasSource(
+  source: ImageBitmap | HTMLCanvasElement,
+  { preprocessed = true }: { preprocessed?: boolean } = {}
+): Promise<string> {
   const worker = await getTesseractWorker();
-  const canvas = preprocess(source);
-  const { data } = await worker.recognize(canvas);
+  // Páginas renderizadas de PDF já são nítidas; o autocontraste agressivo
+  // (pensado para fotos de WhatsApp) borra o texto sintético e piora o OCR.
+  const canvas = preprocessed ? preprocess(source) : source;
+  const { data } = await worker.recognize(canvas as HTMLCanvasElement);
   return data.text;
 }
 
@@ -90,6 +95,24 @@ async function ocrImageFile(file: File): Promise<string> {
   } finally {
     bitmap.close();
   }
+}
+
+// Texto que PDFs "digitais" (CNH-e, certidões eletrônicas) carregam na camada
+// de texto mesmo quando os dados reais estão numa imagem: carimbo de assinatura
+// digital + cabeçalhos federais. Se, tirando isso, sobrar quase nada, o PDF
+// precisa de OCR da página renderizada.
+const PDF_BOILERPLATE = [
+  /documento\s+assinado\s+com\s+certificado\s+digital[\s\S]{0,400}?assinador-digital\.?/gi,
+  /rep[úu]blica\s+federativa\s+do\s+brasil/gi,
+  /minist[ée]rio\s+da\s+[a-zà-ÿ ]+/gi,
+  /secretaria\s+nacional\s+de\s+tr[âa]nsito(\s*-\s*senatran)?/gi,
+  /qr-?code/gi,
+];
+
+function meaningfulNativeText(native: string): boolean {
+  let rest = native;
+  for (const p of PDF_BOILERPLATE) rest = rest.replace(p, " ");
+  return cleanSpaces(rest).length > 120;
 }
 
 async function extractPdfText(file: File, maxPages = 2): Promise<string> {
@@ -115,19 +138,22 @@ async function extractPdfText(file: File, maxPages = 2): Promise<string> {
       const native = content.items
         .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
         .join("");
-      if (cleanSpaces(native).length > 80) {
+      if (meaningfulNativeText(native)) {
         texts.push(native);
         continue;
       }
+      if (cleanSpaces(native)) texts.push(native);
 
-      // PDF escaneado: renderiza a página e faz OCR.
-      const viewport = page.getViewport({ scale: 2.2 });
+      // PDF escaneado (ou digital com dados dentro de imagem, como a CNH-e):
+      // renderiza a página e faz OCR. Escala 3.5 porque documentos em formato
+      // cartão ocupam uma fração pequena da folha A4.
+      const viewport = page.getViewport({ scale: 3.5 });
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);
       const ctx = canvas.getContext("2d")!;
       await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-      texts.push(await ocrCanvasSource(canvas));
+      texts.push(await ocrCanvasSource(canvas, { preprocessed: false }));
     }
     return texts.join("\n");
   } finally {
