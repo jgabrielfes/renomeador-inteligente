@@ -136,10 +136,105 @@ const DOC_RULES: DocRule[] = [
   {
     label: "ITBI",
     patterns: [
-      [/IMPOSTO SOBRE TRANSMISSAO/, 4],
+      [/IMPOSTO SOBRE (?:A )?TRANSMISSAO/, 4],
+      [/INTER-?VIVOS/, 3],
       [/\bITBI\b/, 3],
+      [/NUMERO DE GUIA/, 2],
     ],
     filenameHints: [[/\bITBI\b/, 3]],
+  },
+  {
+    // "Valor venal" também aparece como campo em guias de ITBI — só o título
+    // da certidão pesa de verdade.
+    label: "Certidão de Valor Venal",
+    patterns: [
+      [/CERTIDAO DE VALOR VENAL/, 5],
+      [/VALOR VENAL/, 2],
+    ],
+    filenameHints: [[/VENAL/, 3]],
+  },
+  {
+    label: "Certidão Negativa de Tributos Imobiliários",
+    patterns: [
+      [/NEGATIVA DE (DEBITOS DE )?TRIBUTOS/, 5],
+      [/TRIBUTOS IMOBILIARIOS/, 4],
+    ],
+  },
+  {
+    label: "Certidão Negativa de Débitos Trabalhistas",
+    patterns: [
+      [/NEGATIVA DE DEBITOS TRABALHISTAS/, 5],
+      [/DEBITOS TRABALHISTAS/, 4],
+      [/JUSTICA DO TRABALHO/, 2],
+    ],
+    filenameHints: [[/TRABALHISTA/, 3]],
+  },
+  {
+    label: "Certidão Negativa de Débitos",
+    patterns: [
+      [/CERTIDAO NEGATIVA DE DEBITOS/, 4],
+      [/\bCND\b/, 3],
+      [/NADA CONSTA/, 2],
+    ],
+  },
+  {
+    label: "Certidão de Distribuição",
+    patterns: [
+      [/CERTIDAO DE DISTRIBUICAO/, 5],
+      [/DISTRIBUIDOR (CIVEL|JUDICIAL|CRIMINAL)/, 3],
+    ],
+  },
+  {
+    label: "Certidão de Protesto",
+    patterns: [
+      [/TABELIAO DE PROTESTO|CERTIDAO DE PROTESTO/, 5],
+      [/\bPROTESTOS?\b/, 2],
+    ],
+  },
+  {
+    label: "Certidão de Ônus",
+    patterns: [[/ONUS E ACOES|CERTIDAO DE ONUS/, 5]],
+  },
+  {
+    label: "Certidão Vintenária",
+    patterns: [[/VINTENARIA/, 5]],
+    filenameHints: [[/VINTENARIA/, 3]],
+  },
+  {
+    label: "Habite-se",
+    patterns: [[/HABITE-?SE/, 5]],
+  },
+  {
+    label: "Comprovante de Pagamento",
+    patterns: [
+      [/COMPROVANTE DE PAGAMENTO/, 5],
+      [/RECIBO DE PAGAMENTO|PAGAMENTO (EFETUADO|REALIZADO)/, 4],
+      [/COMPROVANTE DE TRANSFERENCIA|\bPIX\b/, 2],
+    ],
+    filenameHints: [
+      [/PAGAMENTO/, 3],
+      [/COMPROVANTE/, 2],
+    ],
+  },
+  {
+    label: "Boleto",
+    patterns: [
+      [/FICHA DE COMPENSACAO/, 5],
+      [/LINHA DIGITAVEL/, 4],
+      [/LOCAL DE PAGAMENTO/, 3],
+      [/AGENCIA\/?CODIGO (DO )?(CEDENTE|BENEFICIARIO)/, 3],
+      [/\bBOLETO\b/, 2],
+    ],
+    filenameHints: [[/BOLETO/, 3]],
+  },
+  {
+    label: "Termo de Quitação",
+    patterns: [
+      [/TERMO DE QUITACAO/, 5],
+      [/(OUTORGA|PLENA|GERAL|RASA).{0,30}QUITACAO/, 3],
+      [/QUITACAO/, 2],
+    ],
+    filenameHints: [[/QUITACAO/, 3]],
   },
   {
     label: "Escritura",
@@ -179,11 +274,26 @@ const DOC_RULES: DocRule[] = [
 
 const MIN_TYPE_SCORE = 3;
 
+// Padrões encontrados no "título" (o começo do texto) pesam o dobro: é onde
+// documentos declaram o que são — e o que desempata um contrato que menciona
+// a matrícula do imóvel lá pela página dois.
+const TITLE_ZONE = 600;
+
 function contractSubtype(n: string): string {
   if (/(?:VENDA E COMPRA|COMPRA E VENDA)/.test(n)) return "Contrato de Compra e Venda";
   if (/LOCACAO/.test(n)) return "Contrato de Locação";
   if (/PRESTACAO DE SERVICOS/.test(n)) return "Contrato de Prestação de Serviços";
+  if (/HONORARIOS/.test(n)) return "Contrato de Honorários";
   return "Contrato";
+}
+
+function refineType(label: string, n: string): string {
+  if (label === "Contrato") return contractSubtype(n);
+  if (label === "ITBI" && /\bGUIA\b/.test(n)) return "Guia de ITBI";
+  if (label === "Escritura" && /(?:VENDA E COMPRA|COMPRA E VENDA)/.test(n)) {
+    return "Escritura de Venda e Compra";
+  }
+  return label;
 }
 
 export function detectDocumentType(text: string, fileName = ""): string {
@@ -194,7 +304,10 @@ export function detectDocumentType(text: string, fileName = ""): string {
   let bestScore = 0;
   for (const rule of DOC_RULES) {
     let score = 0;
-    for (const [pattern, weight] of rule.patterns) if (pattern.test(n)) score += weight;
+    for (const [pattern, weight] of rule.patterns) {
+      const m = pattern.exec(n);
+      if (m) score += weight * (m.index < TITLE_ZONE ? 2 : 1);
+    }
     for (const [pattern, weight] of rule.filenameHints ?? [])
       if (pattern.test(fn)) score += weight;
     if (score > bestScore) {
@@ -204,7 +317,7 @@ export function detectDocumentType(text: string, fileName = ""): string {
   }
 
   if (bestScore < MIN_TYPE_SCORE) return "Documento";
-  return best === "Contrato" ? contractSubtype(n) : best;
+  return refineType(best, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +380,23 @@ const NON_NAME_WORDS = new Set([
   // imóveis / tributos
   "IMOVEL", "IMOVEIS", "URBANO", "RURAL", "IMPOSTO", "PREDIAL", "TERRITORIAL",
   "TRANSMISSAO", "EXERCICIO", "COMPROVANTE", "ENDERECO", "ENERGIA",
-  "ELETRICA", "AGUA", "FATURA", "CONTA",
+  "ELETRICA", "AGUA", "FATURA", "CONTA", "TRIBUTOS", "TRIBUTO", "DEBITOS",
+  "DEBITO", "NEGATIVA", "POSITIVA", "VENAL", "CONTRIBUINTE", "GUIA",
+  "DISTRIBUICAO", "DISTRIBUIDOR", "PROTESTO", "PROTESTOS", "TRABALHISTA",
+  "TRABALHISTAS", "JUSTICA", "TRABALHO", "ELETRONICA", "ELETRONICO", "ACOES",
+  "PORTAL", "EMITIDA", "EMITIDO", "EXPEDIDA", "EXPEDIDO", "CONSTA", "CONSTAM",
+  "AUTENTICIDADE", "VERIFICACAO", "CODIGO", "SELO",
+  // fazenda municipal / repartições / cobranças
+  "FAZENDA", "PUBLICA", "RECEITA", "ARRECADACAO", "DEPARTAMENTO", "DIVISAO",
+  "SECAO", "TECNICA", "CERTIFICAMOS", "COBRANCA", "DESPESAS", "DEMAIS",
+  "EMOLUMENTOS", "TAXAS", "MULTAS", "MUNICIPAIS", "IMOBILIARIOS",
+  "IMOBILIARIAS", "INSCRICAO", "INSCRICOES", "CADASTRAIS", "CADASTRAL",
+  "QUITE", "RESSALVADO", "DIREITO",
+  // boleto / banco / pagamento
+  "BOLETO", "QUITACAO", "PAGAMENTO", "VENCIMENTO", "BENEFICIARIO", "CEDENTE",
+  "SACADO", "PAGADOR", "AGENCIA", "BANCO", "CAIXA", "BRADESCO", "ITAU",
+  "SANTANDER", "ECONOMICA", "NUBANK", "SICREDI", "SICOOB", "COMPENSACAO",
+  "DIGITAVEL", "CUSTAS", "PARCELA", "EXPRESS",
   // nomes de arquivo comuns
   "WHATSAPP", "IMAGE", "IMG", "SCAN", "SCANNER", "FOTO", "PHOTO", "COPIA",
   "ANEXO", "PAGINA", "PDF", "JPEG", "JPG", "PNG",
@@ -310,10 +439,13 @@ export function titleCaseName(s: string): string {
 // sequência válida para no primeiro token inválido ou em pontuação.
 function longestNameRun(line: string): string | null {
   const tokens = line.split(/\s+/);
+  // Empata por soma de letras, não por contagem: "AMAURI RODRIGUES" ganha de
+  // lixo curto de OCR ("TUE EEN") que aparece antes na linha.
+  const letters = (arr: string[]) => arr.reduce((acc, w) => acc + w.length, 0);
   let best: string[] = [];
   let run: string[] = [];
   const flush = () => {
-    if (run.length > best.length) best = run;
+    if (letters(run) > letters(best)) best = run;
     run = [];
   };
   for (const token of tokens) {
@@ -327,6 +459,10 @@ function longestNameRun(line: string): string | null {
     }
   }
   flush();
+  // Partículas soltas nas pontas ("Jacira Miranda dos") saem.
+  const particle = (w: string) => NAME_PARTICLES.has(normalize(w).replace(/['’\-.]/g, ""));
+  while (best.length && particle(best[0])) best.shift();
+  while (best.length && particle(best[best.length - 1])) best.pop();
   // Mais de 6 tokens seguidos é frase corrida, não nome.
   if (best.length < 2 || best.length > 6) return null;
   const candidate = best.join(" ");
@@ -356,18 +492,29 @@ const COMPANY_MARKERS =
 const PERSON_CONTEXT =
   /\b(BRASILEIR[OA]|PORTUGU[EÊ]S|CASAD[OA]|SOLTEIR[OA]|VIUV[OA]|DIVORCIAD[OA]|APOSENTAD[OA]|PORTADOR|INSCRIT[OA]|RESIDENTE|DOMICILIAD[OA]|NASCID[OA]|CPF|RG\b)/;
 
-// Contratos, escrituras e procurações qualificam as partes logo após o nome:
-// "MANUEL JORGE EIRA DA CUSTODIA, português, viúvo, aposentado, portador...".
-// Prefere pessoa física (a parte que interessa para o nome do arquivo).
-function extractContractParty(text: string): string | null {
+// Documentos formais qualificam a pessoa logo após o nome: "MANUEL JORGE EIRA
+// DA CUSTODIA, português, viúvo, aposentado..." (contratos, escrituras,
+// procurações) ou "AMAURI RODRIGUES, nascido aos..." (certidões). Coleta até
+// `limit` pessoas físicas distintas, na ordem em que aparecem. Roda sobre o
+// texto com espaços colapsados para nomes quebrados em duas linhas não serem
+// cortados no meio.
+function extractQualifiedNames(text: string, limit: number): string[] {
+  const flat = cleanSpaces(text);
+  const found: string[] = [];
+  const seen = new Set<string>();
   const pattern = /([A-ZÀ-Ü][A-ZÀ-Ü'’\- ]{6,70})\s*,([\s\S]{0,160})/g;
-  for (const m of text.matchAll(pattern)) {
+  for (const m of flat.matchAll(pattern)) {
     if (COMPANY_MARKERS.test(normalize(m[1]))) continue;
     if (!PERSON_CONTEXT.test(normalize(m[2]))) continue;
     const run = longestNameRun(m[1]);
-    if (run) return titleCaseName(run);
+    if (!run) continue;
+    const key = normalize(run);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(titleCaseName(run));
+    if (found.length >= limit) break;
   }
-  return null;
+  return found;
 }
 
 // Campo "NOME" de RG/CNH/CPF: o valor vem na própria linha ou nas duas
@@ -403,19 +550,33 @@ function extractBestRun(lines: string[]): string | null {
   return best ? titleCaseName(best) : null;
 }
 
+const PERSONAL_DOCS = new Set(["RG", "CNH", "CPF", "Passaporte"]);
+
 export function extractName(text: string, docType = ""): string | null {
   const lines = text.split(/\r?\n/).map(cleanSpaces).filter(Boolean);
 
   if (docType.startsWith("Certidão de Casamento")) {
     const couple = extractCouple(text);
     if (couple) return couple;
+    // Layout sem ELE:/ELA:: os cônjuges aparecem qualificados no corpo
+    // ("AMAURI RODRIGUES, nascido aos...").
+    const spouses = extractQualifiedNames(text, 2);
+    if (spouses.length > 0) return spouses.join(" e ");
   }
-  if (/^(Contrato|Escritura|Procuração)/.test(docType)) {
-    const party = extractContractParty(text);
-    if (party) return party;
+  if (/^(Contrato|Escritura|Procuração|Termo|Certidão de Nascimento|Certidão de Óbito)/.test(docType)) {
+    const [person] = extractQualifiedNames(text, 1);
+    if (person) return person;
   }
 
-  return extractLabeledName(lines) ?? extractBestRun(lines);
+  const labeled = extractLabeledName(lines);
+  if (labeled) return labeled;
+
+  // Em documento pessoal com OCR ruim, a varredura genérica produz lixo com
+  // aparência de nome — melhor devolver nada e deixar o fallback do nome do
+  // arquivo agir ("RG ANA PAULA.pdf" → "Ana Paula").
+  if (PERSONAL_DOCS.has(docType)) return null;
+
+  return extractBestRun(lines);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,9 +604,25 @@ export function extractCpf(text: string): string | null {
   return null;
 }
 
-export function extractMatricula(text: string): string | null {
-  const n = normalize(text);
-  const m = n.match(/MATRICULA\s*(?:N[O0]?|NUMERO)?\s*[.: -]?\s*([\d][\d.]{2,14}[\d])/);
+// Conteúdo primeiro; nome do arquivo como fallback ("MATRÍCULA 150.407.pdf"
+// resolve mesmo quando o OCR tropeça no carimbo do cartório).
+export function extractMatricula(text: string, fileName = ""): string | null {
+  for (const source of [normalize(text), normalize(fileName)]) {
+    const m = source.match(
+      /MATRICULA\s*(?:N[O0]?|NUMERO)?\s*[.: -]?\s*([\d][\d.]{2,14}[\d])/
+    );
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Nº do contribuinte ou inscrição cadastral (IPTU/valor venal/certidões de
+// tributos municipais) — o identificador que resta quando o documento não
+// traz nome de pessoa.
+export function extractContribuinte(text: string): string | null {
+  const m = normalize(text).match(
+    /(?:CONTRIBUINTE|INSCRIC(?:AO|OES)(?:\s+CADASTRA(?:L|IS))?)\s*(?:N[O0.]*|NUMERO)?\s*[.:]?\s*([\d][\d.\-/]{4,20}[\d])/
+  );
   return m ? m[1] : null;
 }
 
@@ -471,6 +648,12 @@ function nameFromFilename(stem: string): string | null {
     else flush();
   }
   flush();
+  if (best.length === 1) {
+    // Uma palavra só serve quando é claramente um prenome ("RG JACIRA.pdf").
+    const only = best[0];
+    const core = normalize(only).replace(/['’\-.]/g, "");
+    return core.length >= 4 && isNameWord(only) ? titleCaseName(only) : null;
+  }
   const candidate = best.join(" ");
   return best.length >= 2 && plausibleName(candidate) ? titleCaseName(candidate) : null;
 }
@@ -489,7 +672,16 @@ export interface Proposal {
   docType: string;
 }
 
-const PERSONAL_DOCS = new Set(["RG", "CNH", "CPF", "Passaporte"]);
+// Documentos de tributo de imóvel: sem nome de pessoa, o nº do contribuinte
+// é o identificador que diferencia um do outro.
+const PROPERTY_TAX_DOCS = new Set([
+  "IPTU",
+  "ITBI",
+  "Guia de ITBI",
+  "Certidão de Valor Venal",
+  "Certidão Negativa de Tributos Imobiliários",
+  "Certidão Negativa de Débitos",
+]);
 
 export function proposeName(fileName: string, text: string): Proposal {
   const ext = getExtension(fileName);
@@ -502,13 +694,16 @@ export function proposeName(fileName: string, text: string): Proposal {
 
   let base: string | null = null;
   if (docType === "Matrícula de Imóvel") {
-    const mat = extractMatricula(text);
+    const mat = extractMatricula(text, fileName);
     base = mat ? `Matrícula ${mat}` : "Matrícula de Imóvel";
   } else if (personName) {
     base = `${docType} - ${personName}`;
   } else if (PERSONAL_DOCS.has(docType)) {
     const cpf = extractCpf(text);
     if (cpf) base = `${docType} - CPF ${cpf}`;
+  } else if (PROPERTY_TAX_DOCS.has(docType)) {
+    const contribuinte = extractContribuinte(text);
+    if (contribuinte) base = `${docType} - ${contribuinte}`;
   }
 
   if (!base && docType !== "Documento") base = docType;

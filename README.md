@@ -36,7 +36,7 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 
 ## Estrutura
 
-- [lib/renamer.ts](lib/renamer.ts) — lógica de nomeação (detecção do tipo de documento, extração de nome/CPF/matrícula). Port fiel do script Python original (`renomeador_documentos.py`).
+- [lib/renamer.ts](lib/renamer.ts) — motor local de nomeação: tipo por pontuação de evidências (texto + nome do arquivo, com peso extra no título), extração de nome em camadas com validação palavra a palavra, identificadores (CPF com dígito verificador, matrícula, contribuinte) e fallback que preserva o nome original quando nada é confiável. Calibrado com documentos reais de escritório imobiliário.
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, e renomear no lugar com `move()` ou cópia+remoção.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
@@ -54,4 +54,4 @@ Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a funç
 
 ## Tipos reconhecidos
 
-RG, CNH, CPF, Passaporte, Certidão de nascimento/casamento/óbito, Comprovante de residência, Matrícula de imóvel, IPTU, ITBI, Escritura, Procuração e Contrato. As regras ficam em `DOC_RULES` em [lib/renamer.ts](lib/renamer.ts) e podem ser expandidas.
+RG, CNH, CPF, Passaporte, Certidões (nascimento, casamento, óbito, valor venal, tributos imobiliários, negativa de débitos, trabalhista, distribuição, protesto, ônus, vintenária), Matrícula de imóvel, IPTU, Guia de ITBI, Habite-se, Comprovantes (residência, pagamento), Boleto, Termo de quitação, Escritura, Procuração e Contratos (compra e venda, locação, prestação de serviços, honorários). As regras ficam em `DOC_RULES` em [lib/renamer.ts](lib/renamer.ts) e podem ser expandidas.

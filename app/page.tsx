@@ -1004,8 +1004,11 @@ export default function Home() {
 
       <footer className="text-center text-sm text-muted-foreground">
         Tipos reconhecidos: RG, CNH, CPF, Passaporte, Certidões (nascimento,
-        casamento, óbito), Comprovante de residência, Matrícula de imóvel,
-        IPTU, ITBI, Escritura, Procuração e Contrato.
+        casamento, óbito, valor venal, tributos imobiliários, débitos,
+        trabalhista, distribuição, protesto, ônus, vintenária), Matrícula de
+        imóvel, IPTU, Guia de ITBI, Habite-se, Comprovantes (residência,
+        pagamento), Boleto, Termo de quitação, Escritura, Procuração e
+        Contratos (compra e venda, locação, serviços, honorários).
       </footer>
 
       <DocumentPreview
