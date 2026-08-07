@@ -21,28 +21,41 @@ export const AI_MIME_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
 };
 
-const PROMPT = `Você nomeia arquivos de documentos brasileiros (RG, CNH, CPF, passaporte, certidões de nascimento/casamento/óbito, comprovante de residência, matrícula de imóvel, IPTU, ITBI, escritura, procuração, contratos etc.).
+// Vários documentos vão numa única chamada (lote), cada um precedido por um
+// marcador "DOCUMENTO <índice>". A resposta é um array com o índice de volta —
+// mapeamento garantido mesmo com nomes de arquivo repetidos.
+function batchPrompt(count: number): string {
+  return `Acima estão ${count} documento(s) brasileiro(s) (RG, CNH, CPF, passaporte, certidões de nascimento/casamento/óbito, comprovante de residência, matrícula de imóvel, IPTU, ITBI, escritura, procuração, contratos etc.), cada um precedido pelo marcador "DOCUMENTO <índice>: <nome do arquivo original>".
 
-Analise o documento e responda APENAS o JSON pedido:
+Para CADA documento, gere um item no array JSON de resposta:
+- "indice": o número do marcador do documento (1 a ${count}).
 - "tipo": tipo do documento, curto e capitalizado. Exemplos: "CNH", "RG", "CPF", "Certidão de Casamento", "Contrato de Compra e Venda", "Contrato de Locação", "Matrícula de Imóvel", "IPTU", "Procuração", "Comprovante de Residência". Se não reconhecer o tipo, use "Documento".
 - "nome": nome completo da pessoa principal do documento, em Formato de Título (ex.: "João da Silva"). No caso de contratos, a parte pessoa física (não a empresa). Em certidão de casamento, os dois cônjuges separados por " e ". Se nenhum nome legível, use null.
 - "identificador": número identificador relevante quando existir — nº da matrícula (para Matrícula de Imóvel), CPF formatado (para documentos pessoais sem nome legível). Senão, null.
 
 Regras:
+- O array deve ter exatamente ${count} item(ns), um por documento, sem repetir índices.
+- Analise cada documento de forma independente.
 - Nunca invente dados que não estejam legíveis no documento.
 - Não inclua rótulos, títulos de seção ou nomes de órgãos como se fossem nome de pessoa.`;
+}
 
 const RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    tipo: { type: "STRING" },
-    nome: { type: "STRING", nullable: true },
-    identificador: { type: "STRING", nullable: true },
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: {
+      indice: { type: "INTEGER" },
+      tipo: { type: "STRING" },
+      nome: { type: "STRING", nullable: true },
+      identificador: { type: "STRING", nullable: true },
+    },
+    required: ["indice", "tipo"],
   },
-  required: ["tipo"],
 } as const;
 
 interface AiAnswer {
+  indice?: number;
   tipo: string;
   nome?: string | null;
   identificador?: string | null;
@@ -60,7 +73,7 @@ export class GeminiError extends Error {
 async function callGemini(
   apiKey: string,
   parts: Array<Record<string, unknown>>
-): Promise<AiAnswer> {
+): Promise<AiAnswer[]> {
   const res = await fetch(
     `${API_BASE}/v1beta/models/${GEMINI_MODEL}:generateContent`,
     {
@@ -90,7 +103,11 @@ async function callGemini(
   const text: string | undefined =
     payload?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new GeminiError("Resposta do Gemini sem conteúdo.", 502);
-  return JSON.parse(text) as AiAnswer;
+  const parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) {
+    throw new GeminiError("Resposta do Gemini fora do formato esperado.", 502);
+  }
+  return parsed as AiAnswer[];
 }
 
 // Monta o nome final no padrão "{Tipo} - {Nome}.{ext}" a partir da resposta.
@@ -113,38 +130,48 @@ function assembleProposal(
   return { name: safeFilename(base) + ext, docType: tipo };
 }
 
-// Modo "arquivo": o Gemini recebe o documento em si (imagem ou PDF).
-export async function geminiProposeFromFile(
-  apiKey: string,
-  fileName: string,
-  data: ArrayBuffer
-): Promise<{ name: string; docType: string }> {
-  const mimeType = AI_MIME_TYPES[getExtension(fileName)];
-  if (!mimeType) {
-    throw new GeminiError("Formato de arquivo não suportado pela IA.", 415);
-  }
-  const answer = await callGemini(apiKey, [
-    {
-      inline_data: {
-        mime_type: mimeType,
-        data: Buffer.from(data).toString("base64"),
-      },
-    },
-    { text: PROMPT },
-  ]);
-  return assembleProposal(fileName, answer);
+export interface BatchItem {
+  fileName: string;
+  // Um dos dois: o arquivo em si (modo "arquivo") ou o texto do OCR local.
+  data?: ArrayBuffer;
+  text?: string;
 }
 
-// Modo "texto": recebe apenas o texto extraído pelo OCR local do navegador.
-export async function geminiProposeFromText(
+// Analisa um lote de documentos numa única chamada ao Gemini. Devolve um array
+// alinhado à ordem de entrada; null quando o modelo não respondeu aquele item
+// (o cliente cai no fallback local só para ele).
+export async function geminiProposeBatch(
   apiKey: string,
-  fileName: string,
-  text: string
-): Promise<{ name: string; docType: string }> {
-  const answer = await callGemini(apiKey, [
-    {
-      text: `${PROMPT}\n\nTexto extraído do documento (via OCR, pode conter erros):\n\n${text.slice(0, 30000)}`,
-    },
-  ]);
-  return assembleProposal(fileName, answer);
+  items: BatchItem[]
+): Promise<Array<{ name: string; docType: string } | null>> {
+  const parts: Array<Record<string, unknown>> = [];
+  items.forEach((item, i) => {
+    parts.push({ text: `DOCUMENTO ${i + 1}: ${item.fileName}` });
+    if (item.data) {
+      const mimeType = AI_MIME_TYPES[getExtension(item.fileName)];
+      if (!mimeType) {
+        throw new GeminiError(
+          `Formato não suportado pela IA: ${item.fileName}`,
+          415
+        );
+      }
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: Buffer.from(item.data).toString("base64"),
+        },
+      });
+    } else {
+      parts.push({
+        text: `Texto extraído por OCR (pode conter erros):\n${(item.text ?? "").slice(0, 15000)}`,
+      });
+    }
+  });
+  parts.push({ text: batchPrompt(items.length) });
+
+  const answers = await callGemini(apiKey, parts);
+  return items.map((item, i) => {
+    const answer = answers.find((a) => a.indice === i + 1);
+    return answer ? assembleProposal(item.fileName, answer) : null;
+  });
 }

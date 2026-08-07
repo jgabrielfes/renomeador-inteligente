@@ -59,35 +59,41 @@ export function fileEligibleForAi(file: File): boolean {
   );
 }
 
-async function postRename(form: FormData): Promise<{ name: string; docType: string }> {
+// Limites do lote: uma única chamada à IA para vários documentos (o free tier
+// limita REQUISIÇÕES por minuto — agrupar 10 em 1 praticamente elimina o 429).
+export const AI_BATCH_MAX_ITEMS = 10;
+export const AI_BATCH_MAX_BYTES = 3.5 * 1024 * 1024;
+
+export type AiBatchItem =
+  | { file: File }
+  | { fileName: string; text: string };
+
+export interface AiProposal {
+  name: string;
+  docType: string;
+}
+
+// Envia um lote e devolve os resultados alinhados à ordem dos itens
+// (null = o modelo não respondeu aquele item; o chamador faz fallback local).
+export async function aiProposeBatch(
+  items: AiBatchItem[]
+): Promise<Array<AiProposal | null>> {
+  const form = new FormData();
+  for (const item of items) {
+    if ("file" in item) form.append("item", item.file);
+    else form.append("item", JSON.stringify(item));
+  }
+
   const res = await fetch("/api/rename", { method: "POST", body: form });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
     throw new Error(payload?.error ?? `Falha na análise com IA (HTTP ${res.status}).`);
   }
-  if (!payload?.name || !payload?.docType) {
+  if (!Array.isArray(payload?.results) || payload.results.length !== items.length) {
     throw new Error("Resposta inválida da análise com IA.");
   }
-  return payload;
-}
-
-// Modo "arquivo": o documento em si é enviado; o Gemini o lê diretamente.
-export async function aiProposeFromFile(
-  file: File
-): Promise<{ name: string; docType: string }> {
-  const form = new FormData();
-  form.set("fileName", file.name);
-  form.set("file", file);
-  return postRename(form);
-}
-
-// Modo "texto": envia apenas o texto extraído pelo OCR local.
-export async function aiProposeFromText(
-  fileName: string,
-  text: string
-): Promise<{ name: string; docType: string }> {
-  const form = new FormData();
-  form.set("fileName", fileName);
-  form.set("text", text);
-  return postRename(form);
+  return payload.results.map((r: unknown) => {
+    const p = r as AiProposal | null;
+    return p?.name && p?.docType ? p : null;
+  });
 }

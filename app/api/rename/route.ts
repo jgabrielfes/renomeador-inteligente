@@ -1,15 +1,20 @@
-// POST /api/rename — proxy autenticado para o Gemini. O navegador envia o
-// documento (ou o texto extraído por OCR) e recebe { name, docType } no padrão
+// POST /api/rename — proxy autenticado para o Gemini. Recebe um LOTE de
+// documentos (arquivos e/ou textos de OCR) numa única chamada e devolve
+// { results: [{ name, docType } | null] } alinhado à ordem de envio, no padrão
 // "{Tipo} - {Nome}.{ext}". A chave fica em GEMINI_API_KEY, só no servidor.
+//
+// O corpo usa a chave repetida "item" (File ou JSON {fileName, text}) — a
+// ordem das partes do multipart é preservada, então o índice do resultado
+// corresponde ao índice do item enviado.
 
-import {
-  GeminiError,
-  geminiProposeFromFile,
-  geminiProposeFromText,
-} from "@/lib/gemini";
+import { GeminiError, geminiProposeBatch, type BatchItem } from "@/lib/gemini";
+
+// Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
+export const maxDuration = 60;
 
 // Margem sob o limite de corpo das funções serverless (Vercel: ~4,5 MB).
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
+const MAX_ITEMS = 10;
 
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -30,42 +35,54 @@ export async function POST(request: Request) {
     );
   }
 
-  const fileName = form.get("fileName");
-  const file = form.get("file");
-  const text = form.get("text");
+  const items: BatchItem[] = [];
+  let totalBytes = 0;
+  for (const [key, value] of form.entries()) {
+    if (key !== "item") continue;
+    if (value instanceof File) {
+      totalBytes += value.size;
+      items.push({ fileName: value.name, data: await value.arrayBuffer() });
+    } else {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed?.fileName !== "string" || typeof parsed?.text !== "string") {
+          throw new Error();
+        }
+        items.push({ fileName: parsed.fileName, text: parsed.text });
+      } catch {
+        return Response.json(
+          { error: "Item de texto inválido: esperado JSON {fileName, text}." },
+          { status: 400 }
+        );
+      }
+    }
+  }
 
-  if (typeof fileName !== "string" || !fileName) {
-    return Response.json({ error: "Campo fileName ausente." }, { status: 400 });
+  if (items.length === 0) {
+    return Response.json(
+      { error: "Envie ao menos um item (arquivo ou texto)." },
+      { status: 400 }
+    );
+  }
+  if (items.length > MAX_ITEMS) {
+    return Response.json(
+      { error: `Máximo de ${MAX_ITEMS} itens por lote.` },
+      { status: 400 }
+    );
+  }
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    return Response.json(
+      { error: "Lote grande demais — reduza o tamanho total dos arquivos." },
+      { status: 413 }
+    );
   }
 
   try {
-    if (file instanceof File) {
-      if (file.size > MAX_FILE_BYTES) {
-        return Response.json(
-          { error: "Arquivo grande demais — envie o texto extraído." },
-          { status: 413 }
-        );
-      }
-      const proposal = await geminiProposeFromFile(
-        apiKey,
-        fileName,
-        await file.arrayBuffer()
-      );
-      return Response.json(proposal);
-    }
-
-    if (typeof text === "string" && text.trim()) {
-      const proposal = await geminiProposeFromText(apiKey, fileName, text);
-      return Response.json(proposal);
-    }
-
-    return Response.json(
-      { error: "Envie o campo file ou o campo text." },
-      { status: 400 }
-    );
+    const results = await geminiProposeBatch(apiKey, items);
+    return Response.json({ results });
   } catch (err) {
     if (err instanceof GeminiError) {
-      // 429 (cota) e 4xx/5xx do Gemini viram 502 para o cliente decidir o fallback.
+      // 429 (cota) e demais erros do Gemini viram 502; o cliente decide o fallback.
       return Response.json({ error: err.message }, { status: 502 });
     }
     return Response.json(

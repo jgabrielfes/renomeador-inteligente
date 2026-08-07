@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import JSZip from "jszip";
+import { toast } from "sonner";
 import {
   Check,
   Download,
@@ -38,17 +39,23 @@ import {
 } from "@/components/ui/table";
 
 import {
-  aiProposeFromFile,
-  aiProposeFromText,
+  AI_BATCH_MAX_BYTES,
+  AI_BATCH_MAX_ITEMS,
+  aiProposeBatch,
   fileEligibleForAi,
   getAiSettingsServerSnapshot,
   getAiSettingsSnapshot,
   saveAiSettings,
   subscribeAiSettings,
+  type AiBatchItem,
   type AiMode,
+  type AiProposal,
 } from "@/lib/ai";
 import {
+  directoryHandleFromDrop,
+  ensureWritePermission,
   existingNames,
+  filesFromDataTransfer,
   folderPickerAvailable,
   listFolderFiles,
   pickFolder,
@@ -115,68 +122,160 @@ export default function Home() {
     getAiSettingsServerSnapshot
   );
 
+  // false no HTML do servidor, true assim que o cliente hidrata. Evita piscar
+  // o modo padrão antes de o localStorage ser lido: até lá, nenhum card
+  // aparece selecionado.
+  const hydrated = React.useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false
+  );
+
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }, []);
+
+  const applyProposal = React.useCallback(
+    (rowId: string, proposal: AiProposal) => {
+      setRows((prev) => {
+        const used = new Set(
+          prev
+            .filter((r) => r.id !== rowId && r.status === "ok")
+            .map((r) => r.proposed.toLowerCase())
+        );
+        const name = uniqueName(used, proposal.name);
+        return prev.map((r) =>
+          r.id === rowId
+            ? { ...r, status: "ok", proposed: name, docType: proposal.docType }
+            : r
+        );
+      });
+    },
+    []
+  );
+
+  const processLocally = React.useCallback(
+    async (row: Row, text?: string | null) => {
+      try {
+        const extracted = text ?? (await readDocument(row.file));
+        applyProposal(row.id, proposeName(row.file.name, extracted));
+      } catch (err) {
+        patchRow(row.id, {
+          status: "erro",
+          use: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [applyProposal, patchRow]
+  );
 
   const runQueue = React.useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
     try {
-      for (;;) {
-        const next = queueRef.current.shift();
-        if (!next) break;
-        patchRow(next.id, { status: "processando" });
-        try {
-          // IA primeiro (conforme configuração); heurística local é o fallback.
-          const { mode } = getAiSettingsSnapshot();
-          let proposal: { name: string; docType: string } | null = null;
-          let text: string | null = null;
+      while (queueRef.current.length > 0) {
+        const { mode } = getAiSettingsSnapshot();
 
-          if (mode !== "local") {
+        if (mode === "local") {
+          const row = queueRef.current.shift()!;
+          patchRow(row.id, { status: "processando" });
+          await processLocally(row);
+          continue;
+        }
+
+        // Monta um lote para UMA chamada à IA — o free tier limita requisições
+        // por minuto, então 10 documentos por requisição em vez de 10 requisições.
+        // Limitado também pelo tamanho total (corpo da função serverless).
+        // First-fit: um arquivo grande que não coube não fecha o lote — a
+        // varredura segue adiante e completa com arquivos menores da fila.
+        const batch: Row[] = [];
+        let bytes = 0;
+        let index = 0;
+        while (
+          index < queueRef.current.length &&
+          batch.length < AI_BATCH_MAX_ITEMS
+        ) {
+          const candidate = queueRef.current[index];
+          const size =
+            mode === "arquivo" && fileEligibleForAi(candidate.file)
+              ? candidate.file.size
+              : 0;
+          if (batch.length > 0 && bytes + size > AI_BATCH_MAX_BYTES) {
+            index++;
+            continue;
+          }
+          bytes += size;
+          batch.push(candidate);
+          queueRef.current.splice(index, 1);
+        }
+        batch.forEach((row) => patchRow(row.id, { status: "processando" }));
+
+        // Prepara os itens: arquivo direto quando elegível; senão OCR local.
+        const items: AiBatchItem[] = [];
+        const itemRows: Row[] = [];
+        const ocrTexts = new Map<string, string>();
+        for (const row of batch) {
+          if (mode === "arquivo" && fileEligibleForAi(row.file)) {
+            items.push({ file: row.file });
+            itemRows.push(row);
+          } else {
             try {
-              if (mode === "arquivo" && fileEligibleForAi(next.file)) {
-                proposal = await aiProposeFromFile(next.file);
-              } else {
-                text = await readDocument(next.file);
-                proposal = await aiProposeFromText(next.file.name, text);
-              }
-            } catch {
-              setNotice(
-                "IA indisponível no momento — usando análise local como alternativa."
-              );
+              const text = await readDocument(row.file);
+              ocrTexts.set(row.id, text);
+              items.push({ fileName: row.file.name, text });
+              itemRows.push(row);
+            } catch (err) {
+              patchRow(row.id, {
+                status: "erro",
+                use: false,
+                error: err instanceof Error ? err.message : String(err),
+              });
             }
           }
+        }
+        if (items.length === 0) continue;
 
-          if (!proposal) {
-            if (text === null) text = await readDocument(next.file);
-            proposal = proposeName(next.file.name, text);
+        // Uma tentativa + um retry com espera para erros temporários do Gemini
+        // (429 = cota por minuto; 503 = modelo sobrecarregado).
+        let results: Array<AiProposal | null> | null = null;
+        for (let attempt = 0; attempt < 2 && !results; attempt++) {
+          try {
+            results = await aiProposeBatch(items);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const quota = /429|quota/i.test(message);
+            const unstable = /503|UNAVAILABLE|overload|high demand/i.test(message);
+            if (attempt === 0 && (quota || unstable)) {
+              const wait = quota ? 25000 : 8000;
+              toast.warning(
+                quota
+                  ? "Cota da IA atingida"
+                  : "Gemini sobrecarregado no momento",
+                {
+                  description: `Tentando de novo em ${Math.round(wait / 1000)} segundos. Detalhe: ${message.slice(0, 140)}`,
+                }
+              );
+              await new Promise((resolve) => setTimeout(resolve, wait));
+            } else {
+              toast.error("IA indisponível — usando análise local", {
+                description: `Este lote foi analisado localmente no navegador. Detalhe: ${message.slice(0, 140)}`,
+              });
+            }
           }
-          setRows((prev) => {
-            const used = new Set(
-              prev
-                .filter((r) => r.id !== next.id && r.status === "ok")
-                .map((r) => r.proposed.toLowerCase())
-            );
-            const name = uniqueName(used, proposal.name);
-            return prev.map((r) =>
-              r.id === next.id
-                ? { ...r, status: "ok", proposed: name, docType: proposal.docType }
-                : r
-            );
-          });
-        } catch (err) {
-          patchRow(next.id, {
-            status: "erro",
-            use: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+        }
+
+        for (let i = 0; i < itemRows.length; i++) {
+          const row = itemRows[i];
+          const proposal = results?.[i] ?? null;
+          if (proposal) applyProposal(row.id, proposal);
+          else await processLocally(row, ocrTexts.get(row.id) ?? null);
         }
       }
     } finally {
       processingRef.current = false;
     }
-  }, [patchRow]);
+  }, [applyProposal, patchRow, processLocally]);
 
   const enqueueRows = React.useCallback(
     (newRows: Row[], replace: boolean) => {
@@ -214,10 +313,8 @@ export default function Home() {
     [enqueueRows]
   );
 
-  async function handlePickFolder() {
-    try {
-      const dir = await pickFolder();
-      if (!dir) return;
+  const loadFolder = React.useCallback(
+    async (dir: FileSystemDirectoryHandle) => {
       setDirHandle(dir);
       const entries = await listFolderFiles(
         dir,
@@ -245,6 +342,15 @@ export default function Home() {
         })),
         true
       );
+    },
+    [enqueueRows, onlyWhatsapp]
+  );
+
+  async function handlePickFolder() {
+    try {
+      const dir = await pickFolder();
+      if (!dir) return;
+      await loadFolder(dir);
     } catch (err) {
       setNotice(
         `Não foi possível acessar a pasta: ${err instanceof Error ? err.message : err}`
@@ -358,7 +464,7 @@ export default function Home() {
         </p>
       </header>
 
-      {aiSettings.mode === "local" ? (
+      {hydrated && (aiSettings.mode === "local" ? (
         <Alert>
           <ShieldCheck className="size-4" />
           <AlertTitle>100% local</AlertTitle>
@@ -380,7 +486,7 @@ export default function Home() {
             &ldquo;Somente local&rdquo; abaixo.
           </AlertDescription>
         </Alert>
-      )}
+      ))}
 
       <Card>
         <CardHeader>
@@ -392,7 +498,7 @@ export default function Home() {
         </CardHeader>
         <CardContent>
           <RadioGroup
-            value={aiSettings.mode}
+            value={hydrated ? aiSettings.mode : null}
             onValueChange={(value) =>
               saveAiSettings({ mode: value as AiMode })
             }
@@ -466,7 +572,32 @@ export default function Home() {
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              addFiles(e.dataTransfer.files);
+              // As leituras do DataTransfer precisam começar de forma
+              // síncrona — os itens expiram depois de qualquer await.
+              const dirPromise = directoryHandleFromDrop(e.dataTransfer);
+              const filesPromise = filesFromDataTransfer(e.dataTransfer);
+              void (async () => {
+                try {
+                  // Uma pasta arrastada no Chrome/Edge entra no modo pasta,
+                  // com renomeação no lugar (após permissão de escrita).
+                  const dir = dirPromise ? await dirPromise : null;
+                  if (dir && folderSupported) {
+                    if (await ensureWritePermission(dir)) {
+                      await loadFolder(dir);
+                      return;
+                    }
+                    toast.info("Sem permissão de escrita na pasta", {
+                      description:
+                        "Os arquivos serão analisados para baixar em .zip.",
+                    });
+                  }
+                  addFiles(await filesPromise);
+                } catch (err) {
+                  setNotice(
+                    `Não foi possível ler o que foi arrastado: ${err instanceof Error ? err.message : err}`
+                  );
+                }
+              })();
             }}
             className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
               dragging
@@ -476,7 +607,8 @@ export default function Home() {
           >
             <Upload className="size-8 text-muted-foreground" />
             <p className="font-medium">
-              Arraste os arquivos aqui ou clique para selecionar
+              Arraste arquivos ou uma pasta inteira aqui, ou clique para
+              selecionar
             </p>
             <p className="text-sm text-muted-foreground">
               Na primeira análise, o navegador baixa o motor de OCR (~15 MB).
