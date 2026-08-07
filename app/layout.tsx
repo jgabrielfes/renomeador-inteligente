@@ -39,7 +39,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {children}
         <InstallPrompt />
-        <Toaster richColors />
+        {/* O app não tem modo escuro; sem o theme fixo, o sonner seguiria o
+            tema do sistema operacional e destoaria da interface. */}
+        <Toaster richColors theme="light" />
       </body>
     </html>
   );
