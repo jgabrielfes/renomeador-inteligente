@@ -65,6 +65,7 @@ import {
   filesFromDataTransfer,
   folderPickerAvailable,
   listFolderFiles,
+  overwriteFile,
   pickFolder,
   renameInFolder,
 } from "@/lib/fs";
@@ -562,6 +563,46 @@ export default function Home() {
     triggerDownload(row.file, name);
   }
 
+  // Substitui o arquivo pela versão digitalizada. No modo pasta isso GRAVA por
+  // cima do arquivo do usuário e não tem desfazer — daí a confirmação explícita
+  // e o aviso diferente para cada modo.
+  async function replaceWithScan(row: Row, blob: Blob) {
+    const onDisk = Boolean(row.handle);
+    const warning = onDisk
+      ? `Substituir "${row.file.name}" pela versão digitalizada?\n\nO arquivo será gravado por cima na pasta "${dirHandle?.name}". Esta ação não pode ser desfeita.`
+      : `Substituir "${row.file.name}" pela versão digitalizada?\n\nO download e o .zip passarão a usar a versão digitalizada. Seu arquivo no disco não é alterado.`;
+    if (!window.confirm(warning)) return;
+
+    try {
+      if (row.handle) {
+        if (dirHandle && !(await ensureWritePermission(dirHandle))) {
+          toast.error("Sem permissão de escrita na pasta", {
+            description: "Conceda a permissão para substituir o arquivo.",
+          });
+          return;
+        }
+        await overwriteFile(row.handle, blob);
+      }
+      // Mesmo no modo pasta o File em memória precisa ser trocado: é dele que
+      // saem a pré-visualização e o .zip.
+      patchRow(row.id, {
+        file: new File([blob], row.file.name, {
+          type: blob.type,
+          lastModified: Date.now(),
+        }),
+      });
+      toast.success("Arquivo substituído pela versão digitalizada", {
+        description: onDisk
+          ? `Gravado na pasta "${dirHandle?.name}".`
+          : "Vale para o download e o .zip desta sessão.",
+      });
+    } catch (err) {
+      toast.error("Não foi possível substituir o arquivo", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   async function downloadEnhanced(row: Row) {
     setEnhancingId(row.id);
     try {
@@ -1029,8 +1070,8 @@ export default function Home() {
                     setIncludeEnhanced(checked === true)
                   }
                 />
-                Incluir também versão digitalizada no .zip (endireita a folha,
-                remove sombra e realça o texto — sem alterar o conteúdo)
+                Incluir também a versão digitalizada no .zip (endireita a folha,
+                remove sombra e realça o texto — o original vai junto)
               </label>
             )}
 
@@ -1095,6 +1136,10 @@ export default function Home() {
           (previewRow.status === "ok" || previewRow.status === "renomeado")
             ? () => downloadSingle(previewRow)
             : undefined
+        }
+        canEnhance={previewRow ? isEnhanceableImage(previewRow.file.name) : false}
+        onReplace={
+          previewRow ? (blob) => replaceWithScan(previewRow, blob) : undefined
         }
       />
     </main>

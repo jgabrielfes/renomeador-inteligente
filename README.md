@@ -37,7 +37,13 @@ Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa 
 
 Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
 
-Nenhuma etapa altera o conteúdo do documento nem sobrescreve o arquivo original — o pipeline só produz cópias. Por padrão a limpeza roda apenas internamente, para melhorar a precisão do OCR; o usuário também pode baixar a versão digitalizada (botão de varinha em cada linha, ou o checkbox "incluir versão otimizada" ao baixar o `.zip`), sempre mantendo o arquivo original disponível.
+Nenhuma etapa altera o conteúdo do documento — o pipeline só produz cópias. Por padrão a limpeza roda apenas internamente, para melhorar a precisão do OCR. Além disso o usuário pode:
+
+- **Pré-visualizar** a versão digitalizada: na pré-visualização de qualquer imagem há um alternador **Original / Digitalizada**, para comparar antes de decidir;
+- **Baixar** a versão digitalizada (botão de varinha na lista, o botão na pré-visualização, ou o checkbox "incluir versão digitalizada" ao baixar o `.zip`), mantendo o original;
+- **Substituir o original** pela versão digitalizada, a partir da pré-visualização.
+
+A substituição é a única operação que descarta o original, então é sempre confirmada antes e o aviso muda conforme o modo: no modo pasta ela **grava por cima do arquivo no disco** (sem desfazer); no modo upload troca apenas o arquivo em memória, e o disco do usuário não é tocado. A escrita em disco aborta em caso de erro no meio do caminho, para nunca deixar o documento truncado.
 
 ### Salvaguardas (e o que elas custam)
 
@@ -60,7 +66,8 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
 - [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
-- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, e renomear no lugar com `move()` ou cópia+remoção.
+- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar com `move()` ou cópia+remoção, e sobrescrever um arquivo pela versão digitalizada.
+- [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Digitalizada e substituição do original.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
 
 ## Rodando localmente

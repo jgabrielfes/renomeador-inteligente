@@ -141,6 +141,25 @@ export async function existingNames(
   return names;
 }
 
+// Sobrescreve o conteúdo de um arquivo da pasta, mantendo o nome. Usado para
+// substituir o original pela versão digitalizada — é destrutivo e sem desfazer,
+// então quem chama deve confirmar com o usuário antes.
+export async function overwriteFile(
+  handle: FileSystemFileHandle,
+  data: Blob
+): Promise<void> {
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(data);
+  } catch (err) {
+    // Sem o abort, um erro no meio da escrita deixaria o arquivo truncado —
+    // e o original do usuário já teria sido perdido.
+    await writable.abort();
+    throw err;
+  }
+  await writable.close();
+}
+
 // Renomeia no lugar: move() quando o navegador suporta; senão copia e apaga.
 export async function renameInFolder(
   dir: FileSystemDirectoryHandle,
