@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GraduationCap,
   Loader2,
+  Scissors,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { DocumentPreview } from "@/components/document-preview";
+import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,7 +68,9 @@ import {
   listFolderFiles,
   overwriteFile,
   pickFolder,
+  removeFile,
   renameInFolder,
+  writeNewFile,
 } from "@/lib/fs";
 import {
   addCorrection,
@@ -78,6 +82,7 @@ import {
   subscribeLessons,
 } from "@/lib/lessons";
 import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
+import type { PdfSegment } from "@/lib/pdf-split";
 import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
 
 // Imagens sempre; PDFs também — mas só os digitalizados, o que só dá para
@@ -85,6 +90,11 @@ import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
 function isEnhanceable(fileName: string): boolean {
   const lower = fileName.toLowerCase();
   return [...IMAGE_EXTS, ...PDF_EXTS].some((ext) => lower.endsWith(ext));
+}
+
+function isPdfFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return PDF_EXTS.some((ext) => lower.endsWith(ext));
 }
 
 type RowStatus = "aguardando" | "processando" | "ok" | "erro" | "renomeado";
@@ -171,6 +181,8 @@ export default function Home() {
   // Linha em pré-visualização (guarda o id: a linha "viva" vem de rows, então
   // o nome editado no preview e na tabela ficam sempre em sincronia).
   const [previewId, setPreviewId] = React.useState<string | null>(null);
+  // Linha aberta no separador de PDF (mesma ideia do previewId).
+  const [splitId, setSplitId] = React.useState<string | null>(null);
 
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -463,6 +475,7 @@ export default function Home() {
   const previewRow = previewId
     ? (rows.find((r) => r.id === previewId) ?? null)
     : null;
+  const splitRow = splitId ? (rows.find((r) => r.id === splitId) ?? null) : null;
 
   const total = rows.length;
   const done = rows.filter((r) => r.status !== "aguardando" && r.status !== "processando").length;
@@ -578,6 +591,84 @@ export default function Home() {
       });
     } catch (err) {
       toast.error("Não foi possível substituir o arquivo", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Troca o PDF original pelos documentos separados. No modo pasta grava os
+  // novos arquivos e APAGA o original do disco — daí a confirmação.
+  async function applySplit(
+    row: Row,
+    results: Array<{ segment: PdfSegment; blob: Blob }>
+  ) {
+    const onDisk = Boolean(row.handle && dirHandle);
+    const warning = onDisk
+      ? `Separar "${row.file.name}" em ${results.length} arquivos?\n\nOs novos arquivos serão gravados na pasta "${dirHandle?.name}" e o PDF original será APAGADO. Esta ação não pode ser desfeita.`
+      : `Separar "${row.file.name}" em ${results.length} arquivos?\n\nO PDF original sai da lista e os novos entram no lugar. Seu arquivo no disco não é alterado.`;
+    if (!window.confirm(warning)) return;
+
+    try {
+      if (onDisk && !(await ensureWritePermission(dirHandle!))) {
+        toast.error("Sem permissão de escrita na pasta", {
+          description: "Conceda a permissão para separar o arquivo.",
+        });
+        return;
+      }
+
+      // Nomes únicos contra o que já existe na pasta, para não sobrescrever
+      // um arquivo alheio que por acaso tenha o mesmo nome.
+      const used = onDisk ? await existingNames(dirHandle!) : new Set<string>();
+      const novos: Row[] = [];
+      // Só arquivos criados por esta operação (nomes únicos garantem que não
+      // são de terceiros), para poder desfazer se algo falhar no meio.
+      const criados: string[] = [];
+      try {
+        for (const { segment, blob } of results) {
+          const name = uniqueName(used, ensureExtension(segment.name, row.file.name));
+          used.add(name.toLowerCase());
+          const file = new File([blob], name, {
+            type: "application/pdf",
+            lastModified: Date.now(),
+          });
+          let handle: FileSystemFileHandle | undefined;
+          if (onDisk) {
+            handle = await writeNewFile(dirHandle!, name, blob);
+            criados.push(name);
+          }
+          novos.push({
+            id: crypto.randomUUID(),
+            file,
+            handle,
+            proposed: name,
+            docType: segment.docType,
+            status: "ok",
+            use: true,
+            source: segment.source,
+          });
+        }
+      } catch (err) {
+        // Desfaz o que já tinha sido gravado: sem isso, uma falha no meio
+        // deixaria arquivos pela metade na pasta ao lado do original.
+        for (const name of criados) {
+          await removeFile(dirHandle!, name).catch(() => {});
+        }
+        throw err;
+      }
+
+      // O original só é apagado depois que TODOS os novos foram gravados —
+      // se a escrita falhar no meio, o PDF de origem continua lá.
+      if (onDisk) await removeFile(dirHandle!, row.handle!.name);
+
+      setRows((prev) => prev.flatMap((r) => (r.id === row.id ? novos : [r])));
+      setSplitId(null);
+      toast.success(`PDF separado em ${novos.length} arquivos`, {
+        description: onDisk
+          ? `Gravados na pasta "${dirHandle?.name}"; o original foi apagado.`
+          : "Os novos arquivos entraram na lista no lugar do original.",
+      });
+    } catch (err) {
+      toast.error("Não foi possível separar o PDF", {
         description: err instanceof Error ? err.message : String(err),
       });
     }
@@ -994,6 +1085,16 @@ export default function Home() {
                         >
                           <ZoomIn className="size-4" />
                         </Button>
+                        {isPdfFile(row.file.name) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSplitId(row.id)}
+                            title="Separar em documentos individuais (para PDFs que juntam matrícula, RG, CNH, certidões…)"
+                          >
+                            <Scissors className="size-4" />
+                          </Button>
+                        )}
                         {(row.status === "ok" || row.status === "renomeado") && (
                           <Button
                             variant="ghost"
@@ -1077,6 +1178,15 @@ export default function Home() {
         onReplace={
           previewRow ? (blob) => replaceWithOptimized(previewRow, blob) : undefined
         }
+      />
+
+      <PdfSplitDialog
+        file={splitRow?.file ?? null}
+        onClose={() => setSplitId(null)}
+        folderName={splitRow?.handle ? (dirHandle?.name ?? undefined) : undefined}
+        onApply={async (results) => {
+          if (splitRow) await applySplit(splitRow, results);
+        }}
       />
     </main>
   );

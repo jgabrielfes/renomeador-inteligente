@@ -160,6 +160,24 @@ export async function overwriteFile(
   await writable.close();
 }
 
+/** Cria (ou substitui) um arquivo na pasta e devolve o handle. */
+export async function writeNewFile(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  data: Blob
+): Promise<FileSystemFileHandle> {
+  const handle = await dir.getFileHandle(name, { create: true });
+  await overwriteFile(handle, data);
+  return handle;
+}
+
+export async function removeFile(
+  dir: FileSystemDirectoryHandle,
+  name: string
+): Promise<void> {
+  await dir.removeEntry(name);
+}
+
 // Renomeia no lugar: move() quando o navegador suporta; senão copia e apaga.
 export async function renameInFolder(
   dir: FileSystemDirectoryHandle,

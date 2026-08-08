@@ -180,36 +180,64 @@ export async function pageNativeText(
     .join("");
 }
 
+/** Texto de UMA página: nativo quando existe de verdade, senão OCR do render. */
+async function readPdfPage(
+  page: import("pdfjs-dist").PDFPageProxy
+): Promise<string> {
+  // Primeiro tenta o texto nativo do PDF.
+  const native = await pageNativeText(page);
+  if (meaningfulNativeText(native)) return native;
+
+  // PDF escaneado (ou digital com dados dentro de imagem, como a CNH-e):
+  // renderiza a página e faz OCR. Escala 3.5 porque documentos em formato
+  // cartão ocupam uma fração pequena da folha A4.
+  const viewport = page.getViewport({ scale: 3.5 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d")!;
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  const ocr = await ocrCanvasSource(canvas, { preprocessed: false });
+  // O texto nativo residual (carimbo de assinatura, cabeçalho) ainda ajuda a
+  // classificar, então vai junto em vez de ser descartado.
+  return cleanSpaces(native) ? `${native}\n${ocr}` : ocr;
+}
+
+/**
+ * Texto de cada página separadamente — base para separar um PDF que junta
+ * vários documentos (lib/pdf-split.ts). O `onProgress` existe porque isto pode
+ * levar minutos num PDF escaneado longo.
+ */
+export async function readPdfPageTexts(
+  file: File,
+  maxPages = 40,
+  onProgress?: (page: number, total: number) => void
+): Promise<string[]> {
+  const pdfjs = await loadPdfjs();
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+  const doc = await loadingTask.promise;
+  try {
+    const total = Math.min(maxPages, doc.numPages);
+    const texts: string[] = [];
+    for (let i = 1; i <= total; i++) {
+      onProgress?.(i, total);
+      texts.push(await readPdfPage(await doc.getPage(i)));
+    }
+    return texts;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
 async function extractPdfText(file: File, maxPages = 2): Promise<string> {
   const pdfjs = await loadPdfjs();
-
-  const buf = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: buf });
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
   const doc = await loadingTask.promise;
   try {
     const texts: string[] = [];
     const pages = Math.min(maxPages, doc.numPages);
     for (let i = 1; i <= pages; i++) {
-      const page = await doc.getPage(i);
-
-      // Primeiro tenta o texto nativo do PDF.
-      const native = await pageNativeText(page);
-      if (meaningfulNativeText(native)) {
-        texts.push(native);
-        continue;
-      }
-      if (cleanSpaces(native)) texts.push(native);
-
-      // PDF escaneado (ou digital com dados dentro de imagem, como a CNH-e):
-      // renderiza a página e faz OCR. Escala 3.5 porque documentos em formato
-      // cartão ocupam uma fração pequena da folha A4.
-      const viewport = page.getViewport({ scale: 3.5 });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext("2d")!;
-      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-      texts.push(await ocrCanvasSource(canvas, { preprocessed: false }));
+      texts.push(await readPdfPage(await doc.getPage(i)));
     }
     return texts.join("\n");
   } finally {

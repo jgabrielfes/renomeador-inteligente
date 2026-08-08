@@ -61,6 +61,16 @@ O maior risco de um pipeline desses é destruir conteúdo legítimo. Três trava
 - Pixels abaixo de ~72% do nível do papel são tratados como **conteúdo, não sombra** (`SHADOW_FLOOR_RATIO`), o que impede que fotos e fundos escuros impressos sejam apagados. Em troca, vincos muito escuros ficam levemente visíveis — preferimos preservar conteúdo.
 - O ponto de preto dos níveis é **limitado por cima**: num documento com pouquíssima tinta, o percentil baixo cairia sobre o próprio papel e a página inteira sairia preta.
 
+## Separar PDFs que juntam vários documentos ([lib/pdf-split.ts](lib/pdf-split.ts))
+
+É comum receber um único PDF com matrícula + RG + CNH + certidão dentro. O botão de tesoura na lista abre o separador: cada página é lida (texto nativo ou OCR), classificada como se fosse um documento à parte, e as páginas são agrupadas em documentos. O resultado aparece numa tabela com as páginas, o tipo e o nome sugerido — editável — antes de aplicar.
+
+**A regra de agrupamento é o coração da coisa.** Uma página só abre um documento novo quando ela própria se identifica (tipo reconhecido) **e** essa identidade difere da do documento corrente. Páginas sem tipo reconhecido — o verso de um RG, a segunda folha de uma matrícula, a continuação de um contrato — são tratadas como continuação. Sem isso, todo documento de várias páginas seria estilhaçado numa penca de arquivos de uma página. A identidade compara tipo + nome proposto, então dois RGs seguidos de pessoas diferentes viram dois documentos, mas duas páginas do RG da mesma pessoa viram um só.
+
+Ao aplicar, no modo pasta os PDFs individuais são gravados e o original é **apagado** (com confirmação); no modo upload o PDF original sai da lista e os novos entram no lugar, alimentando o `.zip` normalmente. As páginas são copiadas com `copyPages`, então um PDF digital continua digital — o texto não vira imagem.
+
+Salvaguardas da escrita em disco, por ser destrutiva: os nomes são únicos contra o que já existe na pasta (nunca sobrescreve arquivo de terceiro), o original só é apagado **depois** que todos os novos foram gravados, e se algo falhar no meio os arquivos já criados são removidos — a pasta volta ao estado inicial, com o PDF de origem intacto. Há um teto de 40 páginas, já que a análise faz OCR página a página.
+
 ## Dois modos de uso
 
 1. **Selecionar pasta** (Chrome/Edge): o usuário escolhe uma pasta local, o app analisa tudo, mostra a prévia e — após confirmação — **renomeia os arquivos direto na pasta**, via File System Access API. Há um filtro opcional "somente arquivos com WhatsApp no nome".
@@ -74,8 +84,10 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
 - [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
 - [lib/pdf-enhance.ts](lib/pdf-enhance.ts) — otimização de PDFs digitalizados página a página; recusa PDFs digitais.
+- [lib/pdf-split.ts](lib/pdf-split.ts) — separação de um PDF que junta vários documentos: classifica página a página e agrupa em documentos.
+- [components/pdf-split-dialog.tsx](components/pdf-split-dialog.tsx) — revisão dos documentos detectados antes de aplicar.
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
-- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar com `move()` ou cópia+remoção, e sobrescrever um arquivo pela versão otimizada.
+- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar com `move()` ou cópia+remoção, sobrescrever, criar e remover arquivos.
 - [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
 
