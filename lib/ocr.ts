@@ -119,13 +119,47 @@ const PDF_BOILERPLATE = [
   /qr-?code/gi,
 ];
 
-function meaningfulNativeText(native: string): boolean {
+export function meaningfulNativeText(native: string): boolean {
   let rest = native;
   for (const p of PDF_BOILERPLATE) rest = rest.replace(p, " ");
   return cleanSpaces(rest).length > 120;
 }
 
-async function extractPdfText(file: File, maxPages = 2): Promise<string> {
+// O pdf.js 6 usa Map.prototype.getOrInsertComputed ao renderizar páginas —
+// método novíssimo, ausente no Chrome ≤141, no Firefox e no Safari atuais.
+// Sem este shim, renderizar qualquer PDF escaneado estoura com
+// "getOrInsertComputed is not a function" (atinge tanto o OCR quanto a
+// otimização de PDF). Segue o comportamento da proposta: devolve o valor
+// existente ou insere o calculado.
+function polyfillMapGetOrInsert() {
+  const targets = [Map.prototype, WeakMap.prototype] as Array<
+    Map<object, unknown> | WeakMap<object, unknown>
+  >;
+  for (const proto of targets) {
+    const p = proto as unknown as Record<string, unknown>;
+    if (typeof p.getOrInsert !== "function") {
+      p.getOrInsert = function (this: Map<unknown, unknown>, key: unknown, value: unknown) {
+        if (!this.has(key)) this.set(key, value);
+        return this.get(key);
+      };
+    }
+    if (typeof p.getOrInsertComputed !== "function") {
+      p.getOrInsertComputed = function (
+        this: Map<unknown, unknown>,
+        key: unknown,
+        callback: (key: unknown) => unknown
+      ) {
+        if (!this.has(key)) this.set(key, callback(key));
+        return this.get(key);
+      };
+    }
+  }
+}
+
+// Carrega o pdf.js com o worker apontado — compartilhado com lib/pdf-enhance.ts
+// para não duplicar a configuração (e o download) do worker.
+export async function loadPdfjs() {
+  polyfillMapGetOrInsert();
   const pdfjs = await import("pdfjs-dist");
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -133,6 +167,21 @@ async function extractPdfText(file: File, maxPages = 2): Promise<string> {
       import.meta.url
     ).toString();
   }
+  return pdfjs;
+}
+
+/** Texto nativo de uma página, já concatenado. */
+export async function pageNativeText(
+  page: import("pdfjs-dist").PDFPageProxy
+): Promise<string> {
+  const content = await page.getTextContent();
+  return content.items
+    .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
+    .join("");
+}
+
+async function extractPdfText(file: File, maxPages = 2): Promise<string> {
+  const pdfjs = await loadPdfjs();
 
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: buf });
@@ -144,10 +193,7 @@ async function extractPdfText(file: File, maxPages = 2): Promise<string> {
       const page = await doc.getPage(i);
 
       // Primeiro tenta o texto nativo do PDF.
-      const content = await page.getTextContent();
-      const native = content.items
-        .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
-        .join("");
+      const native = await pageNativeText(page);
       if (meaningfulNativeText(native)) {
         texts.push(native);
         continue;

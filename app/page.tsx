@@ -77,12 +77,14 @@ import {
   saveRules,
   subscribeLessons,
 } from "@/lib/lessons";
-import { IMAGE_EXTS, isSupported, readDocument } from "@/lib/ocr";
+import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
 import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
 
-function isEnhanceableImage(fileName: string): boolean {
+// Imagens sempre; PDFs também — mas só os digitalizados, o que só dá para
+// saber abrindo o arquivo. A pré-visualização decide e explica a recusa.
+function isEnhanceable(fileName: string): boolean {
   const lower = fileName.toLowerCase();
-  return IMAGE_EXTS.some((ext) => lower.endsWith(ext));
+  return [...IMAGE_EXTS, ...PDF_EXTS].some((ext) => lower.endsWith(ext));
 }
 
 type RowStatus = "aguardando" | "processando" | "ok" | "erro" | "renomeado";
@@ -1071,7 +1073,7 @@ export default function Home() {
             ? () => downloadSingle(previewRow)
             : undefined
         }
-        canEnhance={previewRow ? isEnhanceableImage(previewRow.file.name) : false}
+        canEnhance={previewRow ? isEnhanceable(previewRow.file.name) : false}
         onReplace={
           previewRow ? (blob) => replaceWithOptimized(previewRow, blob) : undefined
         }

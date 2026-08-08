@@ -27,6 +27,8 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 - OCR com [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly, idiomas por+eng) — na primeira análise o navegador baixa o motor (~15 MB) de um CDN; depois fica em cache;
 - Leitura de PDFs com [pdf.js](https://mozilla.github.io/pdf.js/) — usa o texto nativo do PDF quando existe e faz OCR da página renderizada em PDFs escaneados ou digitais cujos dados estão em imagem (ex.: CNH-e).
 
+> O pdf.js 6 usa `Map.prototype.getOrInsertComputed` ao renderizar páginas — método novíssimo, ausente no Chrome ≤141, no Firefox e no Safari atuais. Sem um shim, renderizar qualquer PDF escaneado estoura com `getOrInsertComputed is not a function`. O shim fica em `loadPdfjs()` ([lib/ocr.ts](lib/ocr.ts)) e cobre tanto o OCR quanto a otimização de PDFs.
+
 ## Otimização automática (foto de documento)
 
 Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
@@ -40,6 +42,14 @@ Quando a detecção dos cantos não é confiável, o pipeline cai para recorte p
 Nenhuma etapa altera o conteúdo do documento — o pipeline só produz cópias. Por padrão a limpeza roda apenas internamente, para melhorar a precisão do OCR.
 
 A versão otimizada fica concentrada num único lugar: a **pré-visualização**. Nela há um alternador **Original / Otimizada** para comparar as duas antes de decidir e, a partir daí, **baixar a otimizada** ou **substituir o original** por ela. Não há atalho para baixá-la direto da lista nem opção de incluí-la no `.zip` — a ideia é que o usuário só a leve embora depois de ter olhado o resultado.
+
+### PDFs ([lib/pdf-enhance.ts](lib/pdf-enhance.ts))
+
+PDFs digitalizados também são otimizados: cada página é renderizada, passa pelo mesmo pipeline e o resultado é remontado num PDF novo (com `pdf-lib`), preservando o tamanho de papel original.
+
+**PDFs digitais não são otimizados, de propósito.** Se o PDF tem camada de texto de verdade (gerado por um sistema, não fotografado), rasterizá-lo destruiria o texto pesquisável e selecionável, engordaria o arquivo e não melhoraria nada visualmente. Nesses casos a pré-visualização recusa e explica o motivo, em vez de piorar o documento silenciosamente. A detecção reaproveita a mesma heurística de texto nativo que o OCR já usava (`meaningfulNativeText`), que ignora carimbos de assinatura digital e cabeçalhos federais.
+
+Duas outras decisões: a imagem é encaixada na página **preservando a proporção** (o enquadramento por perspectiva muda a proporção, e esticar distorceria o texto), e há um teto de 30 páginas, já que o custo cresce por página e um PDF longo travaria a aba sem ganho proporcional.
 
 A substituição é a única operação que descarta o original, então é sempre confirmada antes e o aviso muda conforme o modo: no modo pasta ela **grava por cima do arquivo no disco** (sem desfazer); no modo upload troca apenas o arquivo em memória, e o disco do usuário não é tocado. A escrita em disco aborta em caso de erro no meio do caminho, para nunca deixar o documento truncado.
 
@@ -63,6 +73,7 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/renamer.ts](lib/renamer.ts) — motor local de nomeação: tipo por pontuação de evidências (texto + nome do arquivo, com peso extra no título), extração de nome em camadas com validação palavra a palavra, identificadores (CPF com dígito verificador, matrícula, contribuinte) e fallback que preserva o nome original quando nada é confiável. Calibrado com documentos reais de escritório imobiliário.
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
 - [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
+- [lib/pdf-enhance.ts](lib/pdf-enhance.ts) — otimização de PDFs digitalizados página a página; recusa PDFs digitais.
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar com `move()` ou cópia+remoção, e sobrescrever um arquivo pela versão otimizada.
 - [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.

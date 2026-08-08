@@ -46,6 +46,10 @@ export function DocumentPreview({
   const [optimizedBlob, setOptimizedBlob] = React.useState<Blob | null>(null);
   const [generating, setGenerating] = React.useState(false);
   const [optimizedError, setOptimizedError] = React.useState("");
+  // Recusa deliberada (ex.: PDF já digital) — não é falha, então é mostrada
+  // como aviso, não como erro em vermelho.
+  const [skipped, setSkipped] = React.useState(false);
+  const [progress, setProgress] = React.useState("");
   const [replacing, setReplacing] = React.useState(false);
 
   // Cada arquivo recomeça no original e descarta a otimização do anterior.
@@ -59,6 +63,7 @@ export function DocumentPreview({
     setView("original");
     setOptimizedBlob(null);
     setOptimizedError("");
+    setSkipped(false);
   }
 
   // Blob URL do arquivo local; revogado quando o preview troca/fecha.
@@ -83,19 +88,32 @@ export function DocumentPreview({
   }, [optimizedUrl]);
 
   const isPdf = file?.name.toLowerCase().endsWith(".pdf") ?? false;
-  const showToggle = canEnhance && !isPdf && file !== null;
+  const showToggle = canEnhance && file !== null;
 
   async function showOptimized() {
     setView("otimizada");
     if (optimizedBlob || !file) return;
     setGenerating(true);
     setOptimizedError("");
+    setProgress("");
     try {
-      setOptimizedBlob(await enhanceImageFileToBlob(file));
+      if (isPdf) {
+        const { enhancePdfFileToBlob } = await import("@/lib/pdf-enhance");
+        setOptimizedBlob(
+          await enhancePdfFileToBlob(file, ({ page, total }) =>
+            setProgress(`Página ${page} de ${total}…`)
+          )
+        );
+      } else {
+        setOptimizedBlob(await enhanceImageFileToBlob(file));
+      }
     } catch (err) {
+      const { PdfEnhanceSkipped } = await import("@/lib/pdf-enhance");
       setOptimizedError(err instanceof Error ? err.message : String(err));
+      setSkipped(err instanceof PdfEnhanceSkipped);
     } finally {
       setGenerating(false);
+      setProgress("");
     }
   }
 
@@ -163,8 +181,9 @@ export function DocumentPreview({
             </div>
             {showingOptimized && (
               <p className="text-sm text-muted-foreground">
-                Endireita a folha, remove sombra e realça o texto — sem alterar
-                o conteúdo.
+                {isPdf
+                  ? "Cada página é reprocessada: remove sombra e realça o texto — sem alterar o conteúdo."
+                  : "Endireita a folha, remove sombra e realça o texto — sem alterar o conteúdo."}
               </p>
             )}
           </div>
@@ -175,17 +194,30 @@ export function DocumentPreview({
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-6 animate-spin" />
               Gerando a versão otimizada…
+              {progress && <span className="text-xs">{progress}</span>}
             </div>
           ) : showingOptimized && optimizedError ? (
-            <div className="flex h-full w-full items-center justify-center p-6 text-center text-sm text-destructive">
-              Não foi possível gerar a versão otimizada: {optimizedError}
+            <div
+              className={`flex h-full w-full items-center justify-center p-6 text-center text-sm ${
+                skipped ? "text-muted-foreground" : "text-destructive"
+              }`}
+            >
+              <span className="max-w-md">
+                {skipped
+                  ? optimizedError
+                  : `Não foi possível gerar a versão otimizada: ${optimizedError}`}
+              </span>
             </div>
           ) : (
             visibleUrl &&
-            (isPdf && !showingOptimized ? (
+            (isPdf ? (
               <iframe
                 src={visibleUrl}
-                title={`Pré-visualização de ${file?.name}`}
+                title={
+                  showingOptimized
+                    ? `Versão otimizada de ${file?.name}`
+                    : `Pré-visualização de ${file?.name}`
+                }
                 className="h-full w-full"
               />
             ) : (
