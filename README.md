@@ -33,15 +33,32 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 
 Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
 
-1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha (limiar de Otsu → maior componente conexa → casco convexo → maior quadrilátero inscrito) e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
-2. **Remoção de sombra** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de iluminação por máximo local + borrão e normaliza a imagem por ele, apagando sombras e vincos.
-3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo).
+1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
+2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz por máximo local + borrão e traz as regiões sombreadas ao nível do papel bem iluminado.
+3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo), com saída em ~200 dpi para impressão.
 
 Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
 
-Nenhuma etapa altera o conteúdo do documento — o pipeline só produz cópias. Por padrão a limpeza roda apenas internamente, para melhorar a precisão do OCR.
+### A regra que manda: não alterar o documento
 
-A versão otimizada fica concentrada num único lugar: a **pré-visualização**. Nela há um alternador **Original / Otimizada** para comparar as duas antes de decidir e, a partir daí, **baixar a otimizada** ou **substituir o original** por ela. Não há atalho para baixá-la direto da lista nem opção de incluí-la no `.zip` — a ideia é que o usuário só a leve embora depois de ter olhado o resultado.
+O documento tem de sair **legível para impressão e com todo o conteúdo intacto**. Isso restringe o que o pipeline pode fazer, e duas versões anteriores erraram exatamente aqui:
+
+- **O ponto de branco não pode ficar abaixo do nível do papel.** Uma versão colocava o branco a 90% do papel para "limpar" o resto da sombra — e com isso todo conteúdo cinza-claro (carimbo fraco, marca d'água, fundo de segurança, parte clara da foto 3x4) virava branco puro. Era estouro de luz e perda de informação. Hoje o branco fica no percentil 0.98, então só a franja mais clara do papel satura.
+- **A remoção de sombra equaliza, não clareia.** Ela normalizava tudo para 255, e os níveis clareavam de novo logo depois: o clareamento em dose dupla estourava a imagem. Hoje o ganho é 1 na área mais bem iluminada e só sobe na sombra.
+- **A curva de gama é 1.** Qualquer gama diferente de 1 desloca os meios-tons, ou seja, muda como o conteúdo aparece. O que se faz é apenas esticar o histograma entre preto e branco — transformação linear.
+
+O preço disso é honesto: **sombra e vinco fortes continuam levemente visíveis**. Preferimos assim a apagar conteúdo.
+
+### O documento é o que não é fundo
+
+A detecção de bordas procurava "a maior região clara" da foto. Isso quebra em qualquer documento com faixa escura no cabeçalho, foto 3x4 grande ou fundo colorido impresso: a região clara é só um PEDAÇO da folha, e esticar esse pedaço produzia o **"zoom no meio do documento"** que cortava o resto.
+
+Hoje a lógica é inversa: a **mesa** é que encosta nas bordas da foto. Cresce-se uma região a partir das quatro bordas, aceitando vizinhos de cor parecida (o que acompanha o degradê de iluminação da mesa) e parando no contraste da beirada do papel. O que sobra é o documento inteiro, com faixa escura e tudo.
+
+Duas travas fecham o caso:
+
+- A tolerância de cor desse crescimento é **14**, calibrada por medição: com um documento de cabeçalho preto, o quadrilátero sai exato de 8 a 18 e passa a comer o cabeçalho a partir de 22 (no downscale, a transição faixa-escura/mesa fica suave o bastante para o fundo atravessar).
+- Depois de achar o quadrilátero, mede-se quanto do documento ficaria **fora** dele; acima de 4%, o enquadramento é recusado. Essa medida é feita sobre a máscara do documento, e não por "pixel escuro" — a mesa costuma ser mais escura que o papel, e um limiar de tinta contaria o fundo inteiro como conteúdo perdido, recusando todo enquadramento (foi o que aconteceu na primeira versão desta trava).
 
 ### PDFs ([lib/pdf-enhance.ts](lib/pdf-enhance.ts))
 
@@ -52,14 +69,6 @@ PDFs digitalizados também são otimizados: cada página é renderizada, passa p
 Duas outras decisões: a imagem é encaixada na página **preservando a proporção** (o enquadramento por perspectiva muda a proporção, e esticar distorceria o texto), e há um teto de 30 páginas, já que o custo cresce por página e um PDF longo travaria a aba sem ganho proporcional.
 
 A substituição é a única operação que descarta o original, então é sempre confirmada antes e o aviso muda conforme o modo: no modo pasta ela **grava por cima do arquivo no disco** (sem desfazer); no modo upload troca apenas o arquivo em memória, e o disco do usuário não é tocado. A escrita em disco aborta em caso de erro no meio do caminho, para nunca deixar o documento truncado.
-
-### Salvaguardas (e o que elas custam)
-
-O maior risco de um pipeline desses é destruir conteúdo legítimo. Três travas foram calibradas contra casos de teste (foto em ângulo, papel amassado, documento com foto 3x4 e carimbo claro, digitalização já limpa):
-
-- O campo de iluminação é **borrado** depois do máximo local. Sem isso, dentro de uma foto 3x4 o máximo local é a própria foto, a normalização a divide por ela mesma e ela sai estourada em branco.
-- Pixels abaixo de ~72% do nível do papel são tratados como **conteúdo, não sombra** (`SHADOW_FLOOR_RATIO`), o que impede que fotos e fundos escuros impressos sejam apagados. Em troca, vincos muito escuros ficam levemente visíveis — preferimos preservar conteúdo.
-- O ponto de preto dos níveis é **limitado por cima**: num documento com pouquíssima tinta, o percentil baixo cairia sobre o próprio papel e a página inteira sairia preta.
 
 ## Separar PDFs que juntam vários documentos ([lib/pdf-split.ts](lib/pdf-split.ts))
 

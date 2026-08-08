@@ -22,53 +22,93 @@ function newCanvas(w: number, h: number): HTMLCanvasElement {
 }
 
 // --- 1. Máscara do documento -------------------------------------------------
-// A folha é a região clara e contígua no meio da foto; a mesa/fundo é mais
-// escura. Um limiar de Otsu separa os dois grupos sem precisar de constante
-// mágica, e a maior componente conexa clara é o documento. Buracos internos
-// (texto, foto do RG) não atrapalham: o casco convexo os ignora.
 
-function otsuThreshold(gray: Uint8ClampedArray): number {
-  const hist = new Array<number>(256).fill(0);
-  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
-  const total = gray.length;
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
+/**
+ * Tolerância de cor do crescimento do fundo (ver backgroundMask).
+ *
+ * Calibrada contra uma foto em ângulo cujo documento tem faixa PRETA no
+ * cabeçalho — o caso que quebra: no downscale, a transição faixa-escura/mesa
+ * fica suave e o fundo atravessa para dentro do documento, comendo o
+ * cabeçalho. Medido, o quadrilátero sai exato de 8 a 18 e passa a cortar o
+ * cabeçalho a partir de 22. 14 fica no meio da faixa que funciona.
+ */
+const BG_TOLERANCIA = 14;
 
-  let sumB = 0;
-  let wB = 0;
-  let max = 0;
-  let threshold = 127;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = total - wB;
-    if (wF === 0) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > max) {
-      max = between;
-      threshold = t;
-    }
-  }
-  return threshold;
-}
-
-/** Maior componente conexa (4-vizinhos) de pixels acima do limiar. */
-function largestBrightComponent(
-  gray: Uint8ClampedArray,
+/**
+ * Máscara do documento por ELIMINAÇÃO DO FUNDO.
+ *
+ * A versão anterior procurava "a maior região clara", e isso quebrava em
+ * qualquer documento com faixa escura no cabeçalho, foto 3x4 grande ou fundo
+ * colorido impresso: a região clara era só um PEDAÇO da folha, e esticar esse
+ * pedaço produzia o "zoom no meio do documento".
+ *
+ * Aqui a lógica se inverte: a MESA é que toca as bordas da foto. Cresce-se uma
+ * região a partir das quatro bordas, aceitando vizinhos de cor parecida (o que
+ * acompanha o degradê de iluminação da mesa) e parando no contraste da beirada
+ * do papel. O que sobra é o documento — inteiro, com faixa escura e tudo.
+ */
+function backgroundMask(
+  rgb: Uint8ClampedArray,
   w: number,
   h: number,
-  threshold: number
+  tolerancia = BG_TOLERANCIA
+): Uint8Array {
+  const fundo = new Uint8Array(w * h);
+  const fila = new Int32Array(w * h);
+  let head = 0;
+  let tail = 0;
+
+  const push = (p: number) => {
+    if (!fundo[p]) {
+      fundo[p] = 1;
+      fila[tail++] = p;
+    }
+  };
+  for (let x = 0; x < w; x++) {
+    push(x);
+    push((h - 1) * w + x);
+  }
+  for (let y = 0; y < h; y++) {
+    push(y * w);
+    push(y * w + w - 1);
+  }
+
+  const parecido = (a: number, b: number) => {
+    const ia = a * 4;
+    const ib = b * 4;
+    return (
+      Math.abs(rgb[ia] - rgb[ib]) < tolerancia &&
+      Math.abs(rgb[ia + 1] - rgb[ib + 1]) < tolerancia &&
+      Math.abs(rgb[ia + 2] - rgb[ib + 2]) < tolerancia
+    );
+  };
+
+  while (head < tail) {
+    const p = fila[head++];
+    const x = p % w;
+    const y = (p / w) | 0;
+    if (x > 0 && !fundo[p - 1] && parecido(p, p - 1)) push(p - 1);
+    if (x < w - 1 && !fundo[p + 1] && parecido(p, p + 1)) push(p + 1);
+    if (y > 0 && !fundo[p - w] && parecido(p, p - w)) push(p - w);
+    if (y < h - 1 && !fundo[p + w] && parecido(p, p + w)) push(p + w);
+  }
+  return fundo;
+}
+
+/** Maior componente conexa (4-vizinhos) de pixels marcados na máscara. */
+function largestComponent(
+  mask: Uint8Array,
+  w: number,
+  h: number
 ): { mask: Uint8Array; size: number } | null {
   const labels = new Int32Array(w * h).fill(-1);
   const stack = new Int32Array(w * h);
-  let best: { start: number; size: number } | null = null;
+  let best = -1;
+  let bestSize = 0;
   let current = 0;
 
-  for (let seed = 0; seed < gray.length; seed++) {
-    if (labels[seed] !== -1 || gray[seed] <= threshold) continue;
+  for (let seed = 0; seed < mask.length; seed++) {
+    if (labels[seed] !== -1 || !mask[seed]) continue;
     let top = 0;
     stack[top++] = seed;
     labels[seed] = current;
@@ -78,46 +118,34 @@ function largestBrightComponent(
       size++;
       const x = p % w;
       const y = (p / w) | 0;
-      // 4-vizinhos
-      if (x > 0) {
-        const n = p - 1;
-        if (labels[n] === -1 && gray[n] > threshold) {
-          labels[n] = current;
-          stack[top++] = n;
-        }
+      if (x > 0 && labels[p - 1] === -1 && mask[p - 1]) {
+        labels[p - 1] = current;
+        stack[top++] = p - 1;
       }
-      if (x < w - 1) {
-        const n = p + 1;
-        if (labels[n] === -1 && gray[n] > threshold) {
-          labels[n] = current;
-          stack[top++] = n;
-        }
+      if (x < w - 1 && labels[p + 1] === -1 && mask[p + 1]) {
+        labels[p + 1] = current;
+        stack[top++] = p + 1;
       }
-      if (y > 0) {
-        const n = p - w;
-        if (labels[n] === -1 && gray[n] > threshold) {
-          labels[n] = current;
-          stack[top++] = n;
-        }
+      if (y > 0 && labels[p - w] === -1 && mask[p - w]) {
+        labels[p - w] = current;
+        stack[top++] = p - w;
       }
-      if (y < h - 1) {
-        const n = p + w;
-        if (labels[n] === -1 && gray[n] > threshold) {
-          labels[n] = current;
-          stack[top++] = n;
-        }
+      if (y < h - 1 && labels[p + w] === -1 && mask[p + w]) {
+        labels[p + w] = current;
+        stack[top++] = p + w;
       }
     }
-    if (!best || size > best.size) best = { start: current, size };
+    if (size > bestSize) {
+      bestSize = size;
+      best = current;
+    }
     current++;
   }
 
-  if (!best) return null;
-  const mask = new Uint8Array(w * h);
-  for (let i = 0; i < labels.length; i++) {
-    if (labels[i] === best.start) mask[i] = 1;
-  }
-  return { mask, size: best.size };
+  if (best < 0) return null;
+  const out = new Uint8Array(w * h);
+  for (let i = 0; i < labels.length; i++) if (labels[i] === best) out[i] = 1;
+  return { mask: out, size: bestSize };
 }
 
 // --- 2. Casco convexo e melhor quadrilátero ----------------------------------
@@ -239,12 +267,65 @@ function orderCorners(quad: Point[]): Point[] {
   return rotated;
 }
 
+function pontoDentro(quad: Point[], x: number, y: number): boolean {
+  let dentro = false;
+  for (let i = 0, j = quad.length - 1; i < quad.length; j = i++) {
+    const a = quad[i];
+    const b = quad[j];
+    if (
+      a.y > y !== b.y > y &&
+      x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x
+    ) {
+      dentro = !dentro;
+    }
+  }
+  return dentro;
+}
+
+/**
+ * Fração do DOCUMENTO que ficaria de fora do quadrilátero.
+ *
+ * Esta é a trava que impede o "zoom no meio do documento": ela olha a máscara
+ * do documento (tudo que não é fundo) e mede quanto disso o quadrilátero
+ * deixaria de lado. Se o crescimento do fundo vazou para dentro da folha, ou
+ * se o quadrilátero cortou um canto, aparece aqui e o enquadramento é recusado.
+ *
+ * Importante: NÃO dá para medir isso por "pixel escuro". A mesa costuma ser
+ * mais escura que o papel, então um limiar de tinta contaria o fundo inteiro
+ * como conteúdo perdido e recusaria todo enquadramento — foi exatamente o que
+ * aconteceu na primeira versão desta trava.
+ */
+function documentoForaDoQuad(
+  documento: Uint8Array,
+  w: number,
+  h: number,
+  quad: Point[]
+): number {
+  let total = 0;
+  let fora = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!documento[y * w + x]) continue;
+      total++;
+      if (!pontoDentro(quad, x + 0.5, y + 0.5)) fora++;
+    }
+  }
+  return total === 0 ? 0 : fora / total;
+}
+
+/** Acima disso, o quadrilátero está cortando o documento — melhor não enquadrar. */
+const MAX_DOCUMENTO_FORA = 0.04;
+
+
 /**
  * Encontra os quatro cantos do documento na imagem. Devolve null quando não há
  * detecção confiável — nesse caso o chamador deve manter a imagem como está em
  * vez de arriscar cortar conteúdo.
  */
-export function detectDocumentQuad(canvas: HTMLCanvasElement): Point[] | null {
+export function detectDocumentQuad(
+  canvas: HTMLCanvasElement,
+  tolerancia = BG_TOLERANCIA
+): Point[] | null {
   const maxDim = Math.max(canvas.width, canvas.height);
   const scale = Math.min(1, 500 / maxDim);
   const w = Math.max(1, Math.round(canvas.width * scale));
@@ -260,11 +341,24 @@ export function detectDocumentQuad(canvas: HTMLCanvasElement): Point[] | null {
     gray[j] = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
   }
 
-  const threshold = otsuThreshold(gray);
-  const component = largestBrightComponent(gray, w, h, threshold);
+  const total = w * h;
+
+  // O documento é o que NÃO é fundo. O fundo (a mesa) é a região que encosta
+  // nas bordas da foto.
+  const fundo = backgroundMask(d, w, h, tolerancia);
+  let tamanhoFundo = 0;
+  for (let i = 0; i < fundo.length; i++) if (fundo[i]) tamanhoFundo++;
+
+  // Fundo quase inexistente = a foto já é só o documento; não há o que
+  // reenquadrar. Fundo quase total = o crescimento vazou para dentro do papel
+  // (mesa da cor do papel), e aí a detecção não é confiável.
+  if (tamanhoFundo < total * 0.04 || tamanhoFundo > total * 0.9) return null;
+
+  const documento = new Uint8Array(total);
+  for (let i = 0; i < total; i++) documento[i] = fundo[i] ? 0 : 1;
+  const component = largestComponent(documento, w, h);
   if (!component) return null;
 
-  const total = w * h;
   // Pequena demais para ser a folha, ou grande a ponto de ser a foto inteira
   // (aí não há o que reenquadrar).
   if (component.size < total * 0.12 || component.size > total * 0.985) return null;
@@ -297,6 +391,20 @@ export function detectDocumentQuad(canvas: HTMLCanvasElement): Point[] | null {
   // O quadrilátero precisa explicar a maior parte da componente detectada;
   // senão a forma não é uma folha (mão na frente, dois documentos etc.).
   if (polygonArea(quad) < component.size * 0.75) return null;
+
+  // Trava final: nada de recortar por cima do documento. Uma folga de 2% na
+  // borda evita recusar por causa de um antialiasing na moldura, mas qualquer
+  // texto, carimbo ou foto que fique de fora reprova o enquadramento.
+  const folga = 0.02;
+  const cx = quad.reduce((s, p) => s + p.x, 0) / 4;
+  const cy = quad.reduce((s, p) => s + p.y, 0) / 4;
+  const comFolga = quad.map((p) => ({
+    x: p.x + (p.x - cx) * folga,
+    y: p.y + (p.y - cy) * folga,
+  }));
+  if (documentoForaDoQuad(documento, w, h, comFolga) > MAX_DOCUMENTO_FORA) {
+    return null;
+  }
 
   const inv = 1 / scale;
   return orderCorners(quad).map((p) => ({ x: p.x * inv, y: p.y * inv }));
@@ -425,3 +533,4 @@ export function warpToRectangle(
   octx.putImageData(dstImg, 0, 0);
   return out;
 }
+

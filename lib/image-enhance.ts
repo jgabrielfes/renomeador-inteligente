@@ -32,7 +32,9 @@ export interface EnhanceOptions {
 }
 
 const DEFAULTS: Required<EnhanceOptions> = {
-  targetMaxDim: 1800,
+  // ~200 dpi numa folha A4: o alvo aqui e IMPRESSAO legivel, e 1800 px
+  // (~150 dpi) deixava texto pequeno esgarcado no papel.
+  targetMaxDim: 2400,
   perspective: true,
   crop: true,
   deskew: true,
@@ -79,6 +81,34 @@ function grayscaleOf(canvas: HTMLCanvasElement): {
     gray[j] = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
   }
   return { data: gray, w, h };
+}
+
+/** Limiar de Otsu: separa tinta de papel sem constante mágica. */
+function otsu(gray: Uint8ClampedArray): number {
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const total = gray.length;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0;
+  let wB = 0;
+  let max = 0;
+  let threshold = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > max) {
+      max = between;
+      threshold = t;
+    }
+  }
+  return threshold;
 }
 
 // --- Recorte automático (encontra a "caixa" do documento pela densidade de
@@ -129,15 +159,39 @@ function cropToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
     rowEnergy[y] = rowSum;
   }
 
-  const { top, bottom, left, right } = findBounds(rowEnergy, colEnergy, sw, sh);
+  const bounds = findBounds(rowEnergy, colEnergy, sw, sh);
+
+  // A energia de borda acha onde o documento começa, mas uma região de tinta
+  // fraca (carimbo claro, texto apagado) tem borda fraca e ficaria de fora.
+  // Unir com a caixa da TINTA garante que nada escrito seja cortado — é
+  // preferível sobrar fundo a perder conteúdo.
+  const limiar = otsu(gray);
+  let inkTop = sh;
+  let inkBottom = -1;
+  let inkLeft = sw;
+  let inkRight = -1;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      if (gray[y * sw + x] >= limiar) continue;
+      if (y < inkTop) inkTop = y;
+      if (y > inkBottom) inkBottom = y;
+      if (x < inkLeft) inkLeft = x;
+      if (x > inkRight) inkRight = x;
+    }
+  }
+  const top = inkBottom >= 0 ? Math.min(bounds.top, inkTop) : bounds.top;
+  const bottom = inkBottom >= 0 ? Math.max(bounds.bottom, inkBottom) : bounds.bottom;
+  const left = inkRight >= 0 ? Math.min(bounds.left, inkLeft) : bounds.left;
+  const right = inkRight >= 0 ? Math.max(bounds.right, inkRight) : bounds.right;
+
   const boxW = right - left;
   const boxH = bottom - top;
   // Segurança: se a detecção não achou uma região plausível, não corta nada
   // — é preferível manter uma margem de fundo a arriscar cortar conteúdo.
   if (boxW < sw * 0.5 || boxH < sh * 0.5) return canvas;
 
-  const marginX = Math.round(boxW * 0.03);
-  const marginY = Math.round(boxH * 0.03);
+  const marginX = Math.round(boxW * 0.05);
+  const marginY = Math.round(boxH * 0.05);
   const sx0 = Math.max(0, left - marginX);
   const sy0 = Math.max(0, top - marginY);
   const sx1 = Math.min(sw, right + marginX);
@@ -249,6 +303,9 @@ const BG_BLUR_RADIUS = 16;
 // Abaixo desta fração do papel iluminado, o pixel é tratado como CONTEÚDO e
 // não como sombra — é isso que impede a foto do documento de ser apagada.
 const SHADOW_FLOOR_RATIO = 0.72;
+// Teto do ganho da equalizacao. Acima disso a "sombra" provavelmente era
+// conteudo escuro, e amplificar so geraria ruido.
+const SHADOW_MAX_GAIN = 1.9;
 
 function maxFilter(
   src: Uint8ClampedArray,
@@ -327,14 +384,17 @@ function removeShadow(canvas: HTMLCanvasElement): HTMLCanvasElement {
   const d = img.data;
   const bd = bimg.data;
 
-  // Nível do papel bem iluminado, para servir de referência.
+  // Nível do papel na parte MELHOR iluminada da foto — a referência para a
+  // qual as partes sombreadas são trazidas.
   let paperLevel = 0;
   for (let i = 0; i < bd.length; i += 4) {
     const lum = 0.299 * bd[i] + 0.587 * bd[i + 1] + 0.114 * bd[i + 2];
     if (lum > paperLevel) paperLevel = lum;
   }
+  if (paperLevel < 5) return canvas;
+
   // Sombra de foto de celular escurece o papel, mas não o faz ficar mais escuro
-  // que ~metade do papel iluminado. Abaixo disso é CONTEÚDO (uma foto colada,
+  // que ~72% do papel iluminado. Abaixo disso é CONTEÚDO (uma foto colada,
   // um fundo escuro impresso), não iluminação — e tratar conteúdo como sombra é
   // o que apaga a foto do documento. A trava impede esse caso.
   const floor = Math.max(1, paperLevel * SHADOW_FLOOR_RATIO);
@@ -344,7 +404,11 @@ function removeShadow(canvas: HTMLCanvasElement): HTMLCanvasElement {
       floor,
       0.299 * bd[i] + 0.587 * bd[i + 1] + 0.114 * bd[i + 2]
     );
-    const factor = Math.min(2.2, 255 / bgLum);
+    // EQUALIZA, não clareia: leva cada região ao nível do papel bem iluminado,
+    // e não a 255. Normalizar para 255 aqui somava-se ao ponto de branco dos
+    // níveis logo depois, e esse clareamento em dose dupla era o que estourava
+    // a luz. Aqui o ganho é 1 na área mais clara da foto e só sobe na sombra.
+    const factor = Math.min(SHADOW_MAX_GAIN, paperLevel / bgLum);
     d[i] = clamp(d[i] * factor);
     d[i + 1] = clamp(d[i + 1] * factor);
     d[i + 2] = clamp(d[i + 2] * factor);
@@ -422,7 +486,10 @@ function denoiseLight(canvas: HTMLCanvasElement, amount = 0.4): HTMLCanvasElemen
 // percentis ignoram esses extremos e levam o papel a branco de verdade e o
 // texto a preto de verdade — que é o que dá a impressão de página escaneada. ---
 
-function scanLevels(canvas: HTMLCanvasElement, gamma = 1.15): HTMLCanvasElement {
+// gamma 1 de proposito: qualquer curva != 1 desloca os meios-tons, ou seja,
+// muda como o conteudo do documento aparece. Aqui so se estica o histograma
+// entre preto e branco, que e uma transformacao linear e reversivel.
+function scanLevels(canvas: HTMLCanvasElement, gamma = 1): HTMLCanvasElement {
   const w = canvas.width;
   const h = canvas.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
@@ -445,21 +512,20 @@ function scanLevels(canvas: HTMLCanvasElement, gamma = 1.15): HTMLCanvasElement 
     return 255;
   };
 
-  // O papel domina a área da imagem, então o percentil alto cai sobre ele.
-  // O ponto de branco fica um pouco ABAIXO desse nível de propósito: o que
-  // sobrou de sombra/vinco depois da normalização vive nessa faixa logo abaixo
-  // do papel, e é justamente ele que faz a imagem parecer "foto clareada" em
-  // vez de digitalizada. Cortar essa faixa para branco puro é o que os apps de
-  // scanner fazem — e 10% é margem suficiente para não comer conteúdo legítimo
-  // (foto do RG, carimbos claros ficam bem abaixo disso).
-  const paper = percentile(0.65);
-  const white = paper * 0.9;
+  // O ponto de branco é o percentil ALTO — ou seja, o próprio papel, não algo
+  // abaixo dele. A versão anterior colocava o branco a 90% do nível do papel
+  // para "limpar" o resto da sombra, e era exatamente isso que estourava a luz:
+  // TODO conteúdo cinza-claro (carimbo fraco, marca d'água, fundo de segurança,
+  // parte clara da foto 3x4) caía nessa faixa e virava branco puro — perda de
+  // informação do documento, que é justamente o que não se pode fazer aqui.
+  // Com o branco no percentil 0.98, só a franja mais clara do papel satura.
+  const white = percentile(0.98);
   // O ponto de preto sai da tinta — mas num documento com pouquíssimo texto
   // (uma certidão de duas linhas, uma página quase em branco) a tinta não
-  // chega a 2% dos pixels e o percentil baixo cai sobre o PRÓPRIO PAPEL. Sem
-  // o teto abaixo, preto e branco colapsam num intervalo minúsculo e a página
-  // inteira sai preta. O teto mantém o preto bem abaixo do branco sempre.
-  const black = Math.min(percentile(0.02), white * 0.6);
+  // chega nem a 1% dos pixels e o percentil baixo cai sobre o PRÓPRIO PAPEL.
+  // Sem o teto abaixo, preto e branco colapsam num intervalo minúsculo e a
+  // página inteira sai preta. O teto mantém o preto bem abaixo do branco.
+  const black = Math.min(percentile(0.01), white * 0.55);
   if (white - black < 20) return canvas; // contraste já plano; não force
 
   const range = white - black;
@@ -584,7 +650,7 @@ export async function enhanceImageFileToBlob(
     const { canvas } = enhanceDocumentImage(bitmap, options);
     const type = file.type === "image/png" ? "image/png" : "image/jpeg";
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, type, 0.92)
+      canvas.toBlob(resolve, type, 0.95)
     );
     if (!blob) throw new Error("Não foi possível gerar a imagem otimizada.");
     return blob;
