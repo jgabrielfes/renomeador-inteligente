@@ -34,13 +34,14 @@ async function getTesseractWorker(): Promise<TesseractWorker> {
 }
 
 // Pré-processamento equivalente ao da versão desktop, com uma etapa extra
-// antes: recorte automático das bordas, correção de inclinação e remoção de
-// sombra/ruído (lib/image-enhance.ts) — melhora fotos de celular tiradas em
-// ângulo ou com sombra antes de seguir para a escala de cinza + autocontraste
+// antes: correção de perspectiva a partir dos cantos da folha, remoção de
+// sombra e de ruído (lib/image-enhance.ts) — endireita fotos de celular
+// tiradas em ângulo antes de seguir para a escala de cinza + autocontraste
 // + contraste 1.6 + ampliação até 1800px já calibrados para o OCR.
 function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement {
   const { canvas: cleaned } = enhanceDocumentImage(source, {
     contrast: false, // o contraste final abaixo já é o calibrado para o OCR
+    sharpen: false, // idem: a nitidez extra é para a imagem que o usuário baixa
     targetMaxDim: 1, // a ampliação até 1800px é feita abaixo, sobre o resultado limpo
   });
 

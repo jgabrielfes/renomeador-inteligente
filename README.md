@@ -27,11 +27,25 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 - OCR com [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly, idiomas por+eng) — na primeira análise o navegador baixa o motor (~15 MB) de um CDN; depois fica em cache;
 - Leitura de PDFs com [pdf.js](https://mozilla.github.io/pdf.js/) — usa o texto nativo do PDF quando existe e faz OCR da página renderizada em PDFs escaneados ou digitais cujos dados estão em imagem (ex.: CNH-e).
 
-## Melhoria de imagem (foto de documento)
+## Digitalização automática (foto de documento)
 
-Fotos de documento tiradas com celular (torta, com sombra, fundo da mesa aparecendo) passam por um pipeline de limpeza em [lib/image-enhance.ts](lib/image-enhance.ts) antes do OCR: recorte automático das bordas, correção de inclinação (deskew), remoção de sombra/iluminação irregular, redução leve de ruído e upscaling clássico (interpolação, não generativo) para fotos tiradas de longe. Tudo roda em Canvas no navegador, sem dependências novas.
+Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
 
-Nenhuma etapa altera o conteúdo do documento nem sobrescreve o arquivo original — o pipeline só produz cópias. Por padrão essa limpeza roda apenas internamente, para melhorar a precisão do OCR; o usuário também pode baixar a própria versão otimizada (botão de varinha em cada linha, ou o checkbox "incluir versão otimizada" ao baixar o `.zip`), sempre mantendo o arquivo original disponível para download.
+1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha (limiar de Otsu → maior componente conexa → casco convexo → maior quadrilátero inscrito) e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
+2. **Remoção de sombra** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de iluminação por máximo local + borrão e normaliza a imagem por ele, apagando sombras e vincos.
+3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo).
+
+Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
+
+Nenhuma etapa altera o conteúdo do documento nem sobrescreve o arquivo original — o pipeline só produz cópias. Por padrão a limpeza roda apenas internamente, para melhorar a precisão do OCR; o usuário também pode baixar a versão digitalizada (botão de varinha em cada linha, ou o checkbox "incluir versão otimizada" ao baixar o `.zip`), sempre mantendo o arquivo original disponível.
+
+### Salvaguardas (e o que elas custam)
+
+O maior risco de um pipeline desses é destruir conteúdo legítimo. Três travas foram calibradas contra casos de teste (foto em ângulo, papel amassado, documento com foto 3x4 e carimbo claro, digitalização já limpa):
+
+- O campo de iluminação é **borrado** depois do máximo local. Sem isso, dentro de uma foto 3x4 o máximo local é a própria foto, a normalização a divide por ela mesma e ela sai estourada em branco.
+- Pixels abaixo de ~72% do nível do papel são tratados como **conteúdo, não sombra** (`SHADOW_FLOOR_RATIO`), o que impede que fotos e fundos escuros impressos sejam apagados. Em troca, vincos muito escuros ficam levemente visíveis — preferimos preservar conteúdo.
+- O ponto de preto dos níveis é **limitado por cima**: num documento com pouquíssima tinta, o percentil baixo cairia sobre o próprio papel e a página inteira sairia preta.
 
 ## Dois modos de uso
 
@@ -44,7 +58,8 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 
 - [lib/renamer.ts](lib/renamer.ts) — motor local de nomeação: tipo por pontuação de evidências (texto + nome do arquivo, com peso extra no título), extração de nome em camadas com validação palavra a palavra, identificadores (CPF com dígito verificador, matrícula, contribuinte) e fallback que preserva o nome original quando nada é confiável. Calibrado com documentos reais de escritório imobiliário.
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
-- [lib/image-enhance.ts](lib/image-enhance.ts) — melhoria de fotos de documento: recorte automático, deskew, remoção de sombra, denoise leve e upscaling clássico.
+- [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
+- [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, e renomear no lugar com `move()` ou cópia+remoção.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
 

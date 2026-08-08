@@ -1005,7 +1005,7 @@ export default function Home() {
                               size="icon"
                               onClick={() => downloadEnhanced(row)}
                               disabled={enhancingId === row.id}
-                              title="Baixar versão otimizada para leitura (recorte, nitidez e correção de inclinação — sem alterar o conteúdo)"
+                              title="Baixar versão digitalizada (endireita a folha, remove sombra e realça o texto — sem alterar o conteúdo)"
                             >
                               {enhancingId === row.id ? (
                                 <Loader2 className="size-4 animate-spin" />
@@ -1029,8 +1029,8 @@ export default function Home() {
                     setIncludeEnhanced(checked === true)
                   }
                 />
-                Incluir também versão otimizada para leitura no .zip (recorte,
-                nitidez e correção de inclinação — sem alterar o conteúdo)
+                Incluir também versão digitalizada no .zip (endireita a folha,
+                remove sombra e realça o texto — sem alterar o conteúdo)
               </label>
             )}
 
