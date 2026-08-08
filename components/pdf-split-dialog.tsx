@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Cpu, Loader2, Scissors, Sparkles } from "lucide-react";
+import { ArrowLeft, Cpu, Loader2, Scissors, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   analyzePdfSegments,
   extractSegments,
   PdfSplitError,
+  renderPdfThumbnails,
   type PdfSegment,
 } from "@/lib/pdf-split";
 import { getLessonsSnapshot } from "@/lib/lessons";
@@ -51,6 +52,9 @@ export function PdfSplitDialog({
   const [naoAplicavel, setNaoAplicavel] = React.useState(false);
   const [progress, setProgress] = React.useState("");
   const [applying, setApplying] = React.useState(false);
+  // Miniatura de cada página (índice 0 = página 1) e a página aberta em zoom.
+  const [thumbs, setThumbs] = React.useState<string[]>([]);
+  const [zoomPage, setZoomPage] = React.useState<number | null>(null);
 
   // Ajuste em fase de render: cada arquivo novo zera o resultado e já entra em
   // "analisando", para o efeito abaixo só precisar fazer o trabalho assíncrono.
@@ -62,6 +66,8 @@ export function PdfSplitDialog({
     setNaoAplicavel(false);
     setProgress("");
     setAnalyzing(file !== null);
+    setThumbs([]);
+    setZoomPage(null);
   }
 
   React.useEffect(() => {
@@ -71,6 +77,12 @@ export function PdfSplitDialog({
     let cancelled = false;
     void (async () => {
       try {
+        // As miniaturas vêm primeiro e são baratas: o usuário já vê as páginas
+        // enquanto a classificação (que pode fazer OCR) ainda roda.
+        const imagens = await renderPdfThumbnails(file);
+        if (cancelled) return;
+        setThumbs(imagens);
+
         const lessons = getLessonsSnapshot();
         const found = await analyzePdfSegments(file, lessons, (p) => {
           if (cancelled) return;
@@ -96,6 +108,12 @@ export function PdfSplitDialog({
       cancelled = true;
     };
   }, [file]);
+
+  function pagesOf(s: PdfSegment): number[] {
+    const pages = [];
+    for (let p = s.startPage; p <= s.endPage; p++) pages.push(p);
+    return pages;
+  }
 
   function renameSegment(index: number, name: string) {
     setSegments((prev) =>
@@ -133,7 +151,47 @@ export function PdfSplitDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        {zoomPage !== null && thumbs[zoomPage - 1] && (
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setZoomPage(null)}>
+                <ArrowLeft className="size-4" />
+                Voltar à lista
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={zoomPage <= 1}
+                onClick={() => setZoomPage(zoomPage - 1)}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={zoomPage >= thumbs.length}
+                onClick={() => setZoomPage(zoomPage + 1)}
+              >
+                Próxima
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Página {zoomPage} de {thumbs.length}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/30 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- data URL local */}
+              <img
+                src={thumbs[zoomPage - 1]}
+                alt={`Página ${zoomPage}`}
+                className="mx-auto max-h-full w-auto object-contain"
+              />
+            </div>
+          </div>
+        )}
+
+        <div
+          className={`min-h-0 flex-1 overflow-auto ${zoomPage !== null ? "hidden" : ""}`}
+        >
           {analyzing ? (
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-6 animate-spin" />
@@ -162,7 +220,7 @@ export function PdfSplitDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-24">Páginas</TableHead>
+                    <TableHead className="w-44">Páginas</TableHead>
                     <TableHead>Nome do arquivo</TableHead>
                     <TableHead className="w-40">Tipo</TableHead>
                   </TableRow>
@@ -170,10 +228,32 @@ export function PdfSplitDialog({
                 <TableBody>
                   {segments.map((s, i) => (
                     <TableRow key={`${s.startPage}-${s.endPage}`}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {s.startPage === s.endPage
-                          ? s.startPage
-                          : `${s.startPage}–${s.endPage}`}
+                      <TableCell className="align-top">
+                        <span className="text-xs text-muted-foreground">
+                          {s.startPage === s.endPage
+                            ? `Página ${s.startPage}`
+                            : `Páginas ${s.startPage}–${s.endPage}`}
+                        </span>
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {pagesOf(s).map((pagina) =>
+                            thumbs[pagina - 1] ? (
+                              <button
+                                key={pagina}
+                                type="button"
+                                onClick={() => setZoomPage(pagina)}
+                                title={`Ver a página ${pagina} maior`}
+                                className="overflow-hidden rounded border transition-colors hover:border-primary"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element -- data URL local */}
+                                <img
+                                  src={thumbs[pagina - 1]}
+                                  alt={`Página ${pagina}`}
+                                  className="h-16 w-auto object-contain"
+                                />
+                              </button>
+                            ) : null
+                          )}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <Input
@@ -213,7 +293,7 @@ export function PdfSplitDialog({
           )}
         </div>
 
-        {total > 1 && !error && (
+        {total > 1 && !error && zoomPage === null && (
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={apply} disabled={applying}>
               {applying ? (

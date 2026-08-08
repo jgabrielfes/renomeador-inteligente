@@ -175,6 +175,44 @@ export async function analyzePdfSegments(
 }
 
 /**
+ * Miniatura de cada página, para o usuário VER o que está separando antes de
+ * aplicar. Data URLs (e não blob URLs) porque são dezenas de imagens pequenas
+ * de vida curta — evita ter de revogar cada uma na desmontagem.
+ */
+export async function renderPdfThumbnails(
+  file: File,
+  maxPages = SPLIT_MAX_PAGES,
+  // Serve tanto para a miniatura da lista quanto para a página ampliada, então
+  // é a largura da ampliada que manda — 700px deixa o texto legível no zoom
+  // sem estourar a memória (≈45 KB por página, ≈1,8 MB no PDF de 40 páginas).
+  targetWidth = 700
+): Promise<string[]> {
+  const pdfjs = await loadPdfjs();
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+  const doc = await loadingTask.promise;
+  try {
+    const total = Math.min(maxPages, doc.numPages);
+    const thumbs: string[] = [];
+    for (let i = 1; i <= total; i++) {
+      const page = await doc.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: targetWidth / base.width });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+      thumbs.push(canvas.toDataURL("image/jpeg", 0.72));
+    }
+    return thumbs;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+/**
  * Extrai os segmentos como PDFs independentes. Copia as páginas originais
  * (`copyPages`), então um PDF digital continua digital: o texto não vira imagem.
  */

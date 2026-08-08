@@ -65,11 +65,21 @@ O maior risco de um pipeline desses é destruir conteúdo legítimo. Três trava
 
 É comum receber um único PDF com matrícula + RG + CNH + certidão dentro. O botão de tesoura na lista abre o separador: cada página é lida (texto nativo ou OCR), classificada como se fosse um documento à parte, e as páginas são agrupadas em documentos. O resultado aparece numa tabela com as páginas, o tipo e o nome sugerido — editável — antes de aplicar.
 
+Cada documento mostra as **miniaturas das suas páginas**, e clicar numa delas abre a página ampliada, com navegação. Sem isso o usuário estaria confirmando no escuro: os nomes vêm de OCR e é olhando a página que ele confere se o corte ficou no lugar certo. As miniaturas são renderizadas antes da classificação, que é a parte lenta — assim já dá para ver o PDF enquanto o OCR ainda roda.
+
 **A regra de agrupamento é o coração da coisa.** Uma página só abre um documento novo quando ela própria se identifica (tipo reconhecido) **e** essa identidade difere da do documento corrente. Páginas sem tipo reconhecido — o verso de um RG, a segunda folha de uma matrícula, a continuação de um contrato — são tratadas como continuação. Sem isso, todo documento de várias páginas seria estilhaçado numa penca de arquivos de uma página. A identidade compara tipo + nome proposto, então dois RGs seguidos de pessoas diferentes viram dois documentos, mas duas páginas do RG da mesma pessoa viram um só.
 
 Ao aplicar, no modo pasta os PDFs individuais são gravados e o original é **apagado** (com confirmação); no modo upload o PDF original sai da lista e os novos entram no lugar, alimentando o `.zip` normalmente. As páginas são copiadas com `copyPages`, então um PDF digital continua digital — o texto não vira imagem.
 
 Salvaguardas da escrita em disco, por ser destrutiva: os nomes são únicos contra o que já existe na pasta (nunca sobrescreve arquivo de terceiro), o original só é apagado **depois** que todos os novos foram gravados, e se algo falhar no meio os arquivos já criados são removidos — a pasta volta ao estado inicial, com o PDF de origem intacto. Há um teto de 40 páginas, já que a análise faz OCR página a página.
+
+## Organizar a pasta em subpastas ([lib/categories.ts](lib/categories.ts))
+
+No modo pasta há um checkbox opcional junto do botão de renomear: **organizar em subpastas por conjunto**. Ligado, cada arquivo vai para uma subpasta conforme o tipo de documento — DOCUMENTOS PESSOAIS, DOCUMENTOS DO IMÓVEL, CONTRATOS, IMPOSTO DE TRANSMISSÃO, CERTIDÕES NEGATIVAS, COMPROVANTES E PAGAMENTOS, e OUTROS DOCUMENTOS para o que não se encaixar. Antes de aplicar, a tela mostra quais subpastas serão criadas e quantos arquivos vão para cada uma.
+
+A classificação tem **duas camadas, e a segunda é o que a faz funcionar de verdade**: uma tabela de tipos exatos (os que o motor local produz) e, quando ela não bate, palavras-chave sobre o tipo normalizado. A segunda camada existe porque no modo IA o tipo vem do Gemini em texto livre — "Contrato de Cessão de Direitos Hereditários", "Guia de Recolhimento do ITBI" — e nunca bateria com uma tabela fixa. A ordem das palavras-chave importa: ITBI é testado antes de "guia", e "tributos imobiliários" antes de "negativa", senão cairiam na categoria errada. O que não se encaixa vai para OUTROS DOCUMENTOS em vez de ser espalhado em pastas erradas.
+
+Cada subpasta tem seu próprio espaço de nomes, então "RG - João.pdf" pode existir em duas categorias sem virar "(2)".
 
 ## Dois modos de uso
 
@@ -84,10 +94,11 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
 - [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
 - [lib/pdf-enhance.ts](lib/pdf-enhance.ts) — otimização de PDFs digitalizados página a página; recusa PDFs digitais.
-- [lib/pdf-split.ts](lib/pdf-split.ts) — separação de um PDF que junta vários documentos: classifica página a página e agrupa em documentos.
-- [components/pdf-split-dialog.tsx](components/pdf-split-dialog.tsx) — revisão dos documentos detectados antes de aplicar.
+- [lib/pdf-split.ts](lib/pdf-split.ts) — separação de um PDF que junta vários documentos: classifica página a página, agrupa em documentos e renderiza as miniaturas.
+- [lib/categories.ts](lib/categories.ts) — conjunto (subpasta) a que cada tipo de documento pertence.
+- [components/pdf-split-dialog.tsx](components/pdf-split-dialog.tsx) — revisão dos documentos detectados, com miniaturas e página ampliada, antes de aplicar.
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
-- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar com `move()` ou cópia+remoção, sobrescrever, criar e remover arquivos.
+- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar ou movendo para subpasta (`move()` com fallback de cópia+remoção), sobrescrever, criar e remover arquivos.
 - [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
 

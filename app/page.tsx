@@ -65,7 +65,9 @@ import {
   existingNames,
   filesFromDataTransfer,
   folderPickerAvailable,
+  getSubfolder,
   listFolderFiles,
+  namesIn,
   overwriteFile,
   pickFolder,
   removeFile,
@@ -81,6 +83,7 @@ import {
   saveRules,
   subscribeLessons,
 } from "@/lib/lessons";
+import { categoriaDe } from "@/lib/categories";
 import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
 import type { PdfSegment } from "@/lib/pdf-split";
 import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
@@ -183,6 +186,7 @@ export default function Home() {
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   // Linha aberta no separador de PDF (mesma ideia do previewId).
   const [splitId, setSplitId] = React.useState<string | null>(null);
+  const [organizarEmSubpastas, setOrganizarEmSubpastas] = React.useState(false);
 
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -492,33 +496,74 @@ export default function Home() {
         r.handle.name
   );
   const hasFolderRows = rows.some((r) => r.handle);
+  // Prévia das subpastas que a renomeação vai criar, para o usuário conferir
+  // o agrupamento ANTES de mexer na pasta.
+  const subpastasPrevistas = React.useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const row of applyTargets) {
+      const categoria = categoriaDe(row.docType);
+      contagem.set(categoria, (contagem.get(categoria) ?? 0) + 1);
+    }
+    return [...contagem.entries()]
+      .map(([categoria, quantidade]) => ({ categoria, quantidade }))
+      .sort((a, b) => a.categoria.localeCompare(b.categoria));
+  }, [applyTargets]);
 
   async function applyRenames() {
     if (!dirHandle || applyTargets.length === 0) return;
+    const pastas = organizarEmSubpastas
+      ? [...new Set(applyTargets.map((r) => categoriaDe(r.docType)))].sort()
+      : [];
     if (
       !window.confirm(
-        `Renomear ${applyTargets.length} arquivo(s) na pasta "${dirHandle.name}"?\n\nRecomenda-se revisar a lista antes de confirmar.`
+        organizarEmSubpastas
+          ? `Renomear ${applyTargets.length} arquivo(s) e organizá-los em ${pastas.length} subpasta(s) de "${dirHandle.name}"?\n\nSubpastas: ${pastas.join(", ")}.\n\nRecomenda-se revisar a lista antes de confirmar.`
+          : `Renomear ${applyTargets.length} arquivo(s) na pasta "${dirHandle.name}"?\n\nRecomenda-se revisar a lista antes de confirmar.`
       )
     ) {
       return;
     }
     setApplying(true);
     try {
-      const used = await existingNames(dirHandle);
+      // Um conjunto de nomes por pasta de destino: a raiz e cada subpasta têm
+      // seu próprio espaço de nomes, então "RG - João.pdf" pode existir em
+      // duas categorias sem virar "(2)".
+      const raiz = await existingNames(dirHandle);
+      const usados = new Map<string, Set<string>>([["", raiz]]);
+      const subpastas = new Map<string, FileSystemDirectoryHandle>();
+
       for (const row of applyTargets) {
         const handle = row.handle!;
         const desired = ensureExtension(
           row.proposed.trim() || row.file.name,
           row.file.name
         );
-        used.delete(handle.name.toLowerCase());
-        const name = uniqueName(used, desired);
+
         try {
-          await renameInFolder(dirHandle, handle, name);
+          const categoria = organizarEmSubpastas ? categoriaDe(row.docType) : "";
+          let destino: FileSystemDirectoryHandle | undefined;
+          if (categoria) {
+            destino = subpastas.get(categoria);
+            if (!destino) {
+              destino = await getSubfolder(dirHandle, categoria);
+              subpastas.set(categoria, destino);
+              usados.set(categoria, await namesIn(destino));
+            }
+          }
+
+          const used = usados.get(categoria)!;
+          // O próprio arquivo não conta como conflito quando fica na raiz.
+          if (!categoria) raiz.delete(handle.name.toLowerCase());
+          const name = uniqueName(used, desired);
+
+          await renameInFolder(dirHandle, handle, name, destino);
           used.add(name.toLowerCase());
-          patchRow(row.id, { status: "renomeado", proposed: name });
+          patchRow(row.id, {
+            status: "renomeado",
+            proposed: categoria ? `${categoria}/${name}` : name,
+          });
         } catch (err) {
-          used.add(handle.name.toLowerCase());
+          raiz.add(handle.name.toLowerCase());
           patchRow(row.id, {
             status: "erro",
             error: `Falha ao renomear: ${err instanceof Error ? err.message : err}`,
@@ -1111,6 +1156,30 @@ export default function Home() {
                 </TableBody>
               </Table>
             </div>
+
+            {hasFolderRows && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={organizarEmSubpastas}
+                  onCheckedChange={(checked) =>
+                    setOrganizarEmSubpastas(checked === true)
+                  }
+                />
+                Organizar em subpastas por conjunto (Documentos Pessoais,
+                Documentos do Imóvel, Contratos, Imposto de Transmissão…)
+              </label>
+            )}
+
+            {hasFolderRows && organizarEmSubpastas && subpastasPrevistas.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                <span className="text-muted-foreground">Serão criadas:</span>
+                {subpastasPrevistas.map(({ categoria, quantidade }) => (
+                  <Badge key={categoria} variant="secondary">
+                    {categoria} ({quantidade})
+                  </Badge>
+                ))}
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3">
               {hasFolderRows && (

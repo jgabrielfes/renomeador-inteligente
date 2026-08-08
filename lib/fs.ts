@@ -14,7 +14,13 @@ declare global {
     }): Promise<FileSystemDirectoryHandle>;
   }
   interface FileSystemFileHandle {
+    // O Chromium aceita as duas formas: renomear no lugar e mover para outra
+    // pasta (opcionalmente com nome novo).
     move?(name: string): Promise<void>;
+    move?(
+      destination: FileSystemDirectoryHandle,
+      name?: string
+    ): Promise<void>;
   }
   interface FileSystemDirectoryHandle {
     values(): AsyncIterableIterator<FileSystemHandle>;
@@ -178,19 +184,47 @@ export async function removeFile(
   await dir.removeEntry(name);
 }
 
+/** Subpasta da pasta escolhida, criada se ainda não existir. */
+export async function getSubfolder(
+  dir: FileSystemDirectoryHandle,
+  name: string
+): Promise<FileSystemDirectoryHandle> {
+  return dir.getDirectoryHandle(name, { create: true });
+}
+
+export async function namesIn(
+  dir: FileSystemDirectoryHandle
+): Promise<Set<string>> {
+  return existingNames(dir);
+}
+
 // Renomeia no lugar: move() quando o navegador suporta; senão copia e apaga.
+// Com `destination`, além de renomear, move o arquivo para a subpasta.
 export async function renameInFolder(
   dir: FileSystemDirectoryHandle,
   handle: FileSystemFileHandle,
-  newName: string
+  newName: string,
+  destination?: FileSystemDirectoryHandle
 ): Promise<void> {
   if (typeof handle.move === "function") {
-    await handle.move(newName);
-    return;
+    try {
+      if (destination) await handle.move(destination, newName);
+      else await handle.move(newName);
+      return;
+    } catch {
+      // move() é recente e nem toda implementação aceita as duas formas —
+      // principalmente a que muda o arquivo de pasta. Em vez de falhar a
+      // operação inteira, cai para copiar+remover, que usa só APIs antigas e
+      // produz o mesmo resultado (mais devagar). Não relança de propósito.
+    }
   }
+  // Sem move() (ou com move() recusado): copia para o destino e só então
+  // remove a origem — se a cópia falhar, o arquivo original continua onde está.
   const data = await handle.getFile();
   const oldName = handle.name;
-  const target = await dir.getFileHandle(newName, { create: true });
+  const target = await (destination ?? dir).getFileHandle(newName, {
+    create: true,
+  });
   const writable = await target.createWritable();
   await writable.write(data);
   await writable.close();
