@@ -15,7 +15,6 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  Wand2,
   ZoomIn,
 } from "lucide-react";
 
@@ -78,21 +77,12 @@ import {
   saveRules,
   subscribeLessons,
 } from "@/lib/lessons";
-import { enhanceImageFileToBlob } from "@/lib/image-enhance";
 import { IMAGE_EXTS, isSupported, readDocument } from "@/lib/ocr";
 import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
 
 function isEnhanceableImage(fileName: string): boolean {
   const lower = fileName.toLowerCase();
   return IMAGE_EXTS.some((ext) => lower.endsWith(ext));
-}
-
-// Insere " (otimizado)" antes da extensão do arquivo.
-function withOptimizedSuffix(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > 0
-    ? `${name.slice(0, dot)} (otimizado)${name.slice(dot)}`
-    : `${name} (otimizado)`;
 }
 
 type RowStatus = "aguardando" | "processando" | "ok" | "erro" | "renomeado";
@@ -141,8 +131,6 @@ export default function Home() {
   const [notice, setNotice] = React.useState("");
   const [zipping, setZipping] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
-  const [includeEnhanced, setIncludeEnhanced] = React.useState(false);
-  const [enhancingId, setEnhancingId] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const queueRef = React.useRef<Row[]>([]);
   const processingRef = React.useRef(false);
@@ -489,7 +477,6 @@ export default function Home() {
         r.handle.name
   );
   const hasFolderRows = rows.some((r) => r.handle);
-  const hasEnhanceableRows = downloadable.some((r) => isEnhanceableImage(r.file.name));
 
   async function applyRenames() {
     if (!dirHandle || applyTargets.length === 0) return;
@@ -541,15 +528,6 @@ export default function Home() {
         );
         used.add(name.toLowerCase());
         zip.file(name, row.file);
-
-        if (includeEnhanced && isEnhanceableImage(row.file.name)) {
-          try {
-            const enhanced = await enhanceImageFileToBlob(row.file);
-            zip.file(withOptimizedSuffix(name), enhanced);
-          } catch {
-            // Se a otimização falhar para um arquivo, o original ainda vai no zip.
-          }
-        }
       }
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
@@ -563,14 +541,14 @@ export default function Home() {
     triggerDownload(row.file, name);
   }
 
-  // Substitui o arquivo pela versão digitalizada. No modo pasta isso GRAVA por
+  // Substitui o arquivo pela versão otimizada. No modo pasta isso GRAVA por
   // cima do arquivo do usuário e não tem desfazer — daí a confirmação explícita
   // e o aviso diferente para cada modo.
-  async function replaceWithScan(row: Row, blob: Blob) {
+  async function replaceWithOptimized(row: Row, blob: Blob) {
     const onDisk = Boolean(row.handle);
     const warning = onDisk
-      ? `Substituir "${row.file.name}" pela versão digitalizada?\n\nO arquivo será gravado por cima na pasta "${dirHandle?.name}". Esta ação não pode ser desfeita.`
-      : `Substituir "${row.file.name}" pela versão digitalizada?\n\nO download e o .zip passarão a usar a versão digitalizada. Seu arquivo no disco não é alterado.`;
+      ? `Substituir "${row.file.name}" pela versão otimizada?\n\nO arquivo será gravado por cima na pasta "${dirHandle?.name}". Esta ação não pode ser desfeita.`
+      : `Substituir "${row.file.name}" pela versão otimizada?\n\nO download e o .zip passarão a usar a versão otimizada. Seu arquivo no disco não é alterado.`;
     if (!window.confirm(warning)) return;
 
     try {
@@ -591,7 +569,7 @@ export default function Home() {
           lastModified: Date.now(),
         }),
       });
-      toast.success("Arquivo substituído pela versão digitalizada", {
+      toast.success("Arquivo substituído pela versão otimizada", {
         description: onDisk
           ? `Gravado na pasta "${dirHandle?.name}".`
           : "Vale para o download e o .zip desta sessão.",
@@ -600,21 +578,6 @@ export default function Home() {
       toast.error("Não foi possível substituir o arquivo", {
         description: err instanceof Error ? err.message : String(err),
       });
-    }
-  }
-
-  async function downloadEnhanced(row: Row) {
-    setEnhancingId(row.id);
-    try {
-      const enhanced = await enhanceImageFileToBlob(row.file);
-      const name = ensureExtension(row.proposed.trim() || row.file.name, row.file.name);
-      triggerDownload(enhanced, withOptimizedSuffix(name));
-    } catch (err) {
-      toast.error("Não foi possível gerar a versão otimizada", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setEnhancingId(null);
     }
   }
 
@@ -1039,41 +1002,12 @@ export default function Home() {
                             <Download className="size-4" />
                           </Button>
                         )}
-                        {(row.status === "ok" || row.status === "renomeado") &&
-                          isEnhanceableImage(row.file.name) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => downloadEnhanced(row)}
-                              disabled={enhancingId === row.id}
-                              title="Baixar versão digitalizada (endireita a folha, remove sombra e realça o texto — sem alterar o conteúdo)"
-                            >
-                              {enhancingId === row.id ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <Wand2 className="size-4" />
-                              )}
-                            </Button>
-                          )}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-
-            {hasEnhanceableRows && (
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                <Checkbox
-                  checked={includeEnhanced}
-                  onCheckedChange={(checked) =>
-                    setIncludeEnhanced(checked === true)
-                  }
-                />
-                Incluir também a versão digitalizada no .zip (endireita a folha,
-                remove sombra e realça o texto — o original vai junto)
-              </label>
-            )}
 
             <div className="flex flex-wrap items-center gap-3">
               {hasFolderRows && (
@@ -1139,7 +1073,7 @@ export default function Home() {
         }
         canEnhance={previewRow ? isEnhanceableImage(previewRow.file.name) : false}
         onReplace={
-          previewRow ? (blob) => replaceWithScan(previewRow, blob) : undefined
+          previewRow ? (blob) => replaceWithOptimized(previewRow, blob) : undefined
         }
       />
     </main>

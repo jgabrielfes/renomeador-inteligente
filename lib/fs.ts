@@ -142,7 +142,7 @@ export async function existingNames(
 }
 
 // Sobrescreve o conteúdo de um arquivo da pasta, mantendo o nome. Usado para
-// substituir o original pela versão digitalizada — é destrutivo e sem desfazer,
+// substituir o original pela versão otimizada — é destrutivo e sem desfazer,
 // então quem chama deve confirmar com o usuário antes.
 export async function overwriteFile(
   handle: FileSystemFileHandle,

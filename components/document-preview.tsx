@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { enhanceImageFileToBlob } from "@/lib/image-enhance";
 
-type View = "original" | "digitalizada";
+type View = "original" | "otimizada";
 
 interface DocumentPreviewProps {
   // null = fechado. O arquivo já está em memória; nada sai da máquina.
@@ -25,9 +25,9 @@ interface DocumentPreviewProps {
   onNameChange?: (value: string) => void;
   onNameBlur?: () => void;
   onDownload?: () => void;
-  // Só imagens têm versão digitalizada; sem isto o alternador não aparece.
+  // Só imagens têm versão otimizada; sem isto o alternador não aparece.
   canEnhance?: boolean;
-  // Substitui o arquivo original pela versão digitalizada. Quem implementa é
+  // Substitui o arquivo original pela versão otimizada. Quem implementa é
   // responsável por confirmar com o usuário — a ação não tem desfazer.
   onReplace?: (blob: Blob) => Promise<void>;
 }
@@ -43,12 +43,12 @@ export function DocumentPreview({
   onReplace,
 }: DocumentPreviewProps) {
   const [view, setView] = React.useState<View>("original");
-  const [scanBlob, setScanBlob] = React.useState<Blob | null>(null);
+  const [optimizedBlob, setOptimizedBlob] = React.useState<Blob | null>(null);
   const [generating, setGenerating] = React.useState(false);
-  const [scanError, setScanError] = React.useState("");
+  const [optimizedError, setOptimizedError] = React.useState("");
   const [replacing, setReplacing] = React.useState(false);
 
-  // Cada arquivo recomeça no original e descarta a digitalização do anterior.
+  // Cada arquivo recomeça no original e descarta a otimização do anterior.
   // Também cobre o caso de o próprio arquivo ter sido substituído: a versão
   // em cache passaria a ser a de um conteúdo que não existe mais.
   // Ajuste em fase de render (não em efeito) — é o padrão do React para
@@ -57,8 +57,8 @@ export function DocumentPreview({
   if (lastFile !== file) {
     setLastFile(file);
     setView("original");
-    setScanBlob(null);
-    setScanError("");
+    setOptimizedBlob(null);
+    setOptimizedError("");
   }
 
   // Blob URL do arquivo local; revogado quando o preview troca/fecha.
@@ -72,58 +72,58 @@ export function DocumentPreview({
     };
   }, [url]);
 
-  const scanUrl = React.useMemo(
-    () => (scanBlob ? URL.createObjectURL(scanBlob) : null),
-    [scanBlob]
+  const optimizedUrl = React.useMemo(
+    () => (optimizedBlob ? URL.createObjectURL(optimizedBlob) : null),
+    [optimizedBlob]
   );
   React.useEffect(() => {
     return () => {
-      if (scanUrl) URL.revokeObjectURL(scanUrl);
+      if (optimizedUrl) URL.revokeObjectURL(optimizedUrl);
     };
-  }, [scanUrl]);
+  }, [optimizedUrl]);
 
   const isPdf = file?.name.toLowerCase().endsWith(".pdf") ?? false;
   const showToggle = canEnhance && !isPdf && file !== null;
 
-  async function showScan() {
-    setView("digitalizada");
-    if (scanBlob || !file) return;
+  async function showOptimized() {
+    setView("otimizada");
+    if (optimizedBlob || !file) return;
     setGenerating(true);
-    setScanError("");
+    setOptimizedError("");
     try {
-      setScanBlob(await enhanceImageFileToBlob(file));
+      setOptimizedBlob(await enhanceImageFileToBlob(file));
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : String(err));
+      setOptimizedError(err instanceof Error ? err.message : String(err));
     } finally {
       setGenerating(false);
     }
   }
 
-  function downloadScan() {
-    if (!scanUrl || !file) return;
+  function downloadOptimized() {
+    if (!optimizedUrl || !file) return;
     const dot = file.name.lastIndexOf(".");
-    const scanName =
+    const optimizedName =
       dot > 0
-        ? `${file.name.slice(0, dot)} (digitalizado)${file.name.slice(dot)}`
-        : `${file.name} (digitalizado)`;
+        ? `${file.name.slice(0, dot)} (otimizado)${file.name.slice(dot)}`
+        : `${file.name} (otimizado)`;
     const a = document.createElement("a");
-    a.href = scanUrl;
-    a.download = scanName;
+    a.href = optimizedUrl;
+    a.download = optimizedName;
     a.click();
   }
 
   async function replace() {
-    if (!scanBlob || !onReplace) return;
+    if (!optimizedBlob || !onReplace) return;
     setReplacing(true);
     try {
-      await onReplace(scanBlob);
+      await onReplace(optimizedBlob);
     } finally {
       setReplacing(false);
     }
   }
 
-  const showingScan = view === "digitalizada";
-  const visibleUrl = showingScan ? scanUrl : url;
+  const showingOptimized = view === "otimizada";
+  const visibleUrl = showingOptimized ? optimizedUrl : url;
 
   return (
     <Dialog
@@ -144,24 +144,24 @@ export function DocumentPreview({
           <div className="flex items-center gap-2">
             <div className="inline-flex gap-1 rounded-lg border p-1">
               <Button
-                variant={showingScan ? "ghost" : "secondary"}
+                variant={showingOptimized ? "ghost" : "secondary"}
                 size="sm"
                 onClick={() => setView("original")}
-                aria-pressed={!showingScan}
+                aria-pressed={!showingOptimized}
               >
                 Original
               </Button>
               <Button
-                variant={showingScan ? "secondary" : "ghost"}
+                variant={showingOptimized ? "secondary" : "ghost"}
                 size="sm"
-                onClick={showScan}
-                aria-pressed={showingScan}
+                onClick={showOptimized}
+                aria-pressed={showingOptimized}
               >
                 <Wand2 className="size-3.5" />
-                Digitalizada
+                Otimizada
               </Button>
             </div>
-            {showingScan && (
+            {showingOptimized && (
               <p className="text-sm text-muted-foreground">
                 Endireita a folha, remove sombra e realça o texto — sem alterar
                 o conteúdo.
@@ -171,18 +171,18 @@ export function DocumentPreview({
         )}
 
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/30">
-          {showingScan && generating ? (
+          {showingOptimized && generating ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-6 animate-spin" />
-              Gerando a versão digitalizada…
+              Gerando a versão otimizada…
             </div>
-          ) : showingScan && scanError ? (
+          ) : showingOptimized && optimizedError ? (
             <div className="flex h-full w-full items-center justify-center p-6 text-center text-sm text-destructive">
-              Não foi possível gerar a versão digitalizada: {scanError}
+              Não foi possível gerar a versão otimizada: {optimizedError}
             </div>
           ) : (
             visibleUrl &&
-            (isPdf && !showingScan ? (
+            (isPdf && !showingOptimized ? (
               <iframe
                 src={visibleUrl}
                 title={`Pré-visualização de ${file?.name}`}
@@ -194,8 +194,8 @@ export function DocumentPreview({
                 <img
                   src={visibleUrl}
                   alt={
-                    showingScan
-                      ? `Versão digitalizada de ${file?.name}`
+                    showingOptimized
+                      ? `Versão otimizada de ${file?.name}`
                       : `Pré-visualização de ${file?.name}`
                   }
                   className="max-h-full max-w-full object-contain"
@@ -216,23 +216,23 @@ export function DocumentPreview({
                 className="h-8 min-w-50 flex-1"
               />
             )}
-            {showingScan ? (
+            {showingOptimized ? (
               <>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={downloadScan}
-                  disabled={!scanBlob || generating}
+                  onClick={downloadOptimized}
+                  disabled={!optimizedBlob || generating}
                 >
                   <Download className="size-4" />
-                  Baixar digitalizada
+                  Baixar otimizada
                 </Button>
                 {onReplace && (
                   <Button
                     size="sm"
                     onClick={replace}
-                    disabled={!scanBlob || generating || replacing}
-                    title="Grava a versão digitalizada por cima do arquivo original"
+                    disabled={!optimizedBlob || generating || replacing}
+                    title="Grava a versão otimizada por cima do arquivo original"
                   >
                     {replacing ? (
                       <Loader2 className="size-4 animate-spin" />
