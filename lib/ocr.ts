@@ -1,6 +1,7 @@
 // Extração de texto 100% no navegador: Tesseract.js (WASM) para OCR
 // e pdf.js para PDFs (texto nativo primeiro; se for escaneado, renderiza e faz OCR).
 
+import { enhanceDocumentImage } from "./image-enhance";
 import { cleanSpaces } from "./renamer";
 
 export const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
@@ -32,13 +33,21 @@ async function getTesseractWorker(): Promise<TesseractWorker> {
   return workerPromise;
 }
 
-// Pré-processamento equivalente ao da versão desktop:
-// escala de cinza + autocontraste + contraste 1.6 + ampliação até 1800px.
+// Pré-processamento equivalente ao da versão desktop, com uma etapa extra
+// antes: recorte automático das bordas, correção de inclinação e remoção de
+// sombra/ruído (lib/image-enhance.ts) — melhora fotos de celular tiradas em
+// ângulo ou com sombra antes de seguir para a escala de cinza + autocontraste
+// + contraste 1.6 + ampliação até 1800px já calibrados para o OCR.
 function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement {
-  const maxDim = Math.max(source.width, source.height);
+  const { canvas: cleaned } = enhanceDocumentImage(source, {
+    contrast: false, // o contraste final abaixo já é o calibrado para o OCR
+    targetMaxDim: 1, // a ampliação até 1800px é feita abaixo, sobre o resultado limpo
+  });
+
+  const maxDim = Math.max(cleaned.width, cleaned.height);
   const scale = maxDim < 1800 ? 1800 / maxDim : 1;
-  const w = Math.round(source.width * scale);
-  const h = Math.round(source.height * scale);
+  const w = Math.round(cleaned.width * scale);
+  const h = Math.round(cleaned.height * scale);
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -46,7 +55,7 @@ function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement 
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, 0, 0, w, h);
+  ctx.drawImage(cleaned, 0, 0, w, h);
 
   const imageData = ctx.getImageData(0, 0, w, h);
   const d = imageData.data;
