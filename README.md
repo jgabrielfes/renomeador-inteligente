@@ -52,6 +52,8 @@ npm run dev
 
 Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a função serverless de `/api/rename`. Única configuração: a variável de ambiente `GEMINI_API_KEY` (sem ela o app funciona só no modo local).
 
+A Vercel está configurada para fazer deploy automático a cada commit na branch `main`. Por isso, o desenvolvimento do dia a dia acontece na branch `develop`: novas alterações vão para lá (diretamente ou via PR) e só sobem para `main` — disparando um novo deploy — quando estiverem prontas para produção.
+
 ## Tipos reconhecidos
 
 RG, CNH, CPF, Passaporte, Certidões (nascimento, casamento, óbito, valor venal, tributos imobiliários, negativa de débitos, trabalhista, distribuição, protesto, ônus, vintenária), Matrícula de imóvel, IPTU, Guia de ITBI, Habite-se, Comprovantes (residência, pagamento), Boleto, Termo de quitação, Escritura, Procuração e Contratos (compra e venda, locação, prestação de serviços, honorários). As regras ficam em `DOC_RULES` em [lib/renamer.ts](lib/renamer.ts) e podem ser expandidas.
