@@ -725,6 +725,19 @@ export function uniqueName(used: Set<string>, filename: string): string {
   }
 }
 
+// Prefixo sequencial para montar processo: "01 - RG - João.pdf". A largura vem
+// do total, então 9 arquivos viram 01..09 e 150 viram 001..150 — assim a ordem
+// alfabética da pasta bate com a ordem do processo (sem isso, "10" viria antes
+// de "2"). Mínimo de 2 dígitos, que é como se numera papel.
+export function withSequence(
+  position: number,
+  total: number,
+  filename: string
+): string {
+  const width = Math.max(2, String(total).length);
+  return `${String(position).padStart(width, "0")} - ${filename}`;
+}
+
 // Garante que o nome editado pelo usuário mantenha a extensão do arquivo original.
 export function ensureExtension(name: string, originalFileName: string): string {
   const ext = getExtension(originalFileName);

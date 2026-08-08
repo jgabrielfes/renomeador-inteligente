@@ -73,9 +73,25 @@ Ao aplicar, no modo pasta os PDFs individuais são gravados e o original é **ap
 
 Salvaguardas da escrita em disco, por ser destrutiva: os nomes são únicos contra o que já existe na pasta (nunca sobrescreve arquivo de terceiro), o original só é apagado **depois** que todos os novos foram gravados, e se algo falhar no meio os arquivos já criados são removidos — a pasta volta ao estado inicial, com o PDF de origem intacto. Há um teto de 40 páginas, já que a análise faz OCR página a página.
 
-## Organizar a pasta em subpastas ([lib/categories.ts](lib/categories.ts))
+## Montagem do processo
 
-No modo pasta há um checkbox opcional junto do botão de renomear: **organizar em subpastas por conjunto**. Ligado, cada arquivo vai para uma subpasta conforme o tipo de documento — DOCUMENTOS PESSOAIS, DOCUMENTOS DO IMÓVEL, CONTRATOS, IMPOSTO DE TRANSMISSÃO, CERTIDÕES NEGATIVAS, COMPROVANTES E PAGAMENTOS, e OUTROS DOCUMENTOS para o que não se encaixar. Antes de aplicar, a tela mostra quais subpastas serão criadas e quantos arquivos vão para cada uma.
+Três opções, num painel junto dos botões de aplicar. Valem para os **dois** modos: a renomeação na pasta e o `.zip`.
+
+### Organizar em subpastas por conjunto ([lib/categories.ts](lib/categories.ts))
+
+Cada arquivo vai para uma subpasta conforme o tipo de documento — DOCUMENTOS PESSOAIS, DOCUMENTOS DO IMÓVEL, CONTRATOS, IMPOSTO DE TRANSMISSÃO, CERTIDÕES NEGATIVAS, COMPROVANTES E PAGAMENTOS, e OUTROS DOCUMENTOS para o que não se encaixar. Antes de aplicar, a tela mostra quais subpastas serão criadas e quantos arquivos vão para cada uma.
+
+### Converter imagens em PDF ([lib/to-pdf.ts](lib/to-pdf.ts))
+
+JPG, PNG, WEBP e BMP viram PDF de uma página. Quando o arquivo **já é JPEG ou PNG, os bytes originais são embutidos como estão** — recodificar seria perda de qualidade gratuita, já que o PDF é só um invólucro; só WEBP e BMP, que o PDF não suporta, passam pelo canvas e viram JPEG. A página é A4 na orientação da imagem, com a imagem encaixada preservando a proporção: um processo é feito para ser impresso e paginado, e página do tamanho exato de cada foto daria um documento com folhas de tamanhos diferentes.
+
+No modo pasta, converter é criar um arquivo novo e apagar a imagem — não dá para "renomear" um JPG em PDF. O original só é removido depois que o PDF está gravado.
+
+### Numerar os arquivos
+
+Prefixo sequencial, para montar processo: `01 - RG - João.pdf`, `02 - CNH - Maria.pdf`. A largura vem do total (9 arquivos → `01`..`09`; 150 → `001`..`150`), o que faz a **ordem alfabética da pasta bater com a ordem do processo** — sem o zero à esquerda, "10" viria antes de "2".
+
+A numeração é **por pasta**: cada subpasta é um conjunto do processo e recomeça em `01`. Sem subpastas há uma pasta só, então a sequência segue a ordem da lista. (Se preferir numeração contínua atravessando as subpastas, é uma linha de mudança.)
 
 A classificação tem **duas camadas, e a segunda é o que a faz funcionar de verdade**: uma tabela de tipos exatos (os que o motor local produz) e, quando ela não bate, palavras-chave sobre o tipo normalizado. A segunda camada existe porque no modo IA o tipo vem do Gemini em texto livre — "Contrato de Cessão de Direitos Hereditários", "Guia de Recolhimento do ITBI" — e nunca bateria com uma tabela fixa. A ordem das palavras-chave importa: ITBI é testado antes de "guia", e "tributos imobiliários" antes de "negativa", senão cairiam na categoria errada. O que não se encaixa vai para OUTROS DOCUMENTOS em vez de ser espalhado em pastas erradas.
 
@@ -84,7 +100,7 @@ Cada subpasta tem seu próprio espaço de nomes, então "RG - João.pdf" pode ex
 ## Dois modos de uso
 
 1. **Selecionar pasta** (Chrome/Edge): o usuário escolhe uma pasta local, o app analisa tudo, mostra a prévia e — após confirmação — **renomeia os arquivos direto na pasta**, via File System Access API. Há um filtro opcional "somente arquivos com WhatsApp no nome".
-2. **Upload + download**: em qualquer navegador, o usuário arrasta os arquivos, revisa os nomes sugeridos e baixa tudo num `.zip` já renomeado.
+2. **Upload + download**: em qualquer navegador, o usuário arrasta os arquivos, revisa os nomes sugeridos e baixa tudo num `.zip` já renomeado — com as mesmas subpastas, numeração e conversão em PDF do modo pasta.
 
 Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e cada arquivo pode ser desmarcado antes de aplicar.
 
@@ -96,6 +112,7 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/pdf-enhance.ts](lib/pdf-enhance.ts) — otimização de PDFs digitalizados página a página; recusa PDFs digitais.
 - [lib/pdf-split.ts](lib/pdf-split.ts) — separação de um PDF que junta vários documentos: classifica página a página, agrupa em documentos e renderiza as miniaturas.
 - [lib/categories.ts](lib/categories.ts) — conjunto (subpasta) a que cada tipo de documento pertence.
+- [lib/to-pdf.ts](lib/to-pdf.ts) — conversão de imagens em PDF A4.
 - [components/pdf-split-dialog.tsx](components/pdf-split-dialog.tsx) — revisão dos documentos detectados, com miniaturas e página ampliada, antes de aplicar.
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar ou movendo para subpasta (`move()` com fallback de cópia+remoção), sobrescrever, criar e remover arquivos.
