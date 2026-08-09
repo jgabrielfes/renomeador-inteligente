@@ -1,6 +1,9 @@
-# Renomeador Inteligente de Documentos (Web)
+# Ferramentas do Cartório (Web)
 
-Versão web do renomeador de documentos: analisa imagens e PDFs **no navegador do usuário** e sugere nomes de arquivo com base no conteúdo (RG, CNH, certidões, matrículas, contratos etc.).
+Dois módulos, escolhidos no painel inicial (`/`):
+
+1. **Renomeador Inteligente de Documentos** (`/renomeador`) — analisa imagens e PDFs **no navegador do usuário** e sugere nomes de arquivo com base no conteúdo (RG, CNH, certidões, matrículas, contratos etc.).
+2. **Resolvedor de Notas Devolutivas** (`/notas`) — decompõe a nota de exigências do Registro de Imóveis em itens, classifica cada um numa via de resolução e prepara a minuta da peça correspondente (ver seção própria abaixo).
 
 Exemplos:
 
@@ -34,10 +37,29 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
 
 1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
-2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz por máximo local + borrão e traz as regiões sombreadas ao nível do papel bem iluminado.
+2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz e traz as regiões sombreadas ao nível do papel bem iluminado, o que apaga dobras e sombras.
 3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo), com saída em ~200 dpi para impressão.
 
 Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
+
+### Como a dobra some sem o documento ser alterado
+
+Esta é a parte mais difícil do pipeline, e as três primeiras versões falharam nela — sempre trocando uma coisa pela outra. O problema: um **vinco** e uma **mancha cinza-clara de conteúdo** (um fundo chapado, um carimbo grande) têm brilho parecido e área parecida. Quem quer apagar o vinco acaba clareando a mancha até o branco; quem quer proteger a mancha deixa o vinco na imagem.
+
+Foi medido, não estimado. Com um documento de referência plano, um campo de iluminação sintético (painéis de dobra, vincos e sombra de canto) aplicado por multiplicação, e a saída comparada com o original:
+
+| tentativa | papel amassado | dobras | tons do documento plano |
+| --- | --- | --- | --- |
+| máximo local + borrão (raio único) | 28 | 35 | fiel |
+| limiar de papel + erosão | 28 | 13–20 | mancha clara estourava |
+| tapar depressões rasas do campo | 41 | 20 | fiel |
+| **crescimento a partir de sementes** | **1** | **9** | **fiel** |
+
+(“papel” e “dobras” são o espalhamento p95−p5 da luminância numa área em branco: quanto menor, mais uniforme.)
+
+O que resolveu foi trocar o critério. Nem brilho nem tamanho separam vinco de mancha — a **borda** separa: mancha de conteúdo tem contorno nítido, sombra e vinco são rampas suaves. Então o papel é definido por crescimento: parte-se das regiões mais claras (papel com certeza) e cresce-se aceitando vizinhos de brilho parecido. A rampa do vinco é atravessada e ele entra na medição da luz — por isso é corrigido; o degrau da mancha não é atravessado e ela fica de fora — por isso é preservada. É a mesma ideia da detecção de fundo em [lib/perspective.ts](lib/perspective.ts), aplicada agora dentro do documento.
+
+Com o papel identificado, a luz é medida **só nele** (é o único lugar onde ela é observável, já que o papel tem refletância constante) e interpolada por cima da tinta e dos blocos de conteúdo, por convolução normalizada em vários raios: usa-se sempre o menor raio com papel suficiente por perto, o que mantém o vinco e atravessa uma foto 3x4.
 
 ### A regra que manda: não alterar o documento
 
@@ -47,7 +69,7 @@ O documento tem de sair **legível para impressão e com todo o conteúdo intact
 - **A remoção de sombra equaliza, não clareia.** Ela normalizava tudo para 255, e os níveis clareavam de novo logo depois: o clareamento em dose dupla estourava a imagem. Hoje o ganho é 1 na área mais bem iluminada e só sobe na sombra.
 - **A curva de gama é 1.** Qualquer gama diferente de 1 desloca os meios-tons, ou seja, muda como o conteúdo aparece. O que se faz é apenas esticar o histograma entre preto e branco — transformação linear.
 
-O preço disso é honesto: **sombra e vinco fortes continuam levemente visíveis**. Preferimos assim a apagar conteúdo.
+Essas três regras impedem o estouro, mas sozinhas não apagam dobra nenhuma — quem faz isso é a equalização descrita acima. O que resta na saída é a **linha fina do vinco**, que é o que também aparece num scan de verdade de um papel dobrado.
 
 ### O documento é o que não é fundo
 
@@ -126,7 +148,18 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar ou movendo para subpasta (`move()` com fallback de cópia+remoção), sobrescrever, criar e remover arquivos.
 - [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.
-- [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
+- [app/page.tsx](app/page.tsx) — painel de escolha de módulo; [app/renomeador/page.tsx](app/renomeador/page.tsx) — interface do renomeador; [app/notas/page.tsx](app/notas/page.tsx) — interface do resolvedor de notas (Next.js + shadcn/ui).
+- `lib/notas/` — núcleo do resolvedor de notas: [resolvedor.ts](lib/notas/resolvedor.ts) (decompõe e classifica), [traslado.ts](lib/notas/traslado.ts) (extrator de traslado), [qualificacao.ts](lib/notas/qualificacao.ts) (construtor de qualificação), [pecas.ts](lib/notas/pecas.ts) (dados das minutas), [docx.ts](lib/notas/docx.ts) (leitura e preenchimento de .docx via JSZip).
+
+## Resolvedor de Notas Devolutivas
+
+Três etapas na tela:
+
+1. **Pasta do Caso** — recebe a pasta completa (arrastada inteira) e distribui os papéis automaticamente: quem é a nota devolutiva, quem é o traslado do ato (.docx preferencial) e o que é acervo, com detecção pelo nome e pelo conteúdo ([lib/notas/pasta.ts](lib/notas/pasta.ts)). A nota identificada aparece em **pré-visualização** (páginas do PDF, imagem ou texto), e o prazo, a prenotação e a serventia são lidos da própria nota.
+2. **Exigências** — a nota decomposta e **sintetizada em lista**: cada item vira um apontamento objetivo ("Juntar: guia de ITBI", "Lavrar ata retificativa"…), com a via de resolução sugerida pelos **verbos de remédio** da nota (nunca pelos princípios registrários citados), as partes citadas e o cruzamento com a pasta (documento já presente ou faltante). O texto integral fica disponível por item; status e via são por item, não por nota.
+3. **Resolvendo as Exigências** — para juntada, o documento identificado na pasta é trazido para a tela e baixado em **PDF/A** ([lib/notas/pdfa.ts](lib/notas/pdfa.ts): imagem vira PDF A4 com XMP `pdfaid` e OutputIntent sRGB; PDF existente é baixado intocado para não quebrar assinatura prévia), pronto para o [Assinador ONR](https://assinador.onr.org.br) e reingresso na ONR – RI Digital. Para as demais vias, a **minuta** (ata retificativa, requerimento ou rerratificação) é montada ali mesmo, com prévia do texto e download em .docx. O traslado alimenta as qualificações e a síntese por trás dos panos, sem card próprio. O botão **Redigir com IA** ([lib/gemini-notas.ts](lib/gemini-notas.ts), rota `/api/notas`) usa o Google Gemini para sugerir o conteúdo dos campos vazios (teor da retificação, blocos de lapso/correção, objeto do requerimento…) a partir da exigência, do traslado e dos documentos da pasta — os **templates não são alterados**, campo preenchido pelo operador não é sobrescrito e campo sem base no contexto fica em branco (placeholder visível).
+
+Travas de segurança: a via sugerida precisa de **confirmação humana** antes de gerar; a ata só é gerada com **amparo documental** declarado; campos sem dado permanecem como `{{PLACEHOLDER}}` visível na minuta; e **nada é lavrado automaticamente** — a saída é sempre rascunho. O prazo da prenotação é lido na própria nota (nunca calculado) e fica em destaque na tela.
 
 ## Rodando localmente
 

@@ -112,11 +112,13 @@ export class GeminiError extends Error {
   }
 }
 
-async function callGemini(
+async function fetchGeminiJson(
   apiKey: string,
   model: string,
-  parts: Array<Record<string, unknown>>
-): Promise<AiAnswer[]> {
+  parts: Array<Record<string, unknown>>,
+  responseSchema: unknown,
+  temperature: number
+): Promise<unknown> {
   const res = await fetch(
     `${API_BASE}/v1beta/models/${model}:generateContent`,
     {
@@ -128,9 +130,9 @@ async function callGemini(
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig: {
-          temperature: 0,
+          temperature,
           responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
+          responseSchema,
         },
       }),
     }
@@ -163,11 +165,47 @@ async function callGemini(
   const text: string | undefined =
     payload?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new GeminiError("Resposta do Gemini sem conteúdo.", 502);
-  const parsed = JSON.parse(text);
-  if (!Array.isArray(parsed)) {
-    throw new GeminiError("Resposta do Gemini fora do formato esperado.", 502);
+  return JSON.parse(text);
+}
+
+// Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo) ou 404
+// (modelo aposentado) passam para o próximo; outros erros interrompem na hora.
+// Compartilhada entre o renomeador e o resolvedor de notas.
+export async function geminiJson(
+  apiKey: string,
+  parts: Array<Record<string, unknown>>,
+  responseSchema: unknown,
+  temperature = 0
+): Promise<unknown> {
+  const failures: GeminiError[] = [];
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await fetchGeminiJson(
+        apiKey,
+        model,
+        parts,
+        responseSchema,
+        temperature
+      );
+    } catch (err) {
+      if (
+        err instanceof GeminiError &&
+        (err.status === 429 || err.status === 404)
+      ) {
+        failures.push(err);
+        continue;
+      }
+      throw err;
+    }
   }
-  return parsed as AiAnswer[];
+  // Prefere um erro recuperável (cota por minuto): o cliente pode esperar e
+  // tentar de novo. "Cota diária" só quando TODOS os modelos esgotaram a sua.
+  const recoverable = failures.find((f) => !f.dailyQuota);
+  throw (
+    recoverable ??
+    failures.at(-1) ??
+    new GeminiError("Nenhum modelo disponível.", 502)
+  );
 }
 
 // Monta o nome final no padrão "{Tipo} - {Nome}.{ext}" a partir da resposta.
@@ -230,35 +268,11 @@ export async function geminiProposeBatch(
   });
   parts.push({ text: batchPrompt(items.length, lessons) });
 
-  // Tenta cada modelo da cadeia: 429 (cota daquele modelo) ou 404 (modelo
-  // aposentado) passam para o próximo; outros erros interrompem na hora.
-  const failures: GeminiError[] = [];
-  let answers: AiAnswer[] | null = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      answers = await callGemini(apiKey, model, parts);
-      break;
-    } catch (err) {
-      if (
-        err instanceof GeminiError &&
-        (err.status === 429 || err.status === 404)
-      ) {
-        failures.push(err);
-        continue;
-      }
-      throw err;
-    }
+  const parsed = await geminiJson(apiKey, parts, RESPONSE_SCHEMA);
+  if (!Array.isArray(parsed)) {
+    throw new GeminiError("Resposta do Gemini fora do formato esperado.", 502);
   }
-  if (!answers) {
-    // Prefere um erro recuperável (cota por minuto): o cliente pode esperar e
-    // tentar de novo. "Cota diária" só quando TODOS os modelos esgotaram a sua.
-    const recoverable = failures.find((f) => !f.dailyQuota);
-    throw (
-      recoverable ??
-      failures.at(-1) ??
-      new GeminiError("Nenhum modelo disponível.", 502)
-    );
-  }
+  const answers = parsed as AiAnswer[];
 
   return items.map((item, i) => {
     const answer = answers.find((a) => a.indice === i + 1);

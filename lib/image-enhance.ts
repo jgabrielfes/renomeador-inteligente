@@ -298,14 +298,25 @@ function estimateSkewAngle(canvas: HTMLCanvasElement): number {
 // Parâmetros do campo de iluminação, na escala reduzida de 160px de largura.
 // Calibrados empiricamente contra quatro casos: foto em ângulo, papel amassado,
 // documento com foto 3x4 e digitalização já limpa (ver README).
-const BG_MAX_RADIUS = 3;
-const BG_BLUR_RADIUS = 16;
+// Raios (na escala reduzida de 160px) dos dois níveis de papel de referência.
+const BG_NIVEL_GROSSO_RADIUS = 30;
+const BG_NIVEL_MEDIO_RADIUS = 12;
+// Raios da interpolação da luz, do mais fino ao mais grosso. O fino segura o
+// vinco; o grosso atravessa a foto 3x4.
+const BG_RAIOS = [4, 9, 20, 45];
+const BG_SUAVIZA_RADIUS = 5;
+// Ver marcarPapel: limiar base (protege mancha de conteúdo), piso abaixo do
+// qual é tinta, e raio da erosão que separa linha fina de mancha maciça.
+// Ver marcarPapel: fração do nível local acima da qual o pixel é semente de
+// papel, e quanto dois vizinhos podem diferir para o crescimento continuar.
+const PAPEL_SEMENTE = 0.97;
+const PAPEL_TOLERANCIA = 9;
 // Abaixo desta fração do papel iluminado, o pixel é tratado como CONTEÚDO e
 // não como sombra — é isso que impede a foto do documento de ser apagada.
-const SHADOW_FLOOR_RATIO = 0.72;
+const SHADOW_FLOOR_RATIO = 0.2;
 // Teto do ganho da equalizacao. Acima disso a "sombra" provavelmente era
 // conteudo escuro, e amplificar so geraria ruido.
-const SHADOW_MAX_GAIN = 1.9;
+const SHADOW_MAX_GAIN = 4;
 
 function maxFilter(
   src: Uint8ClampedArray,
@@ -313,24 +324,40 @@ function maxFilter(
   h: number,
   radius: number
 ): Uint8ClampedArray {
+  // Separável: o máximo de uma janela quadrada é o máximo horizontal seguido
+  // do vertical. Sem isso o custo é O(r²) por pixel, e os raios grandes de que
+  // a estimativa precisa (para não afundar dentro de uma foto 3x4) ficariam
+  // proibitivos.
+  const tmp = new Uint8ClampedArray(src.length);
   const out = new Uint8ClampedArray(src.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      for (let c = 0; c < 3; c++) {
+
+  for (let c = 0; c < 3; c++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
         let max = 0;
-        for (let dy = -radius; dy <= radius; dy++) {
-          const yy = Math.min(h - 1, Math.max(0, y + dy));
-          for (let dx = -radius; dx <= radius; dx++) {
-            const xx = Math.min(w - 1, Math.max(0, x + dx));
-            const v = src[(yy * w + xx) * 4 + c];
-            if (v > max) max = v;
-          }
+        const x0 = Math.max(0, x - radius);
+        const x1 = Math.min(w - 1, x + radius);
+        for (let xx = x0; xx <= x1; xx++) {
+          const v = src[(y * w + xx) * 4 + c];
+          if (v > max) max = v;
+        }
+        tmp[(y * w + x) * 4 + c] = max;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        let max = 0;
+        const y0 = Math.max(0, y - radius);
+        const y1 = Math.min(h - 1, y + radius);
+        for (let yy = y0; yy <= y1; yy++) {
+          const v = tmp[(yy * w + x) * 4 + c];
+          if (v > max) max = v;
         }
         out[(y * w + x) * 4 + c] = max;
       }
-      out[(y * w + x) * 4 + 3] = 255;
     }
   }
+  for (let i = 3; i < out.length; i += 4) out[i] = 255;
   return out;
 }
 
@@ -345,6 +372,182 @@ function maxFilter(
 // foto, a divisão normaliza a foto contra ela mesma e ela sai estourada em
 // branco. Borrando, a estimativa vira um campo de ILUMINAÇÃO suave — que é o
 // que ela deveria ser — em vez de acompanhar o conteúdo.
+/** Box blur separável sobre um mapa escalar, com soma corrente (O(1) por pixel). */
+function blurEscalar(src: Float32Array, w: number, h: number, r: number): Float32Array {
+  const tmp = new Float32Array(src.length);
+  const out = new Float32Array(src.length);
+  const janela = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    let soma = 0;
+    for (let x = -r; x <= r; x++) soma += src[y * w + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++) {
+      tmp[y * w + x] = soma / janela;
+      soma += src[y * w + Math.min(w - 1, x + r + 1)] - src[y * w + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let soma = 0;
+    for (let y = -r; y <= r; y++) soma += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = soma / janela;
+      soma += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+/**
+ * Marca as regiões de CONTEÚDO de tom contínuo (foto 3x4, faixa escura de
+ * cabeçalho, brasão) pela caixa das manchas escuras grandes.
+ *
+ * O ponto: um bloco desses tem parte escura E parte clara. Só a parte escura
+ * cai num limiar de tinta, mas a região INTEIRA precisa sair da estimativa de
+ * luz — senão a estimativa acompanha a parte clara do bloco e a divisão
+ * achata o bloco. Usar a caixa da mancha resolve, porque esses blocos são
+ * aproximadamente retangulares.
+ */
+/** Nível de papel de referência: máximo local, em luminância. */
+function nivelDePapel(
+  rgb: Uint8ClampedArray,
+  w: number,
+  h: number,
+  radius: number
+): Float32Array {
+  const maxRgb = maxFilter(rgb, w, h, radius);
+  const out = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < maxRgb.length; i += 4, j++) {
+    out[j] = 0.299 * maxRgb[i] + 0.587 * maxRgb[i + 1] + 0.114 * maxRgb[i + 2];
+  }
+  return out;
+}
+
+/**
+ * Decide quais pixels são PAPEL, ou seja, onde a luz pode ser medida.
+ *
+ * Nem brilho nem tamanho resolvem: um vinco e uma mancha cinza-clara grande
+ * caem na mesma faixa de brilho, e têm áreas parecidas. Tentei limiar simples,
+ * limiar + erosão e tapar depressões no campo — todos trocam uma coisa pela
+ * outra (medido: o que achata a dobra clareia a mancha, e vice-versa).
+ *
+ * O que de fato separa os dois é a BORDA. Uma mancha de conteúdo tem contorno
+ * nítido; sombra e vinco são rampas suaves. Então o papel é definido por
+ * crescimento: parte-se das regiões mais claras (papel com certeza) e cresce-se
+ * aceitando vizinhos de brilho parecido. A rampa do vinco é atravessada, o
+ * degrau da mancha não — e a mancha fica de fora da medição, preservada.
+ *
+ * É a mesma ideia da detecção de fundo em lib/perspective.ts, aplicada agora
+ * dentro do documento.
+ */
+function marcarPapel(
+  gray: Float32Array,
+  nivelPapel: Float32Array,
+  w: number,
+  h: number
+): Float32Array {
+  const n = w * h;
+  const papel = new Uint8Array(n);
+  const fila = new Int32Array(n);
+  let head = 0;
+  let tail = 0;
+
+  // Sementes: o papel mais claro de cada vizinhança, onde não há dúvida.
+  for (let i = 0; i < n; i++) {
+    if (gray[i] >= nivelPapel[i] * PAPEL_SEMENTE) {
+      papel[i] = 1;
+      fila[tail++] = i;
+    }
+  }
+  if (tail === 0) return new Float32Array(n);
+
+  while (head < tail) {
+    const p = fila[head++];
+    const x = p % w;
+    const y = (p / w) | 0;
+    const v = gray[p];
+    const tenta = (q: number) => {
+      if (papel[q] || Math.abs(gray[q] - v) > PAPEL_TOLERANCIA) return;
+      papel[q] = 1;
+      fila[tail++] = q;
+    };
+    if (x > 0) tenta(p - 1);
+    if (x < w - 1) tenta(p + 1);
+    if (y > 0) tenta(p - w);
+    if (y < h - 1) tenta(p + w);
+  }
+
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = papel[i];
+  return out;
+}
+
+function marcarBlocosDeConteudo(
+  gray: Float32Array,
+  nivelPapel: Float32Array,
+  w: number,
+  h: number
+): Uint8Array {
+  const escuro = new Uint8Array(w * h);
+  for (let i = 0; i < gray.length; i++) {
+    escuro[i] = gray[i] < nivelPapel[i] * 0.55 ? 1 : 0;
+  }
+
+  const visitado = new Uint8Array(w * h);
+  const pilha = new Int32Array(w * h);
+  const blocos = new Uint8Array(w * h);
+  const areaMinima = w * h * 0.012;
+
+  for (let seed = 0; seed < escuro.length; seed++) {
+    if (visitado[seed] || !escuro[seed]) continue;
+    let topo = 0;
+    pilha[topo++] = seed;
+    visitado[seed] = 1;
+    let area = 0;
+    let x0 = w;
+    let x1 = -1;
+    let y0 = h;
+    let y1 = -1;
+    while (topo > 0) {
+      const p = pilha[--topo];
+      area++;
+      const x = p % w;
+      const y = (p / w) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (x > 0 && !visitado[p - 1] && escuro[p - 1]) { visitado[p - 1] = 1; pilha[topo++] = p - 1; }
+      if (x < w - 1 && !visitado[p + 1] && escuro[p + 1]) { visitado[p + 1] = 1; pilha[topo++] = p + 1; }
+      if (y > 0 && !visitado[p - w] && escuro[p - w]) { visitado[p - w] = 1; pilha[topo++] = p - w; }
+      if (y < h - 1 && !visitado[p + w] && escuro[p + w]) { visitado[p + w] = 1; pilha[topo++] = p + w; }
+    }
+    // Texto é escuro mas fino: cada letra/linha fica bem abaixo da área mínima.
+    if (area < areaMinima) continue;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) blocos[y * w + x] = 1;
+    }
+  }
+  return blocos;
+}
+
+/**
+ * Campo de ILUMINAÇÃO da foto, estimado SÓ a partir dos pixels de papel.
+ *
+ * Esta é a diferença que faz a dobra sumir sem estragar o conteúdo. A versão
+ * anterior estimava a luz com um máximo local seguido de borrão, e aí um único
+ * raio tinha de servir para duas coisas incompatíveis: raio pequeno acompanha
+ * o vinco (bom) mas afunda dentro da foto 3x4 e a achata (ruim); raio grande
+ * preserva a foto (bom) mas não acompanha o vinco (ruim). Medido: raio 3 dava
+ * espalhamento 13 no papel com a foto achatada a 23 de contraste; raio 26
+ * salvava a foto e deixava o papel em 54.
+ *
+ * A saída é escolher DE ONDE medir, e não com que raio: o papel é o único
+ * lugar onde a luz é observável (refletância constante), então mede-se só nele
+ * e interpola-se por cima da tinta e dos blocos de conteúdo. A interpolação é
+ * por convolução normalizada em vários raios — usa sempre o menor raio que
+ * tenha papel suficiente por perto, o que mantém o vinco (papel dos dois
+ * lados, raio pequeno basta) e atravessa a foto (só há papel longe, cai para
+ * um raio grande).
+ */
 function estimateBackground(canvas: HTMLCanvasElement): HTMLCanvasElement {
   const sw = Math.min(160, canvas.width);
   const sh = Math.max(1, Math.round((canvas.height / canvas.width) * sw));
@@ -355,21 +558,74 @@ function estimateBackground(canvas: HTMLCanvasElement): HTMLCanvasElement {
   sctx.drawImage(canvas, 0, 0, sw, sh);
 
   const img = sctx.getImageData(0, 0, sw, sh);
-  const dilated = maxFilter(img.data, sw, sh, BG_MAX_RADIUS);
-  const smoothed = boxBlurSeparable(dilated, sw, sh, BG_BLUR_RADIUS);
-  for (let i = 0; i < img.data.length; i += 4) {
-    img.data[i] = smoothed[i];
-    img.data[i + 1] = smoothed[i + 1];
-    img.data[i + 2] = smoothed[i + 2];
-    img.data[i + 3] = 255;
+  const d = img.data;
+  const n = sw * sh;
+
+  const gray = new Float32Array(n);
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    gray[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   }
-  sctx.putImageData(img, 0, 0);
+
+  // Nível de papel grosseiro, com raio grande o bastante para atravessar os
+  // blocos de conteúdo — serve só para decidir o que é tinta.
+  // DUAS escalas de referência, porque as duas decisões pedem coisas opostas:
+  //
+  //  - achar blocos de conteúdo (foto 3x4, faixa de cabeçalho) exige um raio
+  //    GRANDE, que atravesse o bloco e compare com o papel em volta;
+  //  - decidir papel × conteúdo pelo brilho relativo exige um raio
+  //    INTERMEDIÁRIO: maior que uma mancha chapada (senão o interior dela vira
+  //    a própria referência e ela passa por papel) e menor que um painel de
+  //    dobra (senão o painel é comparado com o painel vizinho mais claro, é
+  //    tomado por conteúdo e a dobra deixa de ser corrigida).
+  const nivelGrosso = nivelDePapel(d, sw, sh, BG_NIVEL_GROSSO_RADIUS);
+  const nivelMedio = nivelDePapel(d, sw, sh, BG_NIVEL_MEDIO_RADIUS);
+
+  const blocos = marcarBlocosDeConteudo(gray, nivelGrosso, sw, sh);
+  const papel = marcarPapel(gray, nivelMedio, sw, sh);
+  let quantoPapel = 0;
+  for (let i = 0; i < n; i++) {
+    if (blocos[i]) papel[i] = 0;
+    quantoPapel += papel[i];
+  }
 
   const bg = newCanvas(canvas.width, canvas.height);
-  const ctx = bg.getContext("2d")!;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(small, 0, 0, bg.width, bg.height);
+  const bctx = bg.getContext("2d")!;
+  bctx.imageSmoothingEnabled = true;
+  bctx.imageSmoothingQuality = "high";
+
+  // Papel de menos para medir: melhor não mexer na iluminação a inventar uma.
+  if (quantoPapel < n * 0.08) {
+    bctx.drawImage(small, 0, 0, bg.width, bg.height);
+    return bg;
+  }
+
+  const denoms = BG_RAIOS.map((r) => blurEscalar(papel, sw, sh, r));
+  const canal = new Float32Array(n);
+  const saida = new Float32Array(n);
+
+  for (let c = 0; c < 3; c++) {
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) canal[j] = d[i + c] * papel[j];
+    const nums = BG_RAIOS.map((r) => blurEscalar(canal, sw, sh, r));
+
+    for (let i = 0; i < n; i++) {
+      let v = -1;
+      for (let k = 0; k < BG_RAIOS.length; k++) {
+        if (denoms[k][i] >= 0.12) {
+          v = nums[k][i] / denoms[k][i];
+          break;
+        }
+      }
+      // Nem no maior raio houve papel por perto: usa a média do maior raio.
+      saida[i] = v >= 0 ? v : nums[nums.length - 1][i] / Math.max(1e-6, denoms[denoms.length - 1][i]);
+    }
+    // Suaviza o campo: iluminação não tem degrau.
+    const suave = blurEscalar(saida, sw, sh, BG_SUAVIZA_RADIUS);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) d[i + c] = clamp(suave[j]);
+  }
+  for (let i = 3; i < d.length; i += 4) d[i] = 255;
+  sctx.putImageData(img, 0, 0);
+
+  bctx.drawImage(small, 0, 0, bg.width, bg.height);
   return bg;
 }
 
@@ -525,7 +781,7 @@ function scanLevels(canvas: HTMLCanvasElement, gamma = 1): HTMLCanvasElement {
   // chega nem a 1% dos pixels e o percentil baixo cai sobre o PRÓPRIO PAPEL.
   // Sem o teto abaixo, preto e branco colapsam num intervalo minúsculo e a
   // página inteira sai preta. O teto mantém o preto bem abaixo do branco.
-  const black = Math.min(percentile(0.01), white * 0.55);
+  const black = Math.min(percentile(0.004), white * 0.55);
   if (white - black < 20) return canvas; // contraste já plano; não force
 
   const range = white - black;
