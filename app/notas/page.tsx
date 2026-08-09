@@ -6,13 +6,15 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
   Clock,
   Download,
   FileText,
   FileWarning,
+  FolderOpen,
   Loader2,
   ScrollText,
-  Upload,
+  XCircle,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -38,6 +40,14 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 import { extractDocxText, fillDocxTemplate } from "@/lib/notas/docx";
+import {
+  distribuirPapeis,
+  extrairPrazo,
+  extrairPrenotacao,
+  extrairServentia,
+  tipoDoDocumento,
+  type Papel,
+} from "@/lib/notas/pasta";
 import {
   dadosAta,
   dadosRequerimento,
@@ -65,56 +75,86 @@ import {
 } from "@/lib/ocr";
 
 // ---------------------------------------------------------------------------
-// Extração de texto dos arquivos de entrada
+// Extração de texto dos arquivos do caso
 
-type FontePdf = "pdf-nativo" | "pdf-escaneado";
+type Fonte = DadosTraslado["fonte"] | "imagem" | "outro";
 
-async function textoDePdf(
+// Texto barato: só a camada nativa do PDF (sem OCR) — para indexar a pasta
+// inteira sem custo. O OCR fica reservado ao arquivo identificado como nota.
+async function textoNativoPdf(
   file: File,
-  onProgress?: (page: number, total: number) => void
-): Promise<{ texto: string; fonte: FontePdf }> {
-  // Primeiro tenta só a camada nativa (rápido). Se não houver texto de
-  // verdade, cai para o caminho com OCR — e marca a fonte como escaneada,
-  // porque campo vindo de OCR nasce não confiável.
+  maxPages = 20
+): Promise<{ texto: string; nativo: boolean }> {
   const pdfjs = await loadPdfjs();
   const task = pdfjs.getDocument({ data: await file.arrayBuffer() });
   const doc = await task.promise;
   try {
     const partes: string[] = [];
     let nativo = true;
-    for (let i = 1; i <= Math.min(doc.numPages, 20); i++) {
+    for (let i = 1; i <= Math.min(doc.numPages, maxPages); i++) {
       const t = await pageNativeText(await doc.getPage(i));
-      if (!meaningfulNativeText(t)) {
-        nativo = false;
-        break;
-      }
+      if (!meaningfulNativeText(t)) nativo = false;
       partes.push(t);
     }
-    if (nativo) return { texto: partes.join("\n"), fonte: "pdf-nativo" };
+    return { texto: partes.join("\n").trim(), nativo };
   } finally {
     await task.destroy();
   }
-  const paginas = await readPdfPageTexts(file, 20, onProgress);
-  return { texto: paginas.join("\n"), fonte: "pdf-escaneado" };
 }
 
-async function textoDeArquivo(
-  file: File,
-  onProgress?: (page: number, total: number) => void
-): Promise<{ texto: string; fonte: DadosTraslado["fonte"] }> {
+async function textoBarato(
+  file: File
+): Promise<{ texto: string; fonte: Fonte }> {
   const nome = file.name.toLowerCase();
-  if (nome.endsWith(".docx")) {
-    return { texto: await extractDocxText(file), fonte: "docx" };
+  try {
+    if (nome.endsWith(".docx")) {
+      return { texto: await extractDocxText(file), fonte: "docx" };
+    }
+    if (nome.endsWith(".txt")) {
+      return { texto: await file.text(), fonte: "texto" };
+    }
+    if (nome.endsWith(".pdf")) {
+      const { texto, nativo } = await textoNativoPdf(file);
+      return { texto: nativo ? texto : "", fonte: nativo ? "pdf-nativo" : "pdf-escaneado" };
+    }
+    if (/\.(jpe?g|png|webp|bmp|gif|heic)$/.test(nome)) {
+      return { texto: "", fonte: "imagem" };
+    }
+  } catch {
+    // arquivo ilegível entra no índice mesmo assim, só pelo nome
   }
-  if (nome.endsWith(".txt")) {
-    return { texto: await file.text(), fonte: "texto" };
+  return { texto: "", fonte: "outro" };
+}
+
+// Arrastar uma PASTA entrega DataTransferItems com webkitGetAsEntry; este
+// helper percorre a árvore e devolve todos os arquivos.
+async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
+  const entries = Array.from(dt.items)
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter((e): e is FileSystemEntry => Boolean(e));
+  if (entries.length === 0) return Array.from(dt.files);
+
+  const out: File[] = [];
+  async function walk(entry: FileSystemEntry): Promise<void> {
+    if (entry.isFile) {
+      const f = await new Promise<File>((res, rej) =>
+        (entry as FileSystemFileEntry).file(res, rej)
+      );
+      out.push(f);
+      return;
+    }
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    // readEntries devolve em lotes; repetir até vir vazio.
+    for (;;) {
+      const lote = await new Promise<FileSystemEntry[]>((res, rej) =>
+        reader.readEntries(res, rej)
+      );
+      if (lote.length === 0) break;
+      for (const e of lote) await walk(e);
+    }
   }
-  if (nome.endsWith(".pdf")) {
-    return textoDePdf(file, onProgress);
-  }
-  throw new Error(
-    "Formato não suportado. Use .docx, .pdf ou .txt (arquivos .doc antigos: salve como .docx no Word)."
-  );
+  for (const e of entries) await walk(e);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +199,23 @@ const NOTA_VIA: Record<Via, string> = Object.fromEntries([
   ["INDEFINIDO", "Nenhum gatilho conhecido. Item vai para triagem manual."],
 ]) as Record<Via, string>;
 
+interface ArquivoCaso {
+  id: number;
+  file: File;
+  nome: string;
+  texto: string;
+  fonte: Fonte;
+  papel: Papel | "ignorar";
+  tipo: string | null;
+}
+
+const ROTULO_PAPEL: Record<Papel | "ignorar", string> = {
+  nota: "Nota devolutiva",
+  traslado: "Traslado do ato",
+  documento: "Documento do caso",
+  ignorar: "Ignorar",
+};
+
 // ---------------------------------------------------------------------------
 
 function triggerDownload(blob: Blob, name: string) {
@@ -171,22 +228,25 @@ function triggerDownload(blob: Blob, name: string) {
 }
 
 export default function NotasPage() {
+  // --- pasta do caso ---
+  const [arquivos, setArquivos] = React.useState<ArquivoCaso[]>([]);
+  const [indexando, setIndexando] = React.useState(false);
+  const [progresso, setProgresso] = React.useState("");
+  const [arrastando, setArrastando] = React.useState(false);
+  const pastaInputRef = React.useRef<HTMLInputElement>(null);
+  const arquivosInputRef = React.useRef<HTMLInputElement>(null);
+
   // --- nota devolutiva ---
   const [notaTexto, setNotaTexto] = React.useState("");
-  const [notaFonte, setNotaFonte] = React.useState<string | null>(null);
-  const [lendoNota, setLendoNota] = React.useState(false);
-  const [progresso, setProgresso] = React.useState("");
+  const [notaFonte, setNotaFonte] = React.useState<Fonte | null>(null);
   const [prazo, setPrazo] = React.useState("");
   const [prenotacao, setPrenotacao] = React.useState("");
   const [serventia, setServentia] = React.useState("");
   const [itens, setItens] = React.useState<ItemTriado[]>([]);
-  const notaInputRef = React.useRef<HTMLInputElement>(null);
 
   // --- traslado ---
   const [traslado, setTraslado] = React.useState<DadosTraslado | null>(null);
   const [trasladoNome, setTrasladoNome] = React.useState("");
-  const [lendoTraslado, setLendoTraslado] = React.useState(false);
-  const trasladoInputRef = React.useRef<HTMLInputElement>(null);
 
   // --- geração ---
   const [itemPecaId, setItemPecaId] = React.useState<number | null>(null);
@@ -222,39 +282,8 @@ export default function NotasPage() {
     tabeliao: "",
   });
 
-  async function lerNota(file: File) {
-    setLendoNota(true);
-    setProgresso("");
-    try {
-      const { texto, fonte } = await textoDeArquivo(file, (p, t) =>
-        setProgresso(`OCR da página ${p} de ${t}…`)
-      );
-      setNotaTexto(texto);
-      setNotaFonte(fonte);
-      if (fonte === "pdf-escaneado") {
-        toast.warning("Nota escaneada — texto veio de OCR", {
-          description:
-            "Confira o texto extraído abaixo antes de triar: OCR erra números e datas.",
-        });
-      }
-      // Prenotação e serventia, quando a própria nota as declara.
-      const m =
-        /prenota[çc][ãa]o\s*(?:sob\s*)?n?[°º]?\s*[.:]?\s*([\d./-]{3,})/i.exec(
-          texto
-        );
-      if (m) setPrenotacao(m[1].replace(/[.,]+$/, ""));
-    } catch (err) {
-      toast.error("Não foi possível ler a nota", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLendoNota(false);
-      setProgresso("");
-    }
-  }
-
-  function triarNota() {
-    const classificados = triar(notaTexto);
+  function triarDe(texto: string) {
+    const classificados = triar(texto);
     setItens(
       classificados.map((c, i) => ({
         ...c,
@@ -265,24 +294,141 @@ export default function NotasPage() {
       }))
     );
     setItemPecaId(null);
-    if (classificados.length === 0) {
-      toast.info("Nenhum item de exigência encontrado no texto.");
-    }
+    return classificados.length;
   }
 
-  async function lerArquivoTraslado(file: File) {
-    setLendoTraslado(true);
+  // Aplica o texto de um arquivo como nota devolutiva: preenche os campos que
+  // a própria nota declara e roda a triagem.
+  function aplicarNota(texto: string, fonte: Fonte) {
+    setNotaTexto(texto);
+    setNotaFonte(fonte);
+    const pren = extrairPrenotacao(texto);
+    if (pren) setPrenotacao(pren);
+    const pz = extrairPrazo(texto);
+    if (pz) setPrazo(pz);
+    const sv = extrairServentia(texto);
+    if (sv) setServentia(sv);
+    return triarDe(texto);
+  }
+
+  function aplicarTraslado(texto: string, fonte: Fonte, nome: string) {
+    const fonteTraslado: DadosTraslado["fonte"] =
+      fonte === "imagem" || fonte === "outro"
+        ? "pdf-escaneado"
+        : (fonte as DadosTraslado["fonte"]);
+    setTraslado(lerTraslado(texto, fonteTraslado));
+    setTrasladoNome(nome);
+  }
+
+  async function processarPasta(files: File[]) {
+    const uteis = files.filter((f) => !f.name.startsWith("."));
+    if (uteis.length === 0) return;
+    setIndexando(true);
+    setProgresso("");
     try {
-      const { texto, fonte } = await textoDeArquivo(file);
-      setTraslado(lerTraslado(texto, fonte));
-      setTrasladoNome(file.name);
+      // 1. texto barato de todos (sem OCR)
+      const lidos: ArquivoCaso[] = [];
+      for (let i = 0; i < uteis.length; i++) {
+        setProgresso(`Lendo ${i + 1} de ${uteis.length}: ${uteis[i].name}`);
+        const { texto, fonte } = await textoBarato(uteis[i]);
+        lidos.push({
+          id: i,
+          file: uteis[i],
+          nome: uteis[i].name,
+          texto,
+          fonte,
+          papel: "documento",
+          tipo: null,
+        });
+      }
+
+      // 2. papéis: quem é a nota, quem é o traslado, o que é acervo
+      const papeis = distribuirPapeis(
+        lidos.map((a) => ({ nome: a.nome, texto: a.texto }))
+      );
+      papeis.forEach((p, i) => {
+        lidos[i].papel = p;
+        if (p === "documento") {
+          lidos[i].tipo = tipoDoDocumento(lidos[i].nome, lidos[i].texto);
+        }
+      });
+
+      // 3. nota escaneada: OCR só dela (essencial e cara)
+      const nota = lidos.find((a) => a.papel === "nota");
+      if (nota && !nota.texto && nota.fonte === "pdf-escaneado") {
+        const paginas = await readPdfPageTexts(nota.file, 20, (p, t) =>
+          setProgresso(`OCR da nota — página ${p} de ${t}…`)
+        );
+        nota.texto = paginas.join("\n");
+        toast.warning("Nota escaneada — texto veio de OCR", {
+          description:
+            "Confira o texto extraído antes de confiar na triagem: OCR erra números e datas.",
+        });
+      }
+
+      setArquivos(lidos);
+
+      // 4. resolução automática
+      const trasladoArq = lidos.find((a) => a.papel === "traslado");
+      if (trasladoArq) {
+        aplicarTraslado(trasladoArq.texto, trasladoArq.fonte, trasladoArq.nome);
+      }
+      if (nota && nota.texto) {
+        const n = aplicarNota(nota.texto, nota.fonte);
+        toast.success(
+          `Pasta indexada: ${lidos.length} arquivo(s), ${n} exigência(s) na nota` +
+            (trasladoArq ? `, traslado “${trasladoArq.nome}”` : "")
+        );
+      } else {
+        toast.info(
+          "Pasta indexada, mas a nota devolutiva não foi identificada. " +
+            "Marque abaixo qual arquivo é a nota, ou cole o texto dela."
+        );
+      }
     } catch (err) {
-      toast.error("Não foi possível ler o traslado", {
+      toast.error("Não foi possível indexar a pasta", {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setLendoTraslado(false);
+      setIndexando(false);
+      setProgresso("");
     }
+  }
+
+  async function mudarPapel(a: ArquivoCaso, papel: Papel | "ignorar") {
+    setArquivos((prev) =>
+      prev.map((x) =>
+        x.id === a.id
+          ? { ...x, papel, tipo: papel === "documento" ? tipoDoDocumento(x.nome, x.texto) : x.tipo }
+          : papel !== "documento" && papel !== "ignorar" && x.papel === papel
+            ? { ...x, papel: "documento", tipo: tipoDoDocumento(x.nome, x.texto) }
+            : x
+      )
+    );
+    if (papel === "nota") {
+      let texto = a.texto;
+      if (!texto && a.fonte === "pdf-escaneado") {
+        setIndexando(true);
+        try {
+          const paginas = await readPdfPageTexts(a.file, 20, (p, t) =>
+            setProgresso(`OCR da nota — página ${p} de ${t}…`)
+          );
+          texto = paginas.join("\n");
+          setArquivos((prev) =>
+            prev.map((x) => (x.id === a.id ? { ...x, texto } : x))
+          );
+        } catch (err) {
+          toast.error("Não foi possível ler a nota", {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          setIndexando(false);
+          setProgresso("");
+        }
+      }
+      if (texto) aplicarNota(texto, a.fonte);
+    }
+    if (papel === "traslado") aplicarTraslado(a.texto, a.fonte, a.nome);
   }
 
   function mudarItem(id: number, patch: Partial<ItemTriado>) {
@@ -291,13 +437,28 @@ export default function NotasPage() {
     );
   }
 
+  const documentosDoCaso = arquivos.filter((a) => a.papel === "documento");
+
+  // Casa uma exigência de juntada com o acervo: os nomes de `alvos` e os
+  // tipos do índice usam o mesmo vocabulário.
+  function encontrarNaPasta(alvo: string): ArquivoCaso[] {
+    return documentosDoCaso.filter((a) => a.tipo === alvo);
+  }
+
   const itemPeca = itens.find((it) => it.id === itemPecaId) ?? null;
   const tipoPeca: TipoPeca | null = itemPeca
     ? pecaDaVia(itemPeca.viaEscolhida)
     : null;
 
-  // Trava de segurança: sem amparo documental declarado, a via da ata não é
-  // oferecida — sem lastro, a ata não se sustenta.
+  // Amparo documental sugerido para a ata: documento da pasta que casa com os
+  // alvos do item.
+  const amparoSugerido =
+    tipoPeca === "ata" && itemPeca
+      ? itemPeca.alvos.flatMap((alvo) => encontrarNaPasta(alvo))[0] ?? null
+      : null;
+
+  // Trava de segurança: sem amparo documental declarado, a ata não é gerada —
+  // sem lastro, a ata não se sustenta.
   const ataSemAmparo = tipoPeca === "ata" && !ata.amparoDocumental.trim();
 
   async function gerarPeca() {
@@ -348,6 +509,7 @@ export default function NotasPage() {
   const confirmaveis = itens.filter(
     (it) => it.confirmado && pecaDaVia(it.viaEscolhida)
   );
+  const notaIdentificada = arquivos.some((a) => a.papel === "nota");
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-10">
@@ -363,8 +525,9 @@ export default function NotasPage() {
           Resolvedor de Notas Devolutivas
         </h1>
         <p className="text-muted-foreground">
-          Decompõe a nota de exigências em itens, classifica cada um na via de
-          resolução e prepara a minuta da peça correspondente.
+          Envie a pasta do caso completa: a nota devolutiva, o traslado da
+          escritura e os documentos são identificados automaticamente e a
+          resolução de cada exigência já sai montada.
         </p>
       </header>
 
@@ -378,57 +541,186 @@ export default function NotasPage() {
         </AlertDescription>
       </Alert>
 
-      {/* ------------------------------------------------ 1. nota */}
+      {/* ------------------------------------------------ 1. pasta do caso */}
       <Card>
         <CardHeader>
-          <CardTitle>1. Nota devolutiva</CardTitle>
+          <CardTitle>1. Pasta do caso</CardTitle>
           <CardDescription>
-            Envie a nota (PDF, DOCX ou TXT) ou cole o texto. O prazo da
-            prenotação deve ser lido na própria nota — as serventias divergem
-            (data fixa impressa ou &ldquo;20 dias úteis&rdquo;).
+            Arraste a pasta inteira (nota devolutiva, traslado em .docx e os
+            demais documentos). Cada arquivo é identificado pelo nome e pelo
+            conteúdo; o prazo, a prenotação e a serventia são lidos da própria
+            nota.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              onClick={() => notaInputRef.current?.click()}
-              disabled={lendoNota}
-            >
-              {lendoNota ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Upload className="size-4" />
-              )}
-              {lendoNota ? progresso || "Lendo…" : "Enviar nota"}
-            </Button>
-            <input
-              ref={notaInputRef}
-              type="file"
-              accept=".pdf,.docx,.txt"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) lerNota(f);
-              }}
-            />
-            {notaFonte === "pdf-escaneado" && (
-              <Badge className="bg-amber-100 text-amber-800">
-                <AlertTriangle className="size-3" />
-                texto de OCR — conferir
-              </Badge>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Enviar a pasta do caso"
+            onClick={() => pastaInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                pastaInputRef.current?.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setArrastando(true);
+            }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={async (e) => {
+              e.preventDefault();
+              setArrastando(false);
+              const files = await filesFromDataTransfer(e.dataTransfer);
+              await processarPasta(files);
+            }}
+            className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+              arrastando
+                ? "border-primary bg-accent/40"
+                : "border-muted-foreground/25 hover:bg-accent/20"
+            }`}
+          >
+            {indexando ? (
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            ) : (
+              <FolderOpen className="size-8 text-muted-foreground" />
+            )}
+            <p className="font-medium">
+              {indexando
+                ? progresso || "Indexando…"
+                : "Arraste a pasta do caso aqui"}
+            </p>
+            {!indexando && (
+              <p className="text-sm text-muted-foreground">
+                ou clique para selecionar a pasta
+              </p>
             )}
           </div>
-
-          <Textarea
-            value={notaTexto}
-            onChange={(e) => setNotaTexto(e.target.value)}
-            rows={8}
-            placeholder={
-              "Ou cole aqui o texto da nota devolutiva…\n\n1) Apresentar a certidão atualizada de casamento…\n2) O item VENDEDORA deverá ser retificado para constar…"
-            }
-            className="font-mono text-xs"
+          <input
+            ref={pastaInputRef}
+            type="file"
+            // @ts-expect-error webkitdirectory é fora do padrão mas universal
+            webkitdirectory=""
+            multiple
+            className="hidden"
+            onChange={async (e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              await processarPasta(files);
+            }}
           />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={indexando}
+              onClick={() => arquivosInputRef.current?.click()}
+            >
+              <FileText className="size-3.5" />
+              Ou escolher arquivos avulsos
+            </Button>
+            <input
+              ref={arquivosInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp,.bmp"
+              className="hidden"
+              onChange={async (e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                await processarPasta(files);
+              }}
+            />
+          </div>
+
+          {arquivos.length > 0 && (
+            <div className="space-y-1.5">
+              {arquivos.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+                >
+                  {a.papel === "nota" ? (
+                    <FileWarning className="size-4 shrink-0 text-red-600" />
+                  ) : a.papel === "traslado" ? (
+                    <ScrollText className="size-4 shrink-0 text-purple-600" />
+                  ) : (
+                    <FileText className="size-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate" title={a.nome}>
+                    {a.nome}
+                  </span>
+                  {a.papel === "documento" && a.tipo && (
+                    <Badge variant="secondary">{a.tipo}</Badge>
+                  )}
+                  {a.fonte === "pdf-escaneado" && (
+                    <Badge variant="outline">escaneado</Badge>
+                  )}
+                  <Select
+                    items={ROTULO_PAPEL}
+                    value={a.papel}
+                    onValueChange={(v) => mudarPapel(a, v as Papel | "ignorar")}
+                  >
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        Object.keys(ROTULO_PAPEL) as Array<Papel | "ignorar">
+                      ).map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {ROTULO_PAPEL[p]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {arquivos.length > 0 && !notaIdentificada && !notaTexto && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="size-4 text-amber-600" />
+              <AlertTitle className="text-amber-800">
+                Nota devolutiva não identificada
+              </AlertTitle>
+              <AlertDescription className="text-amber-700">
+                Marque acima qual arquivo é a nota (menu à direita) ou cole o
+                texto dela no campo abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <details className="space-y-3" open={!notaIdentificada && arquivos.length === 0}>
+            <summary className="cursor-pointer text-sm text-muted-foreground">
+              Texto da nota devolutiva (conferir ou colar manualmente)
+            </summary>
+            <Textarea
+              value={notaTexto}
+              onChange={(e) => setNotaTexto(e.target.value)}
+              rows={8}
+              placeholder={
+                "Cole aqui o texto da nota devolutiva…\n\n1) Apresentar a certidão atualizada de casamento…\n2) O item VENDEDORA deverá ser retificado para constar…"
+              }
+              className="mt-2 font-mono text-xs"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              disabled={!notaTexto.trim()}
+              onClick={() => {
+                const n = aplicarNota(notaTexto, notaFonte ?? "texto");
+                if (n === 0)
+                  toast.info("Nenhum item de exigência encontrado no texto.");
+              }}
+            >
+              <FileText className="size-3.5" />
+              Triar este texto
+            </Button>
+          </details>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
@@ -472,23 +764,19 @@ export default function NotasPage() {
               </AlertDescription>
             </Alert>
           )}
-
-          <Button onClick={triarNota} disabled={!notaTexto.trim()}>
-            <FileText className="size-4" />
-            Triar exigências
-          </Button>
         </CardContent>
       </Card>
 
-      {/* ------------------------------------------------ 2. triagem */}
+      {/* ------------------------------------------------ 2. resolução */}
       {itens.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>2. Triagem das exigências</CardTitle>
+            <CardTitle>2. Resolução das exigências</CardTitle>
             <CardDescription>
               {itens.length} item(ns). O status é por item, não por nota — uma
-              nota com 7 itens costuma ter 4 vias diferentes. Confirme a via de
-              cada item antes de gerar a peça.
+              nota com 7 itens costuma ter 4 vias diferentes. Cada juntada já
+              foi cruzada com os documentos da pasta. Confirme a via de cada
+              item antes de gerar a peça.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -553,18 +841,40 @@ export default function NotasPage() {
                   {NOTA_VIA[it.viaEscolhida]}
                 </p>
 
-                {(it.pessoas.length > 0 || it.alvos.length > 0) && (
+                {it.pessoas.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {it.pessoas.map((p) => (
                       <Badge key={p} variant="secondary">
                         {p}
                       </Badge>
                     ))}
-                    {it.alvos.map((a) => (
-                      <Badge key={a} variant="outline">
-                        buscar: {a}
-                      </Badge>
-                    ))}
+                  </div>
+                )}
+
+                {/* cruzamento da exigência com a pasta do caso */}
+                {it.alvos.length > 0 && (
+                  <div className="space-y-1">
+                    {it.alvos.map((alvo) => {
+                      const achados = encontrarNaPasta(alvo);
+                      return achados.length > 0 ? (
+                        <p
+                          key={alvo}
+                          className="flex items-center gap-1.5 text-xs text-emerald-700"
+                        >
+                          <CheckCircle2 className="size-3.5 shrink-0" />
+                          {alvo} na pasta:{" "}
+                          {achados.map((d) => `“${d.nome}”`).join(", ")}
+                        </p>
+                      ) : (
+                        <p
+                          key={alvo}
+                          className="flex items-center gap-1.5 text-xs text-red-600"
+                        >
+                          <XCircle className="size-3.5 shrink-0" />
+                          {alvo}: não encontrado na pasta — obter/reemitir
+                        </p>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -591,45 +901,17 @@ export default function NotasPage() {
       )}
 
       {/* ------------------------------------------------ 3. traslado */}
-      {itens.length > 0 && (
+      {traslado && (
         <Card>
           <CardHeader>
             <CardTitle>3. Traslado do ato</CardTitle>
             <CardDescription>
-              Fonte das qualificações e da identificação do ato. Ordem de
-              preferência: <strong>.docx do arquivo do cartório</strong> → PDF
-              nato-digital → escaneado (só como último recurso: o OCR corrompe
-              CPFs, RGs e datas).
+              {trasladoNome ? `“${trasladoNome}” — ` : ""}fonte das
+              qualificações e da identificação do ato, sem redigitação.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="outline"
-                onClick={() => trasladoInputRef.current?.click()}
-                disabled={lendoTraslado}
-              >
-                {lendoTraslado ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ScrollText className="size-4" />
-                )}
-                {trasladoNome || "Enviar traslado (.docx, .pdf, .txt)"}
-              </Button>
-              <input
-                ref={trasladoInputRef}
-                type="file"
-                accept=".docx,.pdf,.txt"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) lerArquivoTraslado(f);
-                }}
-              />
-            </div>
-
-            {traslado && !traslado.confiavel && (
+            {!traslado.confiavel && (
               <Alert className="border-amber-200 bg-amber-50">
                 <AlertTriangle className="size-4 text-amber-600" />
                 <AlertTitle className="text-amber-800">
@@ -643,53 +925,51 @@ export default function NotasPage() {
               </Alert>
             )}
 
-            {traslado && (
-              <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-                {(
+            <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              {(
+                [
+                  ["Formato", traslado.formato],
+                  ["Espécie", traslado.especie],
                   [
-                    ["Formato", traslado.formato],
-                    ["Espécie", traslado.especie],
-                    [
-                      "Livro / folhas",
-                      traslado.traslado
-                        ? `livro ${traslado.traslado.livro}, fls. ${traslado.traslado.fls}`
-                        : undefined,
-                    ],
-                    ["Data da lavratura", traslado.data],
-                    ["Partes", traslado.partesTitulo],
-                    ["Escrevente", traslado.escrevente],
-                    [
-                      "Videoconferência",
-                      traslado.videoconferencia
-                        ? "sim — bloco MNE será incluído"
-                        : "não",
-                    ],
-                    [
-                      "Qualificações",
-                      traslado.qualificacoes
-                        ? `${traslado.qualificacoes.length} caracteres extraídos`
-                        : undefined,
-                    ],
-                    ["Síntese sugerida", traslado.sinteseSugerida],
-                    [
-                      "Ato referenciado",
-                      traslado.atoReferenciado
-                        ? `${traslado.atoReferenciado.especie} — livro ${traslado.atoReferenciado.livro}, fls. ${traslado.atoReferenciado.fls}, ${traslado.atoReferenciado.data}`
-                        : undefined,
-                    ],
-                  ] as Array<[string, string | undefined]>
-                )
-                  .filter(([, v]) => v)
-                  .map(([k, v]) => (
-                    <div key={k}>
-                      <dt className="font-medium">{k}</dt>
-                      <dd className="text-muted-foreground">{v}</dd>
-                    </div>
-                  ))}
-              </dl>
-            )}
+                    "Livro / folhas",
+                    traslado.traslado
+                      ? `livro ${traslado.traslado.livro}, fls. ${traslado.traslado.fls}`
+                      : undefined,
+                  ],
+                  ["Data da lavratura", traslado.data],
+                  ["Partes", traslado.partesTitulo],
+                  ["Escrevente", traslado.escrevente],
+                  [
+                    "Videoconferência",
+                    traslado.videoconferencia
+                      ? "sim — bloco MNE será incluído"
+                      : "não",
+                  ],
+                  [
+                    "Qualificações",
+                    traslado.qualificacoes
+                      ? `${traslado.qualificacoes.length} caracteres extraídos`
+                      : undefined,
+                  ],
+                  ["Síntese sugerida", traslado.sinteseSugerida],
+                  [
+                    "Ato referenciado",
+                    traslado.atoReferenciado
+                      ? `${traslado.atoReferenciado.especie} — livro ${traslado.atoReferenciado.livro}, fls. ${traslado.atoReferenciado.fls}, ${traslado.atoReferenciado.data}`
+                      : undefined,
+                  ],
+                ] as Array<[string, string | undefined]>
+              )
+                .filter(([, v]) => v)
+                .map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="font-medium">{k}</dt>
+                    <dd className="text-muted-foreground">{v}</dd>
+                  </div>
+                ))}
+            </dl>
 
-            {traslado?.atoReferenciado && (
+            {traslado.atoReferenciado && (
               <Alert>
                 <AlertTriangle className="size-4" />
                 <AlertTitle>Este ato já é uma rerratificação</AlertTitle>
@@ -821,8 +1101,10 @@ export default function NotasPage() {
                   />
                 </div>
                 <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-amparo-documental">Amparo documental{" "}
-                    <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="campo-amparo-documental">
+                    Amparo documental{" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="campo-amparo-documental"
                     value={ata.amparoDocumental}
@@ -831,10 +1113,28 @@ export default function NotasPage() {
                     }
                     placeholder="ex.: Certidão de Casamento arquivada nestas notas"
                   />
+                  {amparoSugerido && !ata.amparoDocumental.trim() && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setAta({
+                          ...ata,
+                          amparoDocumental: `${amparoSugerido.tipo} arquivada na pasta do processo (arquivo: ${amparoSugerido.nome})`,
+                        })
+                      }
+                    >
+                      <CheckCircle2 className="size-3.5" />
+                      Usar da pasta: {amparoSugerido.nome}
+                    </Button>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     A ata precisa declarar em que documento arquivado se apoia.
                     Sem amparo documental, a via da ata não se sustenta — e a
                     minuta não é gerada.
+                    {!amparoSugerido &&
+                      documentosDoCaso.length > 0 &&
+                      " Nenhum documento de amparo foi localizado na pasta para este item."}
                   </p>
                 </div>
                 <div className="space-y-1">
@@ -967,7 +1267,8 @@ export default function NotasPage() {
                     <AlertDescription>
                       As qualificações e a identificação do ato saem do
                       traslado, sem redigitação. Sem ele, esses campos ficarão
-                      como placeholders.
+                      como placeholders. Marque o arquivo do traslado na pasta
+                      do caso (etapa 1).
                     </AlertDescription>
                   </Alert>
                 )}
@@ -1054,9 +1355,9 @@ export default function NotasPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="campo-serventia">Serventia</Label>
+                  <Label htmlFor="campo-serventia-rerrat">Serventia</Label>
                   <Input
-                    id="campo-serventia"
+                    id="campo-serventia-rerrat"
                     value={rerrat.serventia}
                     onChange={(e) =>
                       setRerrat({ ...rerrat, serventia: e.target.value })

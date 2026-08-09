@@ -153,12 +153,12 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 
 ## Resolvedor de Notas Devolutivas
 
-Recebe a **nota devolutiva** (PDF, DOCX ou texto colado) e o **traslado do ato** (.docx preferencial), e trabalha em quatro passos:
+Recebe a **pasta do caso completa** (arrastada inteira): distribui os papéis automaticamente — quem é a nota devolutiva, quem é o traslado do ato (.docx preferencial) e o que é acervo, com detecção pelo nome e pelo conteúdo ([lib/notas/pasta.ts](lib/notas/pasta.ts)) — e trabalha em quatro passos:
 
-1. **Decompõe** a nota nos itens de exigência — reconhece os três estilos de numeração observados nas serventias (títulos em caixa alta, `1-`, `1)`/`1.1)`).
-2. **Classifica** cada item numa das seis vias de resolução: providência externa, escritura de rerratificação, requerimento, juntada de documento, ata retificativa ou indefinido (triagem manual). Os gatilhos são os **verbos de remédio** da nota (o que o oficial manda fazer), nunca os princípios registrários citados. Status e via são por item, não por nota.
+1. **Decompõe** a nota nos itens de exigência — reconhece os três estilos de numeração observados nas serventias (títulos em caixa alta, `1-`, `1)`/`1.1)`). O prazo, a prenotação e a serventia são lidos da própria nota.
+2. **Classifica** cada item numa das seis vias de resolução: providência externa, escritura de rerratificação, requerimento, juntada de documento, ata retificativa ou indefinido (triagem manual). Os gatilhos são os **verbos de remédio** da nota (o que o oficial manda fazer), nunca os princípios registrários citados. Status e via são por item, não por nota. Cada exigência de juntada é **cruzada com o índice da pasta**: o item mostra se o documento pedido já está lá ou precisa ser obtido/reemitido.
 3. **Lê o traslado** (fonte das qualificações e da identificação do ato) e deriva a síntese do quadro-resumo. Traslado escaneado é marcado como não confiável — OCR corrompe CPFs, RGs e datas — e serve só como índice.
-4. **Gera a minuta** (.docx) da peça correspondente a partir de templates com placeholders: ata retificativa, requerimento ou rerratificação.
+4. **Gera a minuta** (.docx) da peça correspondente a partir de templates com placeholders: ata retificativa, requerimento ou rerratificação. Para a ata, o amparo documental é sugerido a partir do documento da pasta que casa com a exigência.
 
 Travas de segurança: a via sugerida precisa de **confirmação humana** antes de gerar; a ata só é gerada com **amparo documental** declarado; campos sem dado permanecem como `{{PLACEHOLDER}}` visível na minuta; e **nada é lavrado automaticamente** — a saída é sempre rascunho. O prazo da prenotação é lido na própria nota (nunca calculado) e fica em destaque na tela.
 
