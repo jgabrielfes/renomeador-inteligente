@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GraduationCap,
   Loader2,
+  Scissors,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { DocumentPreview } from "@/components/document-preview";
+import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,9 +65,14 @@ import {
   existingNames,
   filesFromDataTransfer,
   folderPickerAvailable,
+  getSubfolder,
   listFolderFiles,
+  namesIn,
+  overwriteFile,
   pickFolder,
+  removeFile,
   renameInFolder,
+  writeNewFile,
 } from "@/lib/fs";
 import {
   addCorrection,
@@ -76,8 +83,23 @@ import {
   saveRules,
   subscribeLessons,
 } from "@/lib/lessons";
-import { isSupported, readDocument } from "@/lib/ocr";
-import { ensureExtension, proposeName, uniqueName } from "@/lib/renamer";
+import { categoriaDe } from "@/lib/categories";
+import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
+import type { PdfSegment } from "@/lib/pdf-split";
+import { ensureExtension, proposeName, uniqueName, withSequence } from "@/lib/renamer";
+import { imageFileToPdfBlob, isImageFile, pdfNameFor } from "@/lib/to-pdf";
+
+// Imagens sempre; PDFs também — mas só os digitalizados, o que só dá para
+// saber abrindo o arquivo. A pré-visualização decide e explica a recusa.
+function isEnhanceable(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return [...IMAGE_EXTS, ...PDF_EXTS].some((ext) => lower.endsWith(ext));
+}
+
+function isPdfFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return PDF_EXTS.some((ext) => lower.endsWith(ext));
+}
 
 type RowStatus = "aguardando" | "processando" | "ok" | "erro" | "renomeado";
 
@@ -163,6 +185,11 @@ export default function Home() {
   // Linha em pré-visualização (guarda o id: a linha "viva" vem de rows, então
   // o nome editado no preview e na tabela ficam sempre em sincronia).
   const [previewId, setPreviewId] = React.useState<string | null>(null);
+  // Linha aberta no separador de PDF (mesma ideia do previewId).
+  const [splitId, setSplitId] = React.useState<string | null>(null);
+  const [organizarEmSubpastas, setOrganizarEmSubpastas] = React.useState(false);
+  const [converterParaPdf, setConverterParaPdf] = React.useState(false);
+  const [numerarArquivos, setNumerarArquivos] = React.useState(false);
 
   const patchRow = React.useCallback((id: string, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -455,6 +482,7 @@ export default function Home() {
   const previewRow = previewId
     ? (rows.find((r) => r.id === previewId) ?? null)
     : null;
+  const splitRow = splitId ? (rows.find((r) => r.id === splitId) ?? null) : null;
 
   const total = rows.length;
   const done = rows.filter((r) => r.status !== "aguardando" && r.status !== "processando").length;
@@ -462,46 +490,155 @@ export default function Home() {
   const downloadable = rows.filter(
     (r) => r.use && (r.status === "ok" || r.status === "renomeado")
   );
-  const applyTargets = rows.filter(
-    (r) =>
-      r.use &&
-      r.status === "ok" &&
-      r.handle &&
+  // Um arquivo entra na renomeação se o nome muda OU se alguma das opções
+  // implica mexer nele mesmo com o nome igual — mudar de pasta, virar PDF ou
+  // ganhar número. Sem esta última parte, um arquivo já com o nome certo
+  // ficaria de fora e não seria movido para a subpasta.
+  const applyTargets = rows.filter((r) => {
+    if (!r.use || r.status !== "ok" || !r.handle) return false;
+    if (organizarEmSubpastas || numerarArquivos) return true;
+    if (converterParaPdf && isImageFile(r.file.name)) return true;
+    return (
       ensureExtension(r.proposed.trim() || r.file.name, r.file.name) !==
-        r.handle.name
-  );
+      r.handle.name
+    );
+  });
   const hasFolderRows = rows.some((r) => r.handle);
+  // Prévia das subpastas, para o usuário conferir o agrupamento ANTES de
+  // mexer na pasta. Vale para os dois modos, por isso sai de `downloadable`
+  // (todas as linhas aproveitáveis) e não só dos alvos da renomeação.
+  const subpastasPrevistas = React.useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const row of downloadable) {
+      const categoria = categoriaDe(row.docType);
+      contagem.set(categoria, (contagem.get(categoria) ?? 0) + 1);
+    }
+    return [...contagem.entries()]
+      .map(([categoria, quantidade]) => ({ categoria, quantidade }))
+      .sort((a, b) => a.categoria.localeCompare(b.categoria));
+  }, [downloadable]);
+  const imagensParaConverter = downloadable.filter((r) =>
+    isImageFile(r.file.name)
+  ).length;
+
+  // Agrupa as linhas pela pasta de destino, preservando a ordem da tabela.
+  // A numeração é POR PASTA: cada subpasta é um conjunto do processo e começa
+  // no 01. Sem subpastas há uma pasta só, então a sequência é a da lista.
+  function planejarDestinos(alvos: Row[]) {
+    const porPasta = new Map<string, Row[]>();
+    for (const row of alvos) {
+      const categoria = organizarEmSubpastas ? categoriaDe(row.docType) : "";
+      const lista = porPasta.get(categoria);
+      if (lista) lista.push(row);
+      else porPasta.set(categoria, [row]);
+    }
+    return porPasta;
+  }
+
+  // Nome final de um arquivo, aplicando as opções na ordem em que elas fazem
+  // sentido: extensão → .pdf (se converter) → prefixo numérico.
+  function nomeFinal(row: Row, posicao: number, totalNaPasta: number) {
+    let nome = ensureExtension(
+      row.proposed.trim() || row.file.name,
+      row.file.name
+    );
+    const converter = converterParaPdf && isImageFile(row.file.name);
+    if (converter) nome = pdfNameFor(nome);
+    if (numerarArquivos) nome = withSequence(posicao, totalNaPasta, nome);
+    return { nome, converter };
+  }
 
   async function applyRenames() {
     if (!dirHandle || applyTargets.length === 0) return;
+    const porPasta = planejarDestinos(applyTargets);
+    const pastas = [...porPasta.keys()].filter(Boolean).sort();
+    const convertidos = applyTargets.filter(
+      (r) => converterParaPdf && isImageFile(r.file.name)
+    ).length;
+
+    const detalhes = [
+      organizarEmSubpastas && pastas.length > 0
+        ? `Serão criadas ${pastas.length} subpasta(s): ${pastas.join(", ")}.`
+        : "",
+      convertidos > 0
+        ? `${convertidos} imagem(ns) será(ão) convertida(s) em PDF (o arquivo de imagem original é apagado).`
+        : "",
+      numerarArquivos
+        ? organizarEmSubpastas
+          ? "Os arquivos serão numerados, recomeçando em 01 dentro de cada subpasta."
+          : "Os arquivos serão numerados na ordem da lista."
+        : "",
+    ].filter(Boolean);
+
     if (
       !window.confirm(
-        `Renomear ${applyTargets.length} arquivo(s) na pasta "${dirHandle.name}"?\n\nRecomenda-se revisar a lista antes de confirmar.`
+        `Renomear ${applyTargets.length} arquivo(s) na pasta "${dirHandle.name}"?\n\n${detalhes.join("\n")}${detalhes.length ? "\n\n" : ""}Recomenda-se revisar a lista antes de confirmar.`
       )
     ) {
       return;
     }
+
     setApplying(true);
     try {
-      const used = await existingNames(dirHandle);
-      for (const row of applyTargets) {
-        const handle = row.handle!;
-        const desired = ensureExtension(
-          row.proposed.trim() || row.file.name,
-          row.file.name
-        );
-        used.delete(handle.name.toLowerCase());
-        const name = uniqueName(used, desired);
-        try {
-          await renameInFolder(dirHandle, handle, name);
-          used.add(name.toLowerCase());
-          patchRow(row.id, { status: "renomeado", proposed: name });
-        } catch (err) {
-          used.add(handle.name.toLowerCase());
-          patchRow(row.id, {
-            status: "erro",
-            error: `Falha ao renomear: ${err instanceof Error ? err.message : err}`,
-          });
+      // Um conjunto de nomes por pasta de destino: a raiz e cada subpasta têm
+      // seu próprio espaço de nomes, então "RG - João.pdf" pode existir em
+      // duas categorias sem virar "(2)".
+      const raiz = await existingNames(dirHandle);
+      const usados = new Map<string, Set<string>>([["", raiz]]);
+
+      for (const [categoria, linhas] of porPasta) {
+        let destino: FileSystemDirectoryHandle | undefined;
+        if (categoria) {
+          destino = await getSubfolder(dirHandle, categoria);
+          usados.set(categoria, await namesIn(destino));
+        }
+        const used = usados.get(categoria)!;
+
+        for (let i = 0; i < linhas.length; i++) {
+          const row = linhas[i];
+          const handle = row.handle!;
+          const { nome: desejado, converter } = nomeFinal(
+            row,
+            i + 1,
+            linhas.length
+          );
+
+          try {
+            // O próprio arquivo não conta como conflito quando fica na raiz.
+            if (!categoria) raiz.delete(handle.name.toLowerCase());
+            const name = uniqueName(used, desejado);
+
+            let novoHandle = handle;
+            let novoFile = row.file;
+            if (converter) {
+              // Converter é criar um arquivo novo e apagar a imagem: não dá
+              // para "renomear" um JPG em PDF. O original só sai depois que o
+              // PDF está gravado.
+              const blob = await imageFileToPdfBlob(row.file);
+              novoHandle = await writeNewFile(destino ?? dirHandle, name, blob);
+              await removeFile(dirHandle, handle.name);
+              novoFile = new File([blob], name, {
+                type: "application/pdf",
+                lastModified: Date.now(),
+              });
+            } else {
+              await renameInFolder(dirHandle, handle, name, destino);
+            }
+
+            used.add(name.toLowerCase());
+            patchRow(row.id, {
+              status: "renomeado",
+              proposed: categoria ? `${categoria}/${name}` : name,
+              handle: novoHandle,
+              file: novoFile,
+            });
+          } catch (err) {
+            raiz.add(handle.name.toLowerCase());
+            patchRow(row.id, {
+              status: "erro",
+              error: `Falha ao renomear: ${err instanceof Error ? err.message : err}`,
+            });
+          }
         }
       }
     } finally {
@@ -514,15 +651,32 @@ export default function Home() {
     setZipping(true);
     try {
       const zip = new JSZip();
-      const used = new Set<string>();
-      for (const row of downloadable) {
-        const name = uniqueName(
-          used,
-          ensureExtension(row.proposed.trim() || row.file.name, row.file.name)
-        );
-        used.add(name.toLowerCase());
-        zip.file(name, row.file);
+      // As mesmas opções do modo pasta valem aqui: o .zip sai com as subpastas,
+      // a numeração por pasta e as imagens já em PDF.
+      const porPasta = planejarDestinos(downloadable);
+      const usados = new Map<string, Set<string>>();
+
+      for (const [categoria, linhas] of porPasta) {
+        const used = usados.get(categoria) ?? new Set<string>();
+        usados.set(categoria, used);
+
+        for (let i = 0; i < linhas.length; i++) {
+          const row = linhas[i];
+          const { nome: desejado, converter } = nomeFinal(
+            row,
+            i + 1,
+            linhas.length
+          );
+          const name = uniqueName(used, desejado);
+          used.add(name.toLowerCase());
+
+          const conteudo = converter
+            ? await imageFileToPdfBlob(row.file)
+            : row.file;
+          zip.file(categoria ? `${categoria}/${name}` : name, conteudo);
+        }
       }
+
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
     } finally {
@@ -533,6 +687,124 @@ export default function Home() {
   function downloadSingle(row: Row) {
     const name = ensureExtension(row.proposed.trim() || row.file.name, row.file.name);
     triggerDownload(row.file, name);
+  }
+
+  // Substitui o arquivo pela versão otimizada. No modo pasta isso GRAVA por
+  // cima do arquivo do usuário e não tem desfazer — daí a confirmação explícita
+  // e o aviso diferente para cada modo.
+  async function replaceWithOptimized(row: Row, blob: Blob) {
+    const onDisk = Boolean(row.handle);
+    const warning = onDisk
+      ? `Substituir "${row.file.name}" pela versão otimizada?\n\nO arquivo será gravado por cima na pasta "${dirHandle?.name}". Esta ação não pode ser desfeita.`
+      : `Substituir "${row.file.name}" pela versão otimizada?\n\nO download e o .zip passarão a usar a versão otimizada. Seu arquivo no disco não é alterado.`;
+    if (!window.confirm(warning)) return;
+
+    try {
+      if (row.handle) {
+        if (dirHandle && !(await ensureWritePermission(dirHandle))) {
+          toast.error("Sem permissão de escrita na pasta", {
+            description: "Conceda a permissão para substituir o arquivo.",
+          });
+          return;
+        }
+        await overwriteFile(row.handle, blob);
+      }
+      // Mesmo no modo pasta o File em memória precisa ser trocado: é dele que
+      // saem a pré-visualização e o .zip.
+      patchRow(row.id, {
+        file: new File([blob], row.file.name, {
+          type: blob.type,
+          lastModified: Date.now(),
+        }),
+      });
+      toast.success("Arquivo substituído pela versão otimizada", {
+        description: onDisk
+          ? `Gravado na pasta "${dirHandle?.name}".`
+          : "Vale para o download e o .zip desta sessão.",
+      });
+    } catch (err) {
+      toast.error("Não foi possível substituir o arquivo", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Troca o PDF original pelos documentos separados. No modo pasta grava os
+  // novos arquivos e APAGA o original do disco — daí a confirmação.
+  async function applySplit(
+    row: Row,
+    results: Array<{ segment: PdfSegment; blob: Blob }>
+  ) {
+    const onDisk = Boolean(row.handle && dirHandle);
+    const warning = onDisk
+      ? `Separar "${row.file.name}" em ${results.length} arquivos?\n\nOs novos arquivos serão gravados na pasta "${dirHandle?.name}" e o PDF original será APAGADO. Esta ação não pode ser desfeita.`
+      : `Separar "${row.file.name}" em ${results.length} arquivos?\n\nO PDF original sai da lista e os novos entram no lugar. Seu arquivo no disco não é alterado.`;
+    if (!window.confirm(warning)) return;
+
+    try {
+      if (onDisk && !(await ensureWritePermission(dirHandle!))) {
+        toast.error("Sem permissão de escrita na pasta", {
+          description: "Conceda a permissão para separar o arquivo.",
+        });
+        return;
+      }
+
+      // Nomes únicos contra o que já existe na pasta, para não sobrescrever
+      // um arquivo alheio que por acaso tenha o mesmo nome.
+      const used = onDisk ? await existingNames(dirHandle!) : new Set<string>();
+      const novos: Row[] = [];
+      // Só arquivos criados por esta operação (nomes únicos garantem que não
+      // são de terceiros), para poder desfazer se algo falhar no meio.
+      const criados: string[] = [];
+      try {
+        for (const { segment, blob } of results) {
+          const name = uniqueName(used, ensureExtension(segment.name, row.file.name));
+          used.add(name.toLowerCase());
+          const file = new File([blob], name, {
+            type: "application/pdf",
+            lastModified: Date.now(),
+          });
+          let handle: FileSystemFileHandle | undefined;
+          if (onDisk) {
+            handle = await writeNewFile(dirHandle!, name, blob);
+            criados.push(name);
+          }
+          novos.push({
+            id: crypto.randomUUID(),
+            file,
+            handle,
+            proposed: name,
+            docType: segment.docType,
+            status: "ok",
+            use: true,
+            source: segment.source,
+          });
+        }
+      } catch (err) {
+        // Desfaz o que já tinha sido gravado: sem isso, uma falha no meio
+        // deixaria arquivos pela metade na pasta ao lado do original.
+        for (const name of criados) {
+          await removeFile(dirHandle!, name).catch(() => {});
+        }
+        throw err;
+      }
+
+      // O original só é apagado depois que TODOS os novos foram gravados —
+      // se a escrita falhar no meio, o PDF de origem continua lá.
+      if (onDisk) await removeFile(dirHandle!, row.handle!.name);
+
+      setRows((prev) => prev.flatMap((r) => (r.id === row.id ? novos : [r])));
+      setSplitId(null);
+      toast.success(`PDF separado em ${novos.length} arquivos`, {
+        description: onDisk
+          ? `Gravados na pasta "${dirHandle?.name}"; o original foi apagado.`
+          : "Os novos arquivos entraram na lista no lugar do original.",
+      });
+    } catch (err) {
+      toast.error("Não foi possível separar o PDF", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   function triggerDownload(blob: Blob, name: string) {
@@ -946,6 +1218,16 @@ export default function Home() {
                         >
                           <ZoomIn className="size-4" />
                         </Button>
+                        {isPdfFile(row.file.name) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSplitId(row.id)}
+                            title="Separar em documentos individuais (para PDFs que juntam matrícula, RG, CNH, certidões…)"
+                          >
+                            <Scissors className="size-4" />
+                          </Button>
+                        )}
                         {(row.status === "ok" || row.status === "renomeado") && (
                           <Button
                             variant="ghost"
@@ -961,6 +1243,63 @@ export default function Home() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+
+            <div className="space-y-2 rounded-lg border p-4">
+              <p className="text-sm font-medium">Montagem do processo</p>
+              <p className="text-sm text-muted-foreground">
+                Estas opções valem tanto para a renomeação na pasta quanto para
+                o .zip.
+              </p>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={organizarEmSubpastas}
+                  onCheckedChange={(checked) =>
+                    setOrganizarEmSubpastas(checked === true)
+                  }
+                />
+                Organizar em subpastas por conjunto (Documentos Pessoais,
+                Documentos do Imóvel, Contratos, Imposto de Transmissão…)
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={converterParaPdf}
+                  onCheckedChange={(checked) =>
+                    setConverterParaPdf(checked === true)
+                  }
+                />
+                Converter imagens (JPG, PNG, WEBP, BMP) em PDF
+                {imagensParaConverter > 0 && (
+                  <Badge variant="secondary">
+                    {imagensParaConverter} imagem(ns)
+                  </Badge>
+                )}
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={numerarArquivos}
+                  onCheckedChange={(checked) =>
+                    setNumerarArquivos(checked === true)
+                  }
+                />
+                Numerar os arquivos (01, 02, 03…)
+                {numerarArquivos && organizarEmSubpastas && (
+                  <span className="text-xs">
+                    — recomeça em 01 dentro de cada subpasta
+                  </span>
+                )}
+              </label>
+
+              {organizarEmSubpastas && subpastasPrevistas.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-sm">
+                  <span className="text-muted-foreground">Serão criadas:</span>
+                  {subpastasPrevistas.map(({ categoria, quantidade }) => (
+                    <Badge key={categoria} variant="secondary">
+                      {categoria} ({quantidade})
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -1025,6 +1364,19 @@ export default function Home() {
             ? () => downloadSingle(previewRow)
             : undefined
         }
+        canEnhance={previewRow ? isEnhanceable(previewRow.file.name) : false}
+        onReplace={
+          previewRow ? (blob) => replaceWithOptimized(previewRow, blob) : undefined
+        }
+      />
+
+      <PdfSplitDialog
+        file={splitRow?.file ?? null}
+        onClose={() => setSplitId(null)}
+        folderName={splitRow?.handle ? (dirHandle?.name ?? undefined) : undefined}
+        onApply={async (results) => {
+          if (splitRow) await applySplit(splitRow, results);
+        }}
       />
     </main>
   );

@@ -14,7 +14,13 @@ declare global {
     }): Promise<FileSystemDirectoryHandle>;
   }
   interface FileSystemFileHandle {
+    // O Chromium aceita as duas formas: renomear no lugar e mover para outra
+    // pasta (opcionalmente com nome novo).
     move?(name: string): Promise<void>;
+    move?(
+      destination: FileSystemDirectoryHandle,
+      name?: string
+    ): Promise<void>;
   }
   interface FileSystemDirectoryHandle {
     values(): AsyncIterableIterator<FileSystemHandle>;
@@ -141,19 +147,84 @@ export async function existingNames(
   return names;
 }
 
+// Sobrescreve o conteúdo de um arquivo da pasta, mantendo o nome. Usado para
+// substituir o original pela versão otimizada — é destrutivo e sem desfazer,
+// então quem chama deve confirmar com o usuário antes.
+export async function overwriteFile(
+  handle: FileSystemFileHandle,
+  data: Blob
+): Promise<void> {
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(data);
+  } catch (err) {
+    // Sem o abort, um erro no meio da escrita deixaria o arquivo truncado —
+    // e o original do usuário já teria sido perdido.
+    await writable.abort();
+    throw err;
+  }
+  await writable.close();
+}
+
+/** Cria (ou substitui) um arquivo na pasta e devolve o handle. */
+export async function writeNewFile(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  data: Blob
+): Promise<FileSystemFileHandle> {
+  const handle = await dir.getFileHandle(name, { create: true });
+  await overwriteFile(handle, data);
+  return handle;
+}
+
+export async function removeFile(
+  dir: FileSystemDirectoryHandle,
+  name: string
+): Promise<void> {
+  await dir.removeEntry(name);
+}
+
+/** Subpasta da pasta escolhida, criada se ainda não existir. */
+export async function getSubfolder(
+  dir: FileSystemDirectoryHandle,
+  name: string
+): Promise<FileSystemDirectoryHandle> {
+  return dir.getDirectoryHandle(name, { create: true });
+}
+
+export async function namesIn(
+  dir: FileSystemDirectoryHandle
+): Promise<Set<string>> {
+  return existingNames(dir);
+}
+
 // Renomeia no lugar: move() quando o navegador suporta; senão copia e apaga.
+// Com `destination`, além de renomear, move o arquivo para a subpasta.
 export async function renameInFolder(
   dir: FileSystemDirectoryHandle,
   handle: FileSystemFileHandle,
-  newName: string
+  newName: string,
+  destination?: FileSystemDirectoryHandle
 ): Promise<void> {
   if (typeof handle.move === "function") {
-    await handle.move(newName);
-    return;
+    try {
+      if (destination) await handle.move(destination, newName);
+      else await handle.move(newName);
+      return;
+    } catch {
+      // move() é recente e nem toda implementação aceita as duas formas —
+      // principalmente a que muda o arquivo de pasta. Em vez de falhar a
+      // operação inteira, cai para copiar+remover, que usa só APIs antigas e
+      // produz o mesmo resultado (mais devagar). Não relança de propósito.
+    }
   }
+  // Sem move() (ou com move() recusado): copia para o destino e só então
+  // remove a origem — se a cópia falhar, o arquivo original continua onde está.
   const data = await handle.getFile();
   const oldName = handle.name;
-  const target = await dir.getFileHandle(newName, { create: true });
+  const target = await (destination ?? dir).getFileHandle(newName, {
+    create: true,
+  });
   const writable = await target.createWritable();
   await writable.write(data);
   await writable.close();

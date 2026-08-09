@@ -27,18 +27,105 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 - OCR com [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly, idiomas por+eng) — na primeira análise o navegador baixa o motor (~15 MB) de um CDN; depois fica em cache;
 - Leitura de PDFs com [pdf.js](https://mozilla.github.io/pdf.js/) — usa o texto nativo do PDF quando existe e faz OCR da página renderizada em PDFs escaneados ou digitais cujos dados estão em imagem (ex.: CNH-e).
 
+> O pdf.js 6 usa `Map.prototype.getOrInsertComputed` ao renderizar páginas — método novíssimo, ausente no Chrome ≤141, no Firefox e no Safari atuais. Sem um shim, renderizar qualquer PDF escaneado estoura com `getOrInsertComputed is not a function`. O shim fica em `loadPdfjs()` ([lib/ocr.ts](lib/ocr.ts)) e cobre tanto o OCR quanto a otimização de PDFs.
+
+## Otimização automática (foto de documento)
+
+Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
+
+1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
+2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz por máximo local + borrão e traz as regiões sombreadas ao nível do papel bem iluminado.
+3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo), com saída em ~200 dpi para impressão.
+
+Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
+
+### A regra que manda: não alterar o documento
+
+O documento tem de sair **legível para impressão e com todo o conteúdo intacto**. Isso restringe o que o pipeline pode fazer, e duas versões anteriores erraram exatamente aqui:
+
+- **O ponto de branco não pode ficar abaixo do nível do papel.** Uma versão colocava o branco a 90% do papel para "limpar" o resto da sombra — e com isso todo conteúdo cinza-claro (carimbo fraco, marca d'água, fundo de segurança, parte clara da foto 3x4) virava branco puro. Era estouro de luz e perda de informação. Hoje o branco fica no percentil 0.98, então só a franja mais clara do papel satura.
+- **A remoção de sombra equaliza, não clareia.** Ela normalizava tudo para 255, e os níveis clareavam de novo logo depois: o clareamento em dose dupla estourava a imagem. Hoje o ganho é 1 na área mais bem iluminada e só sobe na sombra.
+- **A curva de gama é 1.** Qualquer gama diferente de 1 desloca os meios-tons, ou seja, muda como o conteúdo aparece. O que se faz é apenas esticar o histograma entre preto e branco — transformação linear.
+
+O preço disso é honesto: **sombra e vinco fortes continuam levemente visíveis**. Preferimos assim a apagar conteúdo.
+
+### O documento é o que não é fundo
+
+A detecção de bordas procurava "a maior região clara" da foto. Isso quebra em qualquer documento com faixa escura no cabeçalho, foto 3x4 grande ou fundo colorido impresso: a região clara é só um PEDAÇO da folha, e esticar esse pedaço produzia o **"zoom no meio do documento"** que cortava o resto.
+
+Hoje a lógica é inversa: a **mesa** é que encosta nas bordas da foto. Cresce-se uma região a partir das quatro bordas, aceitando vizinhos de cor parecida (o que acompanha o degradê de iluminação da mesa) e parando no contraste da beirada do papel. O que sobra é o documento inteiro, com faixa escura e tudo.
+
+Duas travas fecham o caso:
+
+- A tolerância de cor desse crescimento é **14**, calibrada por medição: com um documento de cabeçalho preto, o quadrilátero sai exato de 8 a 18 e passa a comer o cabeçalho a partir de 22 (no downscale, a transição faixa-escura/mesa fica suave o bastante para o fundo atravessar).
+- Depois de achar o quadrilátero, mede-se quanto do documento ficaria **fora** dele; acima de 4%, o enquadramento é recusado. Essa medida é feita sobre a máscara do documento, e não por "pixel escuro" — a mesa costuma ser mais escura que o papel, e um limiar de tinta contaria o fundo inteiro como conteúdo perdido, recusando todo enquadramento (foi o que aconteceu na primeira versão desta trava).
+
+### PDFs ([lib/pdf-enhance.ts](lib/pdf-enhance.ts))
+
+PDFs digitalizados também são otimizados: cada página é renderizada, passa pelo mesmo pipeline e o resultado é remontado num PDF novo (com `pdf-lib`), preservando o tamanho de papel original.
+
+**PDFs digitais não são otimizados, de propósito.** Se o PDF tem camada de texto de verdade (gerado por um sistema, não fotografado), rasterizá-lo destruiria o texto pesquisável e selecionável, engordaria o arquivo e não melhoraria nada visualmente. Nesses casos a pré-visualização recusa e explica o motivo, em vez de piorar o documento silenciosamente. A detecção reaproveita a mesma heurística de texto nativo que o OCR já usava (`meaningfulNativeText`), que ignora carimbos de assinatura digital e cabeçalhos federais.
+
+Duas outras decisões: a imagem é encaixada na página **preservando a proporção** (o enquadramento por perspectiva muda a proporção, e esticar distorceria o texto), e há um teto de 30 páginas, já que o custo cresce por página e um PDF longo travaria a aba sem ganho proporcional.
+
+A substituição é a única operação que descarta o original, então é sempre confirmada antes e o aviso muda conforme o modo: no modo pasta ela **grava por cima do arquivo no disco** (sem desfazer); no modo upload troca apenas o arquivo em memória, e o disco do usuário não é tocado. A escrita em disco aborta em caso de erro no meio do caminho, para nunca deixar o documento truncado.
+
+## Separar PDFs que juntam vários documentos ([lib/pdf-split.ts](lib/pdf-split.ts))
+
+É comum receber um único PDF com matrícula + RG + CNH + certidão dentro. O botão de tesoura na lista abre o separador: cada página é lida (texto nativo ou OCR), classificada como se fosse um documento à parte, e as páginas são agrupadas em documentos. O resultado aparece numa tabela com as páginas, o tipo e o nome sugerido — editável — antes de aplicar.
+
+Cada documento mostra as **miniaturas das suas páginas**, e clicar numa delas abre a página ampliada, com navegação. Sem isso o usuário estaria confirmando no escuro: os nomes vêm de OCR e é olhando a página que ele confere se o corte ficou no lugar certo. As miniaturas são renderizadas antes da classificação, que é a parte lenta — assim já dá para ver o PDF enquanto o OCR ainda roda.
+
+**A regra de agrupamento é o coração da coisa.** Uma página só abre um documento novo quando ela própria se identifica (tipo reconhecido) **e** essa identidade difere da do documento corrente. Páginas sem tipo reconhecido — o verso de um RG, a segunda folha de uma matrícula, a continuação de um contrato — são tratadas como continuação. Sem isso, todo documento de várias páginas seria estilhaçado numa penca de arquivos de uma página. A identidade compara tipo + nome proposto, então dois RGs seguidos de pessoas diferentes viram dois documentos, mas duas páginas do RG da mesma pessoa viram um só.
+
+Ao aplicar, no modo pasta os PDFs individuais são gravados e o original é **apagado** (com confirmação); no modo upload o PDF original sai da lista e os novos entram no lugar, alimentando o `.zip` normalmente. As páginas são copiadas com `copyPages`, então um PDF digital continua digital — o texto não vira imagem.
+
+Salvaguardas da escrita em disco, por ser destrutiva: os nomes são únicos contra o que já existe na pasta (nunca sobrescreve arquivo de terceiro), o original só é apagado **depois** que todos os novos foram gravados, e se algo falhar no meio os arquivos já criados são removidos — a pasta volta ao estado inicial, com o PDF de origem intacto. Há um teto de 40 páginas, já que a análise faz OCR página a página.
+
+## Montagem do processo
+
+Três opções, num painel junto dos botões de aplicar. Valem para os **dois** modos: a renomeação na pasta e o `.zip`.
+
+### Organizar em subpastas por conjunto ([lib/categories.ts](lib/categories.ts))
+
+Cada arquivo vai para uma subpasta conforme o tipo de documento — DOCUMENTOS PESSOAIS, DOCUMENTOS DO IMÓVEL, CONTRATOS, IMPOSTO DE TRANSMISSÃO, CERTIDÕES NEGATIVAS, COMPROVANTES E PAGAMENTOS, e OUTROS DOCUMENTOS para o que não se encaixar. Antes de aplicar, a tela mostra quais subpastas serão criadas e quantos arquivos vão para cada uma.
+
+### Converter imagens em PDF ([lib/to-pdf.ts](lib/to-pdf.ts))
+
+JPG, PNG, WEBP e BMP viram PDF de uma página. Quando o arquivo **já é JPEG ou PNG, os bytes originais são embutidos como estão** — recodificar seria perda de qualidade gratuita, já que o PDF é só um invólucro; só WEBP e BMP, que o PDF não suporta, passam pelo canvas e viram JPEG. A página é A4 na orientação da imagem, com a imagem encaixada preservando a proporção: um processo é feito para ser impresso e paginado, e página do tamanho exato de cada foto daria um documento com folhas de tamanhos diferentes.
+
+No modo pasta, converter é criar um arquivo novo e apagar a imagem — não dá para "renomear" um JPG em PDF. O original só é removido depois que o PDF está gravado.
+
+### Numerar os arquivos
+
+Prefixo sequencial, para montar processo: `01 - RG - João.pdf`, `02 - CNH - Maria.pdf`. A largura vem do total (9 arquivos → `01`..`09`; 150 → `001`..`150`), o que faz a **ordem alfabética da pasta bater com a ordem do processo** — sem o zero à esquerda, "10" viria antes de "2".
+
+A numeração é **por pasta**: cada subpasta é um conjunto do processo e recomeça em `01`. Sem subpastas há uma pasta só, então a sequência segue a ordem da lista. (Se preferir numeração contínua atravessando as subpastas, é uma linha de mudança.)
+
+A classificação tem **duas camadas, e a segunda é o que a faz funcionar de verdade**: uma tabela de tipos exatos (os que o motor local produz) e, quando ela não bate, palavras-chave sobre o tipo normalizado. A segunda camada existe porque no modo IA o tipo vem do Gemini em texto livre — "Contrato de Cessão de Direitos Hereditários", "Guia de Recolhimento do ITBI" — e nunca bateria com uma tabela fixa. A ordem das palavras-chave importa: ITBI é testado antes de "guia", e "tributos imobiliários" antes de "negativa", senão cairiam na categoria errada. O que não se encaixa vai para OUTROS DOCUMENTOS em vez de ser espalhado em pastas erradas.
+
+Cada subpasta tem seu próprio espaço de nomes, então "RG - João.pdf" pode existir em duas categorias sem virar "(2)".
+
 ## Dois modos de uso
 
 1. **Selecionar pasta** (Chrome/Edge): o usuário escolhe uma pasta local, o app analisa tudo, mostra a prévia e — após confirmação — **renomeia os arquivos direto na pasta**, via File System Access API. Há um filtro opcional "somente arquivos com WhatsApp no nome".
-2. **Upload + download**: em qualquer navegador, o usuário arrasta os arquivos, revisa os nomes sugeridos e baixa tudo num `.zip` já renomeado.
+2. **Upload + download**: em qualquer navegador, o usuário arrasta os arquivos, revisa os nomes sugeridos e baixa tudo num `.zip` já renomeado — com as mesmas subpastas, numeração e conversão em PDF do modo pasta.
 
 Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e cada arquivo pode ser desmarcado antes de aplicar.
 
 ## Estrutura
 
 - [lib/renamer.ts](lib/renamer.ts) — motor local de nomeação: tipo por pontuação de evidências (texto + nome do arquivo, com peso extra no título), extração de nome em camadas com validação palavra a palavra, identificadores (CPF com dígito verificador, matrícula, contribuinte) e fallback que preserva o nome original quando nada é confiável. Calibrado com documentos reais de escritório imobiliário.
-- [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
-- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, e renomear no lugar com `move()` ou cópia+remoção.
+- [lib/ocr.ts](lib/ocr.ts) — pipeline de extração de texto: pré-processamento da imagem (limpeza via `lib/image-enhance.ts` + escala de cinza, autocontraste, ampliação) + Tesseract; PDFs via pdf.js.
+- [lib/perspective.ts](lib/perspective.ts) — detecção dos quatro cantos do documento e correção de perspectiva.
+- [lib/pdf-enhance.ts](lib/pdf-enhance.ts) — otimização de PDFs digitalizados página a página; recusa PDFs digitais.
+- [lib/pdf-split.ts](lib/pdf-split.ts) — separação de um PDF que junta vários documentos: classifica página a página, agrupa em documentos e renderiza as miniaturas.
+- [lib/categories.ts](lib/categories.ts) — conjunto (subpasta) a que cada tipo de documento pertence.
+- [lib/to-pdf.ts](lib/to-pdf.ts) — conversão de imagens em PDF A4.
+- [components/pdf-split-dialog.tsx](components/pdf-split-dialog.tsx) — revisão dos documentos detectados, com miniaturas e página ampliada, antes de aplicar.
+- [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
+- [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar ou movendo para subpasta (`move()` com fallback de cópia+remoção), sobrescrever, criar e remover arquivos.
+- [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.
 - [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
 
 ## Rodando localmente

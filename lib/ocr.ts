@@ -1,6 +1,7 @@
 // Extração de texto 100% no navegador: Tesseract.js (WASM) para OCR
 // e pdf.js para PDFs (texto nativo primeiro; se for escaneado, renderiza e faz OCR).
 
+import { enhanceDocumentImage } from "./image-enhance";
 import { cleanSpaces } from "./renamer";
 
 export const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
@@ -32,13 +33,22 @@ async function getTesseractWorker(): Promise<TesseractWorker> {
   return workerPromise;
 }
 
-// Pré-processamento equivalente ao da versão desktop:
-// escala de cinza + autocontraste + contraste 1.6 + ampliação até 1800px.
+// Pré-processamento equivalente ao da versão desktop, com uma etapa extra
+// antes: correção de perspectiva a partir dos cantos da folha, remoção de
+// sombra e de ruído (lib/image-enhance.ts) — endireita fotos de celular
+// tiradas em ângulo antes de seguir para a escala de cinza + autocontraste
+// + contraste 1.6 + ampliação até 1800px já calibrados para o OCR.
 function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement {
-  const maxDim = Math.max(source.width, source.height);
+  const { canvas: cleaned } = enhanceDocumentImage(source, {
+    contrast: false, // o contraste final abaixo já é o calibrado para o OCR
+    sharpen: false, // idem: a nitidez extra é para a imagem que o usuário baixa
+    targetMaxDim: 1, // a ampliação até 1800px é feita abaixo, sobre o resultado limpo
+  });
+
+  const maxDim = Math.max(cleaned.width, cleaned.height);
   const scale = maxDim < 1800 ? 1800 / maxDim : 1;
-  const w = Math.round(source.width * scale);
-  const h = Math.round(source.height * scale);
+  const w = Math.round(cleaned.width * scale);
+  const h = Math.round(cleaned.height * scale);
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -46,7 +56,7 @@ function preprocess(source: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement 
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, 0, 0, w, h);
+  ctx.drawImage(cleaned, 0, 0, w, h);
 
   const imageData = ctx.getImageData(0, 0, w, h);
   const d = imageData.data;
@@ -109,13 +119,47 @@ const PDF_BOILERPLATE = [
   /qr-?code/gi,
 ];
 
-function meaningfulNativeText(native: string): boolean {
+export function meaningfulNativeText(native: string): boolean {
   let rest = native;
   for (const p of PDF_BOILERPLATE) rest = rest.replace(p, " ");
   return cleanSpaces(rest).length > 120;
 }
 
-async function extractPdfText(file: File, maxPages = 2): Promise<string> {
+// O pdf.js 6 usa Map.prototype.getOrInsertComputed ao renderizar páginas —
+// método novíssimo, ausente no Chrome ≤141, no Firefox e no Safari atuais.
+// Sem este shim, renderizar qualquer PDF escaneado estoura com
+// "getOrInsertComputed is not a function" (atinge tanto o OCR quanto a
+// otimização de PDF). Segue o comportamento da proposta: devolve o valor
+// existente ou insere o calculado.
+function polyfillMapGetOrInsert() {
+  const targets = [Map.prototype, WeakMap.prototype] as Array<
+    Map<object, unknown> | WeakMap<object, unknown>
+  >;
+  for (const proto of targets) {
+    const p = proto as unknown as Record<string, unknown>;
+    if (typeof p.getOrInsert !== "function") {
+      p.getOrInsert = function (this: Map<unknown, unknown>, key: unknown, value: unknown) {
+        if (!this.has(key)) this.set(key, value);
+        return this.get(key);
+      };
+    }
+    if (typeof p.getOrInsertComputed !== "function") {
+      p.getOrInsertComputed = function (
+        this: Map<unknown, unknown>,
+        key: unknown,
+        callback: (key: unknown) => unknown
+      ) {
+        if (!this.has(key)) this.set(key, callback(key));
+        return this.get(key);
+      };
+    }
+  }
+}
+
+// Carrega o pdf.js com o worker apontado — compartilhado com lib/pdf-enhance.ts
+// para não duplicar a configuração (e o download) do worker.
+export async function loadPdfjs() {
+  polyfillMapGetOrInsert();
   const pdfjs = await import("pdfjs-dist");
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -123,37 +167,77 @@ async function extractPdfText(file: File, maxPages = 2): Promise<string> {
       import.meta.url
     ).toString();
   }
+  return pdfjs;
+}
 
-  const buf = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: buf });
+/** Texto nativo de uma página, já concatenado. */
+export async function pageNativeText(
+  page: import("pdfjs-dist").PDFPageProxy
+): Promise<string> {
+  const content = await page.getTextContent();
+  return content.items
+    .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
+    .join("");
+}
+
+/** Texto de UMA página: nativo quando existe de verdade, senão OCR do render. */
+async function readPdfPage(
+  page: import("pdfjs-dist").PDFPageProxy
+): Promise<string> {
+  // Primeiro tenta o texto nativo do PDF.
+  const native = await pageNativeText(page);
+  if (meaningfulNativeText(native)) return native;
+
+  // PDF escaneado (ou digital com dados dentro de imagem, como a CNH-e):
+  // renderiza a página e faz OCR. Escala 3.5 porque documentos em formato
+  // cartão ocupam uma fração pequena da folha A4.
+  const viewport = page.getViewport({ scale: 3.5 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d")!;
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  const ocr = await ocrCanvasSource(canvas, { preprocessed: false });
+  // O texto nativo residual (carimbo de assinatura, cabeçalho) ainda ajuda a
+  // classificar, então vai junto em vez de ser descartado.
+  return cleanSpaces(native) ? `${native}\n${ocr}` : ocr;
+}
+
+/**
+ * Texto de cada página separadamente — base para separar um PDF que junta
+ * vários documentos (lib/pdf-split.ts). O `onProgress` existe porque isto pode
+ * levar minutos num PDF escaneado longo.
+ */
+export async function readPdfPageTexts(
+  file: File,
+  maxPages = 40,
+  onProgress?: (page: number, total: number) => void
+): Promise<string[]> {
+  const pdfjs = await loadPdfjs();
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+  const doc = await loadingTask.promise;
+  try {
+    const total = Math.min(maxPages, doc.numPages);
+    const texts: string[] = [];
+    for (let i = 1; i <= total; i++) {
+      onProgress?.(i, total);
+      texts.push(await readPdfPage(await doc.getPage(i)));
+    }
+    return texts;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+async function extractPdfText(file: File, maxPages = 2): Promise<string> {
+  const pdfjs = await loadPdfjs();
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
   const doc = await loadingTask.promise;
   try {
     const texts: string[] = [];
     const pages = Math.min(maxPages, doc.numPages);
     for (let i = 1; i <= pages; i++) {
-      const page = await doc.getPage(i);
-
-      // Primeiro tenta o texto nativo do PDF.
-      const content = await page.getTextContent();
-      const native = content.items
-        .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
-        .join("");
-      if (meaningfulNativeText(native)) {
-        texts.push(native);
-        continue;
-      }
-      if (cleanSpaces(native)) texts.push(native);
-
-      // PDF escaneado (ou digital com dados dentro de imagem, como a CNH-e):
-      // renderiza a página e faz OCR. Escala 3.5 porque documentos em formato
-      // cartão ocupam uma fração pequena da folha A4.
-      const viewport = page.getViewport({ scale: 3.5 });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext("2d")!;
-      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-      texts.push(await ocrCanvasSource(canvas, { preprocessed: false }));
+      texts.push(await readPdfPage(await doc.getPage(i)));
     }
     return texts.join("\n");
   } finally {
