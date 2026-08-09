@@ -1,6 +1,9 @@
-# Renomeador Inteligente de Documentos (Web)
+# Ferramentas do Cartório (Web)
 
-Versão web do renomeador de documentos: analisa imagens e PDFs **no navegador do usuário** e sugere nomes de arquivo com base no conteúdo (RG, CNH, certidões, matrículas, contratos etc.).
+Dois módulos, escolhidos no painel inicial (`/`):
+
+1. **Renomeador Inteligente de Documentos** (`/renomeador`) — analisa imagens e PDFs **no navegador do usuário** e sugere nomes de arquivo com base no conteúdo (RG, CNH, certidões, matrículas, contratos etc.).
+2. **Resolvedor de Notas Devolutivas** (`/notas`) — decompõe a nota de exigências do Registro de Imóveis em itens, classifica cada um numa via de resolução e prepara a minuta da peça correspondente (ver seção própria abaixo).
 
 Exemplos:
 
@@ -145,7 +148,19 @@ Em ambos os modos a lista é revisável: cada nome sugerido pode ser editado e c
 - [lib/image-enhance.ts](lib/image-enhance.ts) — acabamento de digitalização: remoção de sombra, denoise, níveis por percentil, nitidez e upscaling clássico.
 - [lib/fs.ts](lib/fs.ts) — modo pasta (File System Access API): listar, renomear no lugar ou movendo para subpasta (`move()` com fallback de cópia+remoção), sobrescrever, criar e remover arquivos.
 - [components/document-preview.tsx](components/document-preview.tsx) — pré-visualização com alternador Original/Otimizada e substituição do original.
-- [app/page.tsx](app/page.tsx) — interface (Next.js + shadcn/ui).
+- [app/page.tsx](app/page.tsx) — painel de escolha de módulo; [app/renomeador/page.tsx](app/renomeador/page.tsx) — interface do renomeador; [app/notas/page.tsx](app/notas/page.tsx) — interface do resolvedor de notas (Next.js + shadcn/ui).
+- `lib/notas/` — núcleo do resolvedor de notas: [resolvedor.ts](lib/notas/resolvedor.ts) (decompõe e classifica), [traslado.ts](lib/notas/traslado.ts) (extrator de traslado), [qualificacao.ts](lib/notas/qualificacao.ts) (construtor de qualificação), [pecas.ts](lib/notas/pecas.ts) (dados das minutas), [docx.ts](lib/notas/docx.ts) (leitura e preenchimento de .docx via JSZip).
+
+## Resolvedor de Notas Devolutivas
+
+Recebe a **nota devolutiva** (PDF, DOCX ou texto colado) e o **traslado do ato** (.docx preferencial), e trabalha em quatro passos:
+
+1. **Decompõe** a nota nos itens de exigência — reconhece os três estilos de numeração observados nas serventias (títulos em caixa alta, `1-`, `1)`/`1.1)`).
+2. **Classifica** cada item numa das seis vias de resolução: providência externa, escritura de rerratificação, requerimento, juntada de documento, ata retificativa ou indefinido (triagem manual). Os gatilhos são os **verbos de remédio** da nota (o que o oficial manda fazer), nunca os princípios registrários citados. Status e via são por item, não por nota.
+3. **Lê o traslado** (fonte das qualificações e da identificação do ato) e deriva a síntese do quadro-resumo. Traslado escaneado é marcado como não confiável — OCR corrompe CPFs, RGs e datas — e serve só como índice.
+4. **Gera a minuta** (.docx) da peça correspondente a partir de templates com placeholders: ata retificativa, requerimento ou rerratificação.
+
+Travas de segurança: a via sugerida precisa de **confirmação humana** antes de gerar; a ata só é gerada com **amparo documental** declarado; campos sem dado permanecem como `{{PLACEHOLDER}}` visível na minuta; e **nada é lavrado automaticamente** — a saída é sempre rascunho. O prazo da prenotação é lido na própria nota (nunca calculado) e fica em destaque na tela.
 
 ## Rodando localmente
 
