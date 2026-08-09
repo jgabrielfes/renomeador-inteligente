@@ -34,6 +34,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
@@ -925,17 +935,47 @@ export default function Home() {
                   : "Nenhuma correção aprendida ainda — edite um nome sugerido pela IA para começar."}
               </span>
               {lessons.corrections.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    clearCorrections();
-                    toast.info("Correções aprendidas foram apagadas.");
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                  Esquecer correções
-                </Button>
+                <Dialog>
+                  <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+                    <Trash2 className="size-3.5" />
+                    Esquecer correções
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Tem certeza que deseja esquecer as correções?
+                      </DialogTitle>
+                      <DialogDescription>
+                        {lessons.corrections.length} correção(ões) aprendida(s)
+                        com suas edições serão apagadas definitivamente — o app
+                        volta a sugerir nomes sem esse aprendizado. As regras
+                        escritas acima não são afetadas. Para guardar uma cópia
+                        antes, use “Exportar”.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <DialogClose render={<Button variant="outline" />}>
+                        Cancelar
+                      </DialogClose>
+                      <DialogClose
+                        render={
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              clearCorrections();
+                              toast.info(
+                                "Correções aprendidas foram apagadas."
+                              );
+                            }}
+                          />
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                        Sim, esquecer correções
+                      </DialogClose>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               )}
               <span className="ml-auto inline-flex gap-1">
                 <Button
