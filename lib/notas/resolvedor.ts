@@ -224,3 +224,52 @@ export function pessoasCitadas(t: string): string[] {
 export function triar(texto: string): ItemClassificado[] {
   return decompor(texto).map(classificar);
 }
+
+// ---------------------------------------------------------------------------
+// Síntese: transforma o texto corrido da exigência num apontamento objetivo
+// ("o que fazer" + complemento curto), para a lista da etapa 2. O texto
+// integral continua disponível — a síntese nunca o substitui como fonte.
+
+export interface Sintese {
+  acao: string;
+  complemento: string;
+}
+
+const ACAO_VIA: Record<Via, string> = {
+  JUNTADA: "Juntar documento",
+  ATA_RETIFICATIVA: "Lavrar ata retificativa",
+  RERRATIFICACAO: "Lavrar escritura de rerratificação",
+  REQUERIMENTO: "Apresentar requerimento",
+  PROVIDENCIA_EXTERNA: "Acompanhar providência externa",
+  INDEFINIDO: "Classificar à mão",
+};
+
+export function sintetizar(item: ItemClassificado): Sintese {
+  const acao =
+    item.via === "JUNTADA" && item.alvos.length > 0
+      ? `Juntar: ${item.alvos.join(", ")}`
+      : ACAO_VIA[item.via];
+
+  let t = item.texto.replace(/\s+/g, " ").trim();
+  // Fundamentação jurídica não é apontamento — sai da síntese.
+  t = t
+    .replace(
+      /,?\s*(?:em|com)\s+(?:respeito|observ[âa]ncia|aten[çc][ãa]o|conformidade)\s+(?:ao?s?|à|com)\s+princ[íi]pio[^,.;]*/gi,
+      ""
+    )
+    .replace(/,?\s*nos termos d[oa][^,.;]*/gi, "")
+    .replace(/,?\s*conforme\s+(?:o\s+)?(?:art(?:igo)?|item)\.?\s*[\d.º°]+[^,.;]*/gi, "")
+    .replace(/\s+([,.;])/g, "$1");
+
+  // Primeira frase (sem tropeçar em abreviações), limitada em ~180 chars.
+  const semAbrev = t.replace(/\b(fls?|n|art|Sr|Sra|Dr|Dra|nº)\./gi, (m) =>
+    m.replace(".", " ")
+  );
+  const fim = semAbrev.search(/\.(?:\s|$)/);
+  if (fim > 30) t = t.slice(0, fim + 1);
+  if (t.length > 180) {
+    const corte = t.lastIndexOf(" ", 177);
+    t = t.slice(0, corte > 100 ? corte : 177) + "…";
+  }
+  return { acao, complemento: t };
+}

@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  ExternalLink,
+  Eye,
   FileText,
   FileWarning,
   FolderOpen,
@@ -48,6 +50,7 @@ import {
   tipoDoDocumento,
   type Papel,
 } from "@/lib/notas/pasta";
+import { documentoParaAssinatura } from "@/lib/notas/pdfa";
 import {
   dadosAta,
   dadosRequerimento,
@@ -61,8 +64,8 @@ import {
   type TipoPeca,
 } from "@/lib/notas/pecas";
 import {
+  sintetizar,
   triar,
-  VIAS,
   type ItemClassificado,
   type Via,
 } from "@/lib/notas/resolvedor";
@@ -73,6 +76,7 @@ import {
   pageNativeText,
   readPdfPageTexts,
 } from "@/lib/ocr";
+import { renderPdfThumbnails } from "@/lib/pdf-split";
 
 // ---------------------------------------------------------------------------
 // Extração de texto dos arquivos do caso
@@ -115,7 +119,10 @@ async function textoBarato(
     }
     if (nome.endsWith(".pdf")) {
       const { texto, nativo } = await textoNativoPdf(file);
-      return { texto: nativo ? texto : "", fonte: nativo ? "pdf-nativo" : "pdf-escaneado" };
+      return {
+        texto: nativo ? texto : "",
+        fonte: nativo ? "pdf-nativo" : "pdf-escaneado",
+      };
     }
     if (/\.(jpe?g|png|webp|bmp|gif|heic)$/.test(nome)) {
       return { texto: "", fonte: "imagem" };
@@ -194,11 +201,6 @@ const COR_VIA: Record<Via, string> = {
   INDEFINIDO: "bg-muted text-muted-foreground",
 };
 
-const NOTA_VIA: Record<Via, string> = Object.fromEntries([
-  ...VIAS.map((v) => [v.via, v.nota]),
-  ["INDEFINIDO", "Nenhum gatilho conhecido. Item vai para triagem manual."],
-]) as Record<Via, string>;
-
 interface ArquivoCaso {
   id: number;
   file: File;
@@ -215,6 +217,18 @@ const ROTULO_PAPEL: Record<Papel | "ignorar", string> = {
   documento: "Documento do caso",
   ignorar: "Ignorar",
 };
+
+type PreviewNota =
+  | { tipo: "paginas"; urls: string[] }
+  | { tipo: "imagem"; url: string }
+  | { tipo: "texto"; texto: string };
+
+interface Minuta {
+  texto: string;
+  blob: Blob;
+  nome: string;
+  faltando: string[];
+}
 
 // ---------------------------------------------------------------------------
 
@@ -233,6 +247,9 @@ export default function NotasPage() {
   const [indexando, setIndexando] = React.useState(false);
   const [progresso, setProgresso] = React.useState("");
   const [arrastando, setArrastando] = React.useState(false);
+  const [notaPreview, setNotaPreview] = React.useState<PreviewNota | null>(
+    null
+  );
   const pastaInputRef = React.useRef<HTMLInputElement>(null);
   const arquivosInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -244,14 +261,14 @@ export default function NotasPage() {
   const [serventia, setServentia] = React.useState("");
   const [itens, setItens] = React.useState<ItemTriado[]>([]);
 
-  // --- traslado ---
+  // --- traslado (fonte interna das qualificações; sem card próprio) ---
   const [traslado, setTraslado] = React.useState<DadosTraslado | null>(null);
-  const [trasladoNome, setTrasladoNome] = React.useState("");
 
-  // --- geração ---
+  // --- resolução / minuta ---
   const [itemPecaId, setItemPecaId] = React.useState<number | null>(null);
   const [gerando, setGerando] = React.useState(false);
-  const [faltando, setFaltando] = React.useState<string[]>([]);
+  const [minuta, setMinuta] = React.useState<Minuta | null>(null);
+  const [baixandoDoc, setBaixandoDoc] = React.useState<number | null>(null);
   const [ata, setAta] = React.useState<EntradaAta>({
     dataAto: "",
     artigoNscgj: "53",
@@ -294,6 +311,7 @@ export default function NotasPage() {
       }))
     );
     setItemPecaId(null);
+    setMinuta(null);
     return classificados.length;
   }
 
@@ -311,13 +329,29 @@ export default function NotasPage() {
     return triarDe(texto);
   }
 
-  function aplicarTraslado(texto: string, fonte: Fonte, nome: string) {
+  async function gerarPreviewNota(a: ArquivoCaso) {
+    try {
+      if (/\.pdf$/i.test(a.nome)) {
+        const urls = await renderPdfThumbnails(a.file, 10, 700);
+        setNotaPreview({ tipo: "paginas", urls });
+        return;
+      }
+      if (/\.(jpe?g|png|webp|bmp|gif)$/i.test(a.nome)) {
+        setNotaPreview({ tipo: "imagem", url: URL.createObjectURL(a.file) });
+        return;
+      }
+      setNotaPreview(a.texto ? { tipo: "texto", texto: a.texto } : null);
+    } catch {
+      setNotaPreview(a.texto ? { tipo: "texto", texto: a.texto } : null);
+    }
+  }
+
+  function aplicarTraslado(texto: string, fonte: Fonte) {
     const fonteTraslado: DadosTraslado["fonte"] =
       fonte === "imagem" || fonte === "outro"
         ? "pdf-escaneado"
         : (fonte as DadosTraslado["fonte"]);
     setTraslado(lerTraslado(texto, fonteTraslado));
-    setTrasladoNome(nome);
   }
 
   async function processarPasta(files: File[]) {
@@ -370,9 +404,8 @@ export default function NotasPage() {
 
       // 4. resolução automática
       const trasladoArq = lidos.find((a) => a.papel === "traslado");
-      if (trasladoArq) {
-        aplicarTraslado(trasladoArq.texto, trasladoArq.fonte, trasladoArq.nome);
-      }
+      if (trasladoArq) aplicarTraslado(trasladoArq.texto, trasladoArq.fonte);
+      if (nota) await gerarPreviewNota(nota);
       if (nota && nota.texto) {
         const n = aplicarNota(nota.texto, nota.fonte);
         toast.success(
@@ -399,7 +432,14 @@ export default function NotasPage() {
     setArquivos((prev) =>
       prev.map((x) =>
         x.id === a.id
-          ? { ...x, papel, tipo: papel === "documento" ? tipoDoDocumento(x.nome, x.texto) : x.tipo }
+          ? {
+              ...x,
+              papel,
+              tipo:
+                papel === "documento"
+                  ? tipoDoDocumento(x.nome, x.texto)
+                  : x.tipo,
+            }
           : papel !== "documento" && papel !== "ignorar" && x.papel === papel
             ? { ...x, papel: "documento", tipo: tipoDoDocumento(x.nome, x.texto) }
             : x
@@ -426,9 +466,10 @@ export default function NotasPage() {
           setProgresso("");
         }
       }
+      await gerarPreviewNota({ ...a, texto });
       if (texto) aplicarNota(texto, a.fonte);
     }
-    if (papel === "traslado") aplicarTraslado(a.texto, a.fonte, a.nome);
+    if (papel === "traslado") aplicarTraslado(a.texto, a.fonte);
   }
 
   function mudarItem(id: number, patch: Partial<ItemTriado>) {
@@ -445,6 +486,25 @@ export default function NotasPage() {
     return documentosDoCaso.filter((a) => a.tipo === alvo);
   }
 
+  async function baixarParaAssinatura(doc: ArquivoCaso, itemRef: string) {
+    setBaixandoDoc(doc.id);
+    try {
+      const r = await documentoParaAssinatura(doc.file);
+      triggerDownload(r.blob, `item ${itemRef} - ${r.nome}`);
+      toast.success(
+        r.convertido
+          ? "Documento convertido para PDF/A — pronto para o Assinador ONR."
+          : "PDF baixado intocado (pode conter assinatura prévia)."
+      );
+    } catch (err) {
+      toast.error("Não foi possível preparar o documento", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBaixandoDoc(null);
+    }
+  }
+
   const itemPeca = itens.find((it) => it.id === itemPecaId) ?? null;
   const tipoPeca: TipoPeca | null = itemPeca
     ? pecaDaVia(itemPeca.viaEscolhida)
@@ -454,14 +514,14 @@ export default function NotasPage() {
   // alvos do item.
   const amparoSugerido =
     tipoPeca === "ata" && itemPeca
-      ? itemPeca.alvos.flatMap((alvo) => encontrarNaPasta(alvo))[0] ?? null
+      ? (itemPeca.alvos.flatMap((alvo) => encontrarNaPasta(alvo))[0] ?? null)
       : null;
 
   // Trava de segurança: sem amparo documental declarado, a ata não é gerada —
   // sem lastro, a ata não se sustenta.
   const ataSemAmparo = tipoPeca === "ata" && !ata.amparoDocumental.trim();
 
-  async function gerarPeca() {
+  async function gerarMinuta() {
     if (!itemPeca || !tipoPeca) return;
     setGerando(true);
     try {
@@ -481,21 +541,23 @@ export default function NotasPage() {
                 prenotacao: rerrat.prenotacao || prenotacao,
                 serventia: rerrat.serventia || serventia,
               });
-      const { blob, faltando: semDado } = await fillDocxTemplate(
-        template,
-        dados
-      );
-      setFaltando(semDado);
-      const nome = `RASCUNHO - ${NOMES_PECA[tipoPeca]} - item ${itemPeca.ref}.docx`;
-      triggerDownload(blob, nome);
+      const { blob, faltando } = await fillDocxTemplate(template, dados);
+      const texto = await extractDocxText(blob);
+      setMinuta({
+        texto,
+        blob,
+        nome: `RASCUNHO - ${NOMES_PECA[tipoPeca]} - item ${itemPeca.ref}.docx`,
+        faltando,
+      });
       mudarItem(itemPeca.id, { status: "em_preparo" });
-      if (semDado.length > 0) {
-        toast.warning(`Minuta gerada com ${semDado.length} campo(s) sem dado`, {
-          description:
-            "Os placeholders ficaram visíveis no documento — preencha antes de usar.",
-        });
-      } else {
-        toast.success("Minuta gerada — confira antes de qualquer lavratura.");
+      if (faltando.length > 0) {
+        toast.warning(
+          `Minuta gerada com ${faltando.length} campo(s) sem dado`,
+          {
+            description:
+              "Os placeholders ficaram visíveis — preencha antes de usar.",
+          }
+        );
       }
     } catch (err) {
       toast.error("Não foi possível gerar a minuta", {
@@ -506,9 +568,6 @@ export default function NotasPage() {
     }
   }
 
-  const confirmaveis = itens.filter(
-    (it) => it.confirmado && pecaDaVia(it.viaEscolhida)
-  );
   const notaIdentificada = arquivos.some((a) => a.papel === "nota");
 
   return (
@@ -541,10 +600,10 @@ export default function NotasPage() {
         </AlertDescription>
       </Alert>
 
-      {/* ------------------------------------------------ 1. pasta do caso */}
+      {/* ------------------------------------------------ 1. Pasta do Caso */}
       <Card>
         <CardHeader>
-          <CardTitle>1. Pasta do caso</CardTitle>
+          <CardTitle>1. Pasta do Caso</CardTitle>
           <CardDescription>
             Arraste a pasta inteira (nota devolutiva, traslado em .docx e os
             demais documentos). Cada arquivo é identificado pelo nome e pelo
@@ -693,7 +752,44 @@ export default function NotasPage() {
             </Alert>
           )}
 
-          <details className="space-y-3" open={!notaIdentificada && arquivos.length === 0}>
+          {notaPreview && (
+            <details open className="rounded-lg border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                <Eye className="mr-1 inline size-3.5" />
+                Pré-visualização da nota de exigência identificada
+              </summary>
+              <div className="mt-3 max-h-[28rem] space-y-3 overflow-y-auto rounded-md bg-muted/40 p-3">
+                {notaPreview.tipo === "paginas" &&
+                  notaPreview.urls.map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={u}
+                      alt={`Página ${i + 1} da nota devolutiva`}
+                      className="mx-auto w-full max-w-xl border bg-white shadow-sm"
+                    />
+                  ))}
+                {notaPreview.tipo === "imagem" && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={notaPreview.url}
+                    alt="Nota devolutiva"
+                    className="mx-auto w-full max-w-xl border bg-white shadow-sm"
+                  />
+                )}
+                {notaPreview.tipo === "texto" && (
+                  <pre className="whitespace-pre-wrap font-mono text-xs">
+                    {notaPreview.texto}
+                  </pre>
+                )}
+              </div>
+            </details>
+          )}
+
+          <details
+            className="space-y-3"
+            open={!notaIdentificada && arquivos.length === 0}
+          >
             <summary className="cursor-pointer text-sm text-muted-foreground">
               Texto da nota devolutiva (conferir ou colar manualmente)
             </summary>
@@ -767,633 +863,741 @@ export default function NotasPage() {
         </CardContent>
       </Card>
 
-      {/* ------------------------------------------------ 2. resolução */}
+      {/* ------------------------------------------------ 2. Exigências */}
       {itens.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>2. Resolução das exigências</CardTitle>
+            <CardTitle>2. Exigências</CardTitle>
             <CardDescription>
-              {itens.length} item(ns). O status é por item, não por nota — uma
-              nota com 7 itens costuma ter 4 vias diferentes. Cada juntada já
-              foi cruzada com os documentos da pasta. Confirme a via de cada
-              item antes de gerar a peça.
+              A nota, sintetizada: {itens.length} exigência(s), cada uma com a
+              via de resolução sugerida. O status é por item, não por nota.
+              Confirme a via de cada item para liberar a resolução na etapa 3.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {itens.map((it) => (
-              <div key={it.id} className="space-y-2 rounded-lg border p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">item {it.ref}</Badge>
-                  <Badge className={COR_VIA[it.viaEscolhida]}>
-                    {ROTULO_VIA[it.viaEscolhida]}
-                  </Badge>
-                  {!it.confirmado && it.via !== "INDEFINIDO" && (
-                    <span className="text-xs text-muted-foreground">
-                      sugerida
-                      {it.gatilho ? ` (gatilho: “${it.gatilho}”)` : ""}
-                    </span>
-                  )}
-                  <span className="ml-auto" />
-                  <Select
-                    items={ROTULO_VIA}
-                    value={it.viaEscolhida}
-                    onValueChange={(v) =>
-                      mudarItem(it.id, {
-                        viaEscolhida: v as Via,
-                        confirmado: false,
-                      })
-                    }
-                  >
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(ROTULO_VIA) as Via[]).map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {ROTULO_VIA[v]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    items={STATUS}
-                    value={it.status}
-                    onValueChange={(v) =>
-                      mudarItem(it.id, { status: v as StatusItem })
-                    }
-                  >
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(STATUS) as StatusItem[]).map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {STATUS[s]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <p className="text-sm">{it.texto}</p>
-
-                <p className="text-xs text-muted-foreground">
-                  {NOTA_VIA[it.viaEscolhida]}
-                </p>
-
-                {it.pessoas.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {it.pessoas.map((p) => (
-                      <Badge key={p} variant="secondary">
-                        {p}
-                      </Badge>
-                    ))}
+          <CardContent className="space-y-3">
+            {itens.map((it) => {
+              const s = sintetizar(it);
+              return (
+                <div key={it.id} className="space-y-2 rounded-lg border p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">item {it.ref}</Badge>
+                    <Badge className={COR_VIA[it.viaEscolhida]}>
+                      {ROTULO_VIA[it.viaEscolhida]}
+                    </Badge>
+                    <span className="ml-auto" />
+                    <Select
+                      items={ROTULO_VIA}
+                      value={it.viaEscolhida}
+                      onValueChange={(v) =>
+                        mudarItem(it.id, {
+                          viaEscolhida: v as Via,
+                          confirmado: false,
+                        })
+                      }
+                    >
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(ROTULO_VIA) as Via[]).map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {ROTULO_VIA[v]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      items={STATUS}
+                      value={it.status}
+                      onValueChange={(v) =>
+                        mudarItem(it.id, { status: v as StatusItem })
+                      }
+                    >
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(STATUS) as StatusItem[]).map((st) => (
+                          <SelectItem key={st} value={st}>
+                            {STATUS[st]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
 
-                {/* cruzamento da exigência com a pasta do caso */}
-                {it.alvos.length > 0 && (
-                  <div className="space-y-1">
+                  <p className="text-sm font-medium">{s.acao}</p>
+                  <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                    <li>{s.complemento}</li>
+                    {it.pessoas.map((p) => (
+                      <li key={p}>Parte citada: {p}</li>
+                    ))}
                     {it.alvos.map((alvo) => {
                       const achados = encontrarNaPasta(alvo);
-                      return achados.length > 0 ? (
-                        <p
+                      return (
+                        <li
                           key={alvo}
-                          className="flex items-center gap-1.5 text-xs text-emerald-700"
+                          className={
+                            achados.length > 0
+                              ? "text-emerald-700"
+                              : "text-red-600"
+                          }
                         >
-                          <CheckCircle2 className="size-3.5 shrink-0" />
-                          {alvo} na pasta:{" "}
-                          {achados.map((d) => `“${d.nome}”`).join(", ")}
-                        </p>
-                      ) : (
-                        <p
-                          key={alvo}
-                          className="flex items-center gap-1.5 text-xs text-red-600"
-                        >
-                          <XCircle className="size-3.5 shrink-0" />
-                          {alvo}: não encontrado na pasta — obter/reemitir
-                        </p>
+                          {achados.length > 0
+                            ? `${alvo} — na pasta: ${achados
+                                .map((d) => `“${d.nome}”`)
+                                .join(", ")}`
+                            : `${alvo} — não encontrado na pasta (obter/reemitir)`}
+                        </li>
                       );
                     })}
-                  </div>
-                )}
+                  </ul>
 
-                {it.viaEscolhida === "PROVIDENCIA_EXTERNA" && (
-                  <p className="text-xs font-medium text-orange-700">
-                    Depende de terceiro — é a via que mais atrasa e mais escapa
-                    do radar. Acompanhe em separado.
-                  </p>
-                )}
+                  <details>
+                    <summary className="cursor-pointer text-xs text-muted-foreground">
+                      Ver texto original da nota
+                    </summary>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {it.texto}
+                    </p>
+                  </details>
 
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={it.confirmado}
-                    onCheckedChange={(c) =>
-                      mudarItem(it.id, { confirmado: c === true })
-                    }
-                  />
-                  Confirmo a via de resolução deste item
-                </label>
-              </div>
-            ))}
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={it.confirmado}
+                      onCheckedChange={(c) =>
+                        mudarItem(it.id, { confirmado: c === true })
+                      }
+                    />
+                    Confirmo a via de resolução deste item
+                  </label>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}
 
-      {/* ------------------------------------------------ 3. traslado */}
-      {traslado && (
+      {/* --------------------------------- 3. Resolvendo as Exigências */}
+      {itens.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>3. Traslado do ato</CardTitle>
+            <CardTitle>3. Resolvendo as Exigências</CardTitle>
             <CardDescription>
-              {trasladoNome ? `“${trasladoNome}” — ` : ""}fonte das
-              qualificações e da identificação do ato, sem redigitação.
+              Juntada: o documento sai da pasta em PDF/A, pronto para assinar
+              no Assinador ONR e reingressar na ONR – RI Digital. Demais vias:
+              a minuta da peça é montada aqui.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!traslado.confiavel && (
-              <Alert className="border-amber-200 bg-amber-50">
-                <AlertTriangle className="size-4 text-amber-600" />
-                <AlertTitle className="text-amber-800">
-                  Traslado escaneado — campos não confiáveis
-                </AlertTitle>
-                <AlertDescription className="text-amber-700">
-                  O texto veio de OCR. Num teste real, 5 de 8 campos vieram
-                  corrompidos. Use este arquivo apenas para localizar o .docx
-                  do cartório; confira campo a campo o que for aproveitado.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-              {(
-                [
-                  ["Formato", traslado.formato],
-                  ["Espécie", traslado.especie],
-                  [
-                    "Livro / folhas",
-                    traslado.traslado
-                      ? `livro ${traslado.traslado.livro}, fls. ${traslado.traslado.fls}`
-                      : undefined,
-                  ],
-                  ["Data da lavratura", traslado.data],
-                  ["Partes", traslado.partesTitulo],
-                  ["Escrevente", traslado.escrevente],
-                  [
-                    "Videoconferência",
-                    traslado.videoconferencia
-                      ? "sim — bloco MNE será incluído"
-                      : "não",
-                  ],
-                  [
-                    "Qualificações",
-                    traslado.qualificacoes
-                      ? `${traslado.qualificacoes.length} caracteres extraídos`
-                      : undefined,
-                  ],
-                  ["Síntese sugerida", traslado.sinteseSugerida],
-                  [
-                    "Ato referenciado",
-                    traslado.atoReferenciado
-                      ? `${traslado.atoReferenciado.especie} — livro ${traslado.atoReferenciado.livro}, fls. ${traslado.atoReferenciado.fls}, ${traslado.atoReferenciado.data}`
-                      : undefined,
-                  ],
-                ] as Array<[string, string | undefined]>
-              )
-                .filter(([, v]) => v)
-                .map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="font-medium">{k}</dt>
-                    <dd className="text-muted-foreground">{v}</dd>
+            {itens.map((it) => {
+              const peca = pecaDaVia(it.viaEscolhida);
+              return (
+                <div key={it.id} className="space-y-3 rounded-lg border p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">item {it.ref}</Badge>
+                    <Badge className={COR_VIA[it.viaEscolhida]}>
+                      {ROTULO_VIA[it.viaEscolhida]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {STATUS[it.status]}
+                    </span>
                   </div>
-                ))}
-            </dl>
 
-            {traslado.atoReferenciado && (
-              <Alert>
-                <AlertTriangle className="size-4" />
-                <AlertTitle>Este ato já é uma rerratificação</AlertTitle>
-                <AlertDescription>
-                  Ele referencia o livro {traslado.atoReferenciado.livro}, fls.{" "}
-                  {traslado.atoReferenciado.fls}. Corrija contra a versão
-                  retificada mais recente, não contra a escritura original.
-                </AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ------------------------------------------------ 4. geração */}
-      {confirmaveis.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>4. Gerar minuta (rascunho)</CardTitle>
-            <CardDescription>
-              Disponível para itens confirmados cuja via gera peça: ata
-              retificativa, requerimento ou rerratificação. Juntada e
-              providência externa não geram peça.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <Label>Item da nota</Label>
-              <Select
-                items={Object.fromEntries(
-                  confirmaveis.map((it) => [
-                    String(it.id),
-                    `item ${it.ref} — ${ROTULO_VIA[it.viaEscolhida]}`,
-                  ])
-                )}
-                value={itemPecaId === null ? null : String(itemPecaId)}
-                onValueChange={(v) => setItemPecaId(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Escolher item confirmado…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {confirmaveis.map((it) => (
-                    <SelectItem key={it.id} value={String(it.id)}>
-                      item {it.ref} — {ROTULO_VIA[it.viaEscolhida]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {tipoPeca === "ata" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="campo-data-da-ata">Data da ata (dd/mm/aaaa)</Label>
-                  <Input
-                    id="campo-data-da-ata"
-                    value={ata.dataAto}
-                    onChange={(e) => setAta({ ...ata, dataAto: e.target.value })}
-                    placeholder="09/08/2026"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Artigo NSCGJ</Label>
-                  <Select
-                    items={{
-                      "53": "53 — qualificação de pessoa",
-                      "54": "54 — descrição de bem",
-                    }}
-                    value={ata.artigoNscgj}
-                    onValueChange={(v) =>
-                      setAta({ ...ata, artigoNscgj: v as "53" | "54" })
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="53">
-                        53 — qualificação de pessoa
-                      </SelectItem>
-                      <SelectItem value="54">54 — descrição de bem</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-provimentos">Provimentos</Label>
-                  <Input
-                    id="campo-provimentos"
-                    value={ata.provimentos}
-                    onChange={(e) =>
-                      setAta({ ...ata, provimentos: e.target.value })
-                    }
-                    placeholder="40/2012 ou 40/2012 e 7/2013"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-natureza-do-erro">Natureza do erro</Label>
-                  <Input
-                    id="campo-natureza-do-erro"
-                    value={ata.naturezaErro}
-                    onChange={(e) =>
-                      setAta({ ...ata, naturezaErro: e.target.value })
-                    }
-                    placeholder="o erro material / ao erro de redação"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-especie-da-escritura">Espécie da escritura</Label>
-                  <Input
-                    id="campo-especie-da-escritura"
-                    value={ata.especieEscritura}
-                    onChange={(e) =>
-                      setAta({ ...ata, especieEscritura: e.target.value })
-                    }
-                    placeholder={traslado?.especie ?? "Escritura de Venda e Compra"}
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-teor-da-retificacao">Teor da retificação</Label>
-                  <Textarea
-                    id="campo-teor-da-retificacao"
-                    rows={3}
-                    value={ata.teorRetificacao}
-                    onChange={(e) =>
-                      setAta({ ...ata, teorRetificacao: e.target.value })
-                    }
-                    placeholder="onde constou X, deve constar Y…"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-amparo-documental">
-                    Amparo documental{" "}
-                    <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="campo-amparo-documental"
-                    value={ata.amparoDocumental}
-                    onChange={(e) =>
-                      setAta({ ...ata, amparoDocumental: e.target.value })
-                    }
-                    placeholder="ex.: Certidão de Casamento arquivada nestas notas"
-                  />
-                  {amparoSugerido && !ata.amparoDocumental.trim() && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setAta({
-                          ...ata,
-                          amparoDocumental: `${amparoSugerido.tipo} arquivada na pasta do processo (arquivo: ${amparoSugerido.nome})`,
-                        })
-                      }
-                    >
-                      <CheckCircle2 className="size-3.5" />
-                      Usar da pasta: {amparoSugerido.nome}
-                    </Button>
+                  {/* ------------------------ juntada: documento da pasta */}
+                  {it.viaEscolhida === "JUNTADA" && (
+                    <div className="space-y-2">
+                      {it.alvos.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum documento específico reconhecido no texto —
+                          identifique o documento pedido e junte-o pela pasta.
+                        </p>
+                      )}
+                      {it.alvos.map((alvo) => {
+                        const achados = encontrarNaPasta(alvo);
+                        if (achados.length === 0) {
+                          return (
+                            <p
+                              key={alvo}
+                              className="flex items-center gap-1.5 text-sm text-red-600"
+                            >
+                              <XCircle className="size-4 shrink-0" />
+                              {alvo}: não está na pasta — obter/reemitir antes
+                              de assinar.
+                            </p>
+                          );
+                        }
+                        return achados.map((doc) => (
+                          <div
+                            key={`${alvo}-${doc.id}`}
+                            className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm"
+                          >
+                            <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                            <span
+                              className="min-w-0 flex-1 truncate"
+                              title={doc.nome}
+                            >
+                              {doc.nome}
+                            </span>
+                            <Badge variant="secondary">{alvo}</Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={baixandoDoc === doc.id}
+                              onClick={() => baixarParaAssinatura(doc, it.ref)}
+                            >
+                              {baixandoDoc === doc.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Download className="size-3.5" />
+                              )}
+                              Baixar PDF/A
+                            </Button>
+                          </div>
+                        ));
+                      })}
+                      <p className="text-xs text-muted-foreground">
+                        Assine o PDF no{" "}
+                        <a
+                          href="https://assinador.onr.org.br"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+                        >
+                          Assinador ONR
+                          <ExternalLink className="size-3" />
+                        </a>{" "}
+                        e reingresse o título pela plataforma ONR – RI Digital.
+                      </p>
+                    </div>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    A ata precisa declarar em que documento arquivado se apoia.
-                    Sem amparo documental, a via da ata não se sustenta — e a
-                    minuta não é gerada.
-                    {!amparoSugerido &&
-                      documentosDoCaso.length > 0 &&
-                      " Nenhum documento de amparo foi localizado na pasta para este item."}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-subscritor">Subscritor</Label>
-                  <Input
-                    id="campo-subscritor"
-                    value={ata.subscritor}
-                    onChange={(e) =>
-                      setAta({ ...ata, subscritor: e.target.value })
-                    }
-                    placeholder="nome de quem subscreve a ata"
-                  />
-                </div>
-              </div>
-            )}
 
-            {tipoPeca === "requerimento" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="campo-serventia-destinataria">Serventia destinatária</Label>
-                  <Input
-                    id="campo-serventia-destinataria"
-                    value={req.serventia}
-                    onChange={(e) =>
-                      setReq({ ...req, serventia: e.target.value })
-                    }
-                    placeholder={serventia || "1º Registro Imobiliário de…"}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-verbo">Verbo</Label>
-                  <Input
-                    id="campo-verbo"
-                    value={req.verbo}
-                    onChange={(e) => setReq({ ...req, verbo: e.target.value })}
-                    placeholder="requerer / solicitar / expor"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-qualificacao-do-requerente">Qualificação do requerente</Label>
-                  <Textarea
-                    id="campo-qualificacao-do-requerente"
-                    rows={3}
-                    value={req.qualificacao}
-                    onChange={(e) =>
-                      setReq({ ...req, qualificacao: e.target.value })
-                    }
-                    placeholder={
-                      traslado?.qualificacoes
-                        ? "cole aqui a qualificação (o traslado carregado tem o bloco completo)"
-                        : "NOME, nacionalidade, RG…, inscrito no CPF/MF sob nº…"
-                    }
-                  />
-                  {traslado?.qualificacoes && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setReq({
-                          ...req,
-                          qualificacao: traslado.qualificacoes ?? "",
-                        })
-                      }
-                    >
-                      Usar qualificações do traslado
-                    </Button>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-referencia">Referência (opcional)</Label>
-                  <Input
-                    id="campo-referencia"
-                    value={req.referencia}
-                    onChange={(e) =>
-                      setReq({ ...req, referencia: e.target.value })
-                    }
-                    placeholder=", em resposta à nota devolutiva nº…"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-data">Data (dd/mm/aaaa)</Label>
-                  <Input
-                    id="campo-data"
-                    value={req.data}
-                    onChange={(e) => setReq({ ...req, data: e.target.value })}
-                    placeholder="09/08/2026"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-objeto-do-requerimento">Objeto do requerimento</Label>
-                  <Textarea
-                    id="campo-objeto-do-requerimento"
-                    rows={3}
-                    value={req.objeto}
-                    onChange={(e) => setReq({ ...req, objeto: e.target.value })}
-                    placeholder="o que se requer, em uma frase"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-bloco-extra">Bloco extra (DOS FATOS / esclarecimentos — opcional)</Label>
-                  <Textarea
-                    id="campo-bloco-extra"
-                    rows={3}
-                    value={req.blocoExtra}
-                    onChange={(e) =>
-                      setReq({ ...req, blocoExtra: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-assinante">Assinante</Label>
-                  <Input
-                    id="campo-assinante"
-                    value={req.assinante}
-                    onChange={(e) =>
-                      setReq({ ...req, assinante: e.target.value })
-                    }
-                    placeholder="nome de quem assina"
-                  />
-                </div>
-              </div>
-            )}
-
-            {tipoPeca === "rerratificacao" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {!traslado && (
-                  <Alert className="sm:col-span-2">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Carregue o traslado do ato</AlertTitle>
-                    <AlertDescription>
-                      As qualificações e a identificação do ato saem do
-                      traslado, sem redigitação. Sem ele, esses campos ficarão
-                      como placeholders. Marque o arquivo do traslado na pasta
-                      do caso (etapa 1).
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <div className="space-y-1">
-                  <Label htmlFor="campo-data-do-novo-ato">Data do novo ato (dd/mm/aaaa)</Label>
-                  <Input
-                    id="campo-data-do-novo-ato"
-                    value={rerrat.dataAto}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, dataAto: e.target.value })
-                    }
-                    placeholder="09/08/2026"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-tabeliao">Tabelião</Label>
-                  <Input
-                    id="campo-tabeliao"
-                    value={rerrat.tabeliao}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, tabeliao: e.target.value })
-                    }
-                    placeholder="nome do tabelião"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-sintese-do-ato">Síntese do ato (item I)</Label>
-                  <Textarea
-                    id="campo-sintese-do-ato"
-                    rows={3}
-                    value={rerrat.sintese}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, sintese: e.target.value })
-                    }
-                    placeholder={
-                      traslado?.sinteseSugerida ??
-                      "o primeiro nomeado, vendeu ao segundo nomeado pelo valor de…"
-                    }
-                  />
-                  {traslado?.sinteseSugerida && (
-                    <p className="text-xs text-muted-foreground">
-                      Vazio = usa a síntese derivada do quadro-resumo do
-                      traslado.
+                  {/* ------------------------ providência externa */}
+                  {it.viaEscolhida === "PROVIDENCIA_EXTERNA" && (
+                    <p className="text-sm text-orange-700">
+                      Depende de ato de terceiro ou de outro protocolo — não se
+                      resolve com peça nossa. É a via que mais atrasa e mais
+                      escapa do radar: use o status “Aguardando terceiro” e
+                      acompanhe em separado.
                     </p>
                   )}
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-bloco-do-lapso">Bloco do lapso (item II — o que constou errado)</Label>
-                  <Textarea
-                    id="campo-bloco-do-lapso"
-                    rows={3}
-                    value={rerrat.blocoLapso}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, blocoLapso: e.target.value })
-                    }
-                    placeholder="Entretanto, por um lapso, constou erroneamente naquela escritura que: a) …"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="campo-bloco-da-correcao">Bloco da correção (item III — pareado com o II)</Label>
-                  <Textarea
-                    id="campo-bloco-da-correcao"
-                    rows={3}
-                    value={rerrat.blocoCorrecao}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, blocoCorrecao: e.target.value })
-                    }
-                    placeholder="RETIFICAM aquela escritura, para constar que: a) …"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Os itens II e III são pareados um a um: “a)” errado ↔ “a)”
-                    correto.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-prenotacao">Prenotação</Label>
-                  <Input
-                    id="campo-prenotacao"
-                    value={rerrat.prenotacao}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, prenotacao: e.target.value })
-                    }
-                    placeholder={prenotacao || "nº da prenotação"}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="campo-serventia-rerrat">Serventia</Label>
-                  <Input
-                    id="campo-serventia-rerrat"
-                    value={rerrat.serventia}
-                    onChange={(e) =>
-                      setRerrat({ ...rerrat, serventia: e.target.value })
-                    }
-                    placeholder={serventia || "serventia da nota"}
-                  />
-                </div>
-              </div>
-            )}
 
-            {itemPeca && tipoPeca && (
-              <div className="space-y-2">
-                {ataSemAmparo && (
-                  <p className="text-sm font-medium text-destructive">
-                    Informe o amparo documental para liberar a geração da ata.
-                  </p>
-                )}
-                <Button
-                  onClick={gerarPeca}
-                  disabled={gerando || ataSemAmparo}
-                >
-                  {gerando ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
+                  {/* ------------------------ indefinido */}
+                  {it.viaEscolhida === "INDEFINIDO" && (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum gatilho conhecido — classifique a via manualmente
+                      na etapa 2 para liberar a resolução.
+                    </p>
                   )}
-                  Gerar {NOMES_PECA[tipoPeca]} (.docx)
-                </Button>
-                {faltando.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Campos sem dado (mantidos como placeholder):{" "}
-                    {faltando.join(", ")}
-                  </p>
-                )}
-              </div>
-            )}
+
+                  {/* ------------------------ vias com peça: minuta */}
+                  {peca && !it.confirmado && (
+                    <p className="text-sm text-muted-foreground">
+                      Confirme a via na etapa 2 para preparar a minuta de{" "}
+                      {NOMES_PECA[peca]}.
+                    </p>
+                  )}
+                  {peca && it.confirmado && itemPecaId !== it.id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setItemPecaId(it.id);
+                        setMinuta(null);
+                      }}
+                    >
+                      <ScrollText className="size-3.5" />
+                      Preparar minuta de {NOMES_PECA[peca]}
+                    </Button>
+                  )}
+
+                  {peca && it.confirmado && itemPecaId === it.id && (
+                    <div className="space-y-4 border-t pt-3">
+                      {tipoPeca === "ata" && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-data-da-ata">
+                              Data da ata (dd/mm/aaaa)
+                            </Label>
+                            <Input
+                              id="campo-data-da-ata"
+                              value={ata.dataAto}
+                              onChange={(e) =>
+                                setAta({ ...ata, dataAto: e.target.value })
+                              }
+                              placeholder="09/08/2026"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Artigo NSCGJ</Label>
+                            <Select
+                              items={{
+                                "53": "53 — qualificação de pessoa",
+                                "54": "54 — descrição de bem",
+                              }}
+                              value={ata.artigoNscgj}
+                              onValueChange={(v) =>
+                                setAta({
+                                  ...ata,
+                                  artigoNscgj: v as "53" | "54",
+                                })
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="53">
+                                  53 — qualificação de pessoa
+                                </SelectItem>
+                                <SelectItem value="54">
+                                  54 — descrição de bem
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-provimentos">
+                              Provimentos
+                            </Label>
+                            <Input
+                              id="campo-provimentos"
+                              value={ata.provimentos}
+                              onChange={(e) =>
+                                setAta({ ...ata, provimentos: e.target.value })
+                              }
+                              placeholder="40/2012 ou 40/2012 e 7/2013"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-natureza-do-erro">
+                              Natureza do erro
+                            </Label>
+                            <Input
+                              id="campo-natureza-do-erro"
+                              value={ata.naturezaErro}
+                              onChange={(e) =>
+                                setAta({ ...ata, naturezaErro: e.target.value })
+                              }
+                              placeholder="o erro material / ao erro de redação"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-especie-da-escritura">
+                              Espécie da escritura
+                            </Label>
+                            <Input
+                              id="campo-especie-da-escritura"
+                              value={ata.especieEscritura}
+                              onChange={(e) =>
+                                setAta({
+                                  ...ata,
+                                  especieEscritura: e.target.value,
+                                })
+                              }
+                              placeholder={
+                                traslado?.especie ??
+                                "Escritura de Venda e Compra"
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-teor-da-retificacao">
+                              Teor da retificação
+                            </Label>
+                            <Textarea
+                              id="campo-teor-da-retificacao"
+                              rows={3}
+                              value={ata.teorRetificacao}
+                              onChange={(e) =>
+                                setAta({
+                                  ...ata,
+                                  teorRetificacao: e.target.value,
+                                })
+                              }
+                              placeholder="onde constou X, deve constar Y…"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-amparo-documental">
+                              Amparo documental{" "}
+                              <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="campo-amparo-documental"
+                              value={ata.amparoDocumental}
+                              onChange={(e) =>
+                                setAta({
+                                  ...ata,
+                                  amparoDocumental: e.target.value,
+                                })
+                              }
+                              placeholder="ex.: Certidão de Casamento arquivada nestas notas"
+                            />
+                            {amparoSugerido &&
+                              !ata.amparoDocumental.trim() && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setAta({
+                                      ...ata,
+                                      amparoDocumental: `${amparoSugerido.tipo} arquivada na pasta do processo (arquivo: ${amparoSugerido.nome})`,
+                                    })
+                                  }
+                                >
+                                  <CheckCircle2 className="size-3.5" />
+                                  Usar da pasta: {amparoSugerido.nome}
+                                </Button>
+                              )}
+                            <p className="text-xs text-muted-foreground">
+                              A ata precisa declarar em que documento arquivado
+                              se apoia. Sem amparo documental, a via da ata não
+                              se sustenta — e a minuta não é gerada.
+                              {!amparoSugerido &&
+                                documentosDoCaso.length > 0 &&
+                                " Nenhum documento de amparo foi localizado na pasta para este item."}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-subscritor">Subscritor</Label>
+                            <Input
+                              id="campo-subscritor"
+                              value={ata.subscritor}
+                              onChange={(e) =>
+                                setAta({ ...ata, subscritor: e.target.value })
+                              }
+                              placeholder="nome de quem subscreve a ata"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {tipoPeca === "requerimento" && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-serventia-destinataria">
+                              Serventia destinatária
+                            </Label>
+                            <Input
+                              id="campo-serventia-destinataria"
+                              value={req.serventia}
+                              onChange={(e) =>
+                                setReq({ ...req, serventia: e.target.value })
+                              }
+                              placeholder={
+                                serventia || "1º Registro Imobiliário de…"
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-verbo">Verbo</Label>
+                            <Input
+                              id="campo-verbo"
+                              value={req.verbo}
+                              onChange={(e) =>
+                                setReq({ ...req, verbo: e.target.value })
+                              }
+                              placeholder="requerer / solicitar / expor"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-qualificacao-do-requerente">
+                              Qualificação do requerente
+                            </Label>
+                            <Textarea
+                              id="campo-qualificacao-do-requerente"
+                              rows={3}
+                              value={req.qualificacao}
+                              onChange={(e) =>
+                                setReq({ ...req, qualificacao: e.target.value })
+                              }
+                              placeholder={
+                                traslado?.qualificacoes
+                                  ? "cole aqui a qualificação (o traslado carregado tem o bloco completo)"
+                                  : "NOME, nacionalidade, RG…, inscrito no CPF/MF sob nº…"
+                              }
+                            />
+                            {traslado?.qualificacoes && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setReq({
+                                    ...req,
+                                    qualificacao: traslado.qualificacoes ?? "",
+                                  })
+                                }
+                              >
+                                Usar qualificações do traslado
+                              </Button>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-referencia">
+                              Referência (opcional)
+                            </Label>
+                            <Input
+                              id="campo-referencia"
+                              value={req.referencia}
+                              onChange={(e) =>
+                                setReq({ ...req, referencia: e.target.value })
+                              }
+                              placeholder=", em resposta à nota devolutiva nº…"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-data">Data (dd/mm/aaaa)</Label>
+                            <Input
+                              id="campo-data"
+                              value={req.data}
+                              onChange={(e) =>
+                                setReq({ ...req, data: e.target.value })
+                              }
+                              placeholder="09/08/2026"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-objeto-do-requerimento">
+                              Objeto do requerimento
+                            </Label>
+                            <Textarea
+                              id="campo-objeto-do-requerimento"
+                              rows={3}
+                              value={req.objeto}
+                              onChange={(e) =>
+                                setReq({ ...req, objeto: e.target.value })
+                              }
+                              placeholder="o que se requer, em uma frase"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-bloco-extra">
+                              Bloco extra (DOS FATOS / esclarecimentos —
+                              opcional)
+                            </Label>
+                            <Textarea
+                              id="campo-bloco-extra"
+                              rows={3}
+                              value={req.blocoExtra}
+                              onChange={(e) =>
+                                setReq({ ...req, blocoExtra: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-assinante">Assinante</Label>
+                            <Input
+                              id="campo-assinante"
+                              value={req.assinante}
+                              onChange={(e) =>
+                                setReq({ ...req, assinante: e.target.value })
+                              }
+                              placeholder="nome de quem assina"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {tipoPeca === "rerratificacao" && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {!traslado && (
+                            <Alert className="sm:col-span-2">
+                              <AlertTriangle className="size-4" />
+                              <AlertTitle>
+                                Carregue o traslado do ato
+                              </AlertTitle>
+                              <AlertDescription>
+                                As qualificações e a identificação do ato saem
+                                do traslado, sem redigitação. Sem ele, esses
+                                campos ficarão como placeholders. Marque o
+                                arquivo do traslado na pasta do caso (etapa 1).
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-data-do-novo-ato">
+                              Data do novo ato (dd/mm/aaaa)
+                            </Label>
+                            <Input
+                              id="campo-data-do-novo-ato"
+                              value={rerrat.dataAto}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  dataAto: e.target.value,
+                                })
+                              }
+                              placeholder="09/08/2026"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-tabeliao">Tabelião</Label>
+                            <Input
+                              id="campo-tabeliao"
+                              value={rerrat.tabeliao}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  tabeliao: e.target.value,
+                                })
+                              }
+                              placeholder="nome do tabelião"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-sintese-do-ato">
+                              Síntese do ato (item I)
+                            </Label>
+                            <Textarea
+                              id="campo-sintese-do-ato"
+                              rows={3}
+                              value={rerrat.sintese}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  sintese: e.target.value,
+                                })
+                              }
+                              placeholder={
+                                traslado?.sinteseSugerida ??
+                                "o primeiro nomeado, vendeu ao segundo nomeado pelo valor de…"
+                              }
+                            />
+                            {traslado?.sinteseSugerida && (
+                              <p className="text-xs text-muted-foreground">
+                                Vazio = usa a síntese derivada do quadro-resumo
+                                do traslado.
+                              </p>
+                            )}
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-bloco-do-lapso">
+                              Bloco do lapso (item II — o que constou errado)
+                            </Label>
+                            <Textarea
+                              id="campo-bloco-do-lapso"
+                              rows={3}
+                              value={rerrat.blocoLapso}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  blocoLapso: e.target.value,
+                                })
+                              }
+                              placeholder="Entretanto, por um lapso, constou erroneamente naquela escritura que: a) …"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label htmlFor="campo-bloco-da-correcao">
+                              Bloco da correção (item III — pareado com o II)
+                            </Label>
+                            <Textarea
+                              id="campo-bloco-da-correcao"
+                              rows={3}
+                              value={rerrat.blocoCorrecao}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  blocoCorrecao: e.target.value,
+                                })
+                              }
+                              placeholder="RETIFICAM aquela escritura, para constar que: a) …"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Os itens II e III são pareados um a um: “a)”
+                              errado ↔ “a)” correto.
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-prenotacao">Prenotação</Label>
+                            <Input
+                              id="campo-prenotacao"
+                              value={rerrat.prenotacao}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  prenotacao: e.target.value,
+                                })
+                              }
+                              placeholder={prenotacao || "nº da prenotação"}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="campo-serventia-rerrat">
+                              Serventia
+                            </Label>
+                            <Input
+                              id="campo-serventia-rerrat"
+                              value={rerrat.serventia}
+                              onChange={(e) =>
+                                setRerrat({
+                                  ...rerrat,
+                                  serventia: e.target.value,
+                                })
+                              }
+                              placeholder={serventia || "serventia da nota"}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {ataSemAmparo && (
+                          <p className="text-sm font-medium text-destructive">
+                            Informe o amparo documental para liberar a geração
+                            da ata.
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            onClick={gerarMinuta}
+                            disabled={gerando || ataSemAmparo}
+                          >
+                            {gerando ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                            {minuta ? "Atualizar minuta" : "Gerar minuta"}
+                          </Button>
+                          {minuta && (
+                            <Button
+                              variant="outline"
+                              onClick={() =>
+                                triggerDownload(minuta.blob, minuta.nome)
+                              }
+                            >
+                              <Download className="size-4" />
+                              Baixar .docx
+                            </Button>
+                          )}
+                        </div>
+                        {minuta && (
+                          <div className="space-y-2">
+                            {minuta.faltando.length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                Campos sem dado (mantidos como placeholder):{" "}
+                                {minuta.faltando.join(", ")}
+                              </p>
+                            )}
+                            <div className="max-h-96 overflow-y-auto rounded-md border bg-muted/40 p-4">
+                              <p className="whitespace-pre-wrap text-sm">
+                                {minuta.texto}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Minuta de conferência — rascunho. Revise antes de
+                              qualquer lavratura.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}
