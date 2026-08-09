@@ -34,10 +34,29 @@ Fora a rota de IA (uma função serverless), a infraestrutura continua estática
 Fotos tiradas com celular — tortas, com sombra, papel amassado, fundo da mesa aparecendo — passam por um pipeline que as transforma em algo parecido com uma página digitalizada:
 
 1. **Correção de perspectiva** ([lib/perspective.ts](lib/perspective.ts)): acha os quatro cantos da folha e a estica para um retângulo com amostragem bilinear. É esta etapa que tira a impressão de "foto de um papel em cima da mesa"; um recorte retangular apenas reenquadra, não desentorta.
-2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz por máximo local + borrão e traz as regiões sombreadas ao nível do papel bem iluminado.
+2. **Equalização da iluminação** ([lib/image-enhance.ts](lib/image-enhance.ts)): estima o campo de luz e traz as regiões sombreadas ao nível do papel bem iluminado, o que apaga dobras e sombras.
 3. **Níveis por percentil, nitidez e upscaling clássico** (interpolação, nunca generativo), com saída em ~200 dpi para impressão.
 
 Quando a detecção dos cantos não é confiável, o pipeline cai para recorte por caixa + correção de inclinação, e no limite deixa a imagem como está — é preferível não enquadrar a arriscar cortar conteúdo.
+
+### Como a dobra some sem o documento ser alterado
+
+Esta é a parte mais difícil do pipeline, e as três primeiras versões falharam nela — sempre trocando uma coisa pela outra. O problema: um **vinco** e uma **mancha cinza-clara de conteúdo** (um fundo chapado, um carimbo grande) têm brilho parecido e área parecida. Quem quer apagar o vinco acaba clareando a mancha até o branco; quem quer proteger a mancha deixa o vinco na imagem.
+
+Foi medido, não estimado. Com um documento de referência plano, um campo de iluminação sintético (painéis de dobra, vincos e sombra de canto) aplicado por multiplicação, e a saída comparada com o original:
+
+| tentativa | papel amassado | dobras | tons do documento plano |
+| --- | --- | --- | --- |
+| máximo local + borrão (raio único) | 28 | 35 | fiel |
+| limiar de papel + erosão | 28 | 13–20 | mancha clara estourava |
+| tapar depressões rasas do campo | 41 | 20 | fiel |
+| **crescimento a partir de sementes** | **1** | **9** | **fiel** |
+
+(“papel” e “dobras” são o espalhamento p95−p5 da luminância numa área em branco: quanto menor, mais uniforme.)
+
+O que resolveu foi trocar o critério. Nem brilho nem tamanho separam vinco de mancha — a **borda** separa: mancha de conteúdo tem contorno nítido, sombra e vinco são rampas suaves. Então o papel é definido por crescimento: parte-se das regiões mais claras (papel com certeza) e cresce-se aceitando vizinhos de brilho parecido. A rampa do vinco é atravessada e ele entra na medição da luz — por isso é corrigido; o degrau da mancha não é atravessado e ela fica de fora — por isso é preservada. É a mesma ideia da detecção de fundo em [lib/perspective.ts](lib/perspective.ts), aplicada agora dentro do documento.
+
+Com o papel identificado, a luz é medida **só nele** (é o único lugar onde ela é observável, já que o papel tem refletância constante) e interpolada por cima da tinta e dos blocos de conteúdo, por convolução normalizada em vários raios: usa-se sempre o menor raio com papel suficiente por perto, o que mantém o vinco e atravessa uma foto 3x4.
 
 ### A regra que manda: não alterar o documento
 
@@ -47,7 +66,7 @@ O documento tem de sair **legível para impressão e com todo o conteúdo intact
 - **A remoção de sombra equaliza, não clareia.** Ela normalizava tudo para 255, e os níveis clareavam de novo logo depois: o clareamento em dose dupla estourava a imagem. Hoje o ganho é 1 na área mais bem iluminada e só sobe na sombra.
 - **A curva de gama é 1.** Qualquer gama diferente de 1 desloca os meios-tons, ou seja, muda como o conteúdo aparece. O que se faz é apenas esticar o histograma entre preto e branco — transformação linear.
 
-O preço disso é honesto: **sombra e vinco fortes continuam levemente visíveis**. Preferimos assim a apagar conteúdo.
+Essas três regras impedem o estouro, mas sozinhas não apagam dobra nenhuma — quem faz isso é a equalização descrita acima. O que resta na saída é a **linha fina do vinco**, que é o que também aparece num scan de verdade de um papel dobrado.
 
 ### O documento é o que não é fundo
 
