@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Loader2,
   ScrollText,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 
@@ -268,6 +269,7 @@ export default function NotasPage() {
   // --- resolução / minuta ---
   const [itemPecaId, setItemPecaId] = React.useState<number | null>(null);
   const [gerando, setGerando] = React.useState(false);
+  const [redigindo, setRedigindo] = React.useState(false);
   const [minuta, setMinuta] = React.useState<Minuta | null>(null);
   const [baixandoDoc, setBaixandoDoc] = React.useState<number | null>(null);
   const [ata, setAta] = React.useState<EntradaAta>({
@@ -524,6 +526,100 @@ export default function NotasPage() {
   // Trava de segurança: sem amparo documental declarado, a ata não é gerada —
   // sem lastro, a ata não se sustenta.
   const ataSemAmparo = tipoPeca === "ata" && !ata.amparoDocumental.trim();
+
+  // Redação assistida (Gemini): a IA sugere o conteúdo dos campos VAZIOS da
+  // peça — os templates .docx não são alterados e campo já preenchido pelo
+  // operador nunca é sobrescrito.
+  async function redigirComIa() {
+    if (!itemPeca || !tipoPeca) return;
+    setRedigindo(true);
+    try {
+      const camposAtuais: Record<string, string> =
+        tipoPeca === "ata"
+          ? {
+              teorRetificacao: ata.teorRetificacao,
+              naturezaErro: ata.naturezaErro,
+              especieEscritura: ata.especieEscritura,
+              amparoDocumental: ata.amparoDocumental,
+            }
+          : tipoPeca === "requerimento"
+            ? {
+                objeto: req.objeto,
+                blocoExtra: req.blocoExtra,
+                referencia: req.referencia,
+                verbo: req.verbo,
+              }
+            : {
+                sintese: rerrat.sintese,
+                blocoLapso: rerrat.blocoLapso,
+                blocoCorrecao: rerrat.blocoCorrecao,
+              };
+
+      const resp = await fetch("/api/notas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          peca: tipoPeca,
+          contexto: {
+            exigencia: itemPeca.texto,
+            serventia: serventia || undefined,
+            prenotacao: prenotacao || undefined,
+            traslado: traslado
+              ? {
+                  especie: traslado.especie,
+                  data: traslado.data,
+                  livro: traslado.traslado?.livro,
+                  fls: traslado.traslado?.fls,
+                  partes: traslado.partesTitulo,
+                  sintese: traslado.sinteseSugerida,
+                  qualificacoes: traslado.qualificacoes,
+                  confiavel: traslado.confiavel,
+                }
+              : undefined,
+            documentos: documentosDoCaso.map((d) => ({
+              nome: d.nome,
+              tipo: d.tipo,
+            })),
+            camposAtuais,
+          },
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data.error ?? `HTTP ${resp.status}`);
+      }
+      const campos: Record<string, string> = data.campos ?? {};
+
+      // Só entra em campo vazio.
+      const novos: Record<string, string> = {};
+      for (const [k, v] of Object.entries(campos)) {
+        if (v && !(camposAtuais[k] ?? "").trim()) novos[k] = v;
+      }
+      if (tipoPeca === "ata") setAta((prev) => ({ ...prev, ...novos }));
+      else if (tipoPeca === "requerimento")
+        setReq((prev) => ({ ...prev, ...novos }));
+      else setRerrat((prev) => ({ ...prev, ...novos }));
+
+      const n = Object.keys(novos).length;
+      if (n === 0) {
+        toast.info("A IA não teve base para preencher os campos vazios.", {
+          description:
+            "Os campos já preenchidos por você nunca são sobrescritos.",
+        });
+      } else {
+        toast.success(`A IA redigiu ${n} campo(s) — revise antes de gerar.`, {
+          description:
+            "Sugestão de rascunho: confira cada campo. O template da peça não foi alterado.",
+        });
+      }
+    } catch (err) {
+      toast.error("Não foi possível redigir com a IA", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRedigindo(false);
+    }
+  }
 
   async function gerarMinuta() {
     if (!itemPeca || !tipoPeca) return;
@@ -1555,6 +1651,18 @@ export default function NotasPage() {
                         )}
                         <div className="flex flex-wrap gap-2">
                           <Button
+                            variant="outline"
+                            onClick={redigirComIa}
+                            disabled={redigindo || gerando}
+                          >
+                            {redigindo ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="size-4" />
+                            )}
+                            Redigir com IA
+                          </Button>
+                          <Button
                             onClick={gerarMinuta}
                             disabled={gerando || ataSemAmparo}
                           >
@@ -1577,6 +1685,14 @@ export default function NotasPage() {
                             </Button>
                           )}
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                          A IA (Google Gemini) redige apenas o conteúdo dos
+                          campos vazios, a partir da exigência, do traslado e
+                          dos documentos da pasta — os templates da ata e da
+                          rerratificação não são alterados, campo preenchido
+                          por você não é sobrescrito e nada é inventado: sem
+                          base, o campo fica em branco.
+                        </p>
                         {minuta && (
                           <div className="space-y-2">
                             {minuta.faltando.length > 0 && (
