@@ -20,7 +20,7 @@ const MODULOS = [
   {
     href: "/notas",
     icon: FileWarning,
-    titulo: "Resolvedor de Notas Devolutivas",
+    titulo: "Resolvedor de Notas Devolutivas (em teste)",
     descricao:
       "Decompõe a nota de exigências do Registro de Imóveis em itens, classifica cada um na via de resolução (juntada, ata retificativa, rerratificação, requerimento…) e prepara a minuta da peça — sempre como rascunho para conferência.",
   },
@@ -31,7 +31,7 @@ export default function Home() {
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-8 px-4 py-10">
       <header className="space-y-2 text-center">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Ferramentas do Cartório
+          Ferramentas
         </h1>
         <p className="text-muted-foreground">
           Escolha o módulo. Tudo roda no seu navegador.
