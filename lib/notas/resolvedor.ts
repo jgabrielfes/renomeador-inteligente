@@ -174,6 +174,26 @@ const ALVOS: Array<[RegExp, string]> = [
   [/procura[çc][ãa]o/i, "procuração"],
 ];
 
+// Os alvos só valem perto de um verbo de comando. A nota cita "matrícula nº
+// 131.131" para IDENTIFICAR o imóvel e o rodapé padrão lista "carnê do iptu,
+// guia do itbi" como aviso genérico — nada disso é pedido. O que o oficial
+// manda apresentar vem logo depois do verbo (calibrado na nota 4.720/2026:
+// só a certidão de casamento é exigida, embora ITBI, IPTU e matrícula
+// apareçam no texto).
+const VERBOS_COMANDO =
+  /(?:re)?apresentar|juntar|exibir|instruir|anexar|acompanhad[oa]s?\s+d[eo]|munid[oa]s?\s+d[eo]/gi;
+const JANELA_COMANDO = 260;
+
+export function alvosDe(t: string): string[] {
+  const janelas: string[] = [];
+  for (const m of t.matchAll(VERBOS_COMANDO)) {
+    janelas.push(t.slice(m.index, m.index + JANELA_COMANDO));
+  }
+  // Sem verbo nenhum ("certidão vencida", "falta o pacto"), o texto todo vale.
+  const base = janelas.length > 0 ? janelas.join("\n") : t;
+  return ALVOS.filter(([pat]) => pat.test(base)).map(([, nome]) => nome);
+}
+
 export function classificar(item: ItemNota): ItemClassificado {
   const t = item.texto;
   for (const v of VIAS) {
@@ -186,7 +206,7 @@ export function classificar(item: ItemNota): ItemClassificado {
           rotulo: v.rotulo,
           nota: v.nota,
           gatilho: m[0],
-          alvos: ALVOS.filter(([pat]) => pat.test(t)).map(([, nome]) => nome),
+          alvos: alvosDe(t),
           pessoas: pessoasCitadas(t),
         };
       }
@@ -221,8 +241,34 @@ export function pessoasCitadas(t: string): string[] {
   return out;
 }
 
+// A nota impressa carrega blocos que não são exigência: o recibo, o aviso de
+// funcionamento, o rodapé "ATENÇÃO: documentos anexos ao título, tais como
+// carnê do iptu, guia do itbi…" (presente em TODA nota da serventia) e a
+// assinatura do escrevente. Se entrarem na triagem, viram alvos e pessoas
+// falsos. O corte é no primeiro marcador de fim de teor.
+const FIM_DO_TEOR: RegExp[] = [
+  /Exig[êe]ncia elaborada por/i,
+  /^\s*RECIBO\s*$/im,
+  /Declaro haver recebido/i,
+  /^\s*IMPORTANTE\s*$/im,
+  /Hor[áa]rio de funcionamento/i,
+  /\*?\s*ATEN[ÇC][ÃA]O\s*:\s*documentos anexos/i,
+  /N[ãa]o concordando com os termos/i,
+  /Impresso em/i,
+  /Para gerar o boleto/i,
+];
+
+export function limparNota(texto: string): string {
+  let corte = texto.length;
+  for (const pat of FIM_DO_TEOR) {
+    const m = pat.exec(texto);
+    if (m && m.index > 0 && m.index < corte) corte = m.index;
+  }
+  return texto.slice(0, corte).trim();
+}
+
 export function triar(texto: string): ItemClassificado[] {
-  return decompor(texto).map(classificar);
+  return decompor(limparNota(texto)).map(classificar);
 }
 
 // ---------------------------------------------------------------------------

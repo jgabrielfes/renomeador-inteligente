@@ -43,6 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { extractDocxText, fillDocxTemplate } from "@/lib/notas/docx";
 import {
+  casarComPasta,
   distribuirPapeis,
   extrairPrazo,
   extrairPrenotacao,
@@ -481,9 +482,10 @@ export default function NotasPage() {
   const documentosDoCaso = arquivos.filter((a) => a.papel === "documento");
 
   // Casa uma exigência de juntada com o acervo: os nomes de `alvos` e os
-  // tipos do índice usam o mesmo vocabulário.
-  function encontrarNaPasta(alvo: string): ArquivoCaso[] {
-    return documentosDoCaso.filter((a) => a.tipo === alvo);
+  // tipos do índice usam o mesmo vocabulário; documento pessoal é filtrado
+  // pelas partes citadas no item.
+  function encontrarNaPasta(alvo: string, pessoas: string[]): ArquivoCaso[] {
+    return casarComPasta(alvo, pessoas, documentosDoCaso);
   }
 
   async function baixarParaAssinatura(doc: ArquivoCaso, itemRef: string) {
@@ -514,7 +516,9 @@ export default function NotasPage() {
   // alvos do item.
   const amparoSugerido =
     tipoPeca === "ata" && itemPeca
-      ? (itemPeca.alvos.flatMap((alvo) => encontrarNaPasta(alvo))[0] ?? null)
+      ? (itemPeca.alvos.flatMap((alvo) =>
+          encontrarNaPasta(alvo, itemPeca.pessoas)
+        )[0] ?? null)
       : null;
 
   // Trava de segurança: sem amparo documental declarado, a ata não é gerada —
@@ -933,7 +937,7 @@ export default function NotasPage() {
                       <li key={p}>Parte citada: {p}</li>
                     ))}
                     {it.alvos.map((alvo) => {
-                      const achados = encontrarNaPasta(alvo);
+                      const achados = encontrarNaPasta(alvo, it.pessoas);
                       return (
                         <li
                           key={alvo}
@@ -1014,7 +1018,7 @@ export default function NotasPage() {
                         </p>
                       )}
                       {it.alvos.map((alvo) => {
-                        const achados = encontrarNaPasta(alvo);
+                        const achados = encontrarNaPasta(alvo, it.pessoas);
                         if (achados.length === 0) {
                           return (
                             <p

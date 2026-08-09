@@ -39,6 +39,7 @@ const TIPOS: Array<[RegExp, string]> = [
   [/\bCNH\b|habilita[çc][ãa]o/i, "CNH"],
   [/\bRG\b|carteira\s+de\s+identidade/i, "RG"],
   [/comprovante.{0,25}(endere[çc]o|resid[êe]ncia)/i, "comprovante de endereço"],
+  [/comprovante.{0,25}pagamento|boleto/i, "comprovante de pagamento"],
   [/procedimento|requerimento/i, "requerimento"],
   [/escritura/i, "escritura"],
   [/contrato/i, "contrato"],
@@ -113,14 +114,77 @@ export function distribuirPapeis(arquivos: ArquivoDoCaso[]): Papel[] {
   return papeis;
 }
 
+// --- casamento exigência ↔ acervo ------------------------------------------
+
+// Documentos que pertencem a UMA pessoa: quando a exigência cita as partes,
+// só o documento da pessoa certa resolve — a certidão de casamento de outro
+// casal da mesma pasta não serve.
+const TIPOS_PESSOAIS = new Set([
+  "certidão de casamento",
+  "certidão de nascimento",
+  "certidão de óbito",
+  "pacto antenupcial",
+  "procuração",
+  "RG",
+  "CNH",
+  "comprovante de endereço",
+]);
+
+const PARTICULAS = new Set(["da", "de", "do", "das", "dos", "e"]);
+
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+// O arquivo é da pessoa quando o nome do arquivo contém pelo menos dois
+// sobrenomes/nomes dela (partículas fora) — tolera nome abreviado ou parcial
+// sem casar por acidente.
+export function arquivoDaPessoa(nomeArquivo: string, pessoa: string): boolean {
+  const arq = normalizar(nomeArquivo);
+  const tokens = normalizar(pessoa)
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !PARTICULAS.has(t));
+  const presentes = tokens.filter((t) => arq.includes(t)).length;
+  return presentes >= Math.min(2, tokens.length);
+}
+
+export interface DocIndexado {
+  nome: string;
+  tipo: string | null;
+}
+
+// Documentos da pasta que resolvem um alvo. Para documento pessoal com
+// partes citadas, filtra pela pessoa; se o filtro zerar (arquivos sem nome
+// de pessoa), volta aos candidatos por tipo — melhor mostrar um candidato a
+// conferir do que afirmar que não existe.
+export function casarComPasta<T extends DocIndexado>(
+  alvo: string,
+  pessoas: string[],
+  docs: T[]
+): T[] {
+  const candidatos = docs.filter((d) => d.tipo === alvo);
+  if (!TIPOS_PESSOAIS.has(alvo) || pessoas.length === 0) return candidatos;
+  const daPessoa = candidatos.filter((d) =>
+    pessoas.some((p) => arquivoDaPessoa(d.nome, p))
+  );
+  return daPessoa.length > 0 ? daPessoa : candidatos;
+}
+
 // --- campos que a própria nota declara -------------------------------------
 
 export function extrairPrenotacao(texto: string): string | null {
-  const m =
-    /prenota[çc][ãa]o\s*(?:sob\s*)?n?[°º]?\s*[.:]?\s*([\d./-]{3,})/i.exec(
-      texto
-    );
-  return m ? m[1].replace(/[.,]+$/, "") : null;
+  // "Data da Prenotação: 21/07/2026" também casa o padrão — o número da
+  // prenotação nunca tem formato de data.
+  for (const m of texto.matchAll(
+    /prenota(?:[çc][ãa]o|d[oa])\s*(?:sob\s*)?n?[°º]?\s*[.:]?\s*([\d./-]{3,})/gi
+  )) {
+    const valor = m[1].replace(/[.,]+$/, "");
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(valor)) return valor;
+  }
+  return null;
 }
 
 // "Ler o prazo da própria nota, nunca calcular": as serventias divergem
