@@ -27,6 +27,7 @@ import {
   registrarDownloadDeItem,
 } from "@/app/(private)/renomeador/actions";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
+import { CorrectionsDialog } from "@/components/corrections-dialog";
 import { DocumentPreview } from "@/components/document-preview";
 import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1067,6 +1068,7 @@ export default function Home({
                   ? `${lessons.corrections.length} correção(ões) aprendida(s) com suas edições.`
                   : "Nenhuma correção aprendida ainda — edite um nome sugerido pela IA para começar."}
               </span>
+              <CorrectionsDialog corrections={lessons.corrections} />
               {lessons.corrections.length > 0 && (
                 <Dialog>
                   <DialogTrigger render={<Button variant="ghost" size="sm" />}>

@@ -125,6 +125,22 @@ export function addCorrection(correction: Correction): void {
   persistCorrections();
 }
 
+// Esquece UMA correção (a chave é o par sugerido/corrigido, igual à
+// deduplicação do addCorrection — o tipo não entra na identidade).
+export function removeCorrection(correction: Correction): void {
+  commit({
+    ...snapshot,
+    corrections: snapshot.corrections.filter(
+      (c) =>
+        !(
+          c.sugerido === correction.sugerido &&
+          c.corrigido === correction.corrigido
+        )
+    ),
+  });
+  persistCorrections();
+}
+
 export function clearCorrections(): void {
   commit({ ...snapshot, corrections: [] });
   persistCorrections();
