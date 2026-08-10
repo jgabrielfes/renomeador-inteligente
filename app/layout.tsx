@@ -2,7 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { Suspense } from "react";
+
 import { InstallPrompt } from "@/components/install-prompt";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -37,6 +40,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {/* useSearchParams (usado pela barra) exige um limite de Suspense */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
         {children}
         <InstallPrompt />
         {/* O app não tem modo escuro; sem o theme fixo, o sonner seguiria o

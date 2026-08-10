@@ -8,6 +8,37 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+# Mapa do projeto
+
+O app deixou de ser só o renomeador: é uma **suíte de ferramentas para cartórios/escritórios imobiliários**. A página inicial (`app/page.tsx`) é o painel "Ferramentas"; cada módulo tem rota própria:
+
+| Módulo | Rota | Código |
+| --- | --- | --- |
+| Renomeador Inteligente | `/renomeador` | `lib/renamer.ts` (motor local), `lib/ai.ts` + `app/api/rename` (IA), `lib/ocr.ts`, `lib/image-enhance.ts`/`lib/perspective.ts` (otimização), `lib/pdf-split.ts` (separador), `lib/to-pdf.ts` |
+| Resolvedor de Notas Devolutivas (em teste) | `/notas` | `lib/notas/*` + `app/api/notas` + `lib/gemini-notas.ts` |
+| Folha de pesquisa (WIP, sem UI ainda) | — | `lib/categories.ts`, `lib/certidoes.ts`, `lib/qualificacao.ts` |
+
+Módulo novo segue o padrão: página em `app/<modulo>/page.tsx`, lógica em `lib/<modulo>/`, card no painel da inicial.
+
+## Branches e deploy
+
+`main` tem **deploy automático na Vercel a cada commit**. O dia a dia acontece na `develop` (direto ou via PR); só mescle para `main` o que estiver pronto para produção. Agentes: nunca commitar direto na `main`.
+
+## Fronteira de dados (privacidade — regra de ouro)
+
+Documentos são sensíveis (RG, certidões, escrituras). O processamento é no navegador; conteúdo de documento só sai da máquina pelas **rotas internas** `/api/rename` (renomeador) e `/api/notas` (redação de peças), que chamam o Gemini **no servidor** com `GEMINI_API_KEY` de env — a chave nunca chega ao cliente. Todo fluxo com IA tem modo/fallback local. **Não** adicionar chamadas externas diretas do cliente nem novas superfícies de saída de dados fora desse desenho.
+
+## PDF e arquivos do usuário
+
+- **Ler/renderizar PDF**: `pdfjs-dist`, sempre via `loadPdfjs()` de `lib/ocr.ts`. **Montar/escrever PDF**: `pdf-lib`. OCR: `tesseract.js`.
+- Escrita na pasta do usuário (File System Access) **só pelos helpers de `lib/fs.ts`**, que carregam as semânticas de segurança: confirmação antes de ação destrutiva, `abort()` para não truncar arquivo em falha, rollback do que a operação criou. Não escrever com `getFileHandle(create: true)` avulso.
+
+## Resolvedor de notas: invariantes
+
+- **A IA nunca toca nos templates** (`public/templates/notas/*.docx`): ela só redige campos variáveis, injetados por `fillDocxTemplate` nos placeholders. Campo sem base no contexto volta `null` e o `{{PLACEHOLDER}}` permanece visível na minuta — é trava de segurança, não bug.
+- Toda saída é **rascunho para aprovação humana** — nada é protocolado/assinado automaticamente.
+- O classificador de vias (`lib/notas/resolvedor.ts`) foi calibrado com notas devolutivas reais ancorando nos **verbos de remédio** do oficial. Mudanças ali (e no `DOC_RULES` do renomeador) devem ser validadas contra documentos reais, não só a olho.
+
 # Convenções do projeto
 
 ## UI: somente shadcn/ui
@@ -29,6 +60,14 @@ Todo elemento interativo da plataforma (botões, links, checkboxes, radios, sele
 - A regra é **global**, em `app/globals.css` (`@layer base`): um seletor cobre elementos nativos e roles ARIA (`role="button"`, `role="radio"`, …, usados pelos componentes Base UI), excluindo estados desabilitados (`:disabled`, `[aria-disabled="true"]`, `[data-disabled]`).
 - **Não** adicionar `cursor-pointer` classe por classe nos componentes — a regra global já cobre.
 - Ao criar um elemento clicável novo que não seja `<button>`/`<a href>`, dar a ele um `role` interativo adequado (ex.: `role="button"`, como a área de drop em `app/page.tsx`) — isso o inclui na regra e melhora a acessibilidade. Se realmente não couber role, aí sim usar `cursor-pointer` pontual.
+
+## Barra de progresso em toda navegação
+
+Toda troca de rota mostra a barra linear no topo da página (estilo nprogress). A implementação é própria, em `components/navigation-progress.tsx`, montada no `app/layout.tsx` — **não instalar** `nprogress`/`nextjs-toploader` (o App Router não tem os eventos globais que essas libs esperam, e vale a regra de não adicionar libs de UI).
+
+- **Cliques em `<Link>`/`<a>` internos e voltar/avançar**: cobertos automaticamente por listeners globais — nenhum código extra nos call sites.
+- **Navegação programática** (ação de botão que redireciona — login, submit etc.): usar `useProgressRouter()` de `@/components/navigation-progress` no lugar do `useRouter` de `next/navigation`. Mesma API; `push`/`replace`/`back`/`forward` ligam a barra antes de navegar. Fora de componente/hook, chamar `startNavigationProgress()` antes do redirect.
+- A barra aparece em **toda** navegação, mesmo instantânea: há um tempo mínimo visível (~200 ms), então rota pré-carregada mostra um flash rápido de 100% em vez de nada. Ela usa `bg-primary` e fica em `z-[60]` (acima dos dialogs, que usam `z-50`); overlays novos devem ficar abaixo disso.
 
 ## Commits: Conventional Commits
 
