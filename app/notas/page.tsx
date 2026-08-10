@@ -394,7 +394,7 @@ export default function NotasPage() {
       const nota = lidos.find((a) => a.papel === "nota");
       if (nota && !nota.texto && nota.fonte === "pdf-escaneado") {
         const paginas = await readPdfPageTexts(nota.file, 20, (p, t) =>
-          setProgresso(`OCR da nota — página ${p} de ${t}…`)
+          setProgresso(`OCR da nota — ${p} de ${t} páginas…`)
         );
         nota.texto = paginas.join("\n");
         toast.warning("Nota escaneada — texto veio de OCR", {
@@ -454,7 +454,7 @@ export default function NotasPage() {
         setIndexando(true);
         try {
           const paginas = await readPdfPageTexts(a.file, 20, (p, t) =>
-            setProgresso(`OCR da nota — página ${p} de ${t}…`)
+            setProgresso(`OCR da nota — ${p} de ${t} páginas…`)
           );
           texto = paginas.join("\n");
           setArquivos((prev) =>

@@ -77,18 +77,25 @@ export function PdfSplitDialog({
     let cancelled = false;
     void (async () => {
       try {
-        // As miniaturas vêm primeiro e são baratas: o usuário já vê as páginas
-        // enquanto a classificação (que pode fazer OCR) ainda roda.
-        const imagens = await renderPdfThumbnails(file);
-        if (cancelled) return;
-        setThumbs(imagens);
+        // Miniaturas e análise correm em PARALELO: cada miniatura aparece
+        // assim que renderiza, enquanto a classificação (que pode fazer OCR)
+        // já trabalha. Falha nas miniaturas não derruba a análise — a lista
+        // funciona sem imagens.
+        void renderPdfThumbnails(file, undefined, undefined, (index, url) => {
+          if (cancelled) return;
+          setThumbs((prev) => {
+            const next = prev.slice();
+            next[index] = url;
+            return next;
+          });
+        }).catch(() => {});
 
         const lessons = getLessonsSnapshot();
         const found = await analyzePdfSegments(file, lessons, (p) => {
           if (cancelled) return;
           setProgress(
             p.stage === "lendo"
-              ? `Lendo página ${p.page} de ${p.total}…`
+              ? `${p.page} de ${p.total} páginas lidas…`
               : "Identificando os documentos…"
           );
         });

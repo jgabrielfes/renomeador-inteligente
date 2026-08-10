@@ -14,23 +14,60 @@ export function isSupported(fileName: string): boolean {
 }
 
 type TesseractWorker = import("tesseract.js").Worker;
+type TesseractScheduler = import("tesseract.js").Scheduler;
 
-let workerPromise: Promise<TesseractWorker> | null = null;
+// OCR em POOL: um scheduler do tesseract.js distribui os trabalhos entre até
+// N workers WASM. O primeiro worker nasce sob demanda (como antes); os extras
+// só quando há mais páginas esperando do que workers — assim quem processa um
+// arquivo por vez não paga a memória do pool, e a separação de um PDF longo
+// ganha paralelismo de verdade (cada worker ocupa um núcleo).
+let schedulerPromise: Promise<TesseractScheduler> | null = null;
+let ocrWorkers = 0;
+let ocrInFlight = 0;
 
-async function getTesseractWorker(): Promise<TesseractWorker> {
-  if (!workerPromise) {
-    workerPromise = (async () => {
-      const { createWorker, PSM } = await import("tesseract.js");
-      const worker = await createWorker("por+eng");
-      // psm 6 funciona bem para documentos (mesmo ajuste da versão desktop).
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
-      return worker;
+// Teto do pool: deixa um núcleo livre para a thread principal (render das
+// páginas + interface) e para em 4 — acima disso o ganho não paga a memória.
+function maxOcrWorkers(): number {
+  const cores =
+    typeof navigator !== "undefined" ? (navigator.hardwareConcurrency ?? 2) : 2;
+  return Math.min(4, Math.max(1, cores - 1));
+}
+
+async function createOcrWorker(): Promise<TesseractWorker> {
+  const { createWorker, PSM } = await import("tesseract.js");
+  const worker = await createWorker("por+eng");
+  // psm 6 funciona bem para documentos (mesmo ajuste da versão desktop).
+  await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+  return worker;
+}
+
+async function getScheduler(): Promise<TesseractScheduler> {
+  if (!schedulerPromise) {
+    schedulerPromise = (async () => {
+      const { createScheduler } = await import("tesseract.js");
+      const scheduler = createScheduler();
+      scheduler.addWorker(await createOcrWorker());
+      ocrWorkers = 1;
+      return scheduler;
     })().catch((err) => {
-      workerPromise = null;
+      schedulerPromise = null;
       throw err;
     });
   }
-  return workerPromise;
+  return schedulerPromise;
+}
+
+// Cresce o pool quando a demanda ultrapassa os workers vivos. O spawn corre em
+// paralelo (o job atual entra na fila e é atendido assim que alguém liberar);
+// se falhar — sem memória, sem rede para o traineddata — o pool só não cresce.
+function growPoolIfBusy(scheduler: TesseractScheduler): void {
+  if (ocrWorkers >= maxOcrWorkers() || ocrInFlight <= ocrWorkers) return;
+  ocrWorkers++;
+  void createOcrWorker()
+    .then((worker) => scheduler.addWorker(worker))
+    .catch(() => {
+      ocrWorkers--;
+    });
 }
 
 // Pré-processamento equivalente ao da versão desktop, com uma etapa extra
@@ -85,12 +122,21 @@ async function ocrCanvasSource(
   source: ImageBitmap | HTMLCanvasElement,
   { preprocessed = true }: { preprocessed?: boolean } = {}
 ): Promise<string> {
-  const worker = await getTesseractWorker();
+  const scheduler = await getScheduler();
   // Páginas renderizadas de PDF já são nítidas; o autocontraste agressivo
   // (pensado para fotos de WhatsApp) borra o texto sintético e piora o OCR.
   const canvas = preprocessed ? preprocess(source) : source;
-  const { data } = await worker.recognize(canvas as HTMLCanvasElement);
-  return data.text;
+  ocrInFlight++;
+  try {
+    growPoolIfBusy(scheduler);
+    const { data } = await scheduler.addJob(
+      "recognize",
+      canvas as HTMLCanvasElement
+    );
+    return data.text;
+  } finally {
+    ocrInFlight--;
+  }
 }
 
 async function ocrImageFile(file: File): Promise<string> {
@@ -205,25 +251,47 @@ async function readPdfPage(
 
 /**
  * Texto de cada página separadamente — base para separar um PDF que junta
- * vários documentos (lib/pdf-split.ts). O `onProgress` existe porque isto pode
- * levar minutos num PDF escaneado longo.
+ * vários documentos (lib/pdf-split.ts), a partir de um documento já aberto.
+ *
+ * As páginas são processadas em PARALELO, em tantas "faixas" quantos workers
+ * de OCR o pool comporta: enquanto uma página está no OCR, a próxima já
+ * renderiza — num PDF escaneado isso corta o tempo total em ~N vezes. Cada
+ * faixa segura no máximo um canvas grande por vez, então a memória fica
+ * limitada ao número de faixas. `onProgress` recebe o número de páginas
+ * CONCLUÍDAS (elas terminam fora de ordem) e o total.
  */
+export async function readPdfPageTextsFromDoc(
+  doc: import("pdfjs-dist").PDFDocumentProxy,
+  maxPages = 40,
+  onProgress?: (done: number, total: number) => void
+): Promise<string[]> {
+  const total = Math.min(maxPages, doc.numPages);
+  const texts: string[] = new Array(total);
+  let done = 0;
+  let next = 1;
+  const lanes = Math.max(1, Math.min(maxOcrWorkers(), total));
+  await Promise.all(
+    Array.from({ length: lanes }, async () => {
+      for (let i = next++; i <= total; i = next++) {
+        texts[i - 1] = await readPdfPage(await doc.getPage(i));
+        onProgress?.(++done, total);
+      }
+    })
+  );
+  return texts;
+}
+
+/** Como acima, abrindo (e fechando) o PDF a partir do arquivo. */
 export async function readPdfPageTexts(
   file: File,
   maxPages = 40,
-  onProgress?: (page: number, total: number) => void
+  onProgress?: (done: number, total: number) => void
 ): Promise<string[]> {
   const pdfjs = await loadPdfjs();
   const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
   const doc = await loadingTask.promise;
   try {
-    const total = Math.min(maxPages, doc.numPages);
-    const texts: string[] = [];
-    for (let i = 1; i <= total; i++) {
-      onProgress?.(i, total);
-      texts.push(await readPdfPage(await doc.getPage(i)));
-    }
-    return texts;
+    return await readPdfPageTextsFromDoc(doc, maxPages, onProgress);
   } finally {
     await loadingTask.destroy();
   }

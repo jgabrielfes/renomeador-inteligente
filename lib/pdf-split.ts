@@ -11,7 +11,7 @@ import {
   type AiLessons,
   type AiProposal,
 } from "./ai";
-import { loadPdfjs, readPdfPageTexts } from "./ocr";
+import { loadPdfjs, readPdfPageTextsFromDoc } from "./ocr";
 import { ensureExtension, proposeName, uniqueName } from "./renamer";
 
 /** Um documento identificado dentro do PDF, com o intervalo de páginas que ocupa. */
@@ -111,27 +111,31 @@ export async function analyzePdfSegments(
   lessons?: AiLessons,
   onProgress?: (p: SplitAnalysisProgress) => void
 ): Promise<PdfSegment[]> {
+  // O documento abre UMA vez e serve tanto para contar as páginas quanto para
+  // ler o texto — antes eram duas cargas completas do mesmo arquivo.
   const pdfjs = await loadPdfjs();
   const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
-  const numPages = await loadingTask.promise.then((d) => {
-    const n = d.numPages;
-    return loadingTask.destroy().then(() => n);
-  });
+  const doc = await loadingTask.promise;
+  let texts: string[];
+  try {
+    const numPages = doc.numPages;
+    if (numPages < 2) {
+      throw new PdfSplitError(
+        "Este PDF tem uma página só — não há o que separar."
+      );
+    }
+    if (numPages > SPLIT_MAX_PAGES) {
+      throw new PdfSplitError(
+        `Este PDF tem ${numPages} páginas (o limite da separação é ${SPLIT_MAX_PAGES}).`
+      );
+    }
 
-  if (numPages < 2) {
-    throw new PdfSplitError(
-      "Este PDF tem uma página só — não há o que separar."
+    texts = await readPdfPageTextsFromDoc(doc, SPLIT_MAX_PAGES, (done, total) =>
+      onProgress?.({ stage: "lendo", page: done, total })
     );
+  } finally {
+    await loadingTask.destroy();
   }
-  if (numPages > SPLIT_MAX_PAGES) {
-    throw new PdfSplitError(
-      `Este PDF tem ${numPages} páginas (o limite da separação é ${SPLIT_MAX_PAGES}).`
-    );
-  }
-
-  const texts = await readPdfPageTexts(file, SPLIT_MAX_PAGES, (page, total) =>
-    onProgress?.({ stage: "lendo", page, total })
-  );
 
   onProgress?.({ stage: "classificando" });
 
@@ -178,6 +182,9 @@ export async function analyzePdfSegments(
  * Miniatura de cada página, para o usuário VER o que está separando antes de
  * aplicar. Data URLs (e não blob URLs) porque são dezenas de imagens pequenas
  * de vida curta — evita ter de revogar cada uma na desmontagem.
+ *
+ * `onThumb` entrega cada miniatura assim que ela fica pronta — a interface
+ * mostra as primeiras páginas de imediato em vez de esperar o lote inteiro.
  */
 export async function renderPdfThumbnails(
   file: File,
@@ -185,7 +192,8 @@ export async function renderPdfThumbnails(
   // Serve tanto para a miniatura da lista quanto para a página ampliada, então
   // é a largura da ampliada que manda — 700px deixa o texto legível no zoom
   // sem estourar a memória (≈45 KB por página, ≈1,8 MB no PDF de 40 páginas).
-  targetWidth = 700
+  targetWidth = 700,
+  onThumb?: (pageIndex: number, dataUrl: string) => void
 ): Promise<string[]> {
   const pdfjs = await loadPdfjs();
   const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
@@ -204,7 +212,9 @@ export async function renderPdfThumbnails(
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-      thumbs.push(canvas.toDataURL("image/jpeg", 0.72));
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+      thumbs.push(dataUrl);
+      onThumb?.(i - 1, dataUrl);
     }
     return thumbs;
   } finally {
