@@ -168,8 +168,22 @@ async function fetchGeminiJson(
   return JSON.parse(text);
 }
 
-// Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo) ou 404
-// (modelo aposentado) passam para o próximo; outros erros interrompem na hora.
+// Sobrecarga do serviço ("the model is overloaded" chega como 503; 500/504
+// têm a mesma natureza transitória): não é cota — o mesmo modelo pode
+// responder segundos depois, e o modelo irmão costuma estar de pé.
+const OVERLOADED_STATUSES = new Set([500, 503, 504]);
+
+// Esperas entre as repassadas pelos modelos sobrecarregados. Curtas de
+// propósito: a rota roda com maxDuration de 60s e o cliente tem retry próprio.
+const OVERLOAD_RETRY_DELAYS_MS = [2000, 5000];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo), 404
+// (modelo aposentado) e 503/500/504 (sobrecarga) passam para o próximo;
+// outros erros interrompem na hora. Se a cadeia inteira falhar e houver
+// modelos SOBRECARREGADOS, só eles são tentados de novo, com espera crescente
+// — cota e modelo aposentado não mudam em segundos, então ficam de fora.
 // Compartilhada entre o renomeador e o resolvedor de notas.
 export async function geminiJson(
   apiKey: string,
@@ -178,28 +192,40 @@ export async function geminiJson(
   temperature = 0
 ): Promise<unknown> {
   const failures: GeminiError[] = [];
-  for (const model of GEMINI_MODELS) {
-    try {
-      return await fetchGeminiJson(
-        apiKey,
-        model,
-        parts,
-        responseSchema,
-        temperature
-      );
-    } catch (err) {
-      if (
-        err instanceof GeminiError &&
-        (err.status === 429 || err.status === 404)
-      ) {
-        failures.push(err);
-        continue;
+  let queue: readonly string[] = GEMINI_MODELS;
+  for (let pass = 0; ; pass++) {
+    const overloaded: string[] = [];
+    for (const model of queue) {
+      try {
+        return await fetchGeminiJson(
+          apiKey,
+          model,
+          parts,
+          responseSchema,
+          temperature
+        );
+      } catch (err) {
+        if (!(err instanceof GeminiError)) throw err;
+        if (OVERLOADED_STATUSES.has(err.status)) {
+          failures.push(err);
+          overloaded.push(model);
+          continue;
+        }
+        if (err.status === 429 || err.status === 404) {
+          failures.push(err);
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
+    const delayMs = OVERLOAD_RETRY_DELAYS_MS[pass];
+    if (overloaded.length === 0 || delayMs === undefined) break;
+    queue = overloaded;
+    await sleep(delayMs);
   }
-  // Prefere um erro recuperável (cota por minuto): o cliente pode esperar e
-  // tentar de novo. "Cota diária" só quando TODOS os modelos esgotaram a sua.
+  // Prefere um erro recuperável (sobrecarga ou cota por minuto): o cliente
+  // pode esperar e tentar de novo. "Cota diária" só quando TODOS os modelos
+  // esgotaram a sua.
   const recoverable = failures.find((f) => !f.dailyQuota);
   throw (
     recoverable ??

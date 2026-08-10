@@ -344,10 +344,11 @@ export default function Home() {
         }
         if (items.length === 0) continue;
 
-        // Uma tentativa + um retry com espera para erros temporários do Gemini
-        // (429 = cota por minuto; 503 = modelo sobrecarregado).
+        // Erros temporários do Gemini (429 = cota por minuto; 503 = modelo
+        // sobrecarregado) ganham até dois retries com espera crescente — além
+        // do fallback de modelo e das repassadas que a rota já faz no servidor.
         let results: Array<AiProposal | null> | null = null;
-        for (let attempt = 0; attempt < 2 && !results; attempt++) {
+        for (let attempt = 0; attempt < 3 && !results; attempt++) {
           try {
             // Regras e correções do escritório calibram cada lote — inclusive
             // as capturadas há pouco, nesta mesma sessão.
@@ -374,10 +375,11 @@ export default function Home() {
             const quota =
               aiError?.geminiStatus === 429 || /429|quota/i.test(message);
             const unstable = /503|UNAVAILABLE|overload|high demand/i.test(message);
-            if (attempt === 0 && (quota || unstable)) {
-              // A Google manda no erro quanto esperar (retryDelay).
+            if (attempt < 2 && (quota || unstable)) {
+              // A Google manda no erro quanto esperar (retryDelay); sem isso,
+              // espera crescente (sobrecarga: 8s → 16s; cota: 25s → 50s).
               const waitSeconds = Math.min(
-                aiError?.retryDelaySeconds ?? (quota ? 25 : 8),
+                aiError?.retryDelaySeconds ?? (quota ? 25 : 8) * (attempt + 1),
                 60
               );
               toast.warning(
