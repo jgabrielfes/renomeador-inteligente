@@ -58,7 +58,7 @@ export default async function ErrosPage({
         </p>
       </header>
 
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>

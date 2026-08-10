@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -189,8 +190,8 @@ export function PdfSplitDialog({
           </div>
         )}
 
-        <div
-          className={`min-h-0 flex-1 overflow-auto ${zoomPage !== null ? "hidden" : ""}`}
+        <ScrollArea
+          className={`min-h-0 flex-1 ${zoomPage !== null ? "hidden" : ""}`}
         >
           {analyzing ? (
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -291,7 +292,7 @@ export function PdfSplitDialog({
               </Table>
             )
           )}
-        </div>
+        </ScrollArea>
 
         {total > 1 && !error && zoomPage === null && (
           <div className="flex flex-wrap items-center gap-3">

@@ -95,11 +95,15 @@ import {
 import {
   addCorrection,
   clearCorrections,
+  flushRules,
   getLessonsServerSnapshot,
   getLessonsSnapshot,
   importLessons,
+  initLessons,
+  migrateLegacyLessons,
   saveRules,
   subscribeLessons,
+  type LessonsState,
 } from "@/lib/lessons";
 import { categoriaDe } from "@/lib/categories";
 import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
@@ -156,7 +160,20 @@ const AI_MODES: Array<{ value: AiMode; title: string; description: string }> = [
   },
 ];
 
-export default function Home() {
+export default function Home({
+  initialLessons,
+}: {
+  // Regras + correções da conta, carregadas no servidor (null = falha).
+  initialLessons: LessonsState | null;
+}) {
+  // Uma vez por mount, ANTES do useSyncExternalStore das lições ler o
+  // snapshot (inicializador de useState roda no primeiro render).
+  React.useState(() => initLessons(initialLessons));
+  // Migração única do localStorage antigo — efeito, porque grava no servidor.
+  React.useEffect(() => {
+    migrateLegacyLessons();
+  }, []);
+
   const [rows, setRows] = React.useState<Row[]>([]);
   const [dirHandle, setDirHandle] =
     React.useState<FileSystemDirectoryHandle | null>(null);
@@ -1029,13 +1046,15 @@ export default function Home() {
             <CardDescription>
               Ensine a IA no seu vocabulário: uma regra por linha, em português
               mesmo. Além disso, toda vez que você corrigir um nome sugerido, o
-              app aprende o padrão e aplica nos próximos documentos.
+              app aprende o padrão e aplica nos próximos documentos. Tudo fica
+              salvo na sua conta e vale em qualquer navegador.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Textarea
               value={lessons.rules}
               onChange={(e) => saveRules(e.target.value)}
+              onBlur={flushRules}
               rows={4}
               placeholder={
                 "Exemplos:\ncertidão da prefeitura sobre débitos de imóvel → Certidão Negativa de Tributos Imobiliários\ncontrato de honorários → Honorários - {Nome do Cliente}"
@@ -1277,8 +1296,7 @@ export default function Home() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <Table>
+            <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">Usar</TableHead>
@@ -1405,8 +1423,7 @@ export default function Home() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </div>
+            </Table>
 
             <div className="space-y-2 rounded-lg border p-4">
               <p className="text-sm font-medium">Montagem do processo</p>

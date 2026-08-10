@@ -53,7 +53,7 @@ export default async function UsuariosPage({
         </p>
       </header>
 
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>

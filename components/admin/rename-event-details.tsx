@@ -9,6 +9,7 @@ import { Check, Download, Eye, Minus, Wand2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -135,7 +136,7 @@ export function RenameEventDetails({ evento }: { evento: DetalhesEvento }) {
         </div>
 
         {evento.itens.length > 0 ? (
-          <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
+          <ScrollArea className="min-h-0 flex-1 rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -172,7 +173,7 @@ export function RenameEventDetails({ evento }: { evento: DetalhesEvento }) {
                 ))}
               </TableBody>
             </Table>
-          </div>
+          </ScrollArea>
         ) : (
           <p className="text-sm text-muted-foreground">
             Evento sem a lista de tipos (registrado antes deste detalhamento).

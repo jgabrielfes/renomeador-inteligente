@@ -60,7 +60,7 @@ export default async function RenomeacoesPage({
         </p>
       </header>
 
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>

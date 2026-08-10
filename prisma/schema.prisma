@@ -32,8 +32,26 @@ model User {
 
   renameEvents RenameEvent[]
   errorEvents  ErrorEvent[]
+  lessons      RenamerLessons?
 
   @@map("users")
+}
+
+// Aprendizado do escritório do renomeador ("Regras do escritório" + correções
+// capturadas quando o usuário edita um nome sugerido) — POR CONTA. Vivia no
+// localStorage; agora acompanha o usuário em qualquer navegador.
+// É dado do PRÓPRIO usuário (as correções contêm nomes que ele digitou):
+// nunca exibir em /admin nem tratar como telemetria.
+model RenamerLessons {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Texto livre do card "Regras do escritório", injetado nos prompts da IA.
+  regras    String   @default("")
+  // Array<{ tipo, sugerido, corrigido }> — exemplos few-shot (máx. 20).
+  correcoes Json     @default("[]")
+  updatedAt DateTime @updatedAt
+
+  @@map("renamer_lessons")
 }
 
 // Registro de erros da plataforma (hoje: falhas das rotas de IA). Sem conteúdo
