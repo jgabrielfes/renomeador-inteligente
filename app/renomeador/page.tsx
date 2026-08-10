@@ -21,6 +21,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 
+import { registrarArquivosRenomeados } from "@/app/renomeador/actions";
 import { DocumentPreview } from "@/components/document-preview";
 import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -597,6 +598,7 @@ export default function Home() {
       // duas categorias sem virar "(2)".
       const raiz = await existingNames(dirHandle);
       const usados = new Map<string, Set<string>>([["", raiz]]);
+      let renomeados = 0;
 
       for (const [categoria, linhas] of porPasta) {
         let destino: FileSystemDirectoryHandle | undefined;
@@ -638,6 +640,7 @@ export default function Home() {
             }
 
             used.add(name.toLowerCase());
+            renomeados += 1;
             patchRow(row.id, {
               status: "renomeado",
               proposed: categoria ? `${categoria}/${name}` : name,
@@ -653,6 +656,8 @@ export default function Home() {
           }
         }
       }
+      // Telemetria (melhor-esforço): alimenta o resumo de /admin.
+      if (renomeados > 0) void registrarArquivosRenomeados(renomeados);
     } finally {
       setApplying(false);
     }
@@ -691,6 +696,8 @@ export default function Home() {
 
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
+      // Telemetria (melhor-esforço): alimenta o resumo de /admin.
+      void registrarArquivosRenomeados(downloadable.length);
     } finally {
       setZipping(false);
     }
@@ -1355,26 +1362,20 @@ export default function Home() {
               {hasFolderRows && (
                 <Button
                   onClick={applyRenames}
-                  disabled={applyTargets.length === 0 || applying || processing}
+                  loading={applying}
+                  disabled={applyTargets.length === 0 || processing}
                 >
-                  {applying ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Check className="size-4" />
-                  )}
+                  <Check className="size-4" />
                   Renomear {applyTargets.length} arquivo(s) na pasta
                 </Button>
               )}
               <Button
                 variant={hasFolderRows ? "outline" : "default"}
                 onClick={downloadZip}
-                disabled={downloadable.length === 0 || zipping}
+                loading={zipping}
+                disabled={downloadable.length === 0}
               >
-                {zipping ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Download className="size-4" />
-                )}
+                <Download className="size-4" />
                 Baixar {downloadable.length} arquivo(s) (.zip)
               </Button>
               <Button

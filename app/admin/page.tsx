@@ -1,0 +1,155 @@
+// Administração (somente MASTER — gate no servidor via requireMaster).
+// Resumo da plataforma com filtro de período via QUERY STRING
+// (?periodo=semana|mes|ano|tudo) e cards de navegação para as listagens.
+
+import Link from "next/link";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  FileCheck2,
+  Users,
+} from "lucide-react";
+
+import { PeriodFilter } from "@/components/admin/period-filter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { filtroDeData, parsePeriodo } from "@/lib/admin";
+import { requireMaster } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+const LISTAGENS = [
+  {
+    href: "/admin/usuarios",
+    icon: Users,
+    titulo: "Usuários",
+    descricao: "Contas cadastradas, confirmação de e-mail e papel de acesso.",
+  },
+  {
+    href: "/admin/renomeacoes",
+    icon: FileCheck2,
+    titulo: "Renomeações",
+    descricao: "Lotes de arquivos renomeados, por usuário ou deslogado.",
+  },
+  {
+    href: "/admin/erros",
+    icon: AlertTriangle,
+    titulo: "Erros",
+    descricao: "Falhas da plataforma (IA inclusa): origem, usuário e detalhe.",
+  },
+] as const;
+
+export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
+  await requireMaster();
+
+  const { periodo: bruto } = await searchParams;
+  const periodo = parsePeriodo(bruto);
+  const createdAt = filtroDeData(periodo);
+
+  let usuarios: number | null = null;
+  let arquivosRenomeados = 0;
+  let erros = 0;
+  try {
+    const [contagemUsuarios, somaRenomeados, contagemErros] =
+      await Promise.all([
+        prisma.user.count({ where: { createdAt } }),
+        prisma.renameEvent.aggregate({
+          _sum: { quantidade: true },
+          where: { createdAt },
+        }),
+        prisma.errorEvent.count({ where: { createdAt } }),
+      ]);
+    usuarios = contagemUsuarios;
+    arquivosRenomeados = somaRenomeados._sum.quantidade ?? 0;
+    erros = contagemErros;
+  } catch {
+    // Banco indisponível/não configurado: a página avisa em vez de quebrar.
+  }
+
+  return (
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        Voltar para as ferramentas
+      </Link>
+
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
+        <p className="text-sm text-muted-foreground">
+          Resumo da plataforma no período selecionado.
+        </p>
+      </header>
+
+      <PeriodFilter basePath="/admin" atual={periodo} />
+
+      {usuarios === null ? (
+        <Alert>
+          <AlertTitle>Banco de dados indisponível</AlertTitle>
+          <AlertDescription>
+            Confira DATABASE_URL/DIRECT_URL no .env e rode `yarn db:migrate`.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card>
+            <CardHeader>
+              <CardDescription className="flex items-center gap-1.5">
+                <Users className="size-4" />
+                Usuários cadastrados
+              </CardDescription>
+              <CardTitle className="text-4xl tabular-nums">
+                {usuarios}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardDescription className="flex items-center gap-1.5">
+                <FileCheck2 className="size-4" />
+                Arquivos renomeados
+              </CardDescription>
+              <CardTitle className="text-4xl tabular-nums">
+                {arquivosRenomeados}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardDescription className="flex items-center gap-1.5">
+                <AlertTriangle className="size-4" />
+                Erros
+              </CardDescription>
+              <CardTitle className="text-4xl tabular-nums">{erros}</CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        {LISTAGENS.map((l) => (
+          <Link key={l.href} href={l.href} className="group">
+            <Card className="h-full transition-colors group-hover:border-primary/50 group-hover:bg-accent/30">
+              <CardHeader>
+                <l.icon className="mb-1 size-6 text-primary" />
+                <CardTitle className="text-base">{l.titulo}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-sm leading-relaxed">
+                  {l.descricao}
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </main>
+  );
+}

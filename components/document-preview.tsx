@@ -263,14 +263,11 @@ export function DocumentPreview({
                   <Button
                     size="sm"
                     onClick={replace}
-                    disabled={!optimizedBlob || generating || replacing}
+                    loading={replacing}
+                    disabled={!optimizedBlob || generating}
                     title="Grava a versão otimizada por cima do arquivo original"
                   >
-                    {replacing ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Save className="size-4" />
-                    )}
+                    <Save className="size-4" />
                     Substituir original
                   </Button>
                 )}

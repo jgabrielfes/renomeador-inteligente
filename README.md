@@ -170,7 +170,23 @@ npm run dev
 
 ## Deploy
 
-Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a função serverless de `/api/rename`. Única configuração: a variável de ambiente `GEMINI_API_KEY` (sem ela o app funciona só no modo local).
+Projeto pronto para a Vercel: `next build` gera as páginas estáticas e as funções serverless (`/api/rename`, `/api/notas`, `/api/auth`). Variáveis de ambiente necessárias (ver [.env.example](.env.example)): `GEMINI_API_KEY` (sem ela o app funciona só no modo local), `DATABASE_URL` + `DIRECT_URL` (Postgres do Supabase) e `AUTH_SECRET`.
+
+## Login e contas
+
+As ferramentas funcionam **sem login** — a conta (NextAuth v5 + Prisma no Supabase) existe para identidade e papéis. Qualquer pessoa pode criar conta em `/cadastro` (sem confirmação de e-mail por enquanto; contas não confirmadas ficam marcadas na interface). O login tem "Permanecer conectado" (marcado: sessão de 30 dias; desmarcado: 8 horas). `/login` e `/cadastro` só são acessíveis deslogado.
+
+Configuração inicial:
+
+```bash
+# 1. cole as URLs do Supabase e o AUTH_SECRET no .env (ver .env.example)
+# 2. crie as tabelas
+yarn db:migrate
+# 3. (opcional) promova um administrador
+yarn user:create admin@exemplo.com.br suasenha "Seu Nome" --master
+```
+
+Usuários `MASTER` verão, futuramente, telas exclusivas de administração; os demais usam as ferramentas normalmente.
 
 A Vercel está configurada para fazer deploy automático a cada commit na branch `main`. Por isso, o desenvolvimento do dia a dia acontece na branch `develop`: novas alterações vão para lá (diretamente ou via PR) e só sobem para `main` — disparando um novo deploy — quando estiverem prontas para produção.
 

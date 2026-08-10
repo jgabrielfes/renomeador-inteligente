@@ -295,12 +295,8 @@ export function PdfSplitDialog({
 
         {total > 1 && !error && zoomPage === null && (
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={apply} disabled={applying}>
-              {applying ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Scissors className="size-4" />
-              )}
+            <Button onClick={apply} loading={applying}>
+              <Scissors className="size-4" />
               {folderName
                 ? `Substituir na pasta por ${total} arquivos`
                 : `Separar em ${total} arquivos`}

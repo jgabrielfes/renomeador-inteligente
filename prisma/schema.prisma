@@ -1,0 +1,65 @@
+// Schema mínimo de autenticação: login por credenciais com papel de acesso.
+// (NextAuth roda com sessão JWT — sem tabelas de sessão/conta por enquanto.)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// MASTER verá telas exclusivas de administração no futuro.
+enum Role {
+  USER
+  MASTER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  // Sem confirmação de e-mail por enquanto: null = "e-mail não confirmado"
+  // (a UI marca). Quando a confirmação existir, recebe a data.
+  // Login com Google já nasce confirmado (o Google atesta o e-mail).
+  emailVerified DateTime?
+  // Null = conta criada via Google (entra só pelo OAuth, sem senha).
+  passwordHash String?
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  renameEvents RenameEvent[]
+  errorEvents  ErrorEvent[]
+
+  @@map("users")
+}
+
+// Registro de erros da plataforma (hoje: falhas das rotas de IA). Sem conteúdo
+// de documento — só origem, mensagem truncada, status e quem estava logado
+// (null = deslogado). Alimenta /admin/erros.
+model ErrorEvent {
+  id        String   @id @default(cuid())
+  origem    String
+  mensagem  String
+  status    Int?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@map("error_events")
+}
+
+// Telemetria mínima do renomeador: um evento por lote concluído (renomeação
+// na pasta ou download do zip), com a quantidade de arquivos. Alimenta o
+// resumo da página /admin. Sem conteúdo de documento — só contagem.
+model RenameEvent {
+  id         String   @id @default(cuid())
+  quantidade Int
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@map("rename_events")
+}
