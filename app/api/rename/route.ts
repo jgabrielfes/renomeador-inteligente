@@ -13,6 +13,8 @@ import {
   type BatchItem,
   type Lessons,
 } from "@/lib/gemini";
+import { requireSession } from "@/lib/auth";
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 // Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
 export const maxDuration = 60;
@@ -21,7 +23,17 @@ export const maxDuration = 60;
 const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
 const MAX_ITEMS = 10;
 
+// Cada lote já leva até 10 documentos; 10 lotes/min por IP cobre com folga o
+// uso real e barra rajadas automatizadas contra a cota do Gemini.
+const BATCHES_PER_MINUTE = 10;
+
 export async function POST(request: Request) {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
+  const limited = rateLimit("rename", clientIp(request), BATCHES_PER_MINUTE, 60_000);
+  if (!limited.ok) return rateLimitResponse(limited);
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(

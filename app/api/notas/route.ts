@@ -11,12 +11,22 @@ import {
   pecaIaValida,
   type ContextoPeca,
 } from "@/lib/gemini-notas";
+import { requireSession } from "@/lib/auth";
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
 const MAX_BODY = 64 * 1024;
 
+const REQUESTS_PER_MINUTE = 10;
+
 export async function POST(request: Request) {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
+  const limited = rateLimit("notas", clientIp(request), REQUESTS_PER_MINUTE, 60_000);
+  if (!limited.ok) return rateLimitResponse(limited);
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(

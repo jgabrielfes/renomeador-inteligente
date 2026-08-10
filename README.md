@@ -170,7 +170,16 @@ npm run dev
 
 ## Deploy
 
-Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a função serverless de `/api/rename`. Única configuração: a variável de ambiente `GEMINI_API_KEY` (sem ela o app funciona só no modo local).
+Projeto pronto para a Vercel: `next build` gera as páginas estáticas e a função serverless de `/api/rename`. Única configuração obrigatória: a variável de ambiente `GEMINI_API_KEY` (sem ela o app funciona só no modo local).
+
+### Proteção da API (senha de acesso + rate limit)
+
+As rotas que chamam o Gemini (`/api/rename` e `/api/notas`) são pagas/limitadas por cota — sem proteção, qualquer script poderia bombardeá-las e gerar custo. Duas camadas cuidam disso:
+
+1. **Senha de acesso** — defina `APP_PASSWORD` (veja [.env.example](.env.example)). Na primeira visita o app pede a senha uma vez por navegador ([components/auth-gate.tsx](components/auth-gate.tsx)); acertando, um cookie de sessão HttpOnly assinado (HMAC‑SHA256, [lib/auth.ts](lib/auth.ts)) vale por 30 dias. Chamadas sem sessão recebem **401**. Opcionalmente defina `AUTH_SECRET` para a assinatura não depender da senha. Sem `APP_PASSWORD`, a proteção fica desligada (modo dev) e tudo se comporta como antes.
+2. **Rate limit** — mesmo autenticado, cada IP tem um teto por minuto ([lib/rate-limit.ts](lib/rate-limit.ts)): 10 lotes/min no renomeador (cada lote leva até 10 documentos), 10 chamadas/min no resolvedor de notas e 5 tentativas/min no login. Excedeu, recebe **429** com `retryDelaySeconds` — o cliente já entende esse campo e espera. O contador vive na memória de cada instância serverless: contém rajadas de abuso, mas não é um teto global exato (para isso seria preciso um armazenamento externo, ex.: Upstash Redis).
+
+Quem fecha o diálogo sem senha continua usando as ferramentas locais normalmente — só a IA fica bloqueada. Não há OAuth nem cadastro de usuários de propósito: para uma equipe pequena com senha compartilhada, um provedor de identidade seria complexidade sem ganho real de proteção.
 
 ## Tipos reconhecidos
 

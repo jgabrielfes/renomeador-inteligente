@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { AuthGate } from "@/components/auth-gate";
 import { InstallPrompt } from "@/components/install-prompt";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         {children}
+        <AuthGate />
         <InstallPrompt />
         {/* O app não tem modo escuro; sem o theme fixo, o sonner seguiria o
             tema do sistema operacional e destoaria da interface. */}
