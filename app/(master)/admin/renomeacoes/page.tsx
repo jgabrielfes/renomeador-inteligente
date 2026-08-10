@@ -144,16 +144,38 @@ function paraDetalhes(e: {
   quantidade: number;
   duracaoMs: number | null;
   itens: unknown;
+  desfecho: unknown;
   user: { name: string; email: string } | null;
 }): DetalhesEvento {
   const itens = Array.isArray(e.itens)
-    ? (e.itens as Array<{ de?: unknown; para?: unknown }>)
-        .filter(
-          (item) =>
-            typeof item?.de === "string" && typeof item?.para === "string"
-        )
-        .map((item) => ({ de: item.de as string, para: item.para as string }))
+    ? (e.itens as Array<{ tipo?: unknown; baixado?: unknown; otimizado?: unknown }>)
+        .filter((item) => typeof item?.tipo === "string")
+        .map((item) => ({
+          tipo: item.tipo as string,
+          baixado: item.baixado === true,
+          otimizado: item.otimizado === true,
+        }))
     : [];
+  const bruto = (e.desfecho ?? null) as {
+    zip?: unknown;
+    montagem?: {
+      subpastas?: unknown;
+      converterPdf?: unknown;
+      numerar?: unknown;
+    };
+  } | null;
+  const desfecho = bruto
+    ? {
+        zip: bruto.zip === true,
+        montagem: bruto.montagem
+          ? {
+              subpastas: bruto.montagem.subpastas === true,
+              converterPdf: bruto.montagem.converterPdf === true,
+              numerar: bruto.montagem.numerar === true,
+            }
+          : undefined,
+      }
+    : null;
   return {
     data: dataCurta.format(e.createdAt),
     usuario: e.user ? `${e.user.name} (${e.user.email})` : "Deslogado",
@@ -161,5 +183,6 @@ function paraDetalhes(e: {
     quantidade: e.quantidade,
     duracaoMs: e.duracaoMs,
     itens,
+    desfecho,
   };
 }

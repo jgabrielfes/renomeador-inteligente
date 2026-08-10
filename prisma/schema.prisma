@@ -61,17 +61,19 @@ enum MetodoAnalise {
 // Telemetria do renomeador: um evento por método dentro de cada rodada de
 // ANÁLISE (registrado quando os arquivos são enviados para IA/OCR, não na
 // renomeação final). Alimenta o resumo e a listagem de /admin.
-// ATENÇÃO privacidade: `itens` guarda os NOMES dos arquivos (de → para), que
-// podem conter nomes de pessoas — nunca o conteúdo dos documentos. Visível
-// só para MASTER em /admin/renomeacoes.
+// Privacidade: NENHUM nome de arquivo/pessoa é gravado — `itens` guarda só a
+// TAG de tipo de cada documento e flags de download. Visível para MASTER.
 model RenameEvent {
   id         String        @id @default(cuid())
   quantidade Int
   metodo     MetodoAnalise @default(LOCAL)
   // Duração total do processamento daquele método na rodada, em ms.
   duracaoMs  Int?
-  // Array<{ de: string; para: string }> — nome original → nome sugerido.
+  // Array<{ tipo: string; baixado?: boolean; otimizado?: boolean }>
   itens      Json?
+  // { zip?: boolean; montagem?: { subpastas; converterPdf; numerar } } —
+  // preenchido depois, quando o lote é baixado/aplicado.
+  desfecho   Json?
   userId     String?
   user       User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt  DateTime      @default(now())

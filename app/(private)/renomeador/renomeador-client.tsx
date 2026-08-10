@@ -23,7 +23,8 @@ import {
 
 import {
   registrarAnalise,
-  type ItemRenomeacao,
+  registrarDesfecho,
+  registrarDownloadDeItem,
 } from "@/app/(private)/renomeador/actions";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import { DocumentPreview } from "@/components/document-preview";
@@ -167,6 +168,12 @@ export default function Home() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const queueRef = React.useRef<Row[]>([]);
   const processingRef = React.useRef(false);
+  // Telemetria: liga cada linha analisada ao evento registrado (para marcar
+  // download/otimizada/zip depois). Vive só nesta sessão da página.
+  const telemetriaRef = React.useRef(
+    new Map<string, { eventId: string; indice: number }>()
+  );
+
   // Ligado quando a cota DIÁRIA do free tier esgota: esperar não resolve,
   // então a IA fica desligada até recarregar a página (e o aviso sai uma vez).
   const aiUnavailableRef = React.useRef(false);
@@ -272,7 +279,7 @@ export default function Home() {
         const extracted = text ?? (await readDocument(row.file));
         const proposal = proposeName(row.file.name, extracted);
         applyProposal(row.id, proposal, "local");
-        return proposal.name;
+        return proposal.docType || "Documento";
       } catch (err) {
         patchRow(row.id, {
           status: "erro",
@@ -294,20 +301,18 @@ export default function Home() {
     const criarBucket = () => ({
       quantidade: 0,
       duracaoMs: 0,
-      itens: [] as ItemRenomeacao[],
+      itens: [] as Array<{ tipo: string }>,
+      rowIds: [] as string[],
     });
     const contadores: Record<MetodoAnalise, ReturnType<typeof criarBucket>> = {
       IA_ARQUIVO: criarBucket(),
       IA_TEXTO: criarBucket(),
       LOCAL: criarBucket(),
     };
-    const registrarItem = (
-      metodo: MetodoAnalise,
-      de: string,
-      para: string
-    ) => {
+    const registrarItem = (metodo: MetodoAnalise, rowId: string, tipo: string) => {
       contadores[metodo].quantidade += 1;
-      contadores[metodo].itens.push({ de, para });
+      contadores[metodo].itens.push({ tipo });
+      contadores[metodo].rowIds.push(rowId);
     };
     try {
       while (queueRef.current.length > 0) {
@@ -317,10 +322,10 @@ export default function Home() {
           const row = queueRef.current.shift()!;
           patchRow(row.id, { status: "processando" });
           const inicioLocal = performance.now();
-          const nomeLocal = await processLocally(row);
-          if (nomeLocal !== null) {
+          const tipoLocal = await processLocally(row);
+          if (tipoLocal !== null) {
             contadores.LOCAL.duracaoMs += performance.now() - inicioLocal;
-            registrarItem("LOCAL", row.file.name, nomeLocal);
+            registrarItem("LOCAL", row.id, tipoLocal);
           }
           continue;
         }
@@ -444,15 +449,15 @@ export default function Home() {
             applyProposal(row.id, proposal, "ia");
             const metodo =
               itemKinds[i] === "arquivo" ? "IA_ARQUIVO" : "IA_TEXTO";
-            registrarItem(metodo, row.file.name, proposal.name);
+            registrarItem(metodo, row.id, proposal.docType || "Documento");
             metodosDoLote.add(metodo);
           } else {
-            const nomeLocal = await processLocally(
+            const tipoLocal = await processLocally(
               row,
               ocrTexts.get(row.id) ?? null
             );
-            if (nomeLocal !== null) {
-              registrarItem("LOCAL", row.file.name, nomeLocal);
+            if (tipoLocal !== null) {
+              registrarItem("LOCAL", row.id, tipoLocal);
               metodosDoLote.add("LOCAL");
             }
           }
@@ -466,13 +471,17 @@ export default function Home() {
         }
       }
       for (const [metodo, bucket] of Object.entries(contadores)) {
-        if (bucket.quantidade > 0) {
-          void registrarAnalise(
-            metodo as MetodoAnalise,
-            bucket.quantidade,
-            Math.round(bucket.duracaoMs),
-            bucket.itens
-          );
+        if (bucket.quantidade === 0) continue;
+        const evento = await registrarAnalise(
+          metodo as MetodoAnalise,
+          bucket.quantidade,
+          Math.round(bucket.duracaoMs),
+          bucket.itens
+        );
+        if (evento) {
+          bucket.rowIds.forEach((rowId, indice) => {
+            telemetriaRef.current.set(rowId, { eventId: evento.id, indice });
+          });
         }
       }
     } finally {
@@ -723,6 +732,20 @@ export default function Home() {
           }
         }
       }
+      const eventos = [
+        ...new Set(
+          applyTargets
+            .map((r) => telemetriaRef.current.get(r.id)?.eventId)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      void registrarDesfecho(eventos, {
+        montagem: {
+          subpastas: organizarEmSubpastas,
+          converterPdf: converterParaPdf,
+          numerar: numerarArquivos,
+        },
+      });
     } finally {
       setApplying(false);
     }
@@ -761,12 +784,33 @@ export default function Home() {
 
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
+      const eventos = [
+        ...new Set(
+          downloadable
+            .map((r) => telemetriaRef.current.get(r.id)?.eventId)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      void registrarDesfecho(eventos, {
+        zip: true,
+        montagem: {
+          subpastas: organizarEmSubpastas,
+          converterPdf: converterParaPdf,
+          numerar: numerarArquivos,
+        },
+      });
     } finally {
       setZipping(false);
     }
   }
 
+  function marcarDownload(row: Row, otimizado: boolean) {
+    const ref = telemetriaRef.current.get(row.id);
+    if (ref) void registrarDownloadDeItem(ref.eventId, ref.indice, otimizado);
+  }
+
   function downloadSingle(row: Row) {
+    marcarDownload(row, false);
     const name = ensureExtension(row.proposed.trim() || row.file.name, row.file.name);
     triggerDownload(row.file, name);
   }
@@ -1476,6 +1520,9 @@ export default function Home() {
           (previewRow.status === "ok" || previewRow.status === "renomeado")
             ? () => downloadSingle(previewRow)
             : undefined
+        }
+        onDownloadOptimized={
+          previewRow ? () => marcarDownload(previewRow, true) : undefined
         }
         canEnhance={previewRow ? isEnhanceable(previewRow.file.name) : false}
         onReplace={
