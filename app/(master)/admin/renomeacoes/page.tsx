@@ -5,6 +5,10 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { QueryPagination } from "@/components/admin/query-pagination";
+import {
+  RenameEventDetails,
+  type DetalhesEvento,
+} from "@/components/admin/rename-event-details";
 import { Badge } from "@/components/ui/badge";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import {
@@ -64,6 +68,7 @@ export default async function RenomeacoesPage({
               <TableHead>Usuário</TableHead>
               <TableHead>Método</TableHead>
               <TableHead className="text-right">Arquivos</TableHead>
+              <TableHead className="w-12">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -90,12 +95,15 @@ export default async function RenomeacoesPage({
                 <TableCell className="text-right font-medium tabular-nums">
                   {e.quantidade}
                 </TableCell>
+                <TableCell>
+                  <RenameEventDetails evento={paraDetalhes(e)} />
+                </TableCell>
               </TableRow>
             ))}
             {eventos.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="text-center text-muted-foreground"
                 >
                   Nenhuma renomeação registrada nesta página.
@@ -127,4 +135,31 @@ function MetodoBadge({ metodo }: { metodo: MetodoAnalise }) {
       {METODO_ROTULOS[metodo]}
     </Badge>
   );
+}
+
+// Converte o registro do banco no formato serializável do dialog de detalhes.
+function paraDetalhes(e: {
+  createdAt: Date;
+  metodo: MetodoAnalise;
+  quantidade: number;
+  duracaoMs: number | null;
+  itens: unknown;
+  user: { name: string; email: string } | null;
+}): DetalhesEvento {
+  const itens = Array.isArray(e.itens)
+    ? (e.itens as Array<{ de?: unknown; para?: unknown }>)
+        .filter(
+          (item) =>
+            typeof item?.de === "string" && typeof item?.para === "string"
+        )
+        .map((item) => ({ de: item.de as string, para: item.para as string }))
+    : [];
+  return {
+    data: dataCurta.format(e.createdAt),
+    usuario: e.user ? `${e.user.name} (${e.user.email})` : "Deslogado",
+    metodo: METODO_ROTULOS[e.metodo],
+    quantidade: e.quantidade,
+    duracaoMs: e.duracaoMs,
+    itens,
+  };
 }

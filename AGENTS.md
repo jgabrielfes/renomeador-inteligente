@@ -100,9 +100,10 @@ Todo filtro de listagem/painel vive na **query string da URL**, nunca em estado 
   - **Largura padrão**: TODA tela `/admin` usa `max-w-4xl` no `<main>` — resumo e listagens, sem exceção.
 - **Paginação também é query string**: `?pagina=N&porPagina=10|25|50|100` (default 1 e 10).
 - Filtros novos seguem o mesmo padrão: um parâmetro por dimensão (`?periodo=…&pagina=…`), nomes em português, valores curtos e estáveis.
-- Telas de administração: `/admin` (resumo), `/admin/usuarios`, `/admin/renomeacoes`, `/admin/erros` — todas gateadas com `requireMaster()` de `lib/auth.ts` no topo (inclusive nas server actions). Telemetria alimenta as listagens — ambas de melhor-esforço e **sem conteúdo de documento**; usuário null = registro antigo de quando a plataforma era aberta:
-  - `rename_events`: registrado **no momento da ANÁLISE** (quando os arquivos selecionados são enviados para IA/OCR na fila do renomeador), um evento por **método** (`IA_ARQUIVO` | `IA_TEXTO` | `LOCAL` — enum `MetodoAnalise`) a cada rodada da fila. Fallback conta como LOCAL. Não confundir com "renomeação aplicada" — o gatilho é a análise.
+- Telas de administração: `/admin` (resumo), `/admin/usuarios`, `/admin/renomeacoes`, `/admin/erros` — todas gateadas com `requireMaster()` de `lib/auth.ts` no topo (inclusive nas server actions). Telemetria alimenta as listagens — ambas de melhor-esforço; usuário null = registro antigo de quando a plataforma era aberta:
+  - `rename_events`: registrado **no momento da ANÁLISE** (quando os arquivos selecionados são enviados para IA/OCR na fila do renomeador), um evento por **método** (`IA_ARQUIVO` | `IA_TEXTO` | `LOCAL` — enum `MetodoAnalise`) a cada rodada da fila, com **duração** e os **nomes de → para** dos arquivos (`itens` Json). Fallback conta como LOCAL. Não confundir com "renomeação aplicada" — o gatilho é a análise.
   - `error_events`: falhas das rotas de IA via `registrarErro` de `lib/error-log.ts`.
+  - **Privacidade da telemetria**: o CONTEÚDO dos documentos nunca é gravado; os **nomes de arquivo são** (podem conter nomes de pessoas — decisão do dono do produto, visíveis só para MASTER). Não expandir a telemetria para além de nomes/contagens/durações sem alinhar com o dono.
 
 ## Cursor pointer em tudo que é clicável
 

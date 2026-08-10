@@ -21,7 +21,10 @@ import {
   ZoomIn,
 } from "lucide-react";
 
-import { registrarAnalise } from "@/app/(private)/renomeador/actions";
+import {
+  registrarAnalise,
+  type ItemRenomeacao,
+} from "@/app/(private)/renomeador/actions";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import { DocumentPreview } from "@/components/document-preview";
 import { PdfSplitDialog } from "@/components/pdf-split-dialog";
@@ -264,18 +267,19 @@ export default function Home() {
   );
 
   const processLocally = React.useCallback(
-    async (row: Row, text?: string | null): Promise<boolean> => {
+    async (row: Row, text?: string | null): Promise<string | null> => {
       try {
         const extracted = text ?? (await readDocument(row.file));
-        applyProposal(row.id, proposeName(row.file.name, extracted), "local");
-        return true;
+        const proposal = proposeName(row.file.name, extracted);
+        applyProposal(row.id, proposal, "local");
+        return proposal.name;
       } catch (err) {
         patchRow(row.id, {
           status: "erro",
           use: false,
           error: err instanceof Error ? err.message : String(err),
         });
-        return false;
+        return null;
       }
     },
     [applyProposal, patchRow]
@@ -285,11 +289,25 @@ export default function Home() {
     if (processingRef.current) return;
     processingRef.current = true;
     // Telemetria: contabiliza NO MOMENTO DA ANÁLISE (arquivo enviado para a
-    // IA ou para o OCR), por método — registrado ao fim da rodada da fila.
-    const contadores: Record<MetodoAnalise, number> = {
-      IA_ARQUIVO: 0,
-      IA_TEXTO: 0,
-      LOCAL: 0,
+    // IA ou para o OCR), por método — registrado ao fim da rodada da fila,
+    // com duração e os nomes de → para de cada arquivo.
+    const criarBucket = () => ({
+      quantidade: 0,
+      duracaoMs: 0,
+      itens: [] as ItemRenomeacao[],
+    });
+    const contadores: Record<MetodoAnalise, ReturnType<typeof criarBucket>> = {
+      IA_ARQUIVO: criarBucket(),
+      IA_TEXTO: criarBucket(),
+      LOCAL: criarBucket(),
+    };
+    const registrarItem = (
+      metodo: MetodoAnalise,
+      de: string,
+      para: string
+    ) => {
+      contadores[metodo].quantidade += 1;
+      contadores[metodo].itens.push({ de, para });
     };
     try {
       while (queueRef.current.length > 0) {
@@ -298,7 +316,12 @@ export default function Home() {
         if (mode === "local" || aiUnavailableRef.current) {
           const row = queueRef.current.shift()!;
           patchRow(row.id, { status: "processando" });
-          if (await processLocally(row)) contadores.LOCAL += 1;
+          const inicioLocal = performance.now();
+          const nomeLocal = await processLocally(row);
+          if (nomeLocal !== null) {
+            contadores.LOCAL.duracaoMs += performance.now() - inicioLocal;
+            registrarItem("LOCAL", row.file.name, nomeLocal);
+          }
           continue;
         }
 
@@ -307,6 +330,7 @@ export default function Home() {
         // Limitado também pelo tamanho total (corpo da função serverless).
         // First-fit: um arquivo grande que não coube não fecha o lote — a
         // varredura segue adiante e completa com arquivos menores da fila.
+        const inicioLote = performance.now();
         const batch: Row[] = [];
         let bytes = 0;
         let index = 0;
@@ -412,20 +436,43 @@ export default function Home() {
           }
         }
 
+        const metodosDoLote = new Set<MetodoAnalise>();
         for (let i = 0; i < itemRows.length; i++) {
           const row = itemRows[i];
           const proposal = results?.[i] ?? null;
           if (proposal) {
             applyProposal(row.id, proposal, "ia");
-            contadores[itemKinds[i] === "arquivo" ? "IA_ARQUIVO" : "IA_TEXTO"] += 1;
-          } else if (await processLocally(row, ocrTexts.get(row.id) ?? null)) {
-            contadores.LOCAL += 1;
+            const metodo =
+              itemKinds[i] === "arquivo" ? "IA_ARQUIVO" : "IA_TEXTO";
+            registrarItem(metodo, row.file.name, proposal.name);
+            metodosDoLote.add(metodo);
+          } else {
+            const nomeLocal = await processLocally(
+              row,
+              ocrTexts.get(row.id) ?? null
+            );
+            if (nomeLocal !== null) {
+              registrarItem("LOCAL", row.file.name, nomeLocal);
+              metodosDoLote.add("LOCAL");
+            }
           }
         }
+        // A duração do lote (preparação + chamada à IA + distribuição) vale
+        // para cada método presente nele — foi o tempo de parede que aqueles
+        // arquivos levaram para serem analisados.
+        const duracaoLote = performance.now() - inicioLote;
+        for (const metodo of metodosDoLote) {
+          contadores[metodo].duracaoMs += duracaoLote;
+        }
       }
-      for (const [metodo, quantidade] of Object.entries(contadores)) {
-        if (quantidade > 0) {
-          void registrarAnalise(metodo as MetodoAnalise, quantidade);
+      for (const [metodo, bucket] of Object.entries(contadores)) {
+        if (bucket.quantidade > 0) {
+          void registrarAnalise(
+            metodo as MetodoAnalise,
+            bucket.quantidade,
+            Math.round(bucket.duracaoMs),
+            bucket.itens
+          );
         }
       }
     } finally {
