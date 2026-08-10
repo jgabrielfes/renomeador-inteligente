@@ -64,11 +64,26 @@ function Button({
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        loading && "relative"
+      )}
       disabled={loading || disabled}
       {...props}
     >
-      {loading ? <Spinner /> : children}
+      {loading ? (
+        <>
+          {/* O conteúdo fica invisível (não some do layout) para o botão não
+              mudar de tamanho; o spinner centraliza por cima. `contents` faz o
+              span não criar caixa — ícones/texto seguem como itens do flex. */}
+          <span aria-hidden className="contents invisible">
+            {children}
+          </span>
+          <Spinner className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+        </>
+      ) : (
+        children
+      )}
     </ButtonPrimitive>
   )
 }

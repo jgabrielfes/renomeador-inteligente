@@ -36,17 +36,32 @@ export function startNavigationProgress(): void {
  * ligam a barra antes de navegar. Use este hook em ações de botão que
  * redirecionam (login, submits etc.).
  */
+// Navegar para a PRÓPRIA rota atual não muda pathname/searchParams — a barra
+// nunca receberia o sinal de conclusão e ficaria presa. Nesses casos, não liga.
+function isSameLocation(href: unknown): boolean {
+  if (typeof window === "undefined" || typeof href !== "string") return false;
+  try {
+    const url = new URL(href, window.location.href);
+    return (
+      url.pathname === window.location.pathname &&
+      url.search === window.location.search
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function useProgressRouter(): ReturnType<typeof useRouter> {
   const router = useRouter();
   return React.useMemo(
     () => ({
       ...router,
       push: (...args: Parameters<typeof router.push>) => {
-        startNavigationProgress();
+        if (!isSameLocation(args[0])) startNavigationProgress();
         router.push(...args);
       },
       replace: (...args: Parameters<typeof router.replace>) => {
-        startNavigationProgress();
+        if (!isSameLocation(args[0])) startNavigationProgress();
         router.replace(...args);
       },
       back: () => {
@@ -182,7 +197,7 @@ export function NavigationProgress() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none fixed inset-x-0 top-0 z-[60]"
+      className="pointer-events-none fixed inset-x-0 top-0 z-60"
     >
       <div
         className={`h-0.5 bg-primary shadow-[0_0_8px] shadow-primary/60 transition-[width,opacity] duration-200 ease-out ${

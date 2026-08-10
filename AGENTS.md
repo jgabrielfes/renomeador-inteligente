@@ -128,7 +128,7 @@ Toda troca de rota mostra a barra linear no topo da página (estilo nprogress). 
 
 - **Cliques em `<Link>`/`<a>` internos e voltar/avançar**: cobertos automaticamente por listeners globais — nenhum código extra nos call sites.
 - **Navegação programática** (ação de botão que redireciona — login, submit etc.): usar `useProgressRouter()` de `@/components/navigation-progress` no lugar do `useRouter` de `next/navigation`. Mesma API; `push`/`replace`/`back`/`forward` ligam a barra antes de navegar. Fora de componente/hook, chamar `startNavigationProgress()` antes do redirect.
-- A barra aparece em **toda** navegação, mesmo instantânea: há um tempo mínimo visível (~200 ms), então rota pré-carregada mostra um flash rápido de 100% em vez de nada. Ela usa `bg-primary` e fica em `z-[60]` (acima dos dialogs, que usam `z-50`); overlays novos devem ficar abaixo disso.
+- A barra aparece em **toda** navegação, mesmo instantânea: há um tempo mínimo visível (~200 ms), então rota pré-carregada mostra um flash rápido de 100% em vez de nada. Ela usa `bg-primary` e fica em `z-60` (acima dos dialogs, que usam `z-50`); overlays novos devem ficar abaixo disso.
 
 ## Commits: Conventional Commits
 
