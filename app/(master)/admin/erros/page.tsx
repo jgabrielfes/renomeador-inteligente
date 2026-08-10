@@ -5,6 +5,9 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import {
+  ErrorEventDetails,
+} from "@/components/admin/error-event-details";
 import { QueryPagination } from "@/components/admin/query-pagination";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -63,7 +66,7 @@ export default async function ErrosPage({
               <TableHead>Origem</TableHead>
               <TableHead>Usuário</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Mensagem</TableHead>
+              <TableHead className="w-12">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -85,11 +88,18 @@ export default async function ErrosPage({
                 <TableCell className="tabular-nums">
                   {e.status ?? "—"}
                 </TableCell>
-                <TableCell
-                  className="max-w-md truncate text-muted-foreground"
-                  title={e.mensagem}
-                >
-                  {e.mensagem}
+                <TableCell>
+                  <ErrorEventDetails
+                    erro={{
+                      data: dataCurta.format(e.createdAt),
+                      usuario: e.user
+                        ? `${e.user.name} (${e.user.email})`
+                        : "Deslogado",
+                      origem: e.origem,
+                      status: e.status,
+                      mensagem: e.mensagem,
+                    }}
+                  />
                 </TableCell>
               </TableRow>
             ))}
