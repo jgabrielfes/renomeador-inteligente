@@ -162,3 +162,18 @@ export async function requireMaster() {
   if (!isMaster(session)) notFound();
   return session!;
 }
+
+/**
+ * Gate das páginas privadas (grupo `(private)`): devolve a sessão ou manda
+ * para o login levando o caminho desejado — ao entrar, a pessoa volta direto
+ * para onde queria ir. Cada página passa o próprio caminho (layout não sabe
+ * a URL da requisição).
+ */
+export async function requireSession(caminhoDeVolta: string) {
+  const { redirect } = await import("next/navigation");
+  const session = await auth();
+  if (!session) {
+    redirect(`/login?callbackUrl=${encodeURIComponent(caminhoDeVolta)}`);
+  }
+  return session!;
+}

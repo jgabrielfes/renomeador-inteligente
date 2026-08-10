@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { QueryPagination } from "@/components/admin/query-pagination";
 import { Badge } from "@/components/ui/badge";
+import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import {
   Table,
   TableBody,
@@ -49,8 +50,9 @@ export default async function RenomeacoesPage({
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Renomeações</h1>
         <p className="text-sm text-muted-foreground">
-          Um registro por lote concluído (renomeação na pasta ou download do
-          zip). Sem nomes nem conteúdo de documento — só a contagem.
+          Um registro por método a cada rodada de análise (quando os arquivos
+          são enviados para a IA ou para o OCR). Sem nomes nem conteúdo de
+          documento — só contagem e método.
         </p>
       </header>
 
@@ -60,6 +62,7 @@ export default async function RenomeacoesPage({
             <TableRow>
               <TableHead>Data</TableHead>
               <TableHead>Usuário</TableHead>
+              <TableHead>Método</TableHead>
               <TableHead className="text-right">Arquivos</TableHead>
             </TableRow>
           </TableHeader>
@@ -81,6 +84,9 @@ export default async function RenomeacoesPage({
                     <Badge variant="outline">Deslogado</Badge>
                   )}
                 </TableCell>
+                <TableCell>
+                  <MetodoBadge metodo={e.metodo} />
+                </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {e.quantidade}
                 </TableCell>
@@ -89,7 +95,7 @@ export default async function RenomeacoesPage({
             {eventos.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={4}
                   className="text-center text-muted-foreground"
                 >
                   Nenhuma renomeação registrada nesta página.
@@ -106,5 +112,19 @@ export default async function RenomeacoesPage({
         totalDeItens={total}
       />
     </main>
+  );
+}
+
+const METODO_ROTULOS: Record<MetodoAnalise, string> = {
+  IA_ARQUIVO: "IA — arquivo",
+  IA_TEXTO: "IA — texto",
+  LOCAL: "Local",
+};
+
+function MetodoBadge({ metodo }: { metodo: MetodoAnalise }) {
+  return (
+    <Badge variant={metodo === "LOCAL" ? "outline" : "secondary"}>
+      {METODO_ROTULOS[metodo]}
+    </Badge>
   );
 }

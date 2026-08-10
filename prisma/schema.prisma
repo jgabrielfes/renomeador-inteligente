@@ -51,15 +51,24 @@ model ErrorEvent {
   @@map("error_events")
 }
 
-// Telemetria mínima do renomeador: um evento por lote concluído (renomeação
-// na pasta ou download do zip), com a quantidade de arquivos. Alimenta o
-// resumo da página /admin. Sem conteúdo de documento — só contagem.
+// Como cada lote foi analisado no renomeador.
+enum MetodoAnalise {
+  IA_ARQUIVO // documento enviado inteiro ao Gemini
+  IA_TEXTO   // OCR local + texto enviado ao Gemini
+  LOCAL      // 100% no navegador (modo local ou fallback)
+}
+
+// Telemetria mínima do renomeador: um evento por método dentro de cada rodada
+// de ANÁLISE (registrado quando os arquivos são enviados para IA/OCR, não na
+// renomeação final). Alimenta o resumo e a listagem de /admin. Sem conteúdo
+// de documento — só contagem e método.
 model RenameEvent {
-  id         String   @id @default(cuid())
+  id         String        @id @default(cuid())
   quantidade Int
+  metodo     MetodoAnalise @default(LOCAL)
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt  DateTime @default(now())
+  user       User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime      @default(now())
 
   @@map("rename_events")
 }

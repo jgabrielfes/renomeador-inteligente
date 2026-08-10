@@ -6,6 +6,7 @@
 import {
   GeminiError,
 } from "@/lib/gemini";
+import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 import {
   geminiRedigirPeca,
@@ -18,6 +19,12 @@ export const maxDuration = 60;
 const MAX_BODY = 64 * 1024;
 
 export async function POST(request: Request) {
+  // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(

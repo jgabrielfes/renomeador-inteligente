@@ -8,7 +8,7 @@ import * as React from "react";
 import { ShieldCheck, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 
-import { alternarMaster } from "@/app/admin/usuarios/actions";
+import { alternarMaster } from "@/app/(master)/admin/usuarios/actions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

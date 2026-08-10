@@ -13,6 +13,7 @@ import {
   type BatchItem,
   type Lessons,
 } from "@/lib/gemini";
+import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 
 // Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
@@ -23,6 +24,12 @@ const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
 const MAX_ITEMS = 10;
 
 export async function POST(request: Request) {
+  // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(

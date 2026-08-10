@@ -21,7 +21,8 @@ import {
   ZoomIn,
 } from "lucide-react";
 
-import { registrarArquivosRenomeados } from "@/app/renomeador/actions";
+import { registrarAnalise } from "@/app/(private)/renomeador/actions";
+import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import { DocumentPreview } from "@/components/document-preview";
 import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -263,16 +264,18 @@ export default function Home() {
   );
 
   const processLocally = React.useCallback(
-    async (row: Row, text?: string | null) => {
+    async (row: Row, text?: string | null): Promise<boolean> => {
       try {
         const extracted = text ?? (await readDocument(row.file));
         applyProposal(row.id, proposeName(row.file.name, extracted), "local");
+        return true;
       } catch (err) {
         patchRow(row.id, {
           status: "erro",
           use: false,
           error: err instanceof Error ? err.message : String(err),
         });
+        return false;
       }
     },
     [applyProposal, patchRow]
@@ -281,6 +284,13 @@ export default function Home() {
   const runQueue = React.useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
+    // Telemetria: contabiliza NO MOMENTO DA ANÁLISE (arquivo enviado para a
+    // IA ou para o OCR), por método — registrado ao fim da rodada da fila.
+    const contadores: Record<MetodoAnalise, number> = {
+      IA_ARQUIVO: 0,
+      IA_TEXTO: 0,
+      LOCAL: 0,
+    };
     try {
       while (queueRef.current.length > 0) {
         const { mode } = getAiSettingsSnapshot();
@@ -288,7 +298,7 @@ export default function Home() {
         if (mode === "local" || aiUnavailableRef.current) {
           const row = queueRef.current.shift()!;
           patchRow(row.id, { status: "processando" });
-          await processLocally(row);
+          if (await processLocally(row)) contadores.LOCAL += 1;
           continue;
         }
 
@@ -322,17 +332,20 @@ export default function Home() {
         // Prepara os itens: arquivo direto quando elegível; senão OCR local.
         const items: AiBatchItem[] = [];
         const itemRows: Row[] = [];
+        const itemKinds: Array<"arquivo" | "texto"> = [];
         const ocrTexts = new Map<string, string>();
         for (const row of batch) {
           if (mode === "arquivo" && fileEligibleForAi(row.file)) {
             items.push({ file: row.file });
             itemRows.push(row);
+            itemKinds.push("arquivo");
           } else {
             try {
               const text = await readDocument(row.file);
               ocrTexts.set(row.id, text);
               items.push({ fileName: row.file.name, text });
               itemRows.push(row);
+              itemKinds.push("texto");
             } catch (err) {
               patchRow(row.id, {
                 status: "erro",
@@ -402,8 +415,17 @@ export default function Home() {
         for (let i = 0; i < itemRows.length; i++) {
           const row = itemRows[i];
           const proposal = results?.[i] ?? null;
-          if (proposal) applyProposal(row.id, proposal, "ia");
-          else await processLocally(row, ocrTexts.get(row.id) ?? null);
+          if (proposal) {
+            applyProposal(row.id, proposal, "ia");
+            contadores[itemKinds[i] === "arquivo" ? "IA_ARQUIVO" : "IA_TEXTO"] += 1;
+          } else if (await processLocally(row, ocrTexts.get(row.id) ?? null)) {
+            contadores.LOCAL += 1;
+          }
+        }
+      }
+      for (const [metodo, quantidade] of Object.entries(contadores)) {
+        if (quantidade > 0) {
+          void registrarAnalise(metodo as MetodoAnalise, quantidade);
         }
       }
     } finally {
@@ -598,7 +620,6 @@ export default function Home() {
       // duas categorias sem virar "(2)".
       const raiz = await existingNames(dirHandle);
       const usados = new Map<string, Set<string>>([["", raiz]]);
-      let renomeados = 0;
 
       for (const [categoria, linhas] of porPasta) {
         let destino: FileSystemDirectoryHandle | undefined;
@@ -640,7 +661,6 @@ export default function Home() {
             }
 
             used.add(name.toLowerCase());
-            renomeados += 1;
             patchRow(row.id, {
               status: "renomeado",
               proposed: categoria ? `${categoria}/${name}` : name,
@@ -656,8 +676,6 @@ export default function Home() {
           }
         }
       }
-      // Telemetria (melhor-esforço): alimenta o resumo de /admin.
-      if (renomeados > 0) void registrarArquivosRenomeados(renomeados);
     } finally {
       setApplying(false);
     }
@@ -696,8 +714,6 @@ export default function Home() {
 
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
-      // Telemetria (melhor-esforço): alimenta o resumo de /admin.
-      void registrarArquivosRenomeados(downloadable.length);
     } finally {
       setZipping(false);
     }

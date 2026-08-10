@@ -11,7 +11,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { registerUser } from "@/app/cadastro/actions";
+import { registerUser } from "@/app/(protected)/cadastro/actions";
 import { Button } from "@/components/ui/button";
 import {
   Field,

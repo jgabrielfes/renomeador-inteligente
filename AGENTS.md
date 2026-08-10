@@ -18,7 +18,22 @@ O app deixou de ser só o renomeador: é uma **suíte de ferramentas para cartó
 | Resolvedor de Notas Devolutivas (em teste) | `/notas` | `lib/notas/*` + `app/api/notas` + `lib/gemini-notas.ts` |
 | Folha de pesquisa (WIP, sem UI ainda) | — | `lib/categories.ts`, `lib/certidoes.ts`, `lib/qualificacao.ts` |
 
-Módulo novo segue o padrão: página em `app/<modulo>/page.tsx`, lógica em `lib/<modulo>/`, card no painel da inicial.
+## Grupos de rota e acesso
+
+O `app/` é organizado em **route groups por nível de acesso** (não mudam a URL). Toda página nova entra num deles:
+
+| Grupo | Quem acessa | Rotas hoje | Gate |
+| --- | --- | --- | --- |
+| `(public)` | todo mundo | `/` (painel) | — |
+| `(private)` | só logado | `/renomeador`, `/notas` | `requireSession("/rota")` no `page.tsx` (server) de CADA página — leva o caminho na URL de login (`/login?callbackUrl=…`) para voltar direto após entrar |
+| `(protected)` | só DESLOGADO | `/login`, `/cadastro` | layout do grupo (`auth()` + redirect; limpa cookie morto) |
+| `(master)` | só MASTER | `/admin/*` | layout do grupo (`requireMaster()` → 404) + repetido em páginas/actions (defesa em profundidade) |
+
+- Página privada client-side ganha um `page.tsx` server fino com o gate + um `*-client.tsx` (ex.: `renomeador-client.tsx`) — o gate NUNCA fica só no client.
+- O gate de `(private)` fica na página (não no layout) porque layout não conhece a URL da requisição — e o `callbackUrl` é obrigatório.
+- As rotas de API dos recursos privados (`/api/rename`, `/api/notas`) também exigem sessão (401) — acompanham as páginas.
+
+Módulo novo segue o padrão: página em `app/(grupo)/<modulo>/page.tsx`, lógica em `lib/<modulo>/`, card no painel da inicial.
 
 ## Branches e deploy
 
@@ -85,7 +100,9 @@ Todo filtro de listagem/painel vive na **query string da URL**, nunca em estado 
   - **Largura padrão**: TODA tela `/admin` usa `max-w-4xl` no `<main>` — resumo e listagens, sem exceção.
 - **Paginação também é query string**: `?pagina=N&porPagina=10|25|50|100` (default 1 e 10).
 - Filtros novos seguem o mesmo padrão: um parâmetro por dimensão (`?periodo=…&pagina=…`), nomes em português, valores curtos e estáveis.
-- Telas de administração: `/admin` (resumo), `/admin/usuarios`, `/admin/renomeacoes`, `/admin/erros` — todas gateadas com `requireMaster()` de `lib/auth.ts` no topo (inclusive nas server actions). Telemetria alimenta as listagens: `rename_events` (lotes renomeados) e `error_events` (falhas das rotas de IA via `registrarErro` de `lib/error-log.ts`) — ambas de melhor-esforço e **sem conteúdo de documento**; usuário null = pessoa deslogada.
+- Telas de administração: `/admin` (resumo), `/admin/usuarios`, `/admin/renomeacoes`, `/admin/erros` — todas gateadas com `requireMaster()` de `lib/auth.ts` no topo (inclusive nas server actions). Telemetria alimenta as listagens — ambas de melhor-esforço e **sem conteúdo de documento**; usuário null = registro antigo de quando a plataforma era aberta:
+  - `rename_events`: registrado **no momento da ANÁLISE** (quando os arquivos selecionados são enviados para IA/OCR na fila do renomeador), um evento por **método** (`IA_ARQUIVO` | `IA_TEXTO` | `LOCAL` — enum `MetodoAnalise`) a cada rodada da fila. Fallback conta como LOCAL. Não confundir com "renomeação aplicada" — o gatilho é a análise.
+  - `error_events`: falhas das rotas de IA via `registrarErro` de `lib/error-log.ts`.
 
 ## Cursor pointer em tudo que é clicável
 
