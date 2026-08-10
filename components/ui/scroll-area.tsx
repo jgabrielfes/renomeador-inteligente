@@ -18,12 +18,18 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      // Customização do projeto (manter ao atualizar pelo CLI): o Root é uma
+      // coluna flex e o Viewport é dimensionado por flex (grow + basis-auto +
+      // min-h-0) em vez do `size-full` original — altura percentual não
+      // resolve quando o Root encolhe via `flex-1`/`max-h` (o conteúdo
+      // vazava do dialog). Com basis-auto, ScrollArea sem limite de altura
+      // (caso das tabelas) continua com altura livre, do tamanho do conteúdo.
+      className={cn("relative flex flex-col", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        className="min-h-0 w-full grow basis-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

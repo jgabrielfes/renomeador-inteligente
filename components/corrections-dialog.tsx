@@ -62,9 +62,11 @@ export function CorrectionsDialog({
           ) : (
             <ScrollArea className="min-h-0 flex-1 rounded-lg border">
               <ul className="divide-y">
-                {corrections.map((c) => (
+                {corrections.map((c, i) => (
                   <li
-                    key={`${c.sugerido}→${c.corrigido}`}
+                    // Índice na key: dados antigos podem ter duplicatas até a
+                    // próxima gravação sanear (a lista é recriada a cada mudança).
+                    key={`${i}-${c.sugerido}`}
                     className="flex items-center gap-3 p-3"
                   >
                     <div className="min-w-0 flex-1 space-y-1">
