@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 
 interface Body {
   casoId: string;
+  herdeiroId?: string;
   nomeHerdeiro: string;
   nomeFalecido: string;
   nomeAdvogado: string;
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
   const convite: ConviteHerdeiro = {
     token: gerarToken(),
     casoId: body.casoId,
+    herdeiroId: body.herdeiroId,
     nomeHerdeiro: body.nomeHerdeiro,
     nomeFalecido: body.nomeFalecido ?? '',
     nomeAdvogado: body.nomeAdvogado ?? '',

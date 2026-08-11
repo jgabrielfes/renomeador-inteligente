@@ -3,7 +3,8 @@
 /**
  * O Sucessorista — folha de trabalho do inventário.
  *
- * Abas do processo: I Triagem · II Partilha (5 passos) · III Acervo · IV Pós-escritura.
+ * Abas do processo: I A família · II Acervo · III Partilha (3 passos) ·
+ * IV Cofre de documentos · V ITCMD.
  * O cálculo roda no navegador: o motor é função pura importada direto.
  * Identidade visual própria ("livro de notas"), escopada em .sucessorista.
  */
@@ -16,10 +17,14 @@ import './sucessorista.css';
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
 import { partilhar } from '@/lib/partilha/engine';
 import { apurarAtribuicao, type TitularidadeBem, type TituloCessao } from '@/lib/partilha/atribuicao';
-import { triagem, type RespostasTriagem } from '@/lib/partilha/triagem';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
-import { gerarPosEscritura } from '@/lib/partilha/posescritura';
-import type { Caso, Herdeiro, Bem, Regime, Vinculo } from '@/lib/partilha/types';
+import type { Caso, Bem } from '@/lib/partilha/types';
+import { QUALIFICACAO_VAZIA, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
+import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
+import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
+import { FamiliaView, type EstadoFamilia } from './familia';
+import { CofreView } from './cofre';
+import { ItcmdView } from './itcmd-view';
 
 /* ---------- helpers ---------- */
 
@@ -29,49 +34,46 @@ const brl = (v: string) =>
 let seq = 0;
 const uid = (p: string) => `${p}${(seq += 1)}`;
 
-/* ---------- estado inicial ---------- */
+const FALECIDO_VAZIO: DadosFalecido = {
+  nome: '',
+  cpf: '',
+  dataObito: '',
+  dataCasamento: '',
+  ultimoDomicilio: '',
+};
 
-const REGIMES: { v: Regime; t: string }[] = [
-  { v: 'COMUNHAO_PARCIAL', t: 'Comunhão parcial' },
-  { v: 'COMUNHAO_UNIVERSAL', t: 'Comunhão universal' },
-  { v: 'SEPARACAO_CONVENCIONAL', t: 'Separação convencional' },
-  { v: 'SEPARACAO_OBRIGATORIA', t: 'Separação obrigatória' },
-];
+type Aba = 'familia' | 'acervo' | 'partilha' | 'cofre' | 'itcmd';
 
 export default function SucessoristaClient() {
-  const [abaProc, setAbaProc] = useState<'triagem' | 'partilha' | 'acervo' | 'pos'>('partilha');
+  const [abaProc, setAbaProc] = useState<Aba>('familia');
 
-  /* --- triagem --- */
-  const [tri, setTri] = useState<RespostasTriagem>({
-    todosMaioresECapazes: true,
-    consensoEntreHerdeiros: true,
-    existeTestamento: false,
-    herdeiroNoExterior: false,
-    bemNoExterior: false,
-    falecidoDeixouDividasRelevantes: false,
-    uf: 'SP',
+  /* --- I: a família (falecido, herdeiros, qualificação, perguntas ITCMD) --- */
+  const [familia, setFamilia] = useState<EstadoFamilia>({
+    falecido: FALECIDO_VAZIO,
+    temSobrevivente: true,
+    vinculo: 'CASAMENTO',
+    regime: 'COMUNHAO_PARCIAL',
+    nomeSobrev: '',
+    herdeiros: [],
+    qualificacoes: {},
+    perguntas: {},
   });
-  const parecer = useMemo(() => triagem(tri), [tri]);
+  const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = familia;
 
-  /* --- partilha: 5 passos --- */
+  /* --- III: partilha (3 passos: bens · espelho · diferenciada) --- */
   const [passo, setPasso] = useState(1);
-  const [temSobrevivente, setTemSobrevivente] = useState(true);
-  const [vinculo, setVinculo] = useState<Vinculo>('CASAMENTO');
-  const [regime, setRegime] = useState<Regime>('COMUNHAO_PARCIAL');
-  const [nomeSobrev, setNomeSobrev] = useState('');
-  const [herdeiros, setHerdeiros] = useState<Herdeiro[]>([]);
   const [bens, setBens] = useState<Bem[]>([]);
 
   const caso: Caso = useMemo(
     () => ({
-      falecido: { dataObito: new Date().toISOString().slice(0, 10) },
+      falecido: { dataObito: falecido.dataObito || new Date().toISOString().slice(0, 10) },
       sobrevivente: temSobrevivente
         ? { vinculo, regime, nome: nomeSobrev || 'Cônjuge/companheiro(a)' }
         : null,
       herdeiros,
       bens,
     }),
-    [temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens],
+    [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens],
   );
 
   const resultado = useMemo(() => {
@@ -83,7 +85,7 @@ export default function SucessoristaClient() {
     }
   }, [caso, bens.length, herdeiros.length, temSobrevivente]);
 
-  /* --- passo 5: partilha diferenciada --- */
+  /* --- passo 3: partilha diferenciada --- */
   const [usufrutoAtivo, setUsufrutoAtivo] = useState(false);
   const [titulo, setTitulo] = useState<TituloCessao>('GRATUITO');
 
@@ -107,16 +109,27 @@ export default function SucessoristaClient() {
     });
   }, [resultado, usufrutoAtivo, titulo, caso, bens, herdeiros, temSobrevivente]);
 
-  /* --- acervo --- */
+  /* --- II: acervo --- */
   const [acervo, setAcervo] = useState(montarChecklistAcervo());
   const feitos = acervo.filter((i) => i.status === 'RECEBIDO' || i.status === 'NAO_SE_APLICA').length;
 
-  /* --- pós-escritura --- */
-  const tarefasPos = useMemo(
-    () => (resultado ? gerarPosEscritura(caso, resultado, atribuicao) : []),
-    [caso, resultado, atribuicao],
-  );
-  const [posFeitas, setPosFeitas] = useState<Record<string, boolean>>({});
+  /* --- IV: cofre de documentos --- */
+  const [casoId] = useState(() => uid('caso-') + Date.now().toString(36));
+  const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
+
+  const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
+    const atual = familia.qualificacoes[herdeiroId] ?? QUALIFICACAO_VAZIA;
+    const mesclada: Qualificacao = { ...atual };
+    for (const campo of Object.keys(q) as (keyof QualificacaoHerdeiro)[]) {
+      const v = q[campo];
+      if (v) mesclada[campo] = v;
+    }
+    setFamilia({
+      ...familia,
+      qualificacoes: { ...familia.qualificacoes, [herdeiroId]: mesclada },
+    });
+    setAbaProc('familia');
+  };
 
   /* ---------- render ---------- */
 
@@ -131,10 +144,11 @@ export default function SucessoristaClient() {
         </div>
         {(
           [
-            ['triagem', 'I', 'Triagem de via'],
-            ['partilha', 'II', 'Partilha'],
-            ['acervo', 'III', 'Acervo'],
-            ['pos', 'IV', 'Pós-escritura'],
+            ['familia', 'I', 'A família'],
+            ['acervo', 'II', 'Acervo'],
+            ['partilha', 'III', 'Partilha'],
+            ['cofre', 'IV', 'Cofre de documentos'],
+            ['itcmd', 'V', 'ITCMD'],
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
@@ -155,106 +169,110 @@ export default function SucessoristaClient() {
       </nav>
 
       <main className="folha">
-        {abaProc === 'triagem' && (
-          <TriagemView tri={tri} setTri={setTri} parecer={parecer} />
+        {abaProc === 'familia' && (
+          <FamiliaView
+            estado={familia}
+            onChange={setFamilia}
+            avancar={() => setAbaProc('acervo')}
+          />
+        )}
+
+        {abaProc === 'acervo' && (
+          <section>
+            <h1>Acervo</h1>
+            <p className="subtitulo">
+              O que mais atrasa inventário é herdeiro que não sabe o que o falecido tinha.
+              Percorra as fontes na ordem — o testamento primeiro, porque decide a via.
+            </p>
+            <p className="progresso num">
+              {feitos} de {acervo.length} fontes concluídas
+            </p>
+            <div className="check">
+              {acervo.map((item, idx) => (
+                <div className="check-item" key={item.fonte.id}>
+                  <span className="prio">P{item.fonte.prioridade}</span>
+                  <div>
+                    <h4>{item.fonte.nome}</h4>
+                    <p>{item.fonte.oQueRevela}</p>
+                    <p>
+                      <strong>Como:</strong> {item.fonte.comoConsultar}{' '}
+                      {item.fonte.url && (
+                        <a href={item.fonte.url} target="_blank" rel="noreferrer">
+                          abrir portal ↗
+                        </a>
+                      )}
+                    </p>
+                  </div>
+                  <select
+                    className="status-sel"
+                    value={item.status}
+                    aria-label={`Status de ${item.fonte.nome}`}
+                    onChange={(e: Ev) =>
+                      setAcervo((prev) =>
+                        prev.map((x, i) =>
+                          i === idx ? { ...x, status: e.target.value as StatusItemAcervo } : x,
+                        ),
+                      )
+                    }
+                  >
+                    <option value="PENDENTE">Pendente</option>
+                    <option value="SOLICITADO">Solicitado</option>
+                    <option value="RECEBIDO">Recebido</option>
+                    <option value="NAO_SE_APLICA">Não se aplica</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="rodape-acoes">
+              <button className="acao fantasma" onClick={() => setAbaProc('familia')}>
+                Voltar à família
+              </button>
+              <button className="acao" onClick={() => setAbaProc('partilha')}>
+                Avançar à partilha
+              </button>
+            </div>
+          </section>
         )}
 
         {abaProc === 'partilha' && (
           <>
             <h1>Partilha</h1>
             <p className="subtitulo">
-              Do regime de bens ao espelho da partilha — com o fundamento legal de cada
-              lançamento e a apuração de torna quando a família convenciona diferente do direito.
+              Dos bens ao espelho da partilha — com o fundamento legal de cada lançamento e
+              a apuração de torna quando a família convenciona diferente do direito. O
+              vínculo, o regime e os herdeiros vêm do item I.
             </p>
 
             <div className="passos" role="tablist" aria-label="Passos">
-              {['Vínculo e regime', 'Herdeiros', 'Bens', 'Espelho da partilha', 'Partilha diferenciada'].map(
-                (t, i) => (
-                  <button key={t} aria-current={passo === i + 1} onClick={() => setPasso(i + 1)}>
-                    {i + 1}. {t}
-                  </button>
-                ),
-              )}
+              {['Bens', 'Espelho da partilha', 'Partilha diferenciada'].map((t, i) => (
+                <button key={t} aria-current={passo === i + 1} onClick={() => setPasso(i + 1)}>
+                  {i + 1}. {t}
+                </button>
+              ))}
             </div>
 
             {passo === 1 && (
-              <section>
-                <span className="eyebrow">Passo 1</span>
-                <h2>Havia cônjuge ou companheiro(a)?</h2>
-                <div className="escolha">
-                  <button aria-pressed={temSobrevivente} onClick={() => setTemSobrevivente(true)}>
-                    Sim
-                  </button>
-                  <button aria-pressed={!temSobrevivente} onClick={() => setTemSobrevivente(false)}>
-                    Não
-                  </button>
-                </div>
-                {temSobrevivente && (
-                  <>
-                    <h2>Vínculo</h2>
-                    <div className="escolha">
-                      <button aria-pressed={vinculo === 'CASAMENTO'} onClick={() => setVinculo('CASAMENTO')}>
-                        Casamento
-                      </button>
-                      <button
-                        aria-pressed={vinculo === 'UNIAO_ESTAVEL'}
-                        onClick={() => setVinculo('UNIAO_ESTAVEL')}
-                      >
-                        União estável
-                      </button>
-                    </div>
-                    <h2>Regime de bens</h2>
-                    <div className="escolha">
-                      {REGIMES.map((r) => (
-                        <button key={r.v} aria-pressed={regime === r.v} onClick={() => setRegime(r.v)}>
-                          {r.t}
-                        </button>
-                      ))}
-                    </div>
-                    <h2>Nome</h2>
-                    <div className="grade c2">
-                      <label className="campo">
-                        Cônjuge/companheiro(a) sobrevivente
-                        <input
-                          type="text"
-                          value={nomeSobrev}
-                          onChange={(e: Ev) => setNomeSobrev(e.target.value)}
-                          placeholder="Maria"
-                        />
-                      </label>
-                    </div>
-                  </>
-                )}
-                <div className="rodape-acoes">
-                  <span />
-                  <button className="acao" onClick={() => setPasso(2)}>
-                    Avançar aos herdeiros
-                  </button>
-                </div>
-              </section>
+              <EditorBens
+                bens={bens}
+                setBens={setBens}
+                voltar={() => setAbaProc('familia')}
+                avancar={() => setPasso(2)}
+              />
             )}
 
             {passo === 2 && (
-              <EditorHerdeiros
-                herdeiros={herdeiros}
-                setHerdeiros={setHerdeiros}
-                temSobrevivente={temSobrevivente}
+              <EspelhoView
+                resultado={resultado}
+                bens={bens}
+                nomeCaso={falecido.nome}
                 voltar={() => setPasso(1)}
                 avancar={() => setPasso(3)}
               />
             )}
 
             {passo === 3 && (
-              <EditorBens bens={bens} setBens={setBens} voltar={() => setPasso(2)} avancar={() => setPasso(4)} />
-            )}
-
-            {passo === 4 && (
-              <EspelhoView resultado={resultado} voltar={() => setPasso(3)} avancar={() => setPasso(5)} />
-            )}
-
-            {passo === 5 && (
               <section>
-                <span className="eyebrow">Passo 5</span>
+                <span className="eyebrow">Passo 3</span>
                 <h2>Partilha diferenciada — usufruto e torna</h2>
                 <p className="subtitulo">
                   Quando o(a) sobrevivente reserva o usufruto do acervo inteiro e os
@@ -359,11 +377,11 @@ export default function SucessoristaClient() {
                   </>
                 )}
                 <div className="rodape-acoes">
-                  <button className="acao fantasma" onClick={() => setPasso(4)}>
+                  <button className="acao fantasma" onClick={() => setPasso(2)}>
                     Voltar ao espelho
                   </button>
-                  <button className="acao" onClick={() => setAbaProc('pos')}>
-                    Ver pós-escritura
+                  <button className="acao" onClick={() => setAbaProc('itcmd')}>
+                    Ver ITCMD
                   </button>
                 </div>
               </section>
@@ -371,88 +389,34 @@ export default function SucessoristaClient() {
           </>
         )}
 
-        {abaProc === 'acervo' && (
-          <section>
-            <h1>Acervo</h1>
-            <p className="subtitulo">
-              O que mais atrasa inventário é herdeiro que não sabe o que o falecido tinha.
-              Percorra as fontes na ordem — o testamento primeiro, porque decide a via.
-            </p>
-            <p className="progresso num">
-              {feitos} de {acervo.length} fontes concluídas
-            </p>
-            <div className="check">
-              {acervo.map((item, idx) => (
-                <div className="check-item" key={item.fonte.id}>
-                  <span className="prio">P{item.fonte.prioridade}</span>
-                  <div>
-                    <h4>{item.fonte.nome}</h4>
-                    <p>{item.fonte.oQueRevela}</p>
-                    <p>
-                      <strong>Como:</strong> {item.fonte.comoConsultar}{' '}
-                      {item.fonte.url && (
-                        <a href={item.fonte.url} target="_blank" rel="noreferrer">
-                          abrir portal ↗
-                        </a>
-                      )}
-                    </p>
-                  </div>
-                  <select
-                    className="status-sel"
-                    value={item.status}
-                    aria-label={`Status de ${item.fonte.nome}`}
-                    onChange={(e: Ev) =>
-                      setAcervo((prev) =>
-                        prev.map((x, i) =>
-                          i === idx ? { ...x, status: e.target.value as StatusItemAcervo } : x,
-                        ),
-                      )
-                    }
-                  >
-                    <option value="PENDENTE">Pendente</option>
-                    <option value="SOLICITADO">Solicitado</option>
-                    <option value="RECEBIDO">Recebido</option>
-                    <option value="NAO_SE_APLICA">Não se aplica</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-          </section>
+        {abaProc === 'cofre' && (
+          <CofreView
+            herdeiros={herdeiros}
+            nomeFalecido={falecido.nome}
+            casoId={casoId}
+            convites={convites}
+            setConvites={setConvites}
+            onImportarQualificacao={importarQualificacao}
+            irParaFamilia={() => setAbaProc('familia')}
+          />
         )}
 
-        {abaProc === 'pos' && (
-          <section>
-            <h1>Pós-escritura</h1>
-            <p className="subtitulo">
-              A etapa que todo mundo esquece. Estas tarefas foram geradas a partir do SEU
-              caso — cada bem, cada torna e cada característica do espólio produziu as suas.
-            </p>
-            {tarefasPos.length === 0 && (
-              <div className="nota">
-                <h3>Sem cálculo, sem checklist</h3>
-                <p>Lance os bens e calcule a partilha na aba II para gerar as tarefas do caso.</p>
-              </div>
-            )}
-            <div className="check">
-              {tarefasPos.map((tarefa) => (
-                <div className="check-item" key={tarefa.id}>
-                  <input
-                    type="checkbox"
-                    checked={posFeitas[tarefa.id] ?? false}
-                    aria-label={`Concluir: ${tarefa.titulo}`}
-                    onChange={(e: Ev) => setPosFeitas((p) => ({ ...p, [tarefa.id]: e.target.checked === true }))}
-                  />
-                  <div style={{ opacity: posFeitas[tarefa.id] ? 0.45 : 1 }}>
-                    <h4>{tarefa.titulo}</h4>
-                    <p>{tarefa.detalhe}</p>
-                    <p className="fund">{tarefa.orgao}</p>
-                    {tarefa.prazoOuAlerta && <p className="alerta">{tarefa.prazoOuAlerta}</p>}
-                  </div>
-                  <span className="prio">P{tarefa.prioridade}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+        {abaProc === 'itcmd' && (
+          <ItcmdView
+            falecido={falecido}
+            temSobrevivente={temSobrevivente}
+            nomeSobrev={nomeSobrev}
+            herdeiros={herdeiros}
+            perguntas={familia.perguntas}
+            qualificacoes={familia.qualificacoes}
+            bens={bens}
+            resultado={resultado}
+            irParaFamilia={() => setAbaProc('familia')}
+            irParaPartilha={() => {
+              setAbaProc('partilha');
+              setPasso(1);
+            }}
+          />
         )}
       </main>
     </div>
@@ -461,211 +425,6 @@ export default function SucessoristaClient() {
 }
 
 /* ================= componentes ================= */
-
-function Pergunta({
-  campo,
-  texto,
-  tri,
-  setTri,
-}: {
-  campo: keyof RespostasTriagem;
-  texto: string;
-  tri: RespostasTriagem;
-  setTri: (t: RespostasTriagem) => void;
-}) {
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{texto}</p>
-      <div className="escolha">
-        <button
-          aria-pressed={tri[campo] === true}
-          onClick={() => setTri({ ...tri, [campo]: true })}
-        >
-          Sim
-        </button>
-        <button
-          aria-pressed={tri[campo] === false}
-          onClick={() => setTri({ ...tri, [campo]: false })}
-        >
-          Não
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TriagemView({
-  tri,
-  setTri,
-  parecer,
-}: {
-  tri: RespostasTriagem;
-  setTri: (t: RespostasTriagem) => void;
-  parecer: ReturnType<typeof triagem>;
-}) {
-  const cls =
-    parecer.via === 'EXTRAJUDICIAL' ? 'ok' : parecer.via === 'JUDICIAL' ? 'jud' : 'cond';
-  const rotulo =
-    parecer.via === 'EXTRAJUDICIAL'
-      ? 'Via extrajudicial'
-      : parecer.via === 'JUDICIAL'
-        ? 'Via judicial'
-        : 'Extrajudicial condicionada';
-
-  return (
-    <section>
-      <h1>Triagem de via</h1>
-      <p className="subtitulo">
-        Sete respostas decidem se o inventário cabe em tabelionato ou vai ao juízo — e o
-        parecer preliminar sai pronto para a comunicação com o cliente.
-      </p>
-      <Pergunta campo="todosMaioresECapazes" texto="Todos os herdeiros são maiores e capazes?" tri={tri} setTri={setTri} />
-      <Pergunta campo="consensoEntreHerdeiros" texto="Há consenso sobre a partilha?" tri={tri} setTri={setTri} />
-      <Pergunta campo="existeTestamento" texto="O falecido deixou testamento?" tri={tri} setTri={setTri} />
-      {tri.existeTestamento && (
-        <Pergunta campo="testamentoCumpridoJudicialmente" texto="O testamento já foi cumprido judicialmente?" tri={tri} setTri={setTri} />
-      )}
-      <Pergunta campo="herdeiroNoExterior" texto="Algum herdeiro reside no exterior?" tri={tri} setTri={setTri} />
-      <Pergunta campo="bemNoExterior" texto="Há bem situado no exterior?" tri={tri} setTri={setTri} />
-      <Pergunta campo="falecidoDeixouDividasRelevantes" texto="O falecido deixou dívidas relevantes?" tri={tri} setTri={setTri} />
-
-      <h2>
-        <span className={`selo-via ${cls}`}>{rotulo}</span>
-      </h2>
-      {parecer.impedimentos.map((i) => (
-        <div className="nota exigencia" key={i.codigo}>
-          <span className="eyebrow">{i.contornavel ? 'Impedimento contornável' : 'Impedimento'}</span>
-          <h3>{i.descricao}</h3>
-          <p>
-            {i.fundamento}
-            {i.comoContornar ? ` — Caminho: ${i.comoContornar}` : ''}
-          </p>
-        </div>
-      ))}
-      {parecer.condicoes.map((c, i) => (
-        <div className="nota" key={i}>
-          <p>{c}</p>
-        </div>
-      ))}
-      <h2>Próximos passos</h2>
-      <div className="check">
-        {parecer.proximosPassos.map((p, i) => (
-          <div className="check-item" key={i}>
-            <span className="prio">·</span>
-            <p style={{ fontSize: 14 }}>{p}</p>
-            <span />
-          </div>
-        ))}
-      </div>
-      <h2>Parecer preliminar</h2>
-      <div className="nota" style={{ whiteSpace: 'pre-line', fontSize: 13.5 }}>
-        {parecer.parecerPreliminar}
-      </div>
-    </section>
-  );
-}
-
-function EditorHerdeiros({
-  herdeiros,
-  setHerdeiros,
-  temSobrevivente,
-  voltar,
-  avancar,
-}: {
-  herdeiros: Herdeiro[];
-  setHerdeiros: (h: Herdeiro[]) => void;
-  temSobrevivente: boolean;
-  voltar: () => void;
-  avancar: () => void;
-}) {
-  const [nome, setNome] = useState('');
-  const [status, setStatus] = useState<Herdeiro['status']>('ATIVO');
-  const [comum, setComum] = useState(true);
-
-  const adicionar = () => {
-    if (!nome.trim()) return;
-    setHerdeiros([
-      ...herdeiros,
-      {
-        id: uid('h'),
-        nome: nome.trim(),
-        classe: 'DESCENDENTE',
-        grau: 1,
-        status,
-        filhoDoSobrevivente: comum,
-      },
-    ]);
-    setNome('');
-    setStatus('ATIVO');
-    setComum(true);
-  };
-
-  return (
-    <section>
-      <span className="eyebrow">Passo 2</span>
-      <h2>Descendentes</h2>
-      <p className="subtitulo">
-        Marque quem é filho(a) também do sobrevivente — em filiação híbrida a lei diverge, e
-        o espelho mostrará os dois cenários.
-      </p>
-      <div className="grade c3">
-        <label className="campo">
-          Nome
-          <input type="text" value={nome} onChange={(e: Ev) => setNome(e.target.value)} placeholder="Ana" />
-        </label>
-        <label className="campo">
-          Situação
-          <select value={status} onChange={(e: Ev) => setStatus(e.target.value as Herdeiro['status'])}>
-            <option value="ATIVO">Vivo(a)</option>
-            <option value="PRE_MORTO">Pré-morto(a)</option>
-            <option value="RENUNCIANTE">Renunciante</option>
-          </select>
-        </label>
-        {temSobrevivente && (
-          <label className="campo">
-            Filho(a) do sobrevivente?
-            <select value={comum ? 's' : 'n'} onChange={(e: Ev) => setComum(e.target.value === 's')}>
-              <option value="s">Sim</option>
-              <option value="n">Não</option>
-            </select>
-          </label>
-        )}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <button className="acao fantasma" onClick={adicionar}>
-          Adicionar herdeiro
-        </button>
-      </div>
-      {herdeiros.map((h) => (
-        <div className="linha-item" key={h.id}>
-          <span>
-            <strong>{h.nome}</strong>
-            <span className="fracao">
-              {' '}
-              · {h.status === 'ATIVO' ? 'vivo(a)' : h.status === 'PRE_MORTO' ? 'pré-morto(a)' : 'renunciante'}
-              {h.filhoDoSobrevivente === false ? ' · de outro relacionamento' : ''}
-            </span>
-          </span>
-          <button className="remover" onClick={() => setHerdeiros(herdeiros.filter((x) => x.id !== h.id))}>
-            remover
-          </button>
-        </div>
-      ))}
-      <p className="fund" style={{ marginTop: 10 }}>
-        Representação de pré-morto por netos, ascendentes e colaterais: disponíveis no motor —
-        nesta tela simplificada, casos com essas classes seguem pelo caso completo.
-      </p>
-      <div className="rodape-acoes">
-        <button className="acao fantasma" onClick={voltar}>
-          Voltar
-        </button>
-        <button className="acao" onClick={avancar}>
-          Avançar aos bens
-        </button>
-      </div>
-    </section>
-  );
-}
 
 function EditorBens({
   bens,
@@ -695,7 +454,7 @@ function EditorBens({
 
   return (
     <section>
-      <span className="eyebrow">Passo 3</span>
+      <span className="eyebrow">Passo 1</span>
       <h2>Bens do acervo</h2>
       <p className="subtitulo">
         Valores na data do óbito. A distinção comum × particular decide, na comunhão parcial,
@@ -751,7 +510,7 @@ function EditorBens({
       ))}
       <div className="rodape-acoes">
         <button className="acao fantasma" onClick={voltar}>
-          Voltar
+          Voltar à família
         </button>
         <button className="acao" onClick={avancar} disabled={bens.length === 0}>
           Calcular o espelho
@@ -763,19 +522,25 @@ function EditorBens({
 
 function EspelhoView({
   resultado,
+  bens,
+  nomeCaso,
   voltar,
   avancar,
 }: {
   resultado: ReturnType<typeof partilhar> | null;
+  bens: Bem[];
+  nomeCaso: string;
   voltar: () => void;
   avancar: () => void;
 }) {
+  const [exportando, setExportando] = useState(false);
+
   if (!resultado) {
     return (
       <section>
         <div className="nota">
           <h3>Faltam dados</h3>
-          <p>Lance ao menos um bem e um herdeiro (ou sobrevivente) para calcular.</p>
+          <p>Lance ao menos um bem e cadastre a família (item I) para calcular.</p>
         </div>
         <div className="rodape-acoes">
           <button className="acao fantasma" onClick={voltar}>
@@ -787,9 +552,50 @@ function EspelhoView({
     );
   }
 
+  /** Exporta o espelho em Excel: Herdeiro · Patrimônio · Percentual Recebido · Valor. */
+  const exportarExcel = async () => {
+    setExportando(true);
+    try {
+      const massa = Number(resultado.acervo.massaPartilhavel);
+      const patrimonio = bens.map((b) => b.descricao).join('; ');
+      const linhas: CelulaXlsx[][] = [];
+      if (resultado.meacao) {
+        linhas.push([
+          { tipo: 'texto', valor: `${resultado.meacao.beneficiario} (meação — não é herança)` },
+          { tipo: 'texto', valor: patrimonio },
+          { tipo: 'pct', valor: massa > 0 ? Number(resultado.meacao.valor) / massa : 0 },
+          { tipo: 'moeda', valor: Number(resultado.meacao.valor) },
+        ]);
+      }
+      for (const q of resultado.quinhoes) {
+        linhas.push([
+          { tipo: 'texto', valor: q.nome },
+          { tipo: 'texto', valor: `Fração ideal (${q.fracaoHeranca} da herança) sobre: ${patrimonio}` },
+          { tipo: 'pct', valor: massa > 0 ? Number(q.valor) / massa : 0 },
+          { tipo: 'moeda', valor: Number(q.valor) },
+        ]);
+      }
+      linhas.push([
+        { tipo: 'texto', valor: 'Total (massa partilhável)' },
+        { tipo: 'texto', valor: patrimonio },
+        { tipo: 'pct', valor: massa > 0 ? 1 : 0 },
+        { tipo: 'moeda', valor: massa },
+      ]);
+      const blob = await gerarXlsx(
+        'Partilha',
+        ['Herdeiro', 'Patrimônio', 'Percentual Recebido', 'Valor'],
+        linhas,
+        [34, 60, 18, 18],
+      );
+      baixarBlob(blob, `Partilha${nomeCaso ? ` - ${nomeCaso}` : ''}.xlsx`);
+    } finally {
+      setExportando(false);
+    }
+  };
+
   return (
     <section>
-      <span className="eyebrow">Passo 4</span>
+      <span className="eyebrow">Passo 2</span>
       <h2>Espelho da partilha</h2>
 
       {resultado.bloqueios.map((b, i) => (
@@ -841,6 +647,12 @@ function EspelhoView({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <button className="acao fantasma" onClick={exportarExcel} disabled={exportando}>
+              {exportando ? 'Gerando planilha…' : 'Exportar em Excel (.xlsx)'}
+            </button>
           </div>
 
           {resultado.divergencias.map((d, i) => (

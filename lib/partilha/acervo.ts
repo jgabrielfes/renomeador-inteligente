@@ -34,7 +34,7 @@ export const CATALOGO_ACERVO: FonteAcervo[] = [
     categoria: 'TESTAMENTO',
     oQueRevela: 'Existência de testamento público ou cerrado lavrado em qualquer tabelionato do país.',
     comoConsultar:
-      'Pedido no portal do CNB/CENSEC com certidão de óbito. PRIMEIRA consulta do caso: o resultado decide a via (triagem).',
+      'Pedido no portal do CNB/CENSEC com certidão de óbito. PRIMEIRA consulta do caso: o resultado decide a via (extrajudicial × judicial).',
     url: 'https://censec.org.br',
     quemPodePedir: 'Qualquer interessado, após o óbito, com a certidão',
     custo: 'PAGO',

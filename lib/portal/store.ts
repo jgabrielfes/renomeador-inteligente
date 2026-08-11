@@ -15,16 +15,44 @@ export interface DocumentoPedido {
   status: 'PENDENTE' | 'ENVIADO' | 'APROVADO' | 'REJEITADO';
   observacaoAdvogado?: string;
   nomeArquivo?: string;
+  /** Tipo detectado pelo renomeador local no navegador do herdeiro. */
+  tipoDetectado?: string;
   enviadoEm?: string;
 }
+
+/** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso). */
+export const CAMPOS_QUALIFICACAO_HERDEIRO = [
+  'rg',
+  'cpf',
+  'dataNascimento',
+  'filiacao',
+  'profissao',
+  'estadoCivil',
+  'email',
+  'endereco',
+  'complemento',
+  'bairro',
+  'cidade',
+  'uf',
+  'cep',
+] as const;
+
+export type QualificacaoHerdeiro = Partial<
+  Record<(typeof CAMPOS_QUALIFICACAO_HERDEIRO)[number], string>
+>;
 
 export interface ConviteHerdeiro {
   token: string;
   casoId: string;
+  /** Id do herdeiro no caso do advogado, para reimportar a qualificação. */
+  herdeiroId?: string;
   nomeHerdeiro: string;
   nomeFalecido: string;
   nomeAdvogado: string;
   documentos: DocumentoPedido[];
+  /** Preenchida pelo próprio herdeiro no portal. */
+  qualificacao?: QualificacaoHerdeiro;
+  qualificacaoEnviadaEm?: string;
   criadoEm: string;
 }
 
@@ -35,6 +63,10 @@ export interface PortalStore {
     token: string,
     docId: string,
     patch: Partial<DocumentoPedido>,
+  ): Promise<ConviteHerdeiro | null>;
+  salvarQualificacao(
+    token: string,
+    qualificacao: QualificacaoHerdeiro,
   ): Promise<ConviteHerdeiro | null>;
 }
 
@@ -53,6 +85,13 @@ export const memoryStore: PortalStore = {
     const doc = c.documentos.find((d) => d.id === docId);
     if (!doc) return null;
     Object.assign(doc, patch);
+    return c;
+  },
+  async salvarQualificacao(token, qualificacao) {
+    const c = mem.get(token);
+    if (!c) return null;
+    c.qualificacao = { ...c.qualificacao, ...qualificacao };
+    c.qualificacaoEnviadaEm = new Date().toISOString();
     return c;
   },
 };

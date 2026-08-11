@@ -31,7 +31,7 @@ const MODULOS = [
     icon: Scale,
     titulo: "O Sucessorista (em teste)",
     descricao:
-      "Folha de trabalho do inventário: triagem da via (extrajudicial × judicial), cálculo de quinhões com fundamento legal, partilha diferenciada com apuração de torna, levantamento de acervo e pós-escritura. Cálculo de apoio — revisão do advogado responsável é obrigatória.",
+      "Folha de trabalho do inventário: composição familiar com qualificação das partes, levantamento de acervo, cálculo de quinhões com fundamento legal e partilha diferenciada com apuração de torna, cofre de documentos com link para os herdeiros e espelho do ITCMD-SP com provisão do imposto. Cálculo de apoio — revisão do advogado responsável é obrigatória.",
   },
 ] as const;
 
