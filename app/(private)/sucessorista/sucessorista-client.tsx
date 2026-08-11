@@ -25,6 +25,7 @@ import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 import { FamiliaView, type EstadoFamilia } from './familia';
 import { CofreView } from './cofre';
 import { ItcmdView } from './itcmd-view';
+import { DocumentosView, type AnexosProcesso } from './documentos';
 
 /* ---------- helpers ---------- */
 
@@ -112,6 +113,8 @@ export default function SucessoristaClient() {
   /* --- II: acervo --- */
   const [acervo, setAcervo] = useState(montarChecklistAcervo());
   const feitos = acervo.filter((i) => i.status === 'RECEBIDO' || i.status === 'NAO_SE_APLICA').length;
+  /** Anexos do ambiente de documentos (vivem só neste navegador). */
+  const [anexosProcesso, setAnexosProcesso] = useState<AnexosProcesso>({});
 
   /* --- IV: cofre de documentos --- */
   const [casoId] = useState(() => uid('caso-') + Date.now().toString(36));
@@ -182,8 +185,10 @@ export default function SucessoristaClient() {
             <h1>Acervo</h1>
             <p className="subtitulo">
               O que mais atrasa inventário é herdeiro que não sabe o que o falecido tinha.
-              Percorra as fontes na ordem — o testamento primeiro, porque decide a via.
+              Percorra as fontes na ordem — o testamento primeiro, porque decide a via — e
+              anexe cada documento recebido no ambiente logo abaixo.
             </p>
+            <h2 style={{ marginTop: 0 }}>Fontes de pesquisa</h2>
             <p className="progresso num">
               {feitos} de {acervo.length} fontes concluídas
             </p>
@@ -223,6 +228,13 @@ export default function SucessoristaClient() {
                 </div>
               ))}
             </div>
+
+            <DocumentosView
+              anexos={anexosProcesso}
+              setAnexos={setAnexosProcesso}
+              nomeCaso={falecido.nome}
+            />
+
             <div className="rodape-acoes">
               <button className="acao fantasma" onClick={() => setAbaProc('familia')}>
                 Voltar à família

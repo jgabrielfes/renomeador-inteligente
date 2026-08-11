@@ -14,6 +14,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import '../../(private)/sucessorista/sucessorista.css';
+import { LupaPreview } from '../../(private)/sucessorista/preview';
 
 /** Alias estrutural — compatível com o ChangeEvent de input file. */
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
@@ -53,6 +54,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const [erro, setErro] = useState<string | null>(null);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
+  /** Arquivos anexados nesta visita, por documento — permitem a lupa local. */
+  const [arquivos, setArquivos] = useState<Record<string, File>>({});
+  const [preview, setPreview] = useState<File | null>(null);
 
   useEffect(() => {
     fetch(`/api/portal/${token}`)
@@ -90,6 +94,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const enviarDocumento = async (docId: string, file: File) => {
     setAnalisando(docId);
     setDicaQualidade(null);
+    setArquivos((a) => ({ ...a, [docId]: file }));
     let nome = file.name;
     let tipo: string | undefined;
     try {
@@ -257,6 +262,17 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                 <p className="fund">
                   Arquivo: {d.nomeArquivo}
                   {d.tipoDetectado ? ` · lido como ${d.tipoDetectado}` : ''}
+                  {arquivos[d.id] && (
+                    <button
+                      type="button"
+                      className="lupa"
+                      title={`Pré-visualizar ${d.nomeArquivo}`}
+                      aria-label={`Pré-visualizar ${d.nomeArquivo}`}
+                      onClick={() => setPreview(arquivos[d.id])}
+                    >
+                      🔍
+                    </button>
+                  )}
                 </p>
               )}
             </div>
@@ -268,6 +284,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       <p className="fund" style={{ marginTop: 24 }}>
         Dúvidas sobre algum documento? Fale direto com {advogado}.
       </p>
+
+      <LupaPreview file={preview} onClose={() => setPreview(null)} />
     </main>
     </div>
   );
