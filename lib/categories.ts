@@ -15,6 +15,9 @@ export const CATEGORIA_OUTROS = "OUTROS DOCUMENTOS";
 export const CATEGORIAS = [
   "DOCUMENTOS PESSOAIS",
   "DOCUMENTOS DO IMÓVEL",
+  "DOCUMENTOS DO VEÍCULO",
+  "DOCUMENTOS CRÉDITOS",
+  "DOCUMENTOS SOCIETÁRIO",
   "CONTRATOS",
   "IMPOSTO DE TRANSMISSÃO",
   "CERTIDÕES NEGATIVAS",
@@ -62,6 +65,22 @@ const POR_TIPO: Record<string, Categoria> = {
   Boleto: "COMPROVANTES E PAGAMENTOS",
   "Comprovante de Pagamento": "COMPROVANTES E PAGAMENTOS",
   "Termo de Quitação": "COMPROVANTES E PAGAMENTOS",
+
+  CRLV: "DOCUMENTOS DO VEÍCULO",
+  CRV: "DOCUMENTOS DO VEÍCULO",
+  ATPV: "DOCUMENTOS DO VEÍCULO",
+  "Documento do Veículo": "DOCUMENTOS DO VEÍCULO",
+  "Certificado de Registro de Veículo": "DOCUMENTOS DO VEÍCULO",
+  IPVA: "DOCUMENTOS DO VEÍCULO",
+
+  "Extrato Bancário": "DOCUMENTOS CRÉDITOS",
+  "Extrato de Aplicação": "DOCUMENTOS CRÉDITOS",
+  "Cédula de Crédito Bancário": "DOCUMENTOS CRÉDITOS",
+
+  "Contrato Social": "DOCUMENTOS SOCIETÁRIO",
+  "Alteração Contratual": "DOCUMENTOS SOCIETÁRIO",
+  "Balanço Patrimonial": "DOCUMENTOS SOCIETÁRIO",
+  "Cartão CNPJ": "DOCUMENTOS SOCIETÁRIO",
 };
 
 // Segunda camada, sobre o tipo normalizado (sem acento, maiúsculo). A ORDEM
@@ -74,6 +93,24 @@ const POR_PALAVRA: Array<[RegExp, Categoria]> = [
   [
     /MATRICULA|VALOR VENAL|TRIBUTOS IMOBILIARIOS|\bIPTU\b|HABITE|\bONUS\b|VINTENARIA|ESCRITURA|IMOVEL|IMOVEIS|REGISTRO DE IMOVEIS/,
     "DOCUMENTOS DO IMÓVEL",
+  ],
+
+  // Societário antes de CONTRATOS: "Contrato Social" é sociedade, não contrato
+  // avulso. Veículo e créditos também vêm antes, para "Contrato de
+  // Financiamento" e "Compra e Venda de Veículo" caírem na pasta certa.
+  [
+    /CONTRATO SOCIAL|ALTERACAO CONTRATUAL|SOCIETARI|JUCESP|\bCNPJ\b|\bQSA\b|ATA DE (?:ASSEMBLEIA|REUNIAO)|BALANCO|DEMONSTRACAO FINANCEIRA|QUADRO DE SOCIOS|DISTRATO SOCIAL/,
+    "DOCUMENTOS SOCIETÁRIO",
+  ],
+
+  [
+    /VEICULO|VEICULOS|\bCRLV\b|\bCRV\b|\bATPV\b|\bDUT\b|RENAVAM|LICENCIAMENTO|\bIPVA\b|\bDETRAN\b|\bFIPE\b/,
+    "DOCUMENTOS DO VEÍCULO",
+  ],
+
+  [
+    /EXTRATO|CEDULA DE CREDITO|EMPRESTIMO|FINANCIAMENTO|CONSORCIO|APLICACAO FINANCEIRA|INVESTIMENTO|POUPANCA|CONTA CORRENTE|PREVIDENCIA|\bVGBL\b|\bPGBL\b|VALORES A RECEBER/,
+    "DOCUMENTOS CRÉDITOS",
   ],
 
   [/CONTRATO|PROCURACAO|DISTRATO|CESSAO DE DIREITOS|COMPROMISSO/, "CONTRATOS"],
