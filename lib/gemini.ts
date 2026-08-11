@@ -1,7 +1,7 @@
 // Lado servidor da integração com o Gemini. A chave (GEMINI_API_KEY) nunca
 // chega ao navegador — só a rota /api/rename usa este módulo.
 
-import { getExtension, safeFilename, titleCaseName } from "./renamer";
+import { getExtension, normalize, safeFilename, titleCaseName } from "./renamer";
 
 // As cotas do free tier são POR MODELO — quando a de um estoura (429), o
 // próximo da cadeia ainda tem saldo próprio. O flash-lite vem primeiro porque
@@ -70,6 +70,7 @@ Para CADA documento, gere um item no array JSON de resposta:
 - "tipo": o tipo ESPECÍFICO do documento, curto e capitalizado. Prefira sempre o tipo do documento ao órgão emissor: uma certidão da prefeitura sobre débitos de imóvel é "Certidão Negativa de Tributos Imobiliários", não "Certidão Prefeitura". Tipos frequentes neste contexto: "Certidão de Matrícula", "Certidão Vintenária", "Certidão Negativa de Tributos Imobiliários", "Certidão de Valor Venal", "Certidão de Dados Cadastrais (IPTU)", "Certidão Negativa de Débitos Condominiais", "Certidão de Ônus e Ações", "CND Federal", "Certidão Negativa de Débitos Trabalhistas", "Certidão de Distribuição Cível", "Certidão de Protesto", "Certidão de Casamento", "Certidão de Nascimento", "Certidão de Óbito", "Guia de ITBI", "Comprovante de Pagamento", "Comprovante de Residência", "Habite-se", "Escritura de Venda e Compra", "Contrato de Compromisso de Compra e Venda", "Contrato de Locação", "Termo de Quitação", "Procuração", "Matrícula de Imóvel", "IPTU", "RG", "CNH", "CPF". A lista não é fechada — use o tipo específico correto mesmo que não esteja nela. Se não reconhecer, use "Documento".
 - "nome": nome completo da pessoa principal do documento, em Formato de Título (ex.: "João da Silva"). Em contratos, a parte pessoa física (não a empresa). Em certidão de casamento, os dois cônjuges separados por " e ". Em certidões sobre imóvel sem pessoa identificável, use null.
 - "identificador": número identificador relevante quando existir — nº da matrícula (Certidão de Matrícula / Matrícula de Imóvel), nº do contribuinte (IPTU / Valor Venal), nº do processo (Certidão de Distribuição), CPF formatado (documento pessoal sem nome legível). Senão, null.
+- "cartorio": SOMENTE para documentos emitidos pelo Registro de Imóveis (Matrícula de Imóvel, Certidão de Matrícula, Certidão Vintenária, Certidão de Ônus e Ações e certidões de propriedade): o cartório emissor em forma CURTA, "Nº RI de Cidade-UF" (ex.: "1º RI de Guarulhos-SP"; cartório único, sem ordinal: "RI de Bilac-SP"). Para qualquer outro documento, null.
 
 Regras:
 - O array deve ter exatamente ${count} item(ns), um por documento, sem repetir índices.
@@ -87,6 +88,7 @@ const RESPONSE_SCHEMA = {
       tipo: { type: "STRING" },
       nome: { type: "STRING", nullable: true },
       identificador: { type: "STRING", nullable: true },
+      cartorio: { type: "STRING", nullable: true },
     },
     required: ["indice", "tipo"],
   },
@@ -97,6 +99,7 @@ interface AiAnswer {
   tipo: string;
   nome?: string | null;
   identificador?: string | null;
+  cartorio?: string | null;
 }
 
 export class GeminiError extends Error {
@@ -236,10 +239,22 @@ function assembleProposal(
   const tipo = safeFilename(answer.tipo || "Documento").slice(0, 60);
   const nome = answer.nome ? titleCaseName(answer.nome) : null;
   const id = answer.identificador?.trim() || null;
+  const cartorio = answer.cartorio?.trim()
+    ? safeFilename(answer.cartorio.trim()).slice(0, 60)
+    : null;
+  // Documento do Registro de Imóveis: nome = nº da matrícula + cartório
+  // emissor (a matrícula só identifica o imóvel dentro de um cartório).
+  const ehRegistroDeImovel = /MATRICULA|VINTENARIA|\bONUS\b|PROPRIEDADE|INTEIRO TEOR/.test(
+    normalize(tipo)
+  );
 
   let base: string;
-  if (tipo === "Matrícula de Imóvel" && id) base = `Matrícula ${id}`;
-  else if (nome) base = `${tipo} - ${nome}`;
+  if (ehRegistroDeImovel && id) {
+    base = /MATRICULA/.test(normalize(tipo))
+      ? `${tipo === "Matrícula de Imóvel" ? "Matrícula" : tipo} ${id}`
+      : `${tipo} - Matrícula ${id}`;
+    if (cartorio) base += ` - ${cartorio}`;
+  } else if (nome) base = `${tipo} - ${nome}`;
   else if (id) base = `${tipo} - ${id}`;
   else if (tipo !== "Documento") base = tipo;
   else base = ext ? fileName.slice(0, -ext.length) : fileName;

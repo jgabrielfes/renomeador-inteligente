@@ -616,6 +616,41 @@ export function extractMatricula(text: string, fileName = ""): string | null {
   return null;
 }
 
+// Cartório de Registro de Imóveis emissor da matrícula/certidão de
+// propriedade, em forma curta ("1º RI de Guarulhos-SP") — o número da
+// matrícula só identifica o imóvel DENTRO de um cartório, então o nome do
+// arquivo precisa dos dois. Âncoras: "REGISTRO DE IMÓVEIS" + a cidade, que
+// vem como "COMARCA DE X" ou "REGISTRO DE IMÓVEIS DE X".
+export function extractCartorioRI(text: string): string | null {
+  const n = normalize(text).replace(/\s+/g, " ");
+  const ri = n.match(
+    /(?:(\d{1,2})\s*[ºO°.]?\s*)?(?:OFICIAL(?:IA)?|OFICIO|CARTORIO|SERVICO|REGISTRADOR)?[A-Z,\s]{0,40}?REGISTRO\s+DE\s+IMOVEIS/
+  );
+  if (!ri) return null;
+  const inicio = ri.index ?? 0;
+  const trecho = n.slice(inicio, inicio + ri[0].length + 90);
+  // A cidade termina onde começa outra coisa: pontuação, número, ou as
+  // palavras que tipicamente vêm depois do cabeçalho do cartório.
+  const termino =
+    /(?=$|\s*[,;.()—–]|\s*\d|\s+(?:MATRICULA|LIVRO|CERTIDAO|CERTIFICO|ESTADO|CEP|COMARCA|RUA|AV\b|AVENIDA))/
+      .source;
+  const cidadeM =
+    trecho.match(
+      new RegExp(`COMARCA\\s+DE\\s+([A-Z][A-Z' ]{2,38}?)(?:\\s*[-–/]\\s*([A-Z]{2}))?${termino}`)
+    ) ??
+    trecho.match(
+      new RegExp(
+        `IMOVEIS\\s+D[EAO]\\s+(?!TITULOS|DOCUMENTOS|PESSOA)([A-Z][A-Z' ]{2,38}?)(?:\\s*[-–/]\\s*([A-Z]{2}))?${termino}`
+      )
+    );
+  if (!cidadeM) return null;
+  const cidade = titleCaseName(cidadeM[1].trim());
+  if (!cidade) return null;
+  const uf = cidadeM[2] ? `-${cidadeM[2]}` : "";
+  const ordinal = ri[1] ? `${Number(ri[1])}º ` : "";
+  return `${ordinal}RI de ${cidade}${uf}`;
+}
+
 // Nº do contribuinte ou inscrição cadastral (IPTU/valor venal/certidões de
 // tributos municipais) — o identificador que resta quando o documento não
 // traz nome de pessoa.
@@ -695,7 +730,10 @@ export function proposeName(fileName: string, text: string): Proposal {
   let base: string | null = null;
   if (docType === "Matrícula de Imóvel") {
     const mat = extractMatricula(text, fileName);
-    base = mat ? `Matrícula ${mat}` : "Matrícula de Imóvel";
+    const cartorio = mat ? extractCartorioRI(text) : null;
+    base = mat
+      ? `Matrícula ${mat}${cartorio ? ` - ${cartorio}` : ""}`
+      : "Matrícula de Imóvel";
   } else if (personName) {
     base = `${docType} - ${personName}`;
   } else if (PERSONAL_DOCS.has(docType)) {
