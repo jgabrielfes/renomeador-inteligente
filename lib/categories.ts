@@ -60,7 +60,15 @@ const POR_TIPO: Record<string, Categoria> = {
   "Certidão Negativa de Débitos": "CERTIDÕES NEGATIVAS",
   "Certidão Negativa de Débitos Trabalhistas": "CERTIDÕES NEGATIVAS",
   "Certidão de Distribuição": "CERTIDÕES NEGATIVAS",
+  "Certidão de Distribuição Cível": "CERTIDÕES NEGATIVAS",
   "Certidão de Protesto": "CERTIDÕES NEGATIVAS",
+  "CND Federal": "CERTIDÕES NEGATIVAS",
+  CND: "CERTIDÕES NEGATIVAS",
+  CNDT: "CERTIDÕES NEGATIVAS",
+  "Certidão de Regularidade do FGTS": "CERTIDÕES NEGATIVAS",
+  "Certidão de Regularidade Fiscal": "CERTIDÕES NEGATIVAS",
+  "Certidão Conjunta Negativa de Débitos": "CERTIDÕES NEGATIVAS",
+  "Certidão de Feitos Ajuizados": "CERTIDÕES NEGATIVAS",
 
   Boleto: "COMPROVANTES E PAGAMENTOS",
   "Comprovante de Pagamento": "COMPROVANTES E PAGAMENTOS",
@@ -120,7 +128,14 @@ const POR_PALAVRA: Array<[RegExp, Categoria]> = [
     "DOCUMENTOS PESSOAIS",
   ],
 
-  [/NEGATIVA|DISTRIBUICAO|PROTESTO|TRABALHISTA|ANTECEDENTES/, "CERTIDÕES NEGATIVAS"],
+  // "DISTRIBUIC" cobre singular e plural (Distribuição/Distribuições);
+  // CND/CNDT/CRF e "regularidade" são como a IA nomeia as negativas federais,
+  // trabalhistas e do FGTS; "certidão de débitos" sem "negativa" também é
+  // certidão fiscal e mora nesta pasta.
+  [
+    /NEGATIVA|DISTRIBUIC|PROTESTO|TRABALHISTA|ANTECEDENTES|\bCND\b|\bCNDT\b|\bCRF\b|REGULARIDADE|FEITOS AJUIZADOS|INTERDICAO|TUTELA|CURATELA|CERTIDAO CONJUNTA|CERTIDAO DE DEBITOS|QUITACAO ELEITORAL/,
+    "CERTIDÕES NEGATIVAS",
+  ],
 
   [/BOLETO|COMPROVANTE|QUITACAO|RECIBO|PAGAMENTO|GUIA|DARF|\bDAM\b/, "COMPROVANTES E PAGAMENTOS"],
 ];
