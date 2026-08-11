@@ -38,7 +38,7 @@ function BotaoAnexar({ onFiles }: { onFiles: (lista: FileList) => void }) {
         ref={ref}
         type="file"
         multiple
-        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp"
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.docx,.xlsx"
         className="hidden"
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) onFiles(e.target.files);

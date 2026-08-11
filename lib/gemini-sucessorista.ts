@@ -39,7 +39,23 @@ export interface CasoExtraido {
     vinculo: "CASAMENTO" | "UNIAO_ESTAVEL" | null;
     regime: RegimeExtraido | null;
   };
-  herdeiros: Array<{ nome: string; filhoDoSobrevivente: boolean | null }>;
+  herdeiros: Array<{
+    nome: string;
+    filhoDoSobrevivente: boolean | null;
+    /** Qualificação quando constar (planilha do escritório, minutas): apoio, nunca verdade. */
+    qualificacao: {
+      rg: string | null;
+      cpf: string | null;
+      dataNascimento: string | null;
+      profissao: string | null;
+      estadoCivil: string | null;
+      email: string | null;
+      endereco: string | null;
+      cidade: string | null;
+      uf: string | null;
+      cep: string | null;
+    } | null;
+  }>;
   bens: Array<{
     descricao: string;
     tipo: TipoBemExtraido | null;
@@ -97,6 +113,22 @@ const RESPONSE_SCHEMA = {
         properties: {
           nome: { type: "string" },
           filhoDoSobrevivente: { type: "boolean", nullable: true },
+          qualificacao: {
+            type: "object",
+            nullable: true,
+            properties: {
+              rg: texto,
+              cpf: texto,
+              dataNascimento: texto,
+              profissao: texto,
+              estadoCivil: texto,
+              email: texto,
+              endereco: texto,
+              cidade: texto,
+              uf: texto,
+              cep: texto,
+            },
+          },
         },
         required: ["nome"],
       },
@@ -142,7 +174,7 @@ Extraia APENAS o que constar dos documentos, para preencher a folha de trabalho 
 
 1. falecido — dados do(a) autor(a) da herança: nome completo, CPF (formato 000.000.000-00), dataObito e dataCasamento em YYYY-MM-DD, ultimoDomicilio como "Cidade/UF". A certidão de óbito é a fonte principal.
 2. sobrevivente — existe = true se os documentos indicarem cônjuge ou companheiro(a) vivo(a) na data do óbito (false apenas com indicação clara em contrário, ex.: certidão de óbito dizendo viúvo/divorciado sem união posterior). vinculo e regime saem da certidão de casamento ou escritura de união estável (regime: atenção à data do casamento — antes de 1977 o regime legal era a comunhão universal).
-3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida.
+3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. Planilhas e minutas do escritório (qualificação, partilha) frequentemente trazem RG, CPF, data de nascimento, profissão, estado civil, e-mail e endereço de cada herdeiro — quando constarem, preencha qualificacao (dataNascimento em YYYY-MM-DD; campo ausente = null; sem qualquer dado, qualificacao = null).
 4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato, contrato social). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR).
 5. arquivos — para CADA documento (indice 1 a ${total}): tipoDetectado (rótulo curto, ex.: "Certidão de Óbito") e documentoId = o id do catálogo abaixo em que o arquivo deve ser arquivado (null se nenhum servir).
 
@@ -180,7 +212,15 @@ export async function extrairCasoDoCofre(
 ): Promise<CasoExtraido> {
   const parts: Array<Record<string, unknown>> = [];
   arquivos.forEach((arq, i) => {
-    const mimeType = AI_MIME_TYPES[getExtension(arq.fileName)];
+    const ext = getExtension(arq.fileName);
+    // .txt: texto já extraído no navegador (planilhas .xlsx e documentos
+    // .docx viram texto plano no cliente) — segue como parte de texto.
+    if (ext === ".txt") {
+      const conteudo = Buffer.from(arq.data).toString("utf-8").slice(0, 60_000);
+      parts.push({ text: `DOCUMENTO ${i + 1}: ${arq.fileName}\n${conteudo}` });
+      return;
+    }
+    const mimeType = AI_MIME_TYPES[ext];
     if (!mimeType) {
       throw new GeminiError(`Formato não suportado pela IA: ${arq.fileName}`, 415);
     }
@@ -226,10 +266,33 @@ export async function extrairCasoDoCofre(
     },
     herdeiros: herdeiros
       .map((h) => {
-        const nome = limpar((h as Record<string, unknown>)?.nome);
+        const item = h as Record<string, unknown>;
+        const nome = limpar(item?.nome);
         if (!nome) return null;
-        const filho = (h as Record<string, unknown>)?.filhoDoSobrevivente;
-        return { nome, filhoDoSobrevivente: typeof filho === "boolean" ? filho : null };
+        const filho = item?.filhoDoSobrevivente;
+        const q = (item?.qualificacao ?? null) as Record<string, unknown> | null;
+        const qualificacao =
+          q && typeof q === "object"
+            ? {
+                rg: limpar(q.rg, 30),
+                cpf: limpar(q.cpf, 14),
+                dataNascimento: dataIso(q.dataNascimento),
+                profissao: limpar(q.profissao, 60),
+                estadoCivil: limpar(q.estadoCivil, 40),
+                email: limpar(q.email, 120),
+                endereco: limpar(q.endereco, 160),
+                cidade: limpar(q.cidade, 60),
+                uf: limpar(q.uf, 2),
+                cep: limpar(q.cep, 10),
+              }
+            : null;
+        const temAlgo =
+          qualificacao && Object.values(qualificacao).some((v) => v !== null);
+        return {
+          nome,
+          filhoDoSobrevivente: typeof filho === "boolean" ? filho : null,
+          qualificacao: temAlgo ? qualificacao : null,
+        };
       })
       .filter((h): h is NonNullable<typeof h> => h !== null)
       .slice(0, 20),

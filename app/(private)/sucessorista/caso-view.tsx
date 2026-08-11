@@ -87,8 +87,34 @@ export function CasoView({
   async function lerArquivos(lista: File[]) {
     if (lendo || lista.length === 0) return;
 
-    const elegiveis = lista.filter((f) => fileEligibleForAi(f));
-    const inelegiveis = lista.filter((f) => !fileEligibleForAi(f));
+    // DOCX/XLSX (planilha de qualificação, minuta de partilha): o texto é
+    // extraído AQUI no navegador e segue como .txt para a leitura; o arquivo
+    // ORIGINAL é o que fica anexado no processo.
+    const { ehArquivoOffice, extrairTextoOffice } = await import('@/lib/office-texto');
+    const pares: { original: File; envio: File }[] = [];
+    const inelegiveis: File[] = [];
+    for (const f of lista) {
+      if (fileEligibleForAi(f)) {
+        pares.push({ original: f, envio: f });
+        continue;
+      }
+      if (ehArquivoOffice(f.name) && f.size <= 15 * 1024 * 1024) {
+        try {
+          const texto = await extrairTextoOffice(f);
+          if (texto.trim()) {
+            pares.push({
+              original: f,
+              envio: new File([texto], `${f.name}.txt`, { type: 'text/plain' }),
+            });
+            continue;
+          }
+        } catch {
+          // ilegível/corrompido: cai para o anexo sem leitura
+        }
+      }
+      inelegiveis.push(f);
+    }
+
     if (inelegiveis.length > 0) {
       // Sem leitura para eles, mas nada se perde: entram no catálogo em "outros".
       aplicarLeitura(
@@ -99,20 +125,21 @@ export function CasoView({
         description: 'Foram anexados em "Outros documentos" para classificação manual.',
       });
     }
-    if (elegiveis.length === 0) return;
+    if (pares.length === 0) return;
 
-    // Lotes no mesmo limite do renomeador (nº de itens e corpo da função).
-    const lotes: File[][] = [];
-    let atual: File[] = [];
+    // Lotes no mesmo limite do renomeador (nº de itens e corpo da função),
+    // medidos pelo arquivo que VIAJA (o .txt extraído é minúsculo).
+    const lotes: { original: File; envio: File }[][] = [];
+    let atual: { original: File; envio: File }[] = [];
     let bytes = 0;
-    for (const f of elegiveis) {
-      if (atual.length >= AI_BATCH_MAX_ITEMS || (atual.length > 0 && bytes + f.size > AI_BATCH_MAX_BYTES)) {
+    for (const par of pares) {
+      if (atual.length >= AI_BATCH_MAX_ITEMS || (atual.length > 0 && bytes + par.envio.size > AI_BATCH_MAX_BYTES)) {
         lotes.push(atual);
         atual = [];
         bytes = 0;
       }
-      atual.push(f);
-      bytes += f.size;
+      atual.push(par);
+      bytes += par.envio.size;
     }
     if (atual.length > 0) lotes.push(atual);
 
@@ -129,7 +156,7 @@ export function CasoView({
             : `Lendo ${lote.length} arquivo(s)…`
         );
         const form = new FormData();
-        for (const f of lote) form.append('item', f);
+        for (const par of lote) form.append('item', par.envio);
         const res = await fetch('/api/sucessorista', { method: 'POST', body: form });
         const payload = await res.json().catch(() => null);
         if (!res.ok) {
@@ -138,11 +165,11 @@ export function CasoView({
         const caso = payload?.caso as CasoExtraido | undefined;
         if (!caso) throw new Error('Resposta inválida da leitura.');
 
-        const classificados: ArquivoClassificado[] = lote.map((file, idx) => {
+        const classificados: ArquivoClassificado[] = lote.map((par, idx) => {
           const info = caso.arquivos.find((a) => a.indice === idx + 1);
           if (info?.tipoDetectado) tipos.add(info.tipoDetectado);
           return {
-            file,
+            file: par.original,
             documentoId: info?.documentoId ?? 'outros',
             tipoDetectado: info?.tipoDetectado ?? null,
           };
@@ -162,7 +189,7 @@ export function CasoView({
       // A leitura falhou, mas os arquivos não se perdem: entram sem classificação.
       aplicarLeitura(
         { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], arquivos: [] },
-        elegiveis.slice(lidos).map((file) => ({ file, documentoId: 'outros', tipoDetectado: null }))
+        pares.slice(lidos).map((par) => ({ file: par.original, documentoId: 'outros', tipoDetectado: null }))
       );
     } finally {
       setLendo(false);
@@ -223,7 +250,7 @@ export function CasoView({
         <span className="dica">
           {lendo
             ? 'A leitura roda pela rota interna da plataforma — a chave da IA nunca sai do servidor.'
-            : 'PDF, JPG, PNG e WEBP (até 4 MB por arquivo). A pasta inteira vale: subpastas entram junto.'}
+            : 'PDF, JPG, PNG e WEBP (até 4 MB por arquivo) — e DOCX/XLSX, como a planilha de qualificação e a minuta de partilha, que viram texto aqui no navegador. Subpastas entram junto.'}
         </span>
         {!lendo && (
           <span className="arrasto-acoes">
@@ -255,7 +282,7 @@ export function CasoView({
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.jpg,.jpeg,.png,.webp"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.docx,.xlsx"
           className="hidden"
           onChange={(e) => {
             if (e.target.files) void lerArquivos(preparar(Array.from(e.target.files)));

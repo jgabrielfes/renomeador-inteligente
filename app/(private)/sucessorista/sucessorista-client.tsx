@@ -331,6 +331,28 @@ export default function SucessoristaClient() {
         perguntas[n.id] = PERGUNTAS_ITCMD_VAZIAS;
       }
 
+      // Qualificação extraída (planilha do escritório, minutas): preenche só
+      // campo VAZIO da ficha, casando por nome — vale para herdeiro novo e
+      // para quem já estava lançado. Extração é apoio: a UI pede conferência.
+      const todos = [...prev.herdeiros, ...novos];
+      for (const lidoH of lido.herdeiros) {
+        if (!lidoH.qualificacao) continue;
+        const alvo = todos.find(
+          (h) => h.nome.trim().toLowerCase() === lidoH.nome.trim().toLowerCase(),
+        );
+        if (!alvo) continue;
+        const ficha = { ...(qualificacoes[alvo.id] ?? QUALIFICACAO_VAZIA) };
+        for (const campo of Object.keys(lidoH.qualificacao) as (keyof NonNullable<
+          typeof lidoH.qualificacao
+        >)[]) {
+          const v = lidoH.qualificacao[campo];
+          if (v && campo in ficha && !ficha[campo as keyof Qualificacao]) {
+            ficha[campo as keyof Qualificacao] = v;
+          }
+        }
+        qualificacoes[alvo.id] = ficha;
+      }
+
       return {
         ...prev,
         falecido: fal,
