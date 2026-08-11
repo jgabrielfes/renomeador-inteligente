@@ -216,6 +216,7 @@ export function FamiliaView({
           <QualificacaoEditor
             titulo={`Qualificação — ${nomeSobrev || 'viúvo(a)'}`}
             valor={estado.qualificacoes['__sobrevivente__'] ?? QUALIFICACAO_VAZIA}
+            comConjuge={false}
             onChange={(q) =>
               set({ qualificacoes: { ...estado.qualificacoes, __sobrevivente__: q } })
             }
@@ -444,7 +445,7 @@ function EditorHerdeiros({
                 size="sm"
                 onClick={() => setAberto(aberto === h.id ? null : h.id)}
               >
-                {aberto === h.id ? 'fechar ficha' : 'qualificação e ITCMD'}
+                {aberto === h.id ? 'fechar ficha' : 'editar ficha'}
               </Button>
               <Button
                 type="button"
@@ -460,6 +461,16 @@ function EditorHerdeiros({
 
           {aberto === h.id && (
             <div className="ficha">
+              <div className="grade c2" style={{ marginBottom: 10 }}>
+                <label className="campo">
+                  Nome completo (como consta no documento)
+                  <Input
+                    value={h.nome}
+                    placeholder="Renata Pummer Carvalho"
+                    onChange={(e) => patchHerdeiro(h.id, { nome: e.target.value })}
+                  />
+                </label>
+              </div>
               <div className="escolha" style={{ marginBottom: 6 }}>
                 <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
                   <Checkbox
@@ -512,58 +523,96 @@ function EditorHerdeiros({
 
 /* ---------- qualificação ---------- */
 
-const CAMPOS_QUALIFICACAO: { campo: keyof Qualificacao; rotulo: string; placeholder?: string }[] = [
-  { campo: 'rg', rotulo: 'RG' },
-  { campo: 'cpf', rotulo: 'CPF', placeholder: '000.000.000-00' },
-  { campo: 'dataNascimento', rotulo: 'Data de nascimento' },
-  { campo: 'filiacao', rotulo: 'Filiação' },
-  { campo: 'profissao', rotulo: 'Profissão' },
-  { campo: 'estadoCivil', rotulo: 'Estado civil' },
-  { campo: 'email', rotulo: 'E-mail' },
-  { campo: 'endereco', rotulo: 'Endereço' },
-  { campo: 'complemento', rotulo: 'Complemento' },
-  { campo: 'bairro', rotulo: 'Bairro' },
-  { campo: 'cidade', rotulo: 'Cidade' },
-  { campo: 'uf', rotulo: 'Estado' },
-  { campo: 'cep', rotulo: 'CEP' },
-  { campo: 'conjugeNome', rotulo: 'Cônjuge — nome' },
-  { campo: 'conjugeRg', rotulo: 'Cônjuge — RG' },
-  { campo: 'conjugeCpf', rotulo: 'Cônjuge — CPF' },
-  { campo: 'conjugeProfissao', rotulo: 'Cônjuge — profissão' },
-  { campo: 'conjugeEmail', rotulo: 'Cônjuge — e-mail' },
+interface CampoQualificacao {
+  campo: keyof Qualificacao;
+  rotulo: string;
+  placeholder?: string;
+}
+
+/** Agrupada na ordem em que a qualificação é lida numa escritura. */
+const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
+  {
+    rotulo: 'Identificação',
+    campos: [
+      { campo: 'cpf', rotulo: 'CPF', placeholder: '000.000.000-00' },
+      { campo: 'rg', rotulo: 'RG' },
+      { campo: 'dataNascimento', rotulo: 'Data de nascimento' },
+      { campo: 'filiacao', rotulo: 'Filiação' },
+    ],
+  },
+  {
+    rotulo: 'Dados pessoais',
+    campos: [
+      { campo: 'estadoCivil', rotulo: 'Estado civil' },
+      { campo: 'profissao', rotulo: 'Profissão' },
+      { campo: 'email', rotulo: 'E-mail', placeholder: 'parte@exemplo.com' },
+    ],
+  },
+  {
+    rotulo: 'Endereço',
+    campos: [
+      { campo: 'endereco', rotulo: 'Endereço (rua e número)' },
+      { campo: 'complemento', rotulo: 'Complemento' },
+      { campo: 'bairro', rotulo: 'Bairro' },
+      { campo: 'cidade', rotulo: 'Cidade' },
+      { campo: 'uf', rotulo: 'Estado (UF)' },
+      { campo: 'cep', rotulo: 'CEP', placeholder: '00000-000' },
+    ],
+  },
 ];
+
+/** Só para herdeiros — o viúvo(a) não tem "cônjuge do cônjuge". */
+const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
+  rotulo: 'Cônjuge do herdeiro (se casado)',
+  campos: [
+    { campo: 'conjugeNome', rotulo: 'Nome completo' },
+    { campo: 'conjugeCpf', rotulo: 'CPF' },
+    { campo: 'conjugeRg', rotulo: 'RG' },
+    { campo: 'conjugeProfissao', rotulo: 'Profissão' },
+    { campo: 'conjugeEmail', rotulo: 'E-mail' },
+  ],
+};
 
 export function QualificacaoEditor({
   titulo,
   valor,
   onChange,
+  comConjuge = true,
 }: {
   titulo: string;
   valor: Qualificacao;
   onChange: (q: Qualificacao) => void;
+  /** false para o(a) sobrevivente: cônjuge do cônjuge não existe. */
+  comConjuge?: boolean;
 }) {
+  const grupos = comConjuge ? [...GRUPOS_QUALIFICACAO, GRUPO_CONJUGE] : GRUPOS_QUALIFICACAO;
   return (
     <div style={{ marginTop: 14 }}>
       <span className="eyebrow">{titulo}</span>
-      <div className="grade q-grid" style={{ marginTop: 8 }}>
-        {CAMPOS_QUALIFICACAO.map(({ campo, rotulo, placeholder }) => (
-          <label className="campo" key={campo}>
-            {rotulo}
-            {campo === 'dataNascimento' ? (
-              <DateInput
-                value={valor[campo]}
-                onChange={(iso) => onChange({ ...valor, [campo]: iso })}
-              />
-            ) : (
-              <Input
-                value={valor[campo]}
-                placeholder={placeholder}
-                onChange={(e) => onChange({ ...valor, [campo]: e.target.value })}
-              />
-            )}
-          </label>
-        ))}
-      </div>
+      {grupos.map((grupo) => (
+        <div key={grupo.rotulo} style={{ marginTop: 12 }}>
+          <p className="q-grupo">{grupo.rotulo}</p>
+          <div className="grade q-grid">
+            {grupo.campos.map(({ campo, rotulo, placeholder }) => (
+              <label className="campo" key={campo}>
+                {rotulo}
+                {campo === 'dataNascimento' ? (
+                  <DateInput
+                    value={valor[campo]}
+                    onChange={(iso) => onChange({ ...valor, [campo]: iso })}
+                  />
+                ) : (
+                  <Input
+                    value={valor[campo]}
+                    placeholder={placeholder}
+                    onChange={(e) => onChange({ ...valor, [campo]: e.target.value })}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

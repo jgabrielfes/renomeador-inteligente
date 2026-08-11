@@ -268,6 +268,18 @@
 .sucessorista .grade.c3 { grid-template-columns: 2fr 1fr 1fr; }
 .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
 
+/* Subtítulo dos grupos da ficha de qualificação (Identificação, Endereço…). */
+.sucessorista .q-grupo {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+  border-bottom: 1px solid var(--fio);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
 .sucessorista label.campo,
 .sucessorista .campo {
   display: flex;
