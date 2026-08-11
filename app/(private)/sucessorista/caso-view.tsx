@@ -73,7 +73,11 @@ export function CasoView({
   const [arrastando, setArrastando] = useState(false);
   const [lendo, setLendo] = useState(false);
   const [progresso, setProgresso] = useState('');
-  const [resumo, setResumo] = useState<{ arquivos: number; tipos: string[] } | null>(null);
+  const [resumo, setResumo] = useState<{
+    arquivos: number;
+    tipos: string[];
+    falecido: string | null;
+  } | null>(null);
 
   const {
     control,
@@ -115,6 +119,18 @@ export function CasoView({
       inelegiveis.push(f);
     }
 
+    // Certidão de óbito PRIMEIRO no lote (depois casamento): é ela que define
+    // o falecido — a ordem alfabética da pasta costuma pôr CNH/RG na frente e
+    // já induziu identificação errada do falecido. A mesclagem preenche campo
+    // vazio primeiro, então o primeiro lote precisa ser o da fonte certa.
+    const prioridade = (nome: string): number => {
+      const n = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      if (n.includes('OBITO')) return 0;
+      if (n.includes('CASAMENTO') || n.includes('UNIAO ESTAVEL')) return 1;
+      return 2;
+    };
+    pares.sort((a, b) => prioridade(a.original.name) - prioridade(b.original.name));
+
     if (inelegiveis.length > 0) {
       // Sem leitura para eles, mas nada se perde: entram no catálogo em "outros".
       aplicarLeitura(
@@ -146,6 +162,7 @@ export function CasoView({
     setLendo(true);
     setResumo(null);
     let lidos = 0;
+    let falecidoLido: string | null = null;
     const tipos = new Set<string>();
     try {
       for (let i = 0; i < lotes.length; i++) {
@@ -175,9 +192,10 @@ export function CasoView({
           };
         });
         aplicarLeitura(caso, classificados);
+        if (caso.falecido.nome && !falecidoLido) falecidoLido = caso.falecido.nome;
         lidos += lote.length;
       }
-      setResumo({ arquivos: lidos, tipos: [...tipos] });
+      setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
       toast.success('Leitura concluída — confira a folha', {
         description: 'A IA preenche para você conferir: nenhum campo extraído dispensa a conferência no documento.',
       });
@@ -325,6 +343,13 @@ export function CasoView({
             {resumo.arquivos} documento(s) lido(s)
             {resumo.tipos.length > 0 ? ` — ${resumo.tipos.join(', ')}` : ''}
           </h3>
+          {resumo.falecido && (
+            <p>
+              Autor(a) da herança identificado(a): <strong>{resumo.falecido}</strong> —{' '}
+              <strong>confira na certidão de óbito</strong>; se estiver errado, corrija no
+              item I antes de seguir.
+            </p>
+          )}
           <p>
             Os campos reconhecidos entraram na folha e os arquivos foram classificados no
             processo. A extração é apoio: <strong>confira cada campo no documento</strong> antes
