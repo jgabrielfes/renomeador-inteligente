@@ -475,8 +475,13 @@
 
 @media (max-width: 1280px) {
   .sucessorista .processo { grid-template-columns: 200px minmax(0, 1fr); }
+  /* O painel desce para baixo da folha, mas SÓ na coluna do conteúdo:
+     ocupando as duas colunas (1/-1) ele começava em x=0 e o texto deslizava
+     por baixo da lombada fixa ao rolar. A lombada abraça as duas linhas,
+     para a coluna escura acompanhar a página inteira. */
+  .sucessorista .lombada { grid-row: 1 / span 2; }
   .sucessorista .painel {
-    grid-column: 1 / -1;
+    grid-column: 2;
     position: static;
     height: auto;
     border-left: none;
