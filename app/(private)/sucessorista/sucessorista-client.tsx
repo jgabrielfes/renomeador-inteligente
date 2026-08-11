@@ -101,6 +101,9 @@ export default function SucessoristaClient() {
     const url = new URL(window.location.href);
     url.searchParams.set('etapa', aba);
     window.history.replaceState(null, '', url);
+    // Cada aba é uma "página" nova da folha: começa no topo, não onde a
+    // rolagem da aba anterior parou.
+    window.scrollTo(0, 0);
   };
 
   /* --- I: a família (falecido, herdeiros, qualificação, perguntas ITCMD) --- */
