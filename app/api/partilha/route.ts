@@ -1,3 +1,4 @@
+import { auth } from '@/lib/auth';
 import { partilhar, VERSAO_MOTOR } from '@/lib/partilha/engine';
 import { apurarAtribuicao } from '@/lib/partilha/atribuicao';
 import type { EntradaAtribuicao } from '@/lib/partilha/atribuicao';
@@ -11,6 +12,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
+  // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ erro: 'Não autenticado.' }, { status: 401 });
+  }
+
   let caso: Payload;
   try {
     caso = (await req.json()) as Payload;

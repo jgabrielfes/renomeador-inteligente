@@ -1,3 +1,4 @@
+import { auth } from '@/lib/auth';
 import {
   store,
   gerarToken,
@@ -17,6 +18,12 @@ interface Body {
 }
 
 export async function POST(req: Request) {
+  // Só o profissional logado emite convites; o herdeiro entra pelo token.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ erro: 'Não autenticado.' }, { status: 401 });
+  }
+
   let body: Body;
   try {
     body = (await req.json()) as Body;

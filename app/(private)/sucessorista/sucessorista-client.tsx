@@ -38,7 +38,7 @@ const REGIMES: { v: Regime; t: string }[] = [
   { v: 'SEPARACAO_OBRIGATORIA', t: 'Separação obrigatória' },
 ];
 
-export default function Pagina() {
+export default function SucessoristaClient() {
   const [abaProc, setAbaProc] = useState<'triagem' | 'partilha' | 'acervo' | 'pos'>('partilha');
 
   /* --- triagem --- */

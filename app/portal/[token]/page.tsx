@@ -7,7 +7,7 @@
  */
 
 import { use, useEffect, useState } from 'react';
-import '../../sucessorista/sucessorista.css';
+import '../../(private)/sucessorista/sucessorista.css';
 
 /** Alias estrutural — compatível com o ChangeEvent de input file. */
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
