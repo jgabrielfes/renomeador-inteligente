@@ -20,7 +20,12 @@ import { CurrencyInput } from '@/components/currency-input';
 import { DateInput } from '@/components/date-input';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib/ai';
+import { filesFromDataTransfer } from '@/lib/fs';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
+
+// Pasta arrastada vem com lixo de sistema (.DS_Store, Thumbs.db…) — fora.
+const LIXO_DE_SISTEMA = /^\.|^(thumbs\.db|desktop\.ini)$/i;
+const semLixo = (lista: File[]) => lista.filter((f) => !LIXO_DE_SISTEMA.test(f.name));
 
 export interface ArquivoClassificado {
   file: File;
@@ -54,6 +59,7 @@ export function CasoView({
   irParaFamilia: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputPastaRef = useRef<HTMLInputElement>(null);
   const [arrastando, setArrastando] = useState(false);
   const [lendo, setLendo] = useState(false);
   const [progresso, setProgresso] = useState('');
@@ -181,15 +187,46 @@ export function CasoView({
         onDrop={(e) => {
           e.preventDefault();
           setArrastando(false);
-          if (!lendo) void lerArquivos(Array.from(e.dataTransfer.files));
+          if (lendo) return;
+          // filesFromDataTransfer percorre PASTAS arrastadas recursivamente
+          // (dataTransfer.files sozinho as ignora) — e precisa ser chamado
+          // de forma síncrona dentro do evento.
+          const coleta = filesFromDataTransfer(e.dataTransfer);
+          void coleta.then((lista) => lerArquivos(semLixo(lista)));
         }}
       >
-        <b>{lendo ? progresso || 'Lendo os documentos…' : 'Arraste os arquivos do caso'}</b>
+        <b>{lendo ? progresso || 'Lendo os documentos…' : 'Arraste a pasta do caso — ou os arquivos'}</b>
         <span className="dica">
           {lendo
             ? 'A leitura roda pela rota interna da plataforma — a chave da IA nunca sai do servidor.'
-            : 'ou clique para selecionar — PDF, JPG, PNG e WEBP (até 4 MB por arquivo).'}
+            : 'PDF, JPG, PNG e WEBP (até 4 MB por arquivo). A pasta inteira vale: subpastas entram junto.'}
         </span>
+        {!lendo && (
+          <span className="arrasto-acoes">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                inputRef.current?.click();
+              }}
+            >
+              Selecionar arquivos
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                inputPastaRef.current?.click();
+              }}
+            >
+              Selecionar pasta
+            </Button>
+          </span>
+        )}
         <input
           ref={inputRef}
           type="file"
@@ -197,7 +234,19 @@ export function CasoView({
           accept=".pdf,.jpg,.jpeg,.png,.webp"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) void lerArquivos(Array.from(e.target.files));
+            if (e.target.files) void lerArquivos(semLixo(Array.from(e.target.files)));
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={inputPastaRef}
+          type="file"
+          multiple
+          className="hidden"
+          // @ts-expect-error webkitdirectory é fora do padrão mas universal
+          webkitdirectory=""
+          onChange={(e) => {
+            if (e.target.files) void lerArquivos(semLixo(Array.from(e.target.files)));
             e.target.value = '';
           }}
         />

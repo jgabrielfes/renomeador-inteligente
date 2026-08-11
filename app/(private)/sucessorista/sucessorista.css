@@ -375,6 +375,14 @@
 
 .sucessorista .arrasto .dica { font-size: 12.5px; color: var(--tinta-media); }
 
+.sucessorista .arrasto .arrasto-acoes {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 /* ---------- checklist ---------- */
 
 .sucessorista .check { border-top: 1px solid var(--fio-forte); }
