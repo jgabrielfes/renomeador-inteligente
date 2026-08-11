@@ -434,7 +434,10 @@ export default function Home({
 
             const quota =
               aiError?.geminiStatus === 429 || /429|quota/i.test(message);
-            const unstable = /503|UNAVAILABLE|overload|high demand/i.test(message);
+            // 504 entra como instável: é o Gemini lento demais (teto interno
+            // da rota) ou, no pior caso, a própria Vercel matando a função.
+            const unstable =
+              /503|504|UNAVAILABLE|overload|high demand|sem resposta/i.test(message);
             if (attempt === 0 && (quota || unstable)) {
               // A Google manda no erro quanto esperar (retryDelay).
               const waitSeconds = Math.min(

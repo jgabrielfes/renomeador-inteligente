@@ -120,11 +120,12 @@ async function fetchGeminiJson(
   model: string,
   parts: Array<Record<string, unknown>>,
   responseSchema: unknown,
-  temperature: number
+  temperature: number,
+  timeoutMs: number
 ): Promise<unknown> {
-  const res = await fetch(
-    `${API_BASE}/v1beta/models/${model}:generateContent`,
-    {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -138,8 +139,20 @@ async function fetchGeminiJson(
           responseSchema,
         },
       }),
+      // Teto por chamada: um modelo lento não pode consumir o tempo todo da
+      // função (Vercel mataria a rota com 504 SEM corpo — o cliente ficava
+      // sem saber o que houve e sem instrução de retry).
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new GeminiError(
+        `Gemini sem resposta em ${Math.round(timeoutMs / 1000)}s (${model}) — sobrecarga provável.`,
+        504
+      );
     }
-  );
+    throw err;
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     let retryDelaySeconds: number | undefined;
@@ -171,33 +184,46 @@ async function fetchGeminiJson(
   return JSON.parse(text);
 }
 
-// Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo) ou 404
-// (modelo aposentado) e 503 (sobrecarregado, após retentativa curta) passam
-// para o próximo; outros erros interrompem na hora.
-// Compartilhada entre o renomeador e o resolvedor de notas.
+// Orçamento de tempo da cadeia inteira: as rotas rodam com maxDuration 60 na
+// Vercel — estourar isso vira 504 SEM corpo. Com o teto aqui, a rota sempre
+// responde JSON (com geminiStatus/retryDelay) antes de a Vercel matar.
+const PRAZO_TOTAL_MS = 45_000;
+const PRAZO_POR_CHAMADA_MS = 25_000;
+
+// Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo), 404
+// (modelo aposentado), 503 (sobrecarregado, após retentativa curta) e 504
+// (sem resposta dentro do teto) passam para o próximo; outros erros
+// interrompem na hora. Compartilhada entre renomeador, notas e sucessorista.
 export async function geminiJson(
   apiKey: string,
   parts: Array<Record<string, unknown>>,
   responseSchema: unknown,
   temperature = 0
 ): Promise<unknown> {
+  const inicio = Date.now();
+  const restante = () => PRAZO_TOTAL_MS - (Date.now() - inicio);
+  const teto = () => Math.min(PRAZO_POR_CHAMADA_MS, restante());
+
   const failures: GeminiError[] = [];
   for (const model of GEMINI_MODELS) {
+    // Sem tempo útil para mais uma tentativa: devolve o melhor erro que há.
+    if (restante() < 5_000) break;
     try {
       return await fetchGeminiJson(
         apiKey,
         model,
         parts,
         responseSchema,
-        temperature
+        temperature,
+        teto()
       );
     } catch (err) {
       if (!(err instanceof GeminiError)) throw err;
       // 503 = "pico temporário de demanda" (mensagem da própria Google):
       // UMA retentativa curta no MESMO modelo antes de cair para o reserva —
       // o pico costuma passar em segundos, e o modelo reserva tem cota bem
-      // menor (não vale queimá-la de primeira).
-      if (err.status === 503) {
+      // menor (não vale queimá-la de primeira). Só se sobrar orçamento.
+      if (err.status === 503 && restante() > 10_000) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         try {
           return await fetchGeminiJson(
@@ -205,7 +231,8 @@ export async function geminiJson(
             model,
             parts,
             responseSchema,
-            temperature
+            temperature,
+            teto()
           );
         } catch (retryErr) {
           if (!(retryErr instanceof GeminiError)) throw retryErr;
@@ -213,7 +240,7 @@ export async function geminiJson(
           continue;
         }
       }
-      if (err.status === 429 || err.status === 404) {
+      if (err.status === 503 || err.status === 504 || err.status === 429 || err.status === 404) {
         failures.push(err);
         continue;
       }
