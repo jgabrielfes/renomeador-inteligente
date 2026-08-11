@@ -27,6 +27,13 @@ import {
 import type { Bem, TipoBem } from '@/lib/partilha/types';
 import type { StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { montarChecklistAcervo } from '@/lib/partilha/acervo';
+import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
+
+export interface ResumoSociedade {
+  chave: string;
+  sociedade: SociedadeExtraida;
+  avaliacao: AvaliacaoQuotas | null;
+}
 
 // Aleatório (não sequencial): o caso volta do sessionStorage e um contador
 // zerado no reload geraria ids que colidem com os bens restaurados.
@@ -76,6 +83,7 @@ export function AcervoView({
   setBens,
   dividas,
   setDividas,
+  sociedades = [],
   checklist,
   setChecklist,
   voltar,
@@ -85,6 +93,7 @@ export function AcervoView({
   setBens: (b: Bem[]) => void;
   dividas: string;
   setDividas: (v: string) => void;
+  sociedades?: ResumoSociedade[];
   checklist: ReturnType<typeof montarChecklistAcervo>;
   setChecklist: (c: ReturnType<typeof montarChecklistAcervo>) => void;
   voltar: () => void;
@@ -214,6 +223,59 @@ export function AcervoView({
           onRemover={() => setBens(bens.filter((x) => x.id !== b.id))}
         />
       ))}
+
+      {sociedades.length > 0 && (
+        <>
+          <h2>Participações societárias lidas</h2>
+          <p className="subtitulo" style={{ marginBottom: 8 }}>
+            Do contrato social e do balanço patrimonial. A base das quotas é o MAIOR entre o
+            patrimônio líquido e o capital social, na proporção do(a) falecido(a) — ou do
+            casal, nos regimes de comunhão. Confira antes de confiar.
+          </p>
+          <div className="check">
+            {sociedades.map(({ chave, sociedade, avaliacao }) => (
+              <div className="check-item" key={chave}>
+                <span className="prio">{avaliacao ? '✓' : '!'}</span>
+                <div>
+                  <h4>
+                    {sociedade.empresa}
+                    {sociedade.cnpj ? <span className="fracao num"> · CNPJ {sociedade.cnpj}</span> : null}
+                  </h4>
+                  <p className="num">
+                    Capital social: {sociedade.capitalSocial ? brl(sociedade.capitalSocial) : '— (junte o contrato social)'} · Patrimônio
+                    líquido: {sociedade.patrimonioLiquido ? brl(sociedade.patrimonioLiquido) : '— (junte o balanço)'}
+                  </p>
+                  {sociedade.socios.length > 0 && (
+                    <p>
+                      Quadro de sócios:{' '}
+                      {sociedade.socios
+                        .map((s) => `${s.nome}${s.percentual !== null ? ` (${s.percentual.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)` : ' (% ilegível)'}`)
+                        .join(' · ')}
+                    </p>
+                  )}
+                  {avaliacao ? (
+                    <>
+                      <p className="fund" style={{ color: 'var(--verde-registro)' }}>
+                        Lançada no acervo: {brl(avaliacao.valor)} — {avaliacao.percentual.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% de {brl(avaliacao.base)} (
+                        {avaliacao.fonteBase === 'PATRIMONIO_LIQUIDO' ? 'patrimônio líquido' : 'capital social'}), titulares: {avaliacao.titulares.join(' e ')}.
+                      </p>
+                      {avaliacao.avisos.map((a, i) => (
+                        <p key={i} className="alerta">{a}</p>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="alerta">
+                      Nem o(a) falecido(a) nem o cônjuge constam do quadro de sócios lido (ou
+                      faltam valores) — confira os nomes no item I ou lance o bem manualmente.
+                    </p>
+                  )}
+                </div>
+                <span />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h2>Passivo do espólio</h2>
       <div className="grade c2">

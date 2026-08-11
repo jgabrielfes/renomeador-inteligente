@@ -27,6 +27,12 @@ import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/ace
 import type { Caso, Bem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { isencoesArt6, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
+import {
+  avaliarQuotas,
+  chaveSociedade,
+  mesclarSociedade,
+  type SociedadeExtraida,
+} from '@/lib/partilha/sociedade';
 import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
@@ -81,6 +87,8 @@ interface CasoSalvo {
   dividasEspolio: string;
   /** Só os status, por id da fonte — robusto a mudanças no catálogo. */
   statusAcervo: Record<string, StatusItemAcervo>;
+  /** Sociedades lidas (snapshot posterior à v1 inicial — opcional). */
+  sociedades?: Record<string, SociedadeExtraida>;
   fiscal: EstadoFiscal;
   passo: number;
   usufrutoAtivo: boolean;
@@ -125,6 +133,8 @@ export default function SucessoristaClient() {
   /** Dívidas e despesas do espólio (R$) — abatem a massa antes da partilha. */
   const [dividasEspolio, setDividasEspolio] = useState('');
   const [checklistAcervo, setChecklistAcervo] = useState(montarChecklistAcervo());
+  /** Sociedades lidas do contrato social/balanço, mescladas por empresa. */
+  const [sociedades, setSociedades] = useState<Record<string, SociedadeExtraida>>({});
 
   /* --- III: partilha (2 passos: espelho · diferenciada) --- */
   const [passo, setPasso] = useState(1);
@@ -169,6 +179,17 @@ export default function SucessoristaClient() {
       return null;
     }
   }, [caso, bens.length, herdeiros.length, temSobrevivente]);
+
+  /** Resumo das sociedades lidas, para a conferência no item II. */
+  const resumoSociedades = useMemo(
+    () =>
+      Object.entries(sociedades).map(([chave, s]) => ({
+        chave,
+        sociedade: s,
+        avaliacao: avaliarQuotas(s, falecido.nome, temSobrevivente ? nomeSobrev : '', regime),
+      })),
+    [sociedades, falecido.nome, nomeSobrev, temSobrevivente, regime],
+  );
 
   /* --- fiscal computado uma vez, compartilhado entre o painel e o item V --- */
   const hoje = hojeIso();
@@ -234,6 +255,8 @@ export default function SucessoristaClient() {
                 )
               );
             }
+            if (salvo.sociedades && typeof salvo.sociedades === 'object')
+              setSociedades(salvo.sociedades);
             if (salvo.fiscal) setFiscal(salvo.fiscal);
             if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
             setUsufrutoAtivo(salvo.usufrutoAtivo === true);
@@ -263,6 +286,7 @@ export default function SucessoristaClient() {
         bens,
         dividasEspolio,
         statusAcervo,
+        sociedades,
         fiscal,
         passo,
         usufrutoAtivo,
@@ -274,7 +298,56 @@ export default function SucessoristaClient() {
     } catch {
       // sem espaço ou modo restrito: a persistência é conforto, não requisito
     }
-  }, [familia, bens, dividasEspolio, checklistAcervo, fiscal, passo, usufrutoAtivo, titulo, casoId, convites]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, usufrutoAtivo, titulo, casoId, convites]);
+
+  /* --- sociedades lidas → bem de quotas no acervo ---
+     Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
+     max(patrimônio líquido, capital social) × percentual do falecido (ou do
+     casal, nos regimes de comunhão). Id determinístico: atualiza em vez de
+     duplicar; editar o bem na mão vale até a próxima mudança destes dados. */
+  useEffect(() => {
+    const chaves = Object.keys(sociedades);
+    if (chaves.length === 0) return;
+    // Diferido (setTimeout 0): setState síncrono em efeito dispararia render
+    // em cascata (regra do lint) — mesmo padrão da restauração do snapshot.
+    const t = setTimeout(() => {
+    setBens((prev) => {
+      let mudou = false;
+      const proximos = [...prev];
+      for (const chave of chaves) {
+        const id = `quotas-${chave}`;
+        const avaliacao = avaliarQuotas(
+          sociedades[chave],
+          falecido.nome,
+          temSobrevivente ? nomeSobrev : '',
+          regime,
+        );
+        const idx = proximos.findIndex((b) => b.id === id);
+        if (!avaliacao) continue; // sem correspondência: não lança nem remove o que o advogado ajustou
+        const bem: Bem = {
+          id,
+          descricao: avaliacao.descricao,
+          valor: avaliacao.valor,
+          natureza: avaliacao.natureza,
+          tipo: 'QUOTAS',
+        };
+        if (idx < 0) {
+          proximos.push(bem);
+          mudou = true;
+        } else if (
+          proximos[idx].descricao !== bem.descricao ||
+          proximos[idx].valor !== bem.valor ||
+          proximos[idx].natureza !== bem.natureza
+        ) {
+          proximos[idx] = { ...proximos[idx], ...bem };
+          mudou = true;
+        }
+      }
+      return mudou ? proximos : prev;
+    });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [sociedades, falecido.nome, nomeSobrev, temSobrevivente, regime]);
 
   const atribuicao = useMemo(() => {
     if (!resultado || !usufrutoAtivo || resultado.bloqueios.length > 0) return null;
@@ -386,6 +459,20 @@ export default function SucessoristaClient() {
             tipo: b.tipo ?? ('OUTRO' as const),
           }));
         return [...prev, ...novos];
+      });
+    }
+
+    // Sociedades: mescla por empresa — contrato social num lote e balanço em
+    // outro completam o MESMO registro; o efeito acima transforma em bem.
+    if (lido.sociedades.length > 0) {
+      setSociedades((prev) => {
+        const proximas = { ...prev };
+        for (const s of lido.sociedades) {
+          const chave = chaveSociedade(s.empresa);
+          if (!chave) continue;
+          proximas[chave] = proximas[chave] ? mesclarSociedade(proximas[chave], s) : s;
+        }
+        return proximas;
       });
     }
   };
@@ -511,6 +598,7 @@ export default function SucessoristaClient() {
             setBens={setBens}
             dividas={dividasEspolio}
             setDividas={setDividasEspolio}
+            sociedades={resumoSociedades}
             checklist={checklistAcervo}
             setChecklist={setChecklistAcervo}
             voltar={() => irPara('familia')}

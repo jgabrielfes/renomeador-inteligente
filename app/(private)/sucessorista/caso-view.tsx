@@ -134,7 +134,7 @@ export function CasoView({
     if (inelegiveis.length > 0) {
       // Sem leitura para eles, mas nada se perde: entram no catálogo em "outros".
       aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], arquivos: [] },
+        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], arquivos: [] },
         inelegiveis.map((file) => ({ file, documentoId: 'outros', tipoDetectado: null }))
       );
       toast.info(`${inelegiveis.length} arquivo(s) fora do formato/tamanho da leitura`, {
@@ -206,7 +206,7 @@ export function CasoView({
       });
       // A leitura falhou, mas os arquivos não se perdem: entram sem classificação.
       aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], arquivos: [] },
+        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], arquivos: [] },
         pares.slice(lidos).map((par) => ({ file: par.original, documentoId: 'outros', tipoDetectado: null }))
       );
     } finally {
