@@ -21,6 +21,13 @@ import {
   ZoomIn,
 } from "lucide-react";
 
+import {
+  registrarAnalise,
+  registrarDesfecho,
+  registrarDownloadDeItem,
+} from "@/app/(private)/renomeador/actions";
+import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
+import { CorrectionsDialog } from "@/components/corrections-dialog";
 import { DocumentPreview } from "@/components/document-preview";
 import { PdfSplitDialog } from "@/components/pdf-split-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -89,11 +96,15 @@ import {
 import {
   addCorrection,
   clearCorrections,
+  flushRules,
   getLessonsServerSnapshot,
   getLessonsSnapshot,
   importLessons,
+  initLessons,
+  migrateLegacyLessons,
   saveRules,
   subscribeLessons,
+  type LessonsState,
 } from "@/lib/lessons";
 import { categoriaDe } from "@/lib/categories";
 import { IMAGE_EXTS, PDF_EXTS, isSupported, readDocument } from "@/lib/ocr";
@@ -150,7 +161,20 @@ const AI_MODES: Array<{ value: AiMode; title: string; description: string }> = [
   },
 ];
 
-export default function Home() {
+export default function Home({
+  initialLessons,
+}: {
+  // Regras + correções da conta, carregadas no servidor (null = falha).
+  initialLessons: LessonsState | null;
+}) {
+  // Uma vez por mount, ANTES do useSyncExternalStore das lições ler o
+  // snapshot (inicializador de useState roda no primeiro render).
+  React.useState(() => initLessons(initialLessons));
+  // Migração única do localStorage antigo — efeito, porque grava no servidor.
+  React.useEffect(() => {
+    migrateLegacyLessons();
+  }, []);
+
   const [rows, setRows] = React.useState<Row[]>([]);
   const [dirHandle, setDirHandle] =
     React.useState<FileSystemDirectoryHandle | null>(null);
@@ -162,6 +186,12 @@ export default function Home() {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const queueRef = React.useRef<Row[]>([]);
   const processingRef = React.useRef(false);
+  // Telemetria: liga cada linha analisada ao evento registrado (para marcar
+  // download/otimizada/zip depois). Vive só nesta sessão da página.
+  const telemetriaRef = React.useRef(
+    new Map<string, { eventId: string; indice: number }>()
+  );
+
   // Ligado quando a cota DIÁRIA do free tier esgota: esperar não resolve,
   // então a IA fica desligada até recarregar a página (e o aviso sai uma vez).
   const aiUnavailableRef = React.useRef(false);
@@ -262,16 +292,19 @@ export default function Home() {
   );
 
   const processLocally = React.useCallback(
-    async (row: Row, text?: string | null) => {
+    async (row: Row, text?: string | null): Promise<string | null> => {
       try {
         const extracted = text ?? (await readDocument(row.file));
-        applyProposal(row.id, proposeName(row.file.name, extracted), "local");
+        const proposal = proposeName(row.file.name, extracted);
+        applyProposal(row.id, proposal, "local");
+        return proposal.docType || "Documento";
       } catch (err) {
         patchRow(row.id, {
           status: "erro",
           use: false,
           error: err instanceof Error ? err.message : String(err),
         });
+        return null;
       }
     },
     [applyProposal, patchRow]
@@ -280,6 +313,25 @@ export default function Home() {
   const runQueue = React.useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
+    // Telemetria: contabiliza NO MOMENTO DA ANÁLISE (arquivo enviado para a
+    // IA ou para o OCR), por método — registrado ao fim da rodada da fila,
+    // com duração e os nomes de → para de cada arquivo.
+    const criarBucket = () => ({
+      quantidade: 0,
+      duracaoMs: 0,
+      itens: [] as Array<{ tipo: string }>,
+      rowIds: [] as string[],
+    });
+    const contadores: Record<MetodoAnalise, ReturnType<typeof criarBucket>> = {
+      IA_ARQUIVO: criarBucket(),
+      IA_TEXTO: criarBucket(),
+      LOCAL: criarBucket(),
+    };
+    const registrarItem = (metodo: MetodoAnalise, rowId: string, tipo: string) => {
+      contadores[metodo].quantidade += 1;
+      contadores[metodo].itens.push({ tipo });
+      contadores[metodo].rowIds.push(rowId);
+    };
     try {
       while (queueRef.current.length > 0) {
         const { mode } = getAiSettingsSnapshot();
@@ -287,7 +339,12 @@ export default function Home() {
         if (mode === "local" || aiUnavailableRef.current) {
           const row = queueRef.current.shift()!;
           patchRow(row.id, { status: "processando" });
-          await processLocally(row);
+          const inicioLocal = performance.now();
+          const tipoLocal = await processLocally(row);
+          if (tipoLocal !== null) {
+            contadores.LOCAL.duracaoMs += performance.now() - inicioLocal;
+            registrarItem("LOCAL", row.id, tipoLocal);
+          }
           continue;
         }
 
@@ -296,6 +353,7 @@ export default function Home() {
         // Limitado também pelo tamanho total (corpo da função serverless).
         // First-fit: um arquivo grande que não coube não fecha o lote — a
         // varredura segue adiante e completa com arquivos menores da fila.
+        const inicioLote = performance.now();
         const batch: Row[] = [];
         let bytes = 0;
         let index = 0;
@@ -321,17 +379,20 @@ export default function Home() {
         // Prepara os itens: arquivo direto quando elegível; senão OCR local.
         const items: AiBatchItem[] = [];
         const itemRows: Row[] = [];
+        const itemKinds: Array<"arquivo" | "texto"> = [];
         const ocrTexts = new Map<string, string>();
         for (const row of batch) {
           if (mode === "arquivo" && fileEligibleForAi(row.file)) {
             items.push({ file: row.file });
             itemRows.push(row);
+            itemKinds.push("arquivo");
           } else {
             try {
               const text = await readDocument(row.file);
               ocrTexts.set(row.id, text);
               items.push({ fileName: row.file.name, text });
               itemRows.push(row);
+              itemKinds.push("texto");
             } catch (err) {
               patchRow(row.id, {
                 status: "erro",
@@ -398,11 +459,47 @@ export default function Home() {
           }
         }
 
+        const metodosDoLote = new Set<MetodoAnalise>();
         for (let i = 0; i < itemRows.length; i++) {
           const row = itemRows[i];
           const proposal = results?.[i] ?? null;
-          if (proposal) applyProposal(row.id, proposal, "ia");
-          else await processLocally(row, ocrTexts.get(row.id) ?? null);
+          if (proposal) {
+            applyProposal(row.id, proposal, "ia");
+            const metodo =
+              itemKinds[i] === "arquivo" ? "IA_ARQUIVO" : "IA_TEXTO";
+            registrarItem(metodo, row.id, proposal.docType || "Documento");
+            metodosDoLote.add(metodo);
+          } else {
+            const tipoLocal = await processLocally(
+              row,
+              ocrTexts.get(row.id) ?? null
+            );
+            if (tipoLocal !== null) {
+              registrarItem("LOCAL", row.id, tipoLocal);
+              metodosDoLote.add("LOCAL");
+            }
+          }
+        }
+        // A duração do lote (preparação + chamada à IA + distribuição) vale
+        // para cada método presente nele — foi o tempo de parede que aqueles
+        // arquivos levaram para serem analisados.
+        const duracaoLote = performance.now() - inicioLote;
+        for (const metodo of metodosDoLote) {
+          contadores[metodo].duracaoMs += duracaoLote;
+        }
+      }
+      for (const [metodo, bucket] of Object.entries(contadores)) {
+        if (bucket.quantidade === 0) continue;
+        const evento = await registrarAnalise(
+          metodo as MetodoAnalise,
+          bucket.quantidade,
+          Math.round(bucket.duracaoMs),
+          bucket.itens
+        );
+        if (evento) {
+          bucket.rowIds.forEach((rowId, indice) => {
+            telemetriaRef.current.set(rowId, { eventId: evento.id, indice });
+          });
         }
       }
     } finally {
@@ -653,6 +750,20 @@ export default function Home() {
           }
         }
       }
+      const eventos = [
+        ...new Set(
+          applyTargets
+            .map((r) => telemetriaRef.current.get(r.id)?.eventId)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      void registrarDesfecho(eventos, {
+        montagem: {
+          subpastas: organizarEmSubpastas,
+          converterPdf: converterParaPdf,
+          numerar: numerarArquivos,
+        },
+      });
     } finally {
       setApplying(false);
     }
@@ -691,12 +802,33 @@ export default function Home() {
 
       const blob = await zip.generateAsync({ type: "blob" });
       triggerDownload(blob, "documentos-renomeados.zip");
+      const eventos = [
+        ...new Set(
+          downloadable
+            .map((r) => telemetriaRef.current.get(r.id)?.eventId)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      void registrarDesfecho(eventos, {
+        zip: true,
+        montagem: {
+          subpastas: organizarEmSubpastas,
+          converterPdf: converterParaPdf,
+          numerar: numerarArquivos,
+        },
+      });
     } finally {
       setZipping(false);
     }
   }
 
+  function marcarDownload(row: Row, otimizado: boolean) {
+    const ref = telemetriaRef.current.get(row.id);
+    if (ref) void registrarDownloadDeItem(ref.eventId, ref.indice, otimizado);
+  }
+
   function downloadSingle(row: Row) {
+    marcarDownload(row, false);
     const name = ensureExtension(row.proposed.trim() || row.file.name, row.file.name);
     triggerDownload(row.file, name);
   }
@@ -915,13 +1047,15 @@ export default function Home() {
             <CardDescription>
               Ensine a IA no seu vocabulário: uma regra por linha, em português
               mesmo. Além disso, toda vez que você corrigir um nome sugerido, o
-              app aprende o padrão e aplica nos próximos documentos.
+              app aprende o padrão e aplica nos próximos documentos. Tudo fica
+              salvo na sua conta e vale em qualquer navegador.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Textarea
               value={lessons.rules}
               onChange={(e) => saveRules(e.target.value)}
+              onBlur={flushRules}
               rows={4}
               placeholder={
                 "Exemplos:\ncertidão da prefeitura sobre débitos de imóvel → Certidão Negativa de Tributos Imobiliários\ncontrato de honorários → Honorários - {Nome do Cliente}"
@@ -934,6 +1068,7 @@ export default function Home() {
                   ? `${lessons.corrections.length} correção(ões) aprendida(s) com suas edições.`
                   : "Nenhuma correção aprendida ainda — edite um nome sugerido pela IA para começar."}
               </span>
+              <CorrectionsDialog corrections={lessons.corrections} />
               {lessons.corrections.length > 0 && (
                 <Dialog>
                   <DialogTrigger render={<Button variant="ghost" size="sm" />}>
@@ -1163,8 +1298,7 @@ export default function Home() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <Table>
+            <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">Usar</TableHead>
@@ -1291,8 +1425,7 @@ export default function Home() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </div>
+            </Table>
 
             <div className="space-y-2 rounded-lg border p-4">
               <p className="text-sm font-medium">Montagem do processo</p>
@@ -1355,26 +1488,20 @@ export default function Home() {
               {hasFolderRows && (
                 <Button
                   onClick={applyRenames}
-                  disabled={applyTargets.length === 0 || applying || processing}
+                  loading={applying}
+                  disabled={applyTargets.length === 0 || processing}
                 >
-                  {applying ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Check className="size-4" />
-                  )}
+                  <Check className="size-4" />
                   Renomear {applyTargets.length} arquivo(s) na pasta
                 </Button>
               )}
               <Button
                 variant={hasFolderRows ? "outline" : "default"}
                 onClick={downloadZip}
-                disabled={downloadable.length === 0 || zipping}
+                loading={zipping}
+                disabled={downloadable.length === 0}
               >
-                {zipping ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Download className="size-4" />
-                )}
+                <Download className="size-4" />
                 Baixar {downloadable.length} arquivo(s) (.zip)
               </Button>
               <Button
@@ -1412,6 +1539,9 @@ export default function Home() {
           (previewRow.status === "ok" || previewRow.status === "renomeado")
             ? () => downloadSingle(previewRow)
             : undefined
+        }
+        onDownloadOptimized={
+          previewRow ? () => marcarDownload(previewRow, true) : undefined
         }
         canEnhance={previewRow ? isEnhanceable(previewRow.file.name) : false}
         onReplace={

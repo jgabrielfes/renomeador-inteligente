@@ -1653,24 +1653,18 @@ export default function NotasPage() {
                           <Button
                             variant="outline"
                             onClick={redigirComIa}
-                            disabled={redigindo || gerando}
+                            loading={redigindo}
+                            disabled={gerando}
                           >
-                            {redigindo ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Sparkles className="size-4" />
-                            )}
+                            <Sparkles className="size-4" />
                             Redigir com IA
                           </Button>
                           <Button
                             onClick={gerarMinuta}
-                            disabled={gerando || ataSemAmparo}
+                            loading={gerando}
+                            disabled={ataSemAmparo}
                           >
-                            {gerando ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Eye className="size-4" />
-                            )}
+                            <Eye className="size-4" />
                             {minuta ? "Atualizar minuta" : "Gerar minuta"}
                           </Button>
                           {minuta && (

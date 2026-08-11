@@ -1,0 +1,100 @@
+// Schema mínimo de autenticação: login por credenciais com papel de acesso.
+// (NextAuth roda com sessão JWT — sem tabelas de sessão/conta por enquanto.)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// MASTER verá telas exclusivas de administração no futuro.
+enum Role {
+  USER
+  MASTER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  // Sem confirmação de e-mail por enquanto: null = "e-mail não confirmado"
+  // (a UI marca). Quando a confirmação existir, recebe a data.
+  // Login com Google já nasce confirmado (o Google atesta o e-mail).
+  emailVerified DateTime?
+  // Null = conta criada via Google (entra só pelo OAuth, sem senha).
+  passwordHash String?
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  renameEvents RenameEvent[]
+  errorEvents  ErrorEvent[]
+  lessons      RenamerLessons?
+
+  @@map("users")
+}
+
+// Aprendizado do escritório do renomeador ("Regras do escritório" + correções
+// capturadas quando o usuário edita um nome sugerido) — POR CONTA. Vivia no
+// localStorage; agora acompanha o usuário em qualquer navegador.
+// É dado do PRÓPRIO usuário (as correções contêm nomes que ele digitou):
+// nunca exibir em /admin nem tratar como telemetria.
+model RenamerLessons {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Texto livre do card "Regras do escritório", injetado nos prompts da IA.
+  regras    String   @default("")
+  // Array<{ tipo, sugerido, corrigido }> — exemplos few-shot (máx. 20).
+  correcoes Json     @default("[]")
+  updatedAt DateTime @updatedAt
+
+  @@map("renamer_lessons")
+}
+
+// Registro de erros da plataforma (hoje: falhas das rotas de IA). Sem conteúdo
+// de documento — só origem, mensagem truncada, status e quem estava logado
+// (null = deslogado). Alimenta /admin/erros.
+model ErrorEvent {
+  id        String   @id @default(cuid())
+  origem    String
+  mensagem  String
+  status    Int?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@map("error_events")
+}
+
+// Como cada lote foi analisado no renomeador.
+enum MetodoAnalise {
+  IA_ARQUIVO // documento enviado inteiro ao Gemini
+  IA_TEXTO   // OCR local + texto enviado ao Gemini
+  LOCAL      // 100% no navegador (modo local ou fallback)
+}
+
+// Telemetria do renomeador: um evento por método dentro de cada rodada de
+// ANÁLISE (registrado quando os arquivos são enviados para IA/OCR, não na
+// renomeação final). Alimenta o resumo e a listagem de /admin.
+// Privacidade: NENHUM nome de arquivo/pessoa é gravado — `itens` guarda só a
+// TAG de tipo de cada documento e flags de download. Visível para MASTER.
+model RenameEvent {
+  id         String        @id @default(cuid())
+  quantidade Int
+  metodo     MetodoAnalise @default(LOCAL)
+  // Duração total do processamento daquele método na rodada, em ms.
+  duracaoMs  Int?
+  // Array<{ tipo: string; baixado?: boolean; otimizado?: boolean }>
+  itens      Json?
+  // { zip?: boolean; montagem?: { subpastas; converterPdf; numerar } } —
+  // preenchido depois, quando o lote é baixado/aplicado.
+  desfecho   Json?
+  userId     String?
+  user       User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime      @default(now())
+
+  @@map("rename_events")
+}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowRight, FileScan, FileWarning, Scale } from "lucide-react";
 
+import { UserMenu } from "@/components/user-menu";
+
 import {
   Card,
   CardContent,
@@ -35,7 +37,10 @@ const MODULOS = [
 
 export default function Home() {
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-8 px-4 py-10">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6">
+      {/* Faixa de sessão no topo; o restante centraliza no espaço que sobra. */}
+      <UserMenu />
+      <div className="flex flex-1 flex-col justify-center gap-8 pb-16">
       <header className="space-y-2 text-center">
         <h1 className="text-3xl font-semibold tracking-tight">
           Ferramentas
@@ -64,6 +69,7 @@ export default function Home() {
             </Card>
           </Link>
         ))}
+      </div>
       </div>
     </main>
   );

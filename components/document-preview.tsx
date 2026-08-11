@@ -25,6 +25,8 @@ interface DocumentPreviewProps {
   onNameChange?: (value: string) => void;
   onNameBlur?: () => void;
   onDownload?: () => void;
+  // Telemetria: avisado quando a versão OTIMIZADA é baixada.
+  onDownloadOptimized?: () => void;
   // Só imagens têm versão otimizada; sem isto o alternador não aparece.
   canEnhance?: boolean;
   // Substitui o arquivo original pela versão otimizada. Quem implementa é
@@ -39,6 +41,7 @@ export function DocumentPreview({
   onNameChange,
   onNameBlur,
   onDownload,
+  onDownloadOptimized,
   canEnhance = false,
   onReplace,
 }: DocumentPreviewProps) {
@@ -119,6 +122,7 @@ export function DocumentPreview({
 
   function downloadOptimized() {
     if (!optimizedUrl || !file) return;
+    onDownloadOptimized?.();
     const dot = file.name.lastIndexOf(".");
     const optimizedName =
       dot > 0
@@ -263,14 +267,11 @@ export function DocumentPreview({
                   <Button
                     size="sm"
                     onClick={replace}
-                    disabled={!optimizedBlob || generating || replacing}
+                    loading={replacing}
+                    disabled={!optimizedBlob || generating}
                     title="Grava a versão otimizada por cima do arquivo original"
                   >
-                    {replacing ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Save className="size-4" />
-                    )}
+                    <Save className="size-4" />
                     Substituir original
                   </Button>
                 )}

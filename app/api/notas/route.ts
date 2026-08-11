@@ -6,6 +6,8 @@
 import {
   GeminiError,
 } from "@/lib/gemini";
+import { auth } from "@/lib/auth";
+import { registrarErro } from "@/lib/error-log";
 import {
   geminiRedigirPeca,
   pecaIaValida,
@@ -17,6 +19,12 @@ export const maxDuration = 60;
 const MAX_BODY = 64 * 1024;
 
 export async function POST(request: Request) {
+  // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(
@@ -64,6 +72,11 @@ export async function POST(request: Request) {
     return Response.json({ campos });
   } catch (err) {
     if (err instanceof GeminiError) {
+      await registrarErro({
+        origem: "api/notas",
+        mensagem: err.message,
+        status: err.status,
+      });
       return Response.json(
         {
           error: err.message,
@@ -74,9 +87,8 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
-    return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    const mensagem = err instanceof Error ? err.message : String(err);
+    await registrarErro({ origem: "api/notas", mensagem, status: 500 });
+    return Response.json({ error: mensagem }, { status: 500 });
   }
 }

@@ -169,7 +169,8 @@ async function fetchGeminiJson(
 }
 
 // Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo) ou 404
-// (modelo aposentado) passam para o próximo; outros erros interrompem na hora.
+// (modelo aposentado) e 503 (sobrecarregado, após retentativa curta) passam
+// para o próximo; outros erros interrompem na hora.
 // Compartilhada entre o renomeador e o resolvedor de notas.
 export async function geminiJson(
   apiKey: string,
@@ -188,10 +189,28 @@ export async function geminiJson(
         temperature
       );
     } catch (err) {
-      if (
-        err instanceof GeminiError &&
-        (err.status === 429 || err.status === 404)
-      ) {
+      if (!(err instanceof GeminiError)) throw err;
+      // 503 = "pico temporário de demanda" (mensagem da própria Google):
+      // UMA retentativa curta no MESMO modelo antes de cair para o reserva —
+      // o pico costuma passar em segundos, e o modelo reserva tem cota bem
+      // menor (não vale queimá-la de primeira).
+      if (err.status === 503) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        try {
+          return await fetchGeminiJson(
+            apiKey,
+            model,
+            parts,
+            responseSchema,
+            temperature
+          );
+        } catch (retryErr) {
+          if (!(retryErr instanceof GeminiError)) throw retryErr;
+          failures.push(retryErr);
+          continue;
+        }
+      }
+      if (err.status === 429 || err.status === 404) {
         failures.push(err);
         continue;
       }

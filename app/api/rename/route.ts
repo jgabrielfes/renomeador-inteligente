@@ -13,6 +13,8 @@ import {
   type BatchItem,
   type Lessons,
 } from "@/lib/gemini";
+import { auth } from "@/lib/auth";
+import { registrarErro } from "@/lib/error-log";
 
 // Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
 export const maxDuration = 60;
@@ -22,6 +24,12 @@ const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
 const MAX_ITEMS = 10;
 
 export async function POST(request: Request) {
+  // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
+  const session = await auth();
+  if (!session) {
+    return Response.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(
@@ -108,6 +116,11 @@ export async function POST(request: Request) {
     return Response.json({ results });
   } catch (err) {
     if (err instanceof GeminiError) {
+      await registrarErro({
+        origem: "api/rename",
+        mensagem: err.message,
+        status: err.status,
+      });
       // 429 (cota) e demais erros do Gemini viram 502; o cliente decide o
       // fallback com base nos campos extras (esperar? desligar IA até amanhã?).
       return Response.json(
@@ -120,9 +133,8 @@ export async function POST(request: Request) {
         { status: 502 }
       );
     }
-    return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    const mensagem = err instanceof Error ? err.message : String(err);
+    await registrarErro({ origem: "api/rename", mensagem, status: 500 });
+    return Response.json({ error: mensagem }, { status: 500 });
   }
 }
