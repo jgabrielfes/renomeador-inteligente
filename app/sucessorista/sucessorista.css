@@ -1,0 +1,377 @@
+/* Identidade do Sucessorista ("livro de notas"), escopada em .sucessorista
+   para nao vazar nos demais modulos. Gerada a partir do globals.css do
+   pacote motor-partilha; mudancas de estilo entram AQUI, sempre com o
+   prefixo .sucessorista. */
+
+/* Identidade: livro de notas. Papel de registro, tinta notarial,
+   lacre reservado a divergência e bloqueio, bronze para a fé pública
+   (fundamentos legais). Números sempre tabulares. */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&display=swap');
+
+.sucessorista {
+  --papel: #f6f4ee;
+  --papel-alto: #fdfcf9;
+  --tinta: #1a2320;
+  --tinta-media: #4a544f;
+  --lacre: #9e2b25;
+  --bronze: #8a6d3b;
+  --verde-registro: #2e5e4e;
+  --fio: #ddd8ca;
+  --fio-forte: #b9b29c;
+  --display: 'Fraunces', Georgia, serif;
+  --texto: 'Archivo', system-ui, sans-serif;
+}
+
+.sucessorista * { box-sizing: border-box; margin: 0; }
+
+.sucessorista { color-scheme: light; }
+
+.sucessorista {
+  background: var(--papel);
+  color: var(--tinta);
+  font-family: var(--texto);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sucessorista .num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* ---------- estrutura: lombada + folha ---------- */
+
+.sucessorista .processo {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sucessorista .lombada {
+  background: var(--tinta);
+  color: var(--papel);
+  padding: 28px 0 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sucessorista .lombada .marca {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.01em;
+  margin-bottom: 4px;
+}
+
+.sucessorista .lombada .marca small {
+  display: block;
+  font-family: var(--texto);
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9aa39e;
+  margin-top: 2px;
+}
+
+.sucessorista .aba {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #b9c1bc;
+  font: 500 13px/1.2 var(--texto);
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: 11px 18px 11px 14px;
+  margin-right: 0;
+  border-radius: 6px 0 0 6px;
+  cursor: pointer;
+}
+
+.sucessorista .aba:hover { color: var(--papel); }
+
+.sucessorista .aba[aria-current='true'] {
+  background: var(--papel);
+  color: var(--tinta);
+  font-weight: 600;
+}
+
+.sucessorista .aba .indice {
+  font-family: var(--display);
+  font-size: 11px;
+  color: var(--bronze);
+  margin-right: 8px;
+}
+
+.sucessorista .lombada .selo {
+  margin-top: auto;
+  padding-right: 24px;
+  font-size: 11px;
+  color: #7c8580;
+  line-height: 1.5;
+}
+
+.sucessorista .folha {
+  padding: 44px 56px 96px;
+  max-width: 980px;
+}
+
+/* ---------- tipografia ---------- */
+
+.sucessorista h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 32px;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.sucessorista .subtitulo { color: var(--tinta-media); margin-bottom: 32px; max-width: 62ch; }
+
+.sucessorista h2 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 20px;
+  margin: 36px 0 14px;
+}
+
+.sucessorista .eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bronze);
+}
+
+/* ---------- formulário ---------- */
+
+.sucessorista .grade { display: grid; gap: 14px; }
+.sucessorista .grade.c2 { grid-template-columns: 1fr 1fr; }
+.sucessorista .grade.c3 { grid-template-columns: 2fr 1fr 1fr; }
+
+.sucessorista label.campo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+
+.sucessorista input[type='text'], .sucessorista input[type='date'], .sucessorista select {
+  font: 400 15px var(--texto);
+  color: var(--tinta);
+  background: var(--papel-alto);
+  border: 1px solid var(--fio-forte);
+  border-radius: 4px;
+  padding: 9px 11px;
+}
+
+.sucessorista input:focus-visible, .sucessorista select:focus-visible, .sucessorista button:focus-visible, .sucessorista .aba:focus-visible {
+  outline: 2px solid var(--bronze);
+  outline-offset: 1px;
+}
+
+.sucessorista .escolha { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.sucessorista .escolha button {
+  font: 500 13px var(--texto);
+  padding: 8px 14px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  background: var(--papel-alto);
+  color: var(--tinta);
+  cursor: pointer;
+}
+
+.sucessorista .escolha button[aria-pressed='true'] {
+  background: var(--tinta);
+  border-color: var(--tinta);
+  color: var(--papel);
+}
+
+.sucessorista .acao {
+  font: 600 14px var(--texto);
+  padding: 11px 22px;
+  border-radius: 4px;
+  border: 1px solid var(--tinta);
+  background: var(--tinta);
+  color: var(--papel);
+  cursor: pointer;
+}
+
+.sucessorista .acao.fantasma { background: transparent; color: var(--tinta); }
+.sucessorista .acao:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.sucessorista .linha-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.sucessorista .remover {
+  border: 0; background: none; color: var(--lacre);
+  font-size: 13px; cursor: pointer; padding: 4px;
+}
+
+/* ---------- espelho da partilha (assinatura visual) ---------- */
+
+.sucessorista .espelho { border-top: 2px solid var(--tinta); margin-top: 10px; }
+
+.sucessorista .espelho .cabeca, .sucessorista .espelho .lanc {
+  display: grid;
+  grid-template-columns: 1fr 120px 150px;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.sucessorista .espelho .cabeca {
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--fio-forte);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+}
+
+.sucessorista .espelho .lanc { padding: 12px 0 4px; }
+.sucessorista .espelho .lanc + .fund { padding-bottom: 12px; border-bottom: 1px solid var(--fio); }
+
+.sucessorista .espelho .nome { font-weight: 600; }
+.sucessorista .espelho .fracao { color: var(--tinta-media); font-size: 13px; }
+.sucessorista .espelho .valor { font-family: var(--display); font-size: 19px; text-align: right; }
+
+.sucessorista .fund {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--bronze);
+}
+
+.sucessorista .fund .prec { color: var(--tinta-media); }
+
+/* ---------- cartões de estado ---------- */
+
+.sucessorista .nota {
+  border-left: 3px solid var(--fio-forte);
+  background: var(--papel-alto);
+  padding: 14px 18px;
+  margin: 14px 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.sucessorista .nota.exigencia { border-left-color: var(--lacre); }
+.sucessorista .nota.exigencia .eyebrow { color: var(--lacre); }
+.sucessorista .nota.registro { border-left-color: var(--verde-registro); }
+.sucessorista .nota.registro .eyebrow { color: var(--verde-registro); }
+
+.sucessorista .nota h3 { font-family: var(--display); font-size: 16px; margin-bottom: 6px; }
+.sucessorista .nota p { font-size: 13.5px; color: var(--tinta-media); }
+.sucessorista .nota .cenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+.sucessorista .nota .cenarios > div { background: var(--papel); border: 1px solid var(--fio); border-radius: 4px; padding: 10px 12px; font-size: 13px; }
+
+.sucessorista .selo-via {
+  display: inline-block;
+  font: 600 12px/1 var(--texto);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  transform: rotate(-1.2deg);
+}
+
+.sucessorista .selo-via.ok { color: var(--verde-registro); }
+.sucessorista .selo-via.cond { color: var(--bronze); }
+.sucessorista .selo-via.jud { color: var(--lacre); }
+
+/* ---------- checklist ---------- */
+
+.sucessorista .check { border-top: 1px solid var(--fio-forte); }
+
+.sucessorista .check-item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--fio);
+  align-items: start;
+}
+
+.sucessorista .check-item .prio {
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--bronze);
+  padding-top: 2px;
+}
+
+.sucessorista .check-item h4 { font-size: 14px; font-weight: 600; }
+.sucessorista .check-item p { font-size: 12.5px; color: var(--tinta-media); margin-top: 2px; max-width: 68ch; }
+.sucessorista .check-item .alerta { color: var(--lacre); font-size: 12px; margin-top: 3px; }
+.sucessorista .check-item a { color: var(--bronze); }
+
+.sucessorista .status-sel {
+  font: 500 12px var(--texto);
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--papel-alto);
+}
+
+.sucessorista .progresso { font-size: 13px; color: var(--tinta-media); margin: 8px 0 16px; }
+
+/* ---------- utilidades ---------- */
+
+.sucessorista .passos { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
+
+.sucessorista .passos button {
+  font: 500 12px var(--texto);
+  border: 1px solid var(--fio-forte);
+  background: var(--papel-alto);
+  border-radius: 3px;
+  padding: 7px 12px;
+  color: var(--tinta-media);
+  cursor: pointer;
+}
+
+.sucessorista .passos button[aria-current='true'] {
+  background: var(--tinta); color: var(--papel); border-color: var(--tinta);
+}
+
+.sucessorista .rodape-acoes { display: flex; justify-content: space-between; margin-top: 30px; }
+
+.sucessorista .mono-alerta { color: var(--lacre); font-size: 13px; margin-top: 10px; }
+
+@media (max-width: 860px) {
+  .sucessorista .processo { grid-template-columns: 1fr; }
+  .sucessorista .lombada { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 14px 16px; gap: 2px; }
+  .sucessorista .lombada .marca { width: 100%; margin-bottom: 8px; }
+  .sucessorista .lombada .selo { display: none; }
+  .sucessorista .aba { border-radius: 4px; padding: 8px 12px; }
+  .sucessorista .folha { padding: 24px 18px 80px; }
+  .sucessorista .grade.c2, .sucessorista .grade.c3, .sucessorista .nota .cenarios { grid-template-columns: 1fr; }
+  .sucessorista .espelho .cabeca, .sucessorista .espelho .lanc { grid-template-columns: 1fr 90px; }
+  .sucessorista .espelho .cabeca span:nth-child(2), .sucessorista .espelho .lanc .fracao { display: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sucessorista .nota, .sucessorista .espelho .lanc { animation: surgir 0.25s ease-out both; }
+  @keyframes surgir { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+}
+
+/* ---------- integração com a moldura do app ---------- */
+
+.sucessorista { flex: 1; }
+
+.sucessorista .voltar {
+  display: inline-block;
+  color: #9aa39e;
+  font-size: 12px;
+  text-decoration: none;
+  margin: 0 0 10px 0;
+  padding-right: 16px;
+}
+
+.sucessorista .voltar:hover { color: var(--papel); }

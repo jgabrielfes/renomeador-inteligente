@@ -1,0 +1,45 @@
+import {
+  store,
+  gerarToken,
+  DOCUMENTOS_PADRAO_HERDEIRO,
+  type ConviteHerdeiro,
+} from '@/lib/portal/store';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+interface Body {
+  casoId: string;
+  nomeHerdeiro: string;
+  nomeFalecido: string;
+  nomeAdvogado: string;
+  documentosExtras?: { id: string; titulo: string; descricao: string }[];
+}
+
+export async function POST(req: Request) {
+  let body: Body;
+  try {
+    body = (await req.json()) as Body;
+  } catch {
+    return Response.json({ erro: 'JSON inválido' }, { status: 400 });
+  }
+  if (!body?.casoId || !body?.nomeHerdeiro) {
+    return Response.json({ erro: 'casoId e nomeHerdeiro são obrigatórios' }, { status: 422 });
+  }
+
+  const convite: ConviteHerdeiro = {
+    token: gerarToken(),
+    casoId: body.casoId,
+    nomeHerdeiro: body.nomeHerdeiro,
+    nomeFalecido: body.nomeFalecido ?? '',
+    nomeAdvogado: body.nomeAdvogado ?? '',
+    criadoEm: new Date().toISOString(),
+    documentos: [
+      ...DOCUMENTOS_PADRAO_HERDEIRO.map((d) => ({ ...d, status: 'PENDENTE' as const })),
+      ...(body.documentosExtras ?? []).map((d) => ({ ...d, status: 'PENDENTE' as const })),
+    ],
+  };
+
+  await store.criar(convite);
+  return Response.json({ token: convite.token, url: `/portal/${convite.token}` }, { status: 201 });
+}

@@ -161,6 +161,19 @@ Três etapas na tela:
 
 Travas de segurança: a via sugerida precisa de **confirmação humana** antes de gerar; a ata só é gerada com **amparo documental** declarado; campos sem dado permanecem como `{{PLACEHOLDER}}` visível na minuta; e **nada é lavrado automaticamente** — a saída é sempre rascunho. O prazo da prenotação é lido na própria nota (nunca calculado) e fica em destaque na tela.
 
+## O Sucessorista
+
+Folha de trabalho do inventário, com identidade visual própria ("livro de notas", escopada em [app/sucessorista/sucessorista.css](app/sucessorista/sucessorista.css)) e motor de cálculo **puro, sem dependências**, em aritmética racional exata com `BigInt` (`lib/partilha/` — nenhum `number` participa de cálculo de quinhão). Quatro abas:
+
+1. **Triagem de via** ([lib/partilha/triagem.ts](lib/partilha/triagem.ts)) — sete respostas decidem entre extrajudicial, judicial e extrajudicial condicionada (CPC art. 610, Res. CNJ 35/2007), com impedimentos fundamentados e parecer preliminar pronto.
+2. **Partilha** ([lib/partilha/engine.ts](lib/partilha/engine.ts)) — do regime de bens ao espelho da partilha com fundamento legal por lançamento; bolsas comum × particular separadas do início ao fim; divergências doutrinárias emitidas com os dois cenários calculados, nunca decididas. A **partilha diferenciada** ([lib/partilha/atribuicao.ts](lib/partilha/atribuicao.ts)) apura a torna quando a família convenciona usufruto + nua-propriedade (gratuita → ITCMD; onerosa → ITBI).
+3. **Acervo** ([lib/partilha/acervo.ts](lib/partilha/acervo.ts)) — 13 fontes de levantamento patrimonial em ordem de prioridade (CENSEC primeiro, porque decide a via).
+4. **Pós-escritura** ([lib/partilha/posescritura.ts](lib/partilha/posescritura.ts)) — checklist gerado do caso: cada imóvel produz o registro na matrícula, cada torna seu tributo.
+
+Também expõe a API `POST /api/partilha` (cálculo por JSON) e o **portal do herdeiro** (`/portal/[token]` + `lib/portal/store.ts`): convite por link sem login para o herdeiro acompanhar e enviar os documentos pedidos. Atenção: o store atual é em memória — zera a cada cold start serverless; para uso real, trocar por Postgres/KV na mesma interface.
+
+Os testes do motor (55 asserções) rodam sem dependências: `node --experimental-strip-types lib/partilha/engine.test.ts` (idem `atribuicao.test.ts` e `modulos.test.ts`, ajustando os imports relativos com extensão). O output é **cálculo de apoio com revisão obrigatória** do advogado responsável — jamais parecer.
+
 ## Rodando localmente
 
 ```bash

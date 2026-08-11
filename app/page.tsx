@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileScan, FileWarning } from "lucide-react";
+import { ArrowRight, FileScan, FileWarning, Scale } from "lucide-react";
 
 import {
   Card,
@@ -23,6 +23,13 @@ const MODULOS = [
     titulo: "Resolvedor de Notas Devolutivas (em teste)",
     descricao:
       "Decompõe a nota de exigências do Registro de Imóveis em itens, classifica cada um na via de resolução (juntada, ata retificativa, rerratificação, requerimento…) e prepara a minuta da peça — sempre como rascunho para conferência.",
+  },
+  {
+    href: "/sucessorista",
+    icon: Scale,
+    titulo: "O Sucessorista (em teste)",
+    descricao:
+      "Folha de trabalho do inventário: triagem da via (extrajudicial × judicial), cálculo de quinhões com fundamento legal, partilha diferenciada com apuração de torna, levantamento de acervo e pós-escritura. Cálculo de apoio — revisão do advogado responsável é obrigatória.",
   },
 ] as const;
 
