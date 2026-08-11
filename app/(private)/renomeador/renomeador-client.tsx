@@ -25,6 +25,7 @@ import {
   registrarAnalise,
   registrarDesfecho,
   registrarDownloadDeItem,
+  registrarErroDeAnalise,
 } from "@/app/(private)/renomeador/actions";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 import { CorrectionsDialog } from "@/components/corrections-dialog";
@@ -452,6 +453,9 @@ export default function Home({
                 setTimeout(resolve, waitSeconds * 1000)
               );
             } else {
+              // O fallback também vai para /admin/erros — a rota só registra o
+              // que chega até ela; rede/timeout/resposta inválida só existem aqui.
+              void registrarErroDeAnalise(message, aiError?.geminiStatus ?? null);
               toast.error("IA indisponível — usando análise local", {
                 description: `Este lote foi analisado localmente no navegador. Detalhe: ${message.slice(0, 140)}`,
               });

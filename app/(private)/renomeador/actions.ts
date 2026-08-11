@@ -8,6 +8,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { registrarErro } from "@/lib/error-log";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
 
 const METODOS: MetodoAnalise[] = ["IA_ARQUIVO", "IA_TEXTO", "LOCAL"];
@@ -57,6 +58,31 @@ export async function registrarAnalise(
     return evento;
   } catch {
     return null; // telemetria é melhor-esforço
+  }
+}
+
+/**
+ * Erro visto no CLIENTE do renomeador: um lote caiu no fallback local (o
+ * toast "IA indisponível"). Complementa o log da rota (origem "api/rename"):
+ * cobre falhas que nunca chegam lá — rede, timeout, resposta inválida — e
+ * mostra ao admin que aquele usuário de fato caiu para a análise local.
+ * Sessão obrigatória (a action é endpoint público; a ferramenta é privada).
+ */
+export async function registrarErroDeAnalise(
+  mensagem: string,
+  status?: number | null
+): Promise<void> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return;
+    if (typeof mensagem !== "string" || !mensagem.trim()) return;
+    await registrarErro({
+      origem: "renomeador/fallback-local",
+      mensagem,
+      status: typeof status === "number" ? status : undefined,
+    });
+  } catch {
+    // telemetria é melhor-esforço
   }
 }
 
