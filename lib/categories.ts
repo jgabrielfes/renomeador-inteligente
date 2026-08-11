@@ -83,7 +83,16 @@ const POR_PALAVRA: Array<[RegExp, Categoria]> = [
     "DOCUMENTOS PESSOAIS",
   ],
 
-  [/NEGATIVA|DISTRIBUICAO|PROTESTO|TRABALHISTA|ANTECEDENTES/, "CERTIDÕES NEGATIVAS"],
+  // O kit de certidões negativas vai muito além da palavra "negativa": CND/CNDT,
+  // distribuição, protesto, feitos ajuizados, falência/concordata/recuperação,
+  // executivos fiscais, ações cíveis/criminais, interdição e tutela, objeto e pé,
+  // regularidade (fiscal/FGTS) e as certidões de débitos/dívida ativa (conjuntas,
+  // positivas com efeito de negativa etc.). Sem esse vocabulário, o tipo livre da
+  // IA caía em OUTROS DOCUMENTOS.
+  [
+    /NEGATIVA|\bCNDS?\b|\bCNDT\b|\bCRF\b|DISTRIBUICAO|PROTESTO|TRABALHISTA|ANTECEDENTES|NADA CONSTA|FEITOS AJUIZADOS|FALENCIA|CONCORDATA|RECUPERACAO JUDICIAL|EXECUTIVOS? FISCA(?:L|IS)|ACOES CIVEIS|CRIMINA(?:L|IS)|INTERDICAO|OBJETO E PE|REGULARIDADE|CERTIDAO.{0,30}(?:DE DEBITOS|DIVIDA ATIVA)/,
+    "CERTIDÕES NEGATIVAS",
+  ],
 
   [/BOLETO|COMPROVANTE|QUITACAO|RECIBO|PAGAMENTO|GUIA|DARF|\bDAM\b/, "COMPROVANTES E PAGAMENTOS"],
 ];
