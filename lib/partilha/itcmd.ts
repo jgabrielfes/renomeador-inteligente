@@ -95,6 +95,119 @@ export const META_SELIC: { desde: string; taxaAa: number }[] = [
 
 export const ALIQUOTA_ITCMD_SP = 0.04; // art. 16 (Lei 10.992/2001)
 
+/* ---------- isenções do art. 6º ---------- */
+
+export interface EntradaIsencoes {
+  /** Bens com tipo e valor em R$ (valores na data do óbito). */
+  bens: { tipo?: string; valor: number; descricao?: string }[];
+  /** UFESP do ano do óbito — o art. 6º mede na data do fato gerador. */
+  ufespObito: number;
+  /** Art. 6º, I, "a": imóvel residencial em que os familiares residem, sem outro imóvel. */
+  aplicarImovelResidencial: boolean;
+  /** Art. 6º, I, "d": depósitos bancários e aplicações financeiras. */
+  aplicarDepositos: boolean;
+}
+
+export interface ResultadoIsencoes {
+  valorIsento: number;
+  detalhes: string[];
+  avisos: string[];
+}
+
+/**
+ * Isenções do art. 6º da Lei 10.705/2000 marcadas pelo advogado.
+ * Atenção à mecânica legal: o teto NÃO é franquia — bem que ultrapassa o
+ * limite ("cujo valor não ultrapassar") é tributado por inteiro.
+ */
+export function isencoesArt6(e: EntradaIsencoes): ResultadoIsencoes {
+  const detalhes: string[] = [];
+  const avisos: string[] = [];
+  let valorIsento = 0;
+
+  if (e.aplicarImovelResidencial) {
+    const teto = 5000 * e.ufespObito;
+    const residencial = e.bens
+      .filter((b) => b.tipo === 'IMOVEL' && b.valor > 0)
+      .sort((a, b) => b.valor - a.valor)[0];
+    if (!residencial) {
+      avisos.push('Isenção do imóvel residencial marcada, mas não há bem do tipo imóvel no acervo.');
+    } else if (residencial.valor <= teto) {
+      valorIsento += residencial.valor;
+      detalhes.push(
+        `Imóvel residencial isento (art. 6º, I, "a"): ${residencial.descricao || 'imóvel'} — valor dentro de 5.000 UFESPs (${fmt(teto)}).`,
+      );
+    } else {
+      avisos.push(
+        `Imóvel residencial acima de 5.000 UFESPs (${fmt(teto)}): a isenção do art. 6º, I, "a" não se aplica — o teto não é franquia, o bem é tributado por inteiro.`,
+      );
+    }
+  }
+
+  if (e.aplicarDepositos) {
+    const teto = 1000 * e.ufespObito;
+    const financeiro = e.bens
+      .filter((b) => b.tipo === 'FINANCEIRO' && b.valor > 0)
+      .reduce((acc, b) => acc + b.valor, 0);
+    if (financeiro === 0) {
+      avisos.push('Isenção de depósitos marcada, mas não há bem do tipo conta/aplicação no acervo.');
+    } else if (financeiro <= teto) {
+      valorIsento += financeiro;
+      detalhes.push(
+        `Depósitos e aplicações isentos (art. 6º, I, "d"): total dentro de 1.000 UFESPs (${fmt(teto)}).`,
+      );
+    } else {
+      avisos.push(
+        `Depósitos e aplicações somam mais que 1.000 UFESPs (${fmt(teto)}): a isenção do art. 6º, I, "d" não se aplica ao conjunto.`,
+      );
+    }
+  }
+
+  return { valorIsento, detalhes, avisos };
+}
+
+/* ---------- cenário da reforma (EC 132/2023 + LC 227/2026) ---------- */
+
+export interface FaixaProgressiva {
+  /** Teto da faixa em UFESPs; null = última faixa (sem teto). */
+  ateUfesps: number | null;
+  /** Alíquota da faixa, em % (ex.: 2). */
+  aliquota: number;
+}
+
+/** PL 7/2024 (SP): 2% a 8% por faixas do quinhão. Hipótese — não está em vigor. */
+export const FAIXAS_PL7_2024: FaixaProgressiva[] = [
+  { ateUfesps: 10_000, aliquota: 2 },
+  { ateUfesps: 85_000, aliquota: 4 },
+  { ateUfesps: 280_000, aliquota: 6 },
+  { ateUfesps: null, aliquota: 8 },
+];
+
+/** Teto nacional (Res. Senado 9/1992): 8% linear. */
+export const FAIXAS_TETO_NACIONAL: FaixaProgressiva[] = [{ ateUfesps: null, aliquota: 8 }];
+
+/**
+ * Imposto progressivo sobre UM quinhão (a LC 227/2026 manda progredir pelo
+ * valor do quinhão de cada herdeiro, não pelo monte).
+ */
+export function impostoProgressivo(
+  baseReais: number,
+  ufesp: number,
+  faixas: FaixaProgressiva[],
+): { imposto: number; aliquotaEfetiva: number } {
+  const emUfesps = baseReais / ufesp;
+  let piso = 0;
+  let imposto = 0;
+  for (const f of faixas) {
+    const teto = f.ateUfesps ?? Infinity;
+    const nestaFaixa = Math.max(0, Math.min(emUfesps, teto) - piso);
+    if (nestaFaixa > 0) imposto += nestaFaixa * ufesp * (f.aliquota / 100);
+    piso = teto;
+    if (emUfesps <= teto) break;
+  }
+  imposto = Math.round(imposto * 100) / 100;
+  return { imposto, aliquotaEfetiva: baseReais > 0 ? (imposto / baseReais) * 100 : 0 };
+}
+
 export interface EntradaItcmd {
   /** Data do óbito (abertura da sucessão) — fato gerador. 'AAAA-MM-DD'. */
   dataObito: string;
@@ -108,6 +221,15 @@ export interface EntradaItcmd {
    * como se o protocolo ocorresse na data de referência.
    */
   dataProtocolo?: string | null;
+  /**
+   * Cenário da reforma: quinhões (nome + valor em R$ na data do óbito, já
+   * líquidos de isenção), faixas e data de vigência da lei estadual.
+   * O imposto só troca para o progressivo se dataObito >= vigência —
+   * a lei aplicável é sempre a da data do fato gerador.
+   */
+  quinhoes?: { nome: string; valor: number }[];
+  faixasProgressivas?: FaixaProgressiva[];
+  vigenciaProgressiva?: string;
 }
 
 export interface ParcelaItcmd {
@@ -158,7 +280,7 @@ function centavos(v: number): number {
 
 /* ---------- parâmetros ---------- */
 
-function ufespDoAno(ano: number): { valor: number; estimado: boolean } {
+export function ufespDoAno(ano: number): { valor: number; estimado: boolean } {
   const anos = Object.keys(UFESP_POR_ANO).map(Number);
   const min = Math.min(...anos);
   const max = Math.max(...anos);
@@ -247,18 +369,50 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   const baseEmUfesps = baseCalculo / uO.valor;
   const baseAtualizada = centavos(baseEmUfesps * uR.valor);
 
-  // Art. 16 (Lei 10.992/2001): alíquota de 4%.
-  const imposto = centavos(baseAtualizada * ALIQUOTA_ITCMD_SP);
+  // Regra de ouro: vale a lei da DATA DO ÓBITO. A tabela progressiva só entra
+  // se o fato gerador for posterior à vigência informada para a lei estadual.
+  const progressivoVale = Boolean(
+    entrada.faixasProgressivas?.length &&
+      entrada.vigenciaProgressiva &&
+      entrada.quinhoes?.length &&
+      dataObito >= entrada.vigenciaProgressiva,
+  );
 
-  const parcelas: ParcelaItcmd[] = [
-    {
+  // Art. 16 (Lei 10.992/2001): alíquota de 4% — ou, no cenário progressivo,
+  // faixas sobre cada quinhão atualizado (LC 227/2026: progride pelo quinhão).
+  let imposto: number;
+  let parcelaImposto: ParcelaItcmd;
+  if (progressivoVale) {
+    const fator = baseCalculo > 0 ? baseAtualizada / baseCalculo : 0;
+    imposto = centavos(
+      entrada.quinhoes!.reduce(
+        (acc, q) =>
+          acc + impostoProgressivo(q.valor * fator, uR.valor, entrada.faixasProgressivas!).imposto,
+        0,
+      ),
+    );
+    parcelaImposto = {
+      id: 'imposto',
+      rotulo: 'ITCMD progressivo por quinhão (simulação da reforma)',
+      valor: imposto,
+      fundamento: 'EC 132/2023 e LC 227/2026 — faixas conforme lei estadual a confirmar',
+      detalhe: `Óbito posterior à vigência informada (${entrada.vigenciaProgressiva}): cada quinhão atualizado progride pelas faixas em UFESPs. Confirme a lei estadual antes de emitir a guia.`,
+    };
+    avisos.push(
+      'Tabela progressiva aplicada por SIMULAÇÃO: nenhuma faixa progressiva está em vigor em SP — o cálculo depende de lei estadual futura.',
+    );
+  } else {
+    imposto = centavos(baseAtualizada * ALIQUOTA_ITCMD_SP);
+    parcelaImposto = {
       id: 'imposto',
       rotulo: 'ITCMD (4% sobre a base atualizada)',
       valor: imposto,
       fundamento: 'Lei 10.705/2000, arts. 15 e 16 (redação da Lei 10.992/2001)',
       detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}) → ${fmt(baseAtualizada)} pela UFESP de ${anoRef} (${fmt(uR.valor)}).`,
-    },
-  ];
+    };
+  }
+
+  const parcelas: ParcelaItcmd[] = [parcelaImposto];
 
   const vencimento = somarDias(dataObito, 180);
   const diasDesdeObito = diffDias(dataObito, dataReferencia);

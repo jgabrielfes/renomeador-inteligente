@@ -18,7 +18,7 @@ type Ev = { target: { value: string; files?: FileList | null; checked?: boolean 
 import { partilhar } from '@/lib/partilha/engine';
 import { apurarAtribuicao, type TitularidadeBem, type TituloCessao } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
-import type { Caso, Bem } from '@/lib/partilha/types';
+import type { Caso, Bem, TipoBem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
 import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
@@ -64,18 +64,32 @@ export default function SucessoristaClient() {
   /* --- III: partilha (3 passos: bens · espelho · diferenciada) --- */
   const [passo, setPasso] = useState(1);
   const [bens, setBens] = useState<Bem[]>([]);
+  /** Dívidas e despesas do espólio (R$) — abatem a massa antes da partilha. */
+  const [dividasEspolio, setDividasEspolio] = useState('');
 
-  const caso: Caso = useMemo(
-    () => ({
+  const caso: Caso = useMemo(() => {
+    const limpo = dividasEspolio.replace(/\./g, '').replace(',', '.');
+    const dividas =
+      /^\d+(\.\d{1,2})?$/.test(limpo) && Number(limpo) > 0
+        ? [
+            {
+              id: 'div-espolio',
+              descricao: 'Dívidas e despesas do espólio',
+              valor: Number(limpo).toFixed(2),
+              natureza: 'COMUM' as const,
+            },
+          ]
+        : undefined;
+    return {
       falecido: { dataObito: falecido.dataObito || new Date().toISOString().slice(0, 10) },
       sobrevivente: temSobrevivente
         ? { vinculo, regime, nome: nomeSobrev || 'Cônjuge/companheiro(a)' }
         : null,
       herdeiros,
       bens,
-    }),
-    [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens],
-  );
+      dividas,
+    };
+  }, [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens, dividasEspolio]);
 
   const resultado = useMemo(() => {
     if (bens.length === 0 || (herdeiros.length === 0 && !temSobrevivente)) return null;
@@ -267,6 +281,8 @@ export default function SucessoristaClient() {
               <EditorBens
                 bens={bens}
                 setBens={setBens}
+                dividas={dividasEspolio}
+                setDividas={setDividasEspolio}
                 voltar={() => setAbaProc('familia')}
                 avancar={() => setPasso(2)}
               />
@@ -438,27 +454,40 @@ export default function SucessoristaClient() {
 
 /* ================= componentes ================= */
 
+const ROTULO_TIPO_BEM: Record<TipoBem, string> = {
+  IMOVEL: 'imóvel',
+  VEICULO: 'veículo',
+  FINANCEIRO: 'conta/aplicação',
+  QUOTAS: 'quotas/ações',
+  OUTRO: 'outro',
+};
+
 function EditorBens({
   bens,
   setBens,
+  dividas,
+  setDividas,
   voltar,
   avancar,
 }: {
   bens: Bem[];
   setBens: (b: Bem[]) => void;
+  dividas: string;
+  setDividas: (v: string) => void;
   voltar: () => void;
   avancar: () => void;
 }) {
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [natureza, setNatureza] = useState<'COMUM' | 'PARTICULAR'>('COMUM');
+  const [tipo, setTipo] = useState<TipoBem>('IMOVEL');
 
   const adicionar = () => {
     const limpo = valor.replace(/\./g, '').replace(',', '.');
     if (!descricao.trim() || !/^\d+(\.\d{1,2})?$/.test(limpo)) return;
     setBens([
       ...bens,
-      { id: uid('b'), descricao: descricao.trim(), valor: Number(limpo).toFixed(2), natureza },
+      { id: uid('b'), descricao: descricao.trim(), valor: Number(limpo).toFixed(2), natureza, tipo },
     ]);
     setDescricao('');
     setValor('');
@@ -470,9 +499,10 @@ function EditorBens({
       <h2>Bens do acervo</h2>
       <p className="subtitulo">
         Valores na data do óbito. A distinção comum × particular decide, na comunhão parcial,
-        se o sobrevivente concorre — e sobre o quê.
+        se o sobrevivente concorre — e sobre o quê. O tipo do bem alimenta as isenções e o
+        checklist do ITCMD.
       </p>
-      <div className="grade c3">
+      <div className="grade c2">
         <label className="campo">
           Descrição
           <input
@@ -494,6 +524,16 @@ function EditorBens({
           />
         </label>
         <label className="campo">
+          Tipo do bem
+          <select value={tipo} onChange={(e: Ev) => setTipo(e.target.value as TipoBem)}>
+            <option value="IMOVEL">Imóvel</option>
+            <option value="VEICULO">Veículo</option>
+            <option value="FINANCEIRO">Conta/aplicação</option>
+            <option value="QUOTAS">Quotas/ações</option>
+            <option value="OUTRO">Outro</option>
+          </select>
+        </label>
+        <label className="campo">
           Natureza
           <select value={natureza} onChange={(e: Ev) => setNatureza(e.target.value as 'COMUM' | 'PARTICULAR')}>
             <option value="COMUM">Comum (adquirido na constância)</option>
@@ -512,7 +552,8 @@ function EditorBens({
             <strong>{b.descricao}</strong>
             <span className="fracao num">
               {' '}
-              · {brl(b.valor)} · {b.natureza === 'COMUM' ? 'comum' : 'particular'}
+              · {brl(b.valor)} · {ROTULO_TIPO_BEM[b.tipo ?? 'OUTRO']} ·{' '}
+              {b.natureza === 'COMUM' ? 'comum' : 'particular'}
             </span>
           </span>
           <button className="remover" onClick={() => setBens(bens.filter((x) => x.id !== b.id))}>
@@ -520,6 +561,26 @@ function EditorBens({
           </button>
         </div>
       ))}
+
+      <h2>Passivo do espólio</h2>
+      <div className="grade c2">
+        <label className="campo">
+          Dívidas e despesas do espólio (R$)
+          <input
+            type="text"
+            inputMode="decimal"
+            className="num"
+            value={dividas}
+            onChange={(e: Ev) => setDividas(e.target.value)}
+            placeholder="0,00"
+          />
+        </label>
+      </div>
+      <p className="fund" style={{ marginTop: 6 }}>
+        Financiamentos, empréstimos e despesas abatem a massa antes da partilha — e reduzem a
+        base do ITCMD.
+      </p>
+
       <div className="rodape-acoes">
         <button className="acao fantasma" onClick={voltar}>
           Voltar à família

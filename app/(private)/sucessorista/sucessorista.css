@@ -358,6 +358,52 @@
 
 .sucessorista .erro-campo { color: var(--lacre); font-size: 12px; font-weight: 500; }
 
+/* ---------- isenções, régua de prazo e faixas ---------- */
+
+.sucessorista label.marcar {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+  margin: 8px 0;
+  cursor: pointer;
+  max-width: 68ch;
+}
+
+.sucessorista label.marcar input[type='checkbox'] { width: auto; flex-shrink: 0; }
+
+.sucessorista .regua { margin: 10px 0 12px; }
+
+.sucessorista .regua .barra {
+  height: 7px;
+  background: var(--fio);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sucessorista .regua .preenchido {
+  height: 100%;
+  background: var(--verde-registro);
+  transition: width 0.3s;
+}
+
+.sucessorista .regua .preenchido.meio { background: var(--bronze); }
+.sucessorista .regua .preenchido.tarde { background: var(--lacre); }
+
+.sucessorista .regua .marcas {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--tinta-media);
+  margin-top: 5px;
+}
+
+.sucessorista input.aliquota-campo {
+  max-width: 88px;
+  text-align: right;
+  padding: 6px 9px;
+}
+
 /* ---------- anexos e lupa ---------- */
 
 .sucessorista .anexo-linha {

@@ -5,7 +5,15 @@
  *   node --experimental-strip-types lib/partilha/itcmd.test.ts
  */
 
-import { provisionarItcmd, jurosArt20, UFESP_POR_ANO } from './itcmd';
+import {
+  provisionarItcmd,
+  jurosArt20,
+  UFESP_POR_ANO,
+  isencoesArt6,
+  impostoProgressivo,
+  FAIXAS_PL7_2024,
+  FAIXAS_TETO_NACIONAL,
+} from './itcmd';
 
 let ok = 0, fail = 0;
 function eq(nome: string, a: unknown, e: unknown) {
@@ -93,6 +101,75 @@ eq('aviso da jurisprudência do TJSP', semProtocolo.avisos.some((a) => a.include
 // Sanidade da tabela de UFESPs.
 eq('UFESP 2025', UFESP_POR_ANO[2025], 37.02);
 eq('UFESP 2026', UFESP_POR_ANO[2026], 38.42);
+
+// ---------- isenções do art. 6º ----------
+const U = 38.42;
+// Imóvel residencial dentro de 5.000 UFESPs (R$ 192.100): isento por inteiro.
+const isOk = isencoesArt6({
+  bens: [{ tipo: 'IMOVEL', valor: 150_000, descricao: 'Casa' }],
+  ufespObito: U,
+  aplicarImovelResidencial: true,
+  aplicarDepositos: false,
+});
+aprox('imóvel dentro do teto: isento por inteiro', isOk.valorIsento, 150_000);
+// Acima do teto NÃO é franquia: nada isento e aviso emitido.
+const isAcima = isencoesArt6({
+  bens: [{ tipo: 'IMOVEL', valor: 500_000 }],
+  ufespObito: U,
+  aplicarImovelResidencial: true,
+  aplicarDepositos: false,
+});
+aprox('imóvel acima do teto: sem isenção', isAcima.valorIsento, 0);
+eq('aviso de teto não é franquia', isAcima.avisos.length, 1);
+// Depósitos dentro de 1.000 UFESPs (R$ 38.420).
+const isDep = isencoesArt6({
+  bens: [
+    { tipo: 'FINANCEIRO', valor: 20_000 },
+    { tipo: 'FINANCEIRO', valor: 10_000 },
+    { tipo: 'IMOVEL', valor: 900_000 },
+  ],
+  ufespObito: U,
+  aplicarImovelResidencial: false,
+  aplicarDepositos: true,
+});
+aprox('depósitos dentro do teto: isentos', isDep.valorIsento, 30_000);
+
+// ---------- imposto progressivo (LC 227 / PL 7-2024) ----------
+// Quinhão de 5.000 UFESPs: tudo na 1ª faixa (2%).
+const p1 = impostoProgressivo(5000 * U, U, FAIXAS_PL7_2024);
+aprox('progressivo 1ª faixa', p1.imposto, 5000 * U * 0.02);
+// Quinhão de 12.000 UFESPs: 10.000 a 2% + 2.000 a 4%.
+const p2 = impostoProgressivo(12_000 * U, U, FAIXAS_PL7_2024);
+aprox('progressivo 2 faixas', p2.imposto, (10_000 * 0.02 + 2_000 * 0.04) * U, 0.5);
+eq('alíquota efetiva entre 2 e 4', p2.aliquotaEfetiva > 2 && p2.aliquotaEfetiva < 4, true);
+// Teto nacional: 8% linear.
+const p3 = impostoProgressivo(100_000, U, FAIXAS_TETO_NACIONAL);
+aprox('teto nacional 8%', p3.imposto, 8_000);
+
+// ---------- provisão com cenário progressivo ----------
+// Óbito ANTES da vigência: continua 4% (lei da data do fato gerador).
+const provFixa = provisionarItcmd({
+  dataObito: '2026-05-10',
+  dataReferencia: '2026-07-01',
+  baseCalculo: 1_000_000,
+  quinhoes: [{ nome: 'A', valor: 500_000 }, { nome: 'B', valor: 500_000 }],
+  faixasProgressivas: FAIXAS_PL7_2024,
+  vigenciaProgressiva: '2027-01-01',
+});
+aprox('óbito antes da vigência: 4% preservado', provFixa.imposto, 40_000);
+// Óbito DEPOIS da vigência: progressivo por quinhão, com aviso de simulação.
+const provProg = provisionarItcmd({
+  dataObito: '2027-02-01',
+  dataReferencia: '2027-03-01',
+  baseCalculo: 1_000_000,
+  quinhoes: [{ nome: 'A', valor: 500_000 }, { nome: 'B', valor: 500_000 }],
+  faixasProgressivas: FAIXAS_TETO_NACIONAL,
+  vigenciaProgressiva: '2027-01-01',
+});
+eq('óbito após a vigência: progressivo aplicado', provProg.parcelas[0].rotulo.includes('progressivo'), true);
+eq('aviso de simulação presente', provProg.avisos.some((a) => a.includes('SIMULAÇÃO')), true);
+// Base atualizada = base (mesmo ano estimado): 8% de 1M = 80.000.
+aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

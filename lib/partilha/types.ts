@@ -39,11 +39,15 @@ export interface Herdeiro {
   menorOuIncapaz?: boolean;
 }
 
+export type TipoBem = 'IMOVEL' | 'VEICULO' | 'FINANCEIRO' | 'QUOTAS' | 'OUTRO';
+
 export interface Bem {
   id: string;
   descricao: string;
   valor: string;
   natureza: Natureza;
+  /** Classe do bem — alimenta isenções do ITCMD e o checklist de documentos. */
+  tipo?: TipoBem;
 }
 
 export interface Divida {

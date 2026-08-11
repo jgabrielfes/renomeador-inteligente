@@ -17,7 +17,16 @@ import {
   type Qualificacao,
   type DadosFalecido,
 } from '@/lib/partilha/familia';
-import { provisionarItcmd, ALIQUOTA_ITCMD_SP } from '@/lib/partilha/itcmd';
+import {
+  provisionarItcmd,
+  ALIQUOTA_ITCMD_SP,
+  isencoesArt6,
+  impostoProgressivo,
+  ufespDoAno,
+  FAIXAS_PL7_2024,
+  FAIXAS_TETO_NACIONAL,
+  type FaixaProgressiva,
+} from '@/lib/partilha/itcmd';
 
 /** Alias estrutural — compatível com o ChangeEvent de input e select. */
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
@@ -57,18 +66,44 @@ export function ItcmdView({
   const [inventarioAberto, setInventarioAberto] = useState(false);
   const [dataProtocolo, setDataProtocolo] = useState('');
 
+  /* isenções do art. 6º (opt-in do advogado) */
+  const [isencaoResidencial, setIsencaoResidencial] = useState(false);
+  const [isencaoDepositos, setIsencaoDepositos] = useState(false);
+
+  /* cenário da reforma — faixas editáveis (nenhuma está em vigor) */
+  const [vigencia, setVigencia] = useState('2027-01-01');
+  const [faixas, setFaixas] = useState<FaixaProgressiva[]>(FAIXAS_PL7_2024);
+
   const faltaObito = !falecido.dataObito;
   const faltaCalculo = !resultado || resultado.bloqueios.length > 0;
 
+  const ufespObito = faltaObito ? null : ufespDoAno(Number(falecido.dataObito.slice(0, 4)));
+
+  const isencoes = useMemo(() => {
+    if (faltaObito || faltaCalculo || !ufespObito) return null;
+    return isencoesArt6({
+      bens: bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+      ufespObito: ufespObito.valor,
+      aplicarImovelResidencial: isencaoResidencial,
+      aplicarDepositos: isencaoDepositos,
+    });
+  }, [faltaObito, faltaCalculo, ufespObito, bens, isencaoResidencial, isencaoDepositos]);
+
   const provisao = useMemo(() => {
     if (faltaObito || faltaCalculo || !resultado) return null;
+    const herancaBruta = Number(resultado.heranca.total);
+    const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
+    const fator = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
     return provisionarItcmd({
       dataObito: falecido.dataObito,
       dataReferencia: hoje,
-      baseCalculo: Number(resultado.heranca.total),
+      baseCalculo: baseLiquida,
       dataProtocolo: inventarioAberto && dataProtocolo ? dataProtocolo : null,
+      quinhoes: resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) * fator })),
+      faixasProgressivas: faixas,
+      vigenciaProgressiva: vigencia,
     });
-  }, [faltaObito, faltaCalculo, resultado, falecido.dataObito, hoje, inventarioAberto, dataProtocolo]);
+  }, [faltaObito, faltaCalculo, resultado, falecido.dataObito, hoje, inventarioAberto, dataProtocolo, isencoes, faixas, vigencia]);
 
   const perguntasPendentes = herdeiros.some((h) => {
     const p = perguntas[h.id] ?? PERGUNTAS_ITCMD_VAZIAS;
@@ -198,7 +233,71 @@ export function ItcmdView({
               <span className="fracao">art. 9º — valor venal (mercado) na data do óbito</span>
               <span className="valor num">{brl(resultado.heranca.total)}</span>
             </div>
+            {isencoes && isencoes.valorIsento > 0 && (
+              <>
+                <div className="lanc">
+                  <span className="nome">(−) Isenções do art. 6º</span>
+                  <span className="fracao">marcadas abaixo</span>
+                  <span className="valor num" style={{ color: 'var(--verde-registro)' }}>
+                    {brl(isencoes.valorIsento)}
+                  </span>
+                </div>
+                <div className="lanc">
+                  <span className="nome">Base tributável líquida</span>
+                  <span />
+                  <span className="valor num">
+                    {brl(Math.max(0, Number(resultado.heranca.total) - isencoes.valorIsento))}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
+
+          <h2>Isenções (art. 6º da Lei 10.705/2000)</h2>
+          <label className="marcar">
+            <input
+              type="checkbox"
+              checked={isencaoResidencial}
+              onChange={(e: Ev) => setIsencaoResidencial(e.target.checked === true)}
+            />
+            Imóvel residencial em que os familiares residem, sem outro imóvel — isento até
+            5.000 UFESPs (art. 6º, I, &quot;a&quot;)
+          </label>
+          <label className="marcar">
+            <input
+              type="checkbox"
+              checked={isencaoDepositos}
+              onChange={(e: Ev) => setIsencaoDepositos(e.target.checked === true)}
+            />
+            Depósitos bancários e aplicações financeiras — isentos até 1.000 UFESPs no
+            conjunto (art. 6º, I, &quot;d&quot;)
+          </label>
+          <p className="fund">
+            O teto não é franquia: bem que ultrapassa o limite é tributado por inteiro.
+            Confirme os requisitos caso a caso antes de aplicar.
+          </p>
+          {isencoes?.detalhes.map((d, i) => (
+            <p key={i} className="fund" style={{ color: 'var(--verde-registro)' }}>
+              {d}
+            </p>
+          ))}
+          {isencoes?.avisos.map((a, i) => (
+            <p key={i} className="mono-alerta">
+              {a}
+            </p>
+          ))}
+
+          {bens.some((b) => b.tipo === 'QUOTAS') && (
+            <div className="nota exigencia">
+              <span className="eyebrow">Quotas e ações no acervo</span>
+              <p>
+                A LC 227/2026 passa a exigir base a valor de MERCADO para participações em
+                sociedades não listadas — patrimônio líquido ajustado + fundo de comércio.
+                Balanço contábil puro tende a ser recusado; holdings com imóvel a custo
+                histórico encarecem. Prepare o balanço ajustado antes da declaração.
+              </p>
+            </div>
+          )}
 
           {/* ---------- provisão ---------- */}
           <h2>Provisão do imposto em {formatarData(hoje)}</h2>
@@ -265,6 +364,19 @@ export function ItcmdView({
           <div className="grade c2" style={{ marginTop: 14 }}>
             <div className="nota">
               <span className="eyebrow">Prazos do caso</span>
+              <div className="regua num" aria-hidden>
+                <div className="barra">
+                  <div
+                    className={`preenchido${provisao.diasDesdeObito > 180 ? ' tarde' : provisao.diasDesdeObito > 60 ? ' meio' : ''}`}
+                    style={{ width: `${Math.min(100, Math.max(2, (provisao.diasDesdeObito / 240) * 100))}%` }}
+                  />
+                </div>
+                <div className="marcas">
+                  <span>0</span>
+                  <span>60 — multa 10%</span>
+                  <span>180 — multa 20% e juros</span>
+                </div>
+              </div>
               <p>
                 Desconto de 5%: recolhendo até <strong>{formatarData(sumDias(falecido.dataObito, 90))}</strong> (art. 17, §2º).
                 <br />
@@ -296,6 +408,138 @@ export function ItcmdView({
             </>
           )}
 
+          {/* ---------- cenário da reforma ---------- */}
+          <h2>Cenário da reforma (EC 132/2023 · LC 227/2026)</h2>
+          <p className="subtitulo" style={{ marginBottom: 12 }}>
+            O imposto segue a lei vigente na DATA DO ÓBITO — óbito de hoje continua a 4%
+            mesmo que a partilha saia depois. A progressividade da LC 227/2026 incide sobre o
+            quinhão de cada herdeiro, não sobre o monte: mais herdeiros diluem a alíquota.
+            Nenhuma faixa está em vigor em SP (PL 7/2024 e PL 409/2025 tramitam) — a tabela é
+            hipótese editável.
+          </p>
+          <div className="grade c2">
+            <label className="campo">
+              Faixas progressivas em vigor a partir de
+              <input type="date" value={vigencia} onChange={(e: Ev) => setVigencia(e.target.value)} />
+            </label>
+            <label className="campo">
+              Tabela de partida
+              <select
+                value={faixas.length === 1 ? 'teto' : 'pl7'}
+                onChange={(e: Ev) =>
+                  setFaixas(
+                    e.target.value === 'teto'
+                      ? [...FAIXAS_TETO_NACIONAL]
+                      : FAIXAS_PL7_2024.map((f) => ({ ...f })),
+                  )
+                }
+              >
+                <option value="pl7">PL 7/2024 — SP (2% a 8%)</option>
+                <option value="teto">Teto nacional (8% linear)</option>
+              </select>
+            </label>
+          </div>
+          <div className="espelho" style={{ marginTop: 12 }}>
+            <div className="cabeca">
+              <span>Faixa do quinhão (UFESPs)</span>
+              <span>Em reais (UFESP atual)</span>
+              <span style={{ textAlign: 'right' }}>Alíquota %</span>
+            </div>
+            {faixas.map((f, i) => {
+              const de = i === 0 ? 0 : faixas[i - 1].ateUfesps ?? 0;
+              const rotulo =
+                f.ateUfesps === null
+                  ? `acima de ${de.toLocaleString('pt-BR')}`
+                  : `${de.toLocaleString('pt-BR')} a ${f.ateUfesps.toLocaleString('pt-BR')}`;
+              const reais =
+                f.ateUfesps === null
+                  ? `acima de ${brl(de * provisao.ufespReferencia)}`
+                  : `até ${brl(f.ateUfesps * provisao.ufespReferencia)}`;
+              return (
+                <div className="lanc" key={i}>
+                  <span className="nome" style={{ fontWeight: 400 }}>{rotulo}</span>
+                  <span className="fracao num">{reais}</span>
+                  <span className="valor" style={{ fontSize: 15 }}>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="num aliquota-campo"
+                      value={String(f.aliquota)}
+                      aria-label={`Alíquota da faixa ${rotulo}`}
+                      onChange={(e: Ev) => {
+                        const v = Number(e.target.value.replace(',', '.'));
+                        if (!Number.isFinite(v) || v < 0) return;
+                        setFaixas(faixas.map((x, xi) => (xi === i ? { ...x, aliquota: v } : x)));
+                      }}
+                    />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <h3 style={{ margin: '18px 0 6px', fontSize: 15 }}>
+            Comparativo por herdeiro — hoje (4%) × tabela progressiva
+          </h3>
+          <div className="espelho">
+            <div className="cabeca">
+              <span>Herdeiro</span>
+              <span>Hoje (4%)</span>
+              <span style={{ textAlign: 'right' }}>Progressivo (diferença)</span>
+            </div>
+            {(() => {
+              const herancaBruta = Number(resultado.heranca.total);
+              const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
+              const fatorIsencao = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
+              const fatorAtualizacao = baseLiquida > 0 ? provisao.baseAtualizada / baseLiquida : 0;
+              const linhas = resultado.quinhoes.map((q) => {
+                const base = Number(q.valor) * fatorIsencao * fatorAtualizacao;
+                const fixo = base * ALIQUOTA_ITCMD_SP;
+                const prog = impostoProgressivo(base, provisao.ufespReferencia, faixas);
+                return { nome: q.nome, fixo, prog: prog.imposto, efetiva: prog.aliquotaEfetiva };
+              });
+              const totalFixo = linhas.reduce((s, l) => s + l.fixo, 0);
+              const totalProg = linhas.reduce((s, l) => s + l.prog, 0);
+              return (
+                <>
+                  {linhas.map((l) => (
+                    <div className="lanc" key={l.nome}>
+                      <span className="nome">{l.nome}</span>
+                      <span className="fracao num">{brl(l.fixo)}</span>
+                      <span
+                        className="valor num"
+                        style={{
+                          fontSize: 16,
+                          color: l.prog > l.fixo ? 'var(--lacre)' : 'var(--verde-registro)',
+                        }}
+                      >
+                        {brl(l.prog)} ({l.prog > l.fixo ? '+' : ''}
+                        {brl(l.prog - l.fixo)} · {l.efetiva.toFixed(2)}%)
+                      </span>
+                    </div>
+                  ))}
+                  <div className="lanc">
+                    <span className="nome">Total</span>
+                    <span className="fracao num">{brl(totalFixo)}</span>
+                    <span
+                      className="valor num"
+                      style={{ color: totalProg > totalFixo ? 'var(--lacre)' : 'var(--verde-registro)' }}
+                    >
+                      {brl(totalProg)} ({totalProg > totalFixo ? '+' : ''}
+                      {brl(totalProg - totalFixo)})
+                    </span>
+                  </div>
+                  <div className="fund">
+                    Bases líquidas de isenção e atualizadas pela UFESP. Lei estadual publicada
+                    em 2026 só produz efeito a partir de 01/01/2027 (anterioridades anual e
+                    nonagesimal) — ajuste a vigência acima quando a lei sair e o motor aplica
+                    sozinho aos óbitos posteriores.
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
           {/* ---------- avaliação a valor de mercado ---------- */}
           <div className="nota exigencia" style={{ marginTop: 24 }}>
             <span className="eyebrow">Evite a notificação de lançamento</span>
@@ -313,6 +557,11 @@ export function ItcmdView({
               método (3+ anúncios comparáveis, ajustados a 90%) ou contrate laudo de
               avaliador habilitado, e guarde as evidências com a minuta. Custa menos que o
               contencioso — e a diferença de imposto viria com multa e juros.
+            </p>
+            <p style={{ marginTop: 8 }}>
+              Na defesa, vale lembrar: o STJ (Tema 1.371) só admite a revisão do valor
+              declarado por procedimento administrativo formal e motivado — o Fisco não pode
+              trocar automaticamente o valor declarado por tabela de referência infralegal.
             </p>
           </div>
         </>
