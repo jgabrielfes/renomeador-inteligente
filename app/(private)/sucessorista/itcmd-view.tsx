@@ -5,9 +5,23 @@
  * perguntas do sistema, bens e apuração) e a provisão do imposto causa mortis
  * na data de hoje, contada do fato gerador (óbito), com cada parcela
  * discriminada pelo dispositivo da Lei 10.705/2000.
+ *
+ * O estado fiscal (isenções, vigência, faixas, protocolo) vive no client do
+ * módulo — o painel do caso mostra os MESMOS números que esta aba detalha.
  */
 
-import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DateInput } from '@/components/date-input';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
 import type { Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
 import {
   formatarData,
@@ -18,26 +32,37 @@ import {
   type DadosFalecido,
 } from '@/lib/partilha/familia';
 import {
-  provisionarItcmd,
   ALIQUOTA_ITCMD_SP,
-  isencoesArt6,
   impostoProgressivo,
-  ufespDoAno,
   FAIXAS_PL7_2024,
   FAIXAS_TETO_NACIONAL,
   type FaixaProgressiva,
+  type ProvisaoItcmd,
+  type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
-
-/** Alias estrutural — compatível com o ChangeEvent de input e select. */
-type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function hojeIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** Estado fiscal do caso — elevado ao client para alimentar também o painel. */
+export interface EstadoFiscal {
+  isencaoResidencial: boolean;
+  isencaoDepositos: boolean;
+  /** Cenário da reforma: início de vigência da tabela progressiva. */
+  vigencia: string;
+  faixas: FaixaProgressiva[];
+  inventarioAberto: boolean;
+  dataProtocolo: string;
 }
+
+export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
+  isencaoResidencial: false,
+  isencaoDepositos: false,
+  vigencia: '2027-01-01',
+  faixas: FAIXAS_PL7_2024.map((f) => ({ ...f })),
+  inventarioAberto: false,
+  dataProtocolo: '',
+};
 
 export function ItcmdView({
   falecido,
@@ -48,8 +73,13 @@ export function ItcmdView({
   qualificacoes,
   bens,
   resultado,
+  fiscal,
+  setFiscal,
+  isencoes,
+  provisao,
+  hoje,
   irParaFamilia,
-  irParaPartilha,
+  irParaAcervo,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -59,51 +89,17 @@ export function ItcmdView({
   qualificacoes: Record<string, Qualificacao>;
   bens: Bem[];
   resultado: Resultado | null;
+  fiscal: EstadoFiscal;
+  setFiscal: (f: EstadoFiscal) => void;
+  isencoes: ResultadoIsencoes | null;
+  provisao: ProvisaoItcmd | null;
+  hoje: string;
   irParaFamilia: () => void;
-  irParaPartilha: () => void;
+  irParaAcervo: () => void;
 }) {
-  const hoje = hojeIso();
-  const [inventarioAberto, setInventarioAberto] = useState(false);
-  const [dataProtocolo, setDataProtocolo] = useState('');
-
-  /* isenções do art. 6º (opt-in do advogado) */
-  const [isencaoResidencial, setIsencaoResidencial] = useState(false);
-  const [isencaoDepositos, setIsencaoDepositos] = useState(false);
-
-  /* cenário da reforma — faixas editáveis (nenhuma está em vigor) */
-  const [vigencia, setVigencia] = useState('2027-01-01');
-  const [faixas, setFaixas] = useState<FaixaProgressiva[]>(FAIXAS_PL7_2024);
-
   const faltaObito = !falecido.dataObito;
   const faltaCalculo = !resultado || resultado.bloqueios.length > 0;
-
-  const ufespObito = faltaObito ? null : ufespDoAno(Number(falecido.dataObito.slice(0, 4)));
-
-  const isencoes = useMemo(() => {
-    if (faltaObito || faltaCalculo || !ufespObito) return null;
-    return isencoesArt6({
-      bens: bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
-      ufespObito: ufespObito.valor,
-      aplicarImovelResidencial: isencaoResidencial,
-      aplicarDepositos: isencaoDepositos,
-    });
-  }, [faltaObito, faltaCalculo, ufespObito, bens, isencaoResidencial, isencaoDepositos]);
-
-  const provisao = useMemo(() => {
-    if (faltaObito || faltaCalculo || !resultado) return null;
-    const herancaBruta = Number(resultado.heranca.total);
-    const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
-    const fator = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
-    return provisionarItcmd({
-      dataObito: falecido.dataObito,
-      dataReferencia: hoje,
-      baseCalculo: baseLiquida,
-      dataProtocolo: inventarioAberto && dataProtocolo ? dataProtocolo : null,
-      quinhoes: resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) * fator })),
-      faixasProgressivas: faixas,
-      vigenciaProgressiva: vigencia,
-    });
-  }, [faltaObito, faltaCalculo, resultado, falecido.dataObito, hoje, inventarioAberto, dataProtocolo, isencoes, faixas, vigencia]);
+  const patch = (p: Partial<EstadoFiscal>) => setFiscal({ ...fiscal, ...p });
 
   const perguntasPendentes = herdeiros.some((h) => {
     const p = perguntas[h.id] ?? PERGUNTAS_ITCMD_VAZIAS;
@@ -124,7 +120,9 @@ export function ItcmdView({
           <span className="eyebrow">Falta o fato gerador</span>
           <p>
             Informe a data do óbito no item I —{' '}
-            <button className="remover" onClick={irParaFamilia}>ir para A família</button>
+            <Button variant="ghost" size="sm" onClick={irParaFamilia}>
+              ir para A família
+            </Button>
           </p>
         </div>
       )}
@@ -132,8 +130,10 @@ export function ItcmdView({
         <div className="nota exigencia">
           <span className="eyebrow">Falta a base de cálculo</span>
           <p>
-            Lance os bens e calcule o espelho no item III —{' '}
-            <button className="remover" onClick={irParaPartilha}>ir para a Partilha</button>
+            Lance os bens no item II —{' '}
+            <Button variant="ghost" size="sm" onClick={irParaAcervo}>
+              ir para O acervo
+            </Button>
           </p>
         </div>
       )}
@@ -255,22 +255,24 @@ export function ItcmdView({
 
           <h2>Isenções (art. 6º da Lei 10.705/2000)</h2>
           <label className="marcar">
-            <input
-              type="checkbox"
-              checked={isencaoResidencial}
-              onChange={(e: Ev) => setIsencaoResidencial(e.target.checked === true)}
+            <Checkbox
+              checked={fiscal.isencaoResidencial}
+              onCheckedChange={(v) => patch({ isencaoResidencial: v === true })}
             />
-            Imóvel residencial em que os familiares residem, sem outro imóvel — isento até
-            5.000 UFESPs (art. 6º, I, &quot;a&quot;)
+            <span>
+              Imóvel residencial em que os familiares residem, sem outro imóvel — isento até
+              5.000 UFESPs (art. 6º, I, &quot;a&quot;)
+            </span>
           </label>
           <label className="marcar">
-            <input
-              type="checkbox"
-              checked={isencaoDepositos}
-              onChange={(e: Ev) => setIsencaoDepositos(e.target.checked === true)}
+            <Checkbox
+              checked={fiscal.isencaoDepositos}
+              onCheckedChange={(v) => patch({ isencaoDepositos: v === true })}
             />
-            Depósitos bancários e aplicações financeiras — isentos até 1.000 UFESPs no
-            conjunto (art. 6º, I, &quot;d&quot;)
+            <span>
+              Depósitos bancários e aplicações financeiras — isentos até 1.000 UFESPs no
+              conjunto (art. 6º, I, &quot;d&quot;)
+            </span>
           </label>
           <p className="fund">
             O teto não é franquia: bem que ultrapassa o limite é tributado por inteiro.
@@ -304,21 +306,25 @@ export function ItcmdView({
           <div className="grade c2" style={{ margin: '10px 0 4px' }}>
             <label className="campo">
               O inventário já foi aberto (protocolado)?
-              <select
-                value={inventarioAberto ? 's' : 'n'}
-                onChange={(e: Ev) => setInventarioAberto(e.target.value === 's')}
+              <Select
+                value={fiscal.inventarioAberto ? 's' : 'n'}
+                onValueChange={(v) => v && patch({ inventarioAberto: v === 's' })}
               >
-                <option value="n">Ainda não</option>
-                <option value="s">Sim</option>
-              </select>
+                <SelectTrigger aria-label="O inventário já foi aberto?">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="n">Ainda não</SelectItem>
+                  <SelectItem value="s">Sim</SelectItem>
+                </SelectContent>
+              </Select>
             </label>
-            {inventarioAberto && (
+            {fiscal.inventarioAberto && (
               <label className="campo">
                 Data do protocolo
-                <input
-                  type="date"
-                  value={dataProtocolo}
-                  onChange={(e: Ev) => setDataProtocolo(e.target.value)}
+                <DateInput
+                  value={fiscal.dataProtocolo}
+                  onChange={(iso) => patch({ dataProtocolo: iso })}
                 />
               </label>
             )}
@@ -398,15 +404,11 @@ export function ItcmdView({
             </div>
           </div>
 
-          {(provisao.estimativa || provisao.avisos.length > 0) && (
-            <>
-              {provisao.avisos.map((a, i) => (
-                <p key={i} className="fund" style={{ marginTop: 6 }}>
-                  {a}
-                </p>
-              ))}
-            </>
-          )}
+          {provisao.avisos.map((a, i) => (
+            <p key={i} className="fund" style={{ marginTop: 6 }}>
+              {a}
+            </p>
+          ))}
 
           {/* ---------- cenário da reforma ---------- */}
           <h2>Cenário da reforma (EC 132/2023 · LC 227/2026)</h2>
@@ -420,23 +422,33 @@ export function ItcmdView({
           <div className="grade c2">
             <label className="campo">
               Faixas progressivas em vigor a partir de
-              <input type="date" value={vigencia} onChange={(e: Ev) => setVigencia(e.target.value)} />
+              <DateInput
+                value={fiscal.vigencia}
+                onChange={(iso) => patch({ vigencia: iso })}
+              />
             </label>
             <label className="campo">
               Tabela de partida
-              <select
-                value={faixas.length === 1 ? 'teto' : 'pl7'}
-                onChange={(e: Ev) =>
-                  setFaixas(
-                    e.target.value === 'teto'
-                      ? [...FAIXAS_TETO_NACIONAL]
-                      : FAIXAS_PL7_2024.map((f) => ({ ...f })),
-                  )
-                }
+              <Select
+                value={fiscal.faixas.length === 1 ? 'teto' : 'pl7'}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  patch({
+                    faixas:
+                      v === 'teto'
+                        ? [...FAIXAS_TETO_NACIONAL]
+                        : FAIXAS_PL7_2024.map((f) => ({ ...f })),
+                  });
+                }}
               >
-                <option value="pl7">PL 7/2024 — SP (2% a 8%)</option>
-                <option value="teto">Teto nacional (8% linear)</option>
-              </select>
+                <SelectTrigger aria-label="Tabela de partida das faixas">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pl7">PL 7/2024 — SP (2% a 8%)</SelectItem>
+                  <SelectItem value="teto">Teto nacional (8% linear)</SelectItem>
+                </SelectContent>
+              </Select>
             </label>
           </div>
           <div className="espelho" style={{ marginTop: 12 }}>
@@ -445,8 +457,8 @@ export function ItcmdView({
               <span>Em reais (UFESP atual)</span>
               <span style={{ textAlign: 'right' }}>Alíquota %</span>
             </div>
-            {faixas.map((f, i) => {
-              const de = i === 0 ? 0 : faixas[i - 1].ateUfesps ?? 0;
+            {fiscal.faixas.map((f, i) => {
+              const de = i === 0 ? 0 : fiscal.faixas[i - 1].ateUfesps ?? 0;
               const rotulo =
                 f.ateUfesps === null
                   ? `acima de ${de.toLocaleString('pt-BR')}`
@@ -460,16 +472,20 @@ export function ItcmdView({
                   <span className="nome" style={{ fontWeight: 400 }}>{rotulo}</span>
                   <span className="fracao num">{reais}</span>
                   <span className="valor" style={{ fontSize: 15 }}>
-                    <input
-                      type="text"
+                    <Input
                       inputMode="decimal"
-                      className="num aliquota-campo"
+                      className="num ml-auto"
+                      style={{ maxWidth: 88, textAlign: 'right' }}
                       value={String(f.aliquota)}
                       aria-label={`Alíquota da faixa ${rotulo}`}
-                      onChange={(e: Ev) => {
+                      onChange={(e) => {
                         const v = Number(e.target.value.replace(',', '.'));
                         if (!Number.isFinite(v) || v < 0) return;
-                        setFaixas(faixas.map((x, xi) => (xi === i ? { ...x, aliquota: v } : x)));
+                        patch({
+                          faixas: fiscal.faixas.map((x, xi) =>
+                            xi === i ? { ...x, aliquota: v } : x
+                          ),
+                        });
                       }}
                     />
                   </span>
@@ -495,7 +511,7 @@ export function ItcmdView({
               const linhas = resultado.quinhoes.map((q) => {
                 const base = Number(q.valor) * fatorIsencao * fatorAtualizacao;
                 const fixo = base * ALIQUOTA_ITCMD_SP;
-                const prog = impostoProgressivo(base, provisao.ufespReferencia, faixas);
+                const prog = impostoProgressivo(base, provisao.ufespReferencia, fiscal.faixas);
                 return { nome: q.nome, fixo, prog: prog.imposto, efetiva: prog.aliquotaEfetiva };
               });
               const totalFixo = linhas.reduce((s, l) => s + l.fixo, 0);

@@ -4,9 +4,30 @@
  * Abre o caso: dados do falecido (óbito, vínculo, regime, data do casamento),
  * herdeiros com qualificação completa (planilha do escritório) e as respostas
  * das perguntas da declaração do ITCMD-SP, que alimentam o item V.
+ *
+ * A folha é edição inline contínua (cada tecla move o painel ao lado), por
+ * isso os campos do falecido/qualificação são controlados; react-hook-form
+ * entra onde há SUBMISSÃO com validação — o formulário de adicionar herdeiro.
  */
 
+import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DateInput } from '@/components/date-input';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useState } from 'react';
+
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
   composicaoFamiliar,
@@ -18,11 +39,9 @@ import {
   type Qualificacao,
 } from '@/lib/partilha/familia';
 
-/** Alias estrutural — compatível com o ChangeEvent de input, select e checkbox. */
-type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
-
-let seq = 0;
-const uid = (p: string) => `${p}${(seq += 1)}`;
+// Aleatório (não sequencial): o caso volta do sessionStorage e um contador
+// zerado no reload geraria ids que colidem com os herdeiros restaurados.
+const uid = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}`;
 
 const REGIMES: { v: Regime; t: string }[] = [
   { v: 'COMUNHAO_PARCIAL', t: 'Comunhão parcial' },
@@ -42,6 +61,30 @@ export interface EstadoFamilia {
   qualificacoes: Record<string, Qualificacao>;
   /** Respostas das perguntas do ITCMD por herdeiro. */
   perguntas: Record<string, PerguntasItcmd>;
+}
+
+/** Pílula de escolha (Sim/Não, vínculo, regime) sobre o Button do shadcn. */
+export function Pilula({
+  ativo,
+  onClick,
+  children,
+}: {
+  ativo: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={ativo ? 'default' : 'outline'}
+      aria-pressed={ativo}
+      onClick={onClick}
+      className="rounded-full"
+    >
+      {children}
+    </Button>
+  );
 }
 
 export function FamiliaView({
@@ -64,45 +107,45 @@ export function FamiliaView({
     <section>
       <h1>A família</h1>
       <p className="subtitulo">
-        O caso começa aqui: quem faleceu, quando, sob qual regime — e quem fica. A
-        qualificação preenchida nesta folha alimenta a escritura, o espelho do ITCMD e o
-        cofre de documentos.
+        O caso começa aqui: quem faleceu, quando, sob qual regime — e quem fica. Cada campo
+        preenchido move um número no painel ao lado na hora; a qualificação alimenta a
+        escritura, o espelho do ITCMD e o cofre de documentos.
       </p>
 
       <span className="eyebrow">Autor(a) da herança</span>
       <div className="grade c2" style={{ marginTop: 10 }}>
         <label className="campo">
           Nome completo
-          <input
-            type="text"
+          <Input
             value={falecido.nome}
-            onChange={(e: Ev) => setFalecido({ nome: e.target.value })}
+            onChange={(e) => setFalecido({ nome: e.target.value })}
             placeholder="Antonio"
           />
         </label>
         <label className="campo">
           CPF
-          <input
-            type="text"
+          <Input
             value={falecido.cpf}
-            onChange={(e: Ev) => setFalecido({ cpf: e.target.value })}
+            onChange={(e) => setFalecido({ cpf: e.target.value })}
             placeholder="000.000.000-00"
           />
         </label>
         <label className="campo">
-          Data do óbito (fato gerador do ITCMD)
-          <input
-            type="date"
+          {/* Num flex-col, texto solto + span viram itens separados (a dica
+              quebrava linha e desalinhava o input) — rótulo e dica juntos. */}
+          <span>
+            Data do óbito <span className="dica">— fato gerador do ITCMD</span>
+          </span>
+          <DateInput
             value={falecido.dataObito}
-            onChange={(e: Ev) => setFalecido({ dataObito: e.target.value })}
+            onChange={(iso) => setFalecido({ dataObito: iso })}
           />
         </label>
         <label className="campo">
           Último domicílio (cidade/UF)
-          <input
-            type="text"
+          <Input
             value={falecido.ultimoDomicilio}
-            onChange={(e: Ev) => setFalecido({ ultimoDomicilio: e.target.value })}
+            onChange={(e) => setFalecido({ ultimoDomicilio: e.target.value })}
             placeholder="Guarulhos/SP"
           />
         </label>
@@ -110,51 +153,49 @@ export function FamiliaView({
 
       <h2>Havia cônjuge ou companheiro(a)?</h2>
       <div className="escolha">
-        <button aria-pressed={temSobrevivente} onClick={() => set({ temSobrevivente: true })}>
+        <Pilula ativo={temSobrevivente} onClick={() => set({ temSobrevivente: true })}>
           Sim
-        </button>
-        <button aria-pressed={!temSobrevivente} onClick={() => set({ temSobrevivente: false })}>
+        </Pilula>
+        <Pilula ativo={!temSobrevivente} onClick={() => set({ temSobrevivente: false })}>
           Não
-        </button>
+        </Pilula>
       </div>
 
       {temSobrevivente && (
         <>
           <h2>Vínculo e regime de bens</h2>
           <div className="escolha">
-            <button aria-pressed={vinculo === 'CASAMENTO'} onClick={() => set({ vinculo: 'CASAMENTO' })}>
+            <Pilula ativo={vinculo === 'CASAMENTO'} onClick={() => set({ vinculo: 'CASAMENTO' })}>
               Casamento
-            </button>
-            <button
-              aria-pressed={vinculo === 'UNIAO_ESTAVEL'}
+            </Pilula>
+            <Pilula
+              ativo={vinculo === 'UNIAO_ESTAVEL'}
               onClick={() => set({ vinculo: 'UNIAO_ESTAVEL' })}
             >
               União estável
-            </button>
+            </Pilula>
           </div>
           <div className="escolha" style={{ marginTop: 8 }}>
             {REGIMES.map((r) => (
-              <button key={r.v} aria-pressed={regime === r.v} onClick={() => set({ regime: r.v })}>
+              <Pilula key={r.v} ativo={regime === r.v} onClick={() => set({ regime: r.v })}>
                 {r.t}
-              </button>
+              </Pilula>
             ))}
           </div>
           <div className="grade c2" style={{ marginTop: 14 }}>
             <label className="campo">
               Nome do(a) sobrevivente
-              <input
-                type="text"
+              <Input
                 value={nomeSobrev}
-                onChange={(e: Ev) => set({ nomeSobrev: e.target.value })}
+                onChange={(e) => set({ nomeSobrev: e.target.value })}
                 placeholder="Maria"
               />
             </label>
             <label className="campo">
               Data do casamento / início da união
-              <input
-                type="date"
+              <DateInput
                 value={falecido.dataCasamento}
-                onChange={(e: Ev) => setFalecido({ dataCasamento: e.target.value })}
+                onChange={(iso) => setFalecido({ dataCasamento: iso })}
               />
             </label>
           </div>
@@ -171,8 +212,9 @@ export function FamiliaView({
       <h2>Herdeiros</h2>
       <p className="subtitulo" style={{ marginBottom: 14 }}>
         Marque quem é filho(a) também do sobrevivente — em filiação híbrida a lei diverge e
-        o espelho da partilha mostrará os dois cenários. As três perguntas de cada herdeiro
-        são as da declaração do ITCMD e entram prontas no item V.
+        o espelho da partilha mostrará os dois cenários. Herdeiro menor ou incapaz muda o
+        rito no painel: fecha a via extrajudicial. As três perguntas de cada herdeiro são
+        as da declaração do ITCMD e entram prontas no item V.
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
 
@@ -188,9 +230,7 @@ export function FamiliaView({
 
       <div className="rodape-acoes">
         <span />
-        <button className="acao" onClick={avancar}>
-          Avançar ao acervo
-        </button>
+        <Button onClick={avancar}>Avançar ao acervo</Button>
       </div>
     </section>
   );
@@ -203,6 +243,15 @@ function formatarDataCurta(iso: string): string {
 
 /* ---------- herdeiros ---------- */
 
+const esquemaHerdeiro = z.object({
+  nome: z.string().trim().min(1, 'Informe o nome do herdeiro.'),
+  status: z.enum(['ATIVO', 'PRE_MORTO', 'RENUNCIANTE']),
+  comum: z.boolean(),
+  incapaz: z.boolean(),
+});
+
+type NovoHerdeiro = z.infer<typeof esquemaHerdeiro>;
+
 function EditorHerdeiros({
   estado,
   onChange,
@@ -211,20 +260,28 @@ function EditorHerdeiros({
   onChange: (e: EstadoFamilia) => void;
 }) {
   const { herdeiros, temSobrevivente } = estado;
-  const [nome, setNome] = useState('');
-  const [status, setStatus] = useState<Herdeiro['status']>('ATIVO');
-  const [comum, setComum] = useState(true);
   const [aberto, setAberto] = useState<string | null>(null);
 
-  const adicionar = () => {
-    if (!nome.trim()) return;
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<NovoHerdeiro>({
+    resolver: zodResolver(esquemaHerdeiro),
+    defaultValues: { nome: '', status: 'ATIVO', comum: true, incapaz: false },
+  });
+
+  const adicionar = (dados: NovoHerdeiro) => {
     const novo: Herdeiro = {
       id: uid('h'),
-      nome: nome.trim(),
+      nome: dados.nome,
       classe: 'DESCENDENTE',
       grau: 1,
-      status,
-      filhoDoSobrevivente: comum,
+      status: dados.status,
+      filhoDoSobrevivente: dados.comum,
+      menorOuIncapaz: dados.incapaz,
     };
     onChange({
       ...estado,
@@ -232,11 +289,15 @@ function EditorHerdeiros({
       qualificacoes: { ...estado.qualificacoes, [novo.id]: QUALIFICACAO_VAZIA },
       perguntas: { ...estado.perguntas, [novo.id]: PERGUNTAS_ITCMD_VAZIAS },
     });
-    setNome('');
-    setStatus('ATIVO');
-    setComum(true);
+    reset();
     setAberto(novo.id);
   };
+
+  const patchHerdeiro = (id: string, patch: Partial<Herdeiro>) =>
+    onChange({
+      ...estado,
+      herdeiros: herdeiros.map((h) => (h.id === id ? { ...h, ...patch } : h)),
+    });
 
   const remover = (id: string) => {
     const qualificacoes = { ...estado.qualificacoes };
@@ -253,34 +314,80 @@ function EditorHerdeiros({
 
   return (
     <>
-      <div className="grade c3">
-        <label className="campo">
-          Nome
-          <input type="text" value={nome} onChange={(e: Ev) => setNome(e.target.value)} placeholder="Ana" />
-        </label>
-        <label className="campo">
-          Situação
-          <select value={status} onChange={(e: Ev) => setStatus(e.target.value as Herdeiro['status'])}>
-            <option value="ATIVO">Vivo(a)</option>
-            <option value="PRE_MORTO">Pré-morto(a)</option>
-            <option value="RENUNCIANTE">Renunciante</option>
-          </select>
-        </label>
-        {temSobrevivente && (
-          <label className="campo">
-            Filho(a) do sobrevivente?
-            <select value={comum ? 's' : 'n'} onChange={(e: Ev) => setComum(e.target.value === 's')}>
-              <option value="s">Sim</option>
-              <option value="n">Não</option>
-            </select>
-          </label>
-        )}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <button className="acao fantasma" onClick={adicionar}>
-          Adicionar herdeiro
-        </button>
-      </div>
+      <form noValidate onSubmit={handleSubmit(adicionar)}>
+        <div className="grade c3">
+          <Field data-invalid={Boolean(errors.nome)}>
+            <FieldLabel htmlFor="herdeiro-nome">Nome</FieldLabel>
+            <Input
+              id="herdeiro-nome"
+              placeholder="Ana"
+              aria-invalid={Boolean(errors.nome)}
+              {...register('nome')}
+            />
+            <FieldError errors={[errors.nome]} />
+          </Field>
+          <Field>
+            <FieldLabel>Situação</FieldLabel>
+            <Controller
+              control={control}
+              name="status"
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={(v) => v && field.onChange(String(v))}
+                >
+                  <SelectTrigger aria-label="Situação do herdeiro">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ATIVO">Vivo(a)</SelectItem>
+                    <SelectItem value="PRE_MORTO">Pré-morto(a)</SelectItem>
+                    <SelectItem value="RENUNCIANTE">Renunciante</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>Condições</FieldLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
+              {temSobrevivente && (
+                <Controller
+                  control={control}
+                  name="comum"
+                  render={({ field }) => (
+                    <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(v) => field.onChange(v === true)}
+                      />
+                      Filho(a) também do sobrevivente
+                    </label>
+                  )}
+                />
+              )}
+              <Controller
+                control={control}
+                name="incapaz"
+                render={({ field }) => (
+                  <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(v) => field.onChange(v === true)}
+                    />
+                    Menor ou incapaz
+                  </label>
+                )}
+              />
+            </div>
+          </Field>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Button type="submit" variant="outline">
+            Adicionar herdeiro
+          </Button>
+        </div>
+      </form>
 
       {herdeiros.map((h) => (
         <div key={h.id}>
@@ -291,24 +398,41 @@ function EditorHerdeiros({
                 {' '}
                 · {h.status === 'ATIVO' ? 'vivo(a)' : h.status === 'PRE_MORTO' ? 'pré-morto(a)' : 'renunciante'}
                 {h.filhoDoSobrevivente === false ? ' · de outro relacionamento' : ''}
+                {h.menorOuIncapaz ? ' · menor/incapaz' : ''}
               </span>
             </span>
-            <span>
-              <button
-                className="remover"
-                style={{ color: 'var(--bronze)' }}
+            <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setAberto(aberto === h.id ? null : h.id)}
               >
                 {aberto === h.id ? 'fechar ficha' : 'qualificação e ITCMD'}
-              </button>
-              <button className="remover" onClick={() => remover(h.id)}>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => remover(h.id)}
+              >
                 remover
-              </button>
+              </Button>
             </span>
           </div>
 
           {aberto === h.id && (
             <div className="ficha">
+              <div className="escolha" style={{ marginBottom: 6 }}>
+                <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                  <Checkbox
+                    checked={h.menorOuIncapaz === true}
+                    onCheckedChange={(v) => patchHerdeiro(h.id, { menorOuIncapaz: v === true })}
+                  />
+                  Menor ou incapaz (muda o rito para judicial)
+                </label>
+              </div>
               <QualificacaoEditor
                 titulo={`Qualificação — ${h.nome}`}
                 valor={estado.qualificacoes[h.id] ?? QUALIFICACAO_VAZIA}
@@ -328,12 +452,12 @@ function EditorHerdeiros({
                   <div key={campo} style={{ marginBottom: 10 }}>
                     <p style={{ fontSize: 13, marginBottom: 5 }}>{texto}</p>
                     <div className="escolha">
-                      <button aria-pressed={atual[campo] === true} onClick={() => marcar(true)}>
+                      <Pilula ativo={atual[campo] === true} onClick={() => marcar(true)}>
                         Sim
-                      </button>
-                      <button aria-pressed={atual[campo] === false} onClick={() => marcar(false)}>
+                      </Pilula>
+                      <Pilula ativo={atual[campo] === false} onClick={() => marcar(false)}>
                         Não
-                      </button>
+                      </Pilula>
                     </div>
                   </div>
                 );
@@ -389,12 +513,18 @@ export function QualificacaoEditor({
         {CAMPOS_QUALIFICACAO.map(({ campo, rotulo, placeholder }) => (
           <label className="campo" key={campo}>
             {rotulo}
-            <input
-              type={campo === 'dataNascimento' ? 'date' : 'text'}
-              value={valor[campo]}
-              placeholder={placeholder}
-              onChange={(e: Ev) => onChange({ ...valor, [campo]: e.target.value })}
-            />
+            {campo === 'dataNascimento' ? (
+              <DateInput
+                value={valor[campo]}
+                onChange={(iso) => onChange({ ...valor, [campo]: iso })}
+              />
+            ) : (
+              <Input
+                value={valor[campo]}
+                placeholder={placeholder}
+                onChange={(e) => onChange({ ...valor, [campo]: e.target.value })}
+              />
+            )}
           </label>
         ))}
       </div>

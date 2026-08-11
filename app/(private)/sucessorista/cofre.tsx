@@ -1,5 +1,5 @@
 /**
- * Item IV — Cofre de documentos.
+ * Cofre de documentos — convites aos herdeiros.
  *
  * O advogado gera um link por herdeiro; o herdeiro abre o link, preenche um
  * formulário rápido de qualificação e anexa os documentos — que chegam já
@@ -8,6 +8,8 @@
  */
 
 import { useState } from 'react';
+
+import { Button } from '@/components/ui/button';
 import type { Herdeiro } from '@/lib/partilha/types';
 import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
 
@@ -80,9 +82,9 @@ export function CofreView({
   };
 
   return (
-    <section>
-      <h1>Cofre de documentos</h1>
-      <p className="subtitulo">
+    <>
+      <h2>Cofre — convites aos herdeiros</h2>
+      <p className="subtitulo" style={{ marginBottom: 10 }}>
         O que mais atrasa é esperar papel de herdeiro. Envie um link para cada um: lá ele
         preenche a própria qualificação num formulário rápido e anexa os documentos — o
         renomeador roda no navegador dele e os arquivos já chegam nomeados e conferíveis.
@@ -93,7 +95,9 @@ export function CofreView({
           <h3>Sem herdeiros lançados</h3>
           <p>
             Cadastre os herdeiros no item I —{' '}
-            <button className="remover" onClick={irParaFamilia}>ir para A família</button>
+            <Button variant="ghost" size="sm" onClick={irParaFamilia}>
+              ir para A família
+            </Button>
           </p>
         </div>
       )}
@@ -137,31 +141,37 @@ export function CofreView({
               </div>
               <span style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                 {!convite && (
-                  <button className="acao fantasma" disabled={ocupado === h.id} onClick={() => gerarLink(h)}>
-                    {ocupado === h.id ? 'Gerando…' : 'Gerar link'}
-                  </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    loading={ocupado === h.id}
+                    onClick={() => gerarLink(h)}
+                  >
+                    Gerar link
+                  </Button>
                 )}
                 {convite && url && (
                   <>
-                    <button className="acao fantasma" onClick={() => copiar(h, url)}>
+                    <Button variant="outline" size="sm" onClick={() => copiar(h, url)}>
                       {copiado === h.id ? 'Copiado ✓' : 'Copiar link'}
-                    </button>
-                    <button
-                      className="remover"
-                      style={{ color: 'var(--bronze)' }}
-                      disabled={ocupado === h.id}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={ocupado === h.id}
                       onClick={() => atualizar(h, convite.token)}
                     >
                       atualizar status
-                    </button>
+                    </Button>
                     {convite.qualificacao && (
-                      <button
-                        className="remover"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         style={{ color: 'var(--verde-registro)' }}
                         onClick={() => onImportarQualificacao(h.id, convite.qualificacao!)}
                       >
                         importar qualificação
-                      </button>
+                      </Button>
                     )}
                   </>
                 )}
@@ -176,6 +186,6 @@ export function CofreView({
         implantação — gere o link e envie na hora. O conteúdo dos arquivos não sai do
         navegador do herdeiro; o cofre registra nomes e status para a conferência.
       </p>
-    </section>
+    </>
   );
 }

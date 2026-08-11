@@ -16,6 +16,7 @@ O app deixou de ser só o renomeador: é uma **suíte de ferramentas para cartó
 | --- | --- | --- |
 | Renomeador Inteligente | `/renomeador` | `lib/renamer.ts` (motor local), `lib/ai.ts` + `app/api/rename` (IA), `lib/ocr.ts`, `lib/image-enhance.ts`/`lib/perspective.ts` (otimização), `lib/pdf-split.ts` (separador), `lib/to-pdf.ts` |
 | Resolvedor de Notas Devolutivas (em teste) | `/notas` | `lib/notas/*` + `app/api/notas` + `lib/gemini-notas.ts` |
+| O Sucessorista (em teste) | `/sucessorista` | `lib/partilha/*` (motor de partilha/ITCMD, puro e com testes), `lib/gemini-sucessorista.ts` + `app/api/sucessorista` (leitura do cofre), `lib/portal/*` + `app/portal/[token]` + `app/api/portal` (portal do herdeiro), `app/api/partilha` (motor via API) |
 | Folha de pesquisa (WIP, sem UI ainda) | — | `lib/categories.ts`, `lib/certidoes.ts`, `lib/qualificacao.ts` |
 
 ## Grupos de rota e acesso
@@ -25,13 +26,13 @@ O `app/` é organizado em **route groups por nível de acesso** (não mudam a UR
 | Grupo | Quem acessa | Rotas hoje | Gate |
 | --- | --- | --- | --- |
 | `(public)` | todo mundo | `/` (painel) | — |
-| `(private)` | só logado | `/renomeador`, `/notas` | `requireSession("/rota")` no `page.tsx` (server) de CADA página — leva o caminho na URL de login (`/login?callbackUrl=…`) para voltar direto após entrar |
+| `(private)` | só logado | `/renomeador`, `/notas`, `/sucessorista` | `requireSession("/rota")` no `page.tsx` (server) de CADA página — leva o caminho na URL de login (`/login?callbackUrl=…`) para voltar direto após entrar |
 | `(protected)` | só DESLOGADO | `/login`, `/cadastro` | layout do grupo (`auth()` + redirect; limpa cookie morto) |
 | `(master)` | só MASTER | `/admin/*` | layout do grupo (`requireMaster()` → 404) + repetido em páginas/actions (defesa em profundidade) |
 
 - Página privada client-side ganha um `page.tsx` server fino com o gate + um `*-client.tsx` (ex.: `renomeador-client.tsx`) — o gate NUNCA fica só no client.
 - O gate de `(private)` fica na página (não no layout) porque layout não conhece a URL da requisição — e o `callbackUrl` é obrigatório.
-- As rotas de API dos recursos privados (`/api/rename`, `/api/notas`) também exigem sessão (401) — acompanham as páginas.
+- As rotas de API dos recursos privados (`/api/rename`, `/api/notas`, `/api/sucessorista`, `/api/partilha`, `/api/portal/convite`) também exigem sessão (401) — acompanham as páginas. Exceção deliberada: `app/portal/[token]` e `GET/POST /api/portal/[token]` são acessíveis **pelo token** — o herdeiro convidado não tem login; o token é a credencial.
 
 Módulo novo segue o padrão: página em `app/(grupo)/<modulo>/page.tsx`, lógica em `lib/<modulo>/`, card no painel da inicial.
 
@@ -54,7 +55,7 @@ Módulo novo segue o padrão: página em `app/(grupo)/<modulo>/page.tsx`, lógic
 
 ## Fronteira de dados (privacidade — regra de ouro)
 
-Documentos são sensíveis (RG, certidões, escrituras). O processamento é no navegador; conteúdo de documento só sai da máquina pelas **rotas internas** `/api/rename` (renomeador) e `/api/notas` (redação de peças), que chamam o Gemini **no servidor** com `GEMINI_API_KEY` de env — a chave nunca chega ao cliente. Todo fluxo com IA tem modo/fallback local. **Não** adicionar chamadas externas diretas do cliente nem novas superfícies de saída de dados fora desse desenho.
+Documentos são sensíveis (RG, certidões, escrituras). O processamento é no navegador; conteúdo de documento só sai da máquina pelas **rotas internas** `/api/rename` (renomeador), `/api/notas` (redação de peças) e `/api/sucessorista` (leitura do cofre do inventário), que chamam o Gemini **no servidor** com `GEMINI_API_KEY` de env — a chave nunca chega ao cliente. Todo fluxo com IA tem modo/fallback local. **Não** adicionar chamadas externas diretas do cliente nem novas superfícies de saída de dados fora desse desenho.
 
 **Aprendizado do escritório no banco, POR CONTA**: as "Regras do escritório" e as correções aprendidas do renomeador ficam em `renamer_lessons` (uma linha por usuário), via server actions de `app/(private)/renomeador/licoes-actions.ts` — cada action valida a sessão e grava só a linha do próprio usuário, com gravações **parciais** (salvar regras não toca nas correções e vice-versa). O estado reativo continua em `lib/lessons.ts` (useSyncExternalStore): o snapshot inicial vem do servidor (`page.tsx` → `initLessons`), regras salvam com debounce (+ flush no blur do textarea), correções na hora; quem tinha dados da era localStorage é migrado uma única vez (`migrateLegacyLessons` — só quando a conta está vazia e o carregamento inicial funcionou). Isto é dado do PRÓPRIO usuário (as correções contêm nomes que ele digitou), não telemetria: **nunca exibir em `/admin`**.
 
@@ -68,6 +69,15 @@ Documentos são sensíveis (RG, certidões, escrituras). O processamento é no n
 - **A IA nunca toca nos templates** (`public/templates/notas/*.docx`): ela só redige campos variáveis, injetados por `fillDocxTemplate` nos placeholders. Campo sem base no contexto volta `null` e o `{{PLACEHOLDER}}` permanece visível na minuta — é trava de segurança, não bug.
 - Toda saída é **rascunho para aprovação humana** — nada é protocolado/assinado automaticamente.
 - O classificador de vias (`lib/notas/resolvedor.ts`) foi calibrado com notas devolutivas reais ancorando nos **verbos de remédio** do oficial. Mudanças ali (e no `DOC_RULES` do renomeador) devem ser validadas contra documentos reais, não só a olho.
+
+## Sucessorista: invariantes
+
+- **Esqueleto do módulo**: entrada pelo cofre (etapa 0 — leitura real dos documentos via `/api/sucessorista`), navegação LIVRE entre as abas (nada bloqueia nada) e o **painel do caso fixo à direita** (`painel-caso.tsx`) — todo campo digitado move um número lá na hora. O estado fiscal (isenções do art. 6º, faixas da reforma, protocolo) vive no `sucessorista-client.tsx` e alimenta o painel E a aba V com os MESMOS números — não recalcular em views separadas.
+- **Extração do cofre é apoio, nunca verdade**: campo sem base clara no documento volta `null` e a folha fica em branco para o advogado preencher (`lib/gemini-sucessorista.ts`); a mesclagem só preenche campo VAZIO e deduplica herdeiros/bens por nome. A UI repete que é para CONFERIR.
+- **Identidade "livro de notas" por cima do shadcn**: os componentes são os de `components/ui/` (convenção geral), e a identidade (papel/serifa/bronze/lacre) entra pelo `sucessorista.css`, que **re-mapeia as variáveis de tema do shadcn** (`--background`, `--primary`, `--border`…) dentro do escopo `.sucessorista`. Não estilizar elemento cru nem criar componente visual próprio — vestir o shadcn pelo tema escopado.
+- **Folha = edição inline contínua** (o painel reage a cada tecla): os campos do caso são inputs controlados (a exceção prevista na convenção de formulários); react-hook-form + zod entram nos formulários de ADIÇÃO com validação (adicionar herdeiro, lançar bem, início rápido).
+- O motor (`lib/partilha/*`) é puro, com testes — mudanças ali acompanham os `.test.ts`, e cálculo jurídico novo entra com fundamento legal na saída (padrão `fundamento`/`precedente` dos quinhões).
+- **Estado sobrevive ao F5**: a etapa ativa vive na URL (`?etapa=caso|familia|acervo|partilha|documentos|itcmd`, validada contra lista fechada, trocada com `history.replaceState` — atualização rasa, sem round-trip nem barra de progresso por clique de aba) e a folha inteira vive no **sessionStorage** (`sucessorista-caso`: restaurado uma vez no mount com o efeito de salvar esperando a flag — senão o estado vazio gravaria por cima; morre com a aba do navegador). Arquivos (`File`) não são serializáveis: anexos precisam ser reanexados após recarregar. Ids de herdeiro/bem são **aleatórios** (`crypto.randomUUID`), nunca contador sequencial — o contador zera no reload e colidiria com os ids restaurados.
 
 # Convenções do projeto
 
@@ -125,6 +135,7 @@ Todo formulário de entrada de dados usa **react-hook-form** com schema **zod** 
 - **Toda regra tem mensagem amigável em português** no schema — obrigatório é no mínimo `z.string().min(1, "Informe …")`; nunca deixar a mensagem padrão da lib. E-mail no zod v4: `z.string().trim().min(1, "…").pipe(z.email("…"))` (duas mensagens: vazio × inválido).
 - Estado de envio vem de `formState.isSubmitting` (desabilita o botão); erros de servidor viram toast, erros de campo ficam no `FieldError`.
 - O que **não** é formulário: edição inline de valores em tabelas (nomes sugeridos, segmentos do split) e pickers de arquivo. Nesses casos, validação ad-hoc continua ok.
+- **Campo monetário = `components/currency-input.tsx`** (máscara automática de `lib/moeda.ts`, portada do calcarios-polar-app: dígitos são centavos — "1234" → "12,34" — com ponto de milhar sozinho; valor exposto é o TEXTO mascarado, `moedaParaNumero` dá o número). **Campo de data = `components/date-input.tsx`** (digitação manual dd/mm/aaaa com barras automáticas + ícone que abre o date picker do shadcn — Calendar/Popover, `captionLayout="dropdown"`; o valor exposto é SEMPRE ISO `yyyy-mm-dd` ou vazio). Não usar `<input type="date">` nem máscara manual em call site; com react-hook-form, os dois entram via `<Controller>`.
 
 ## Barra de progresso em toda navegação
 

@@ -1,11 +1,15 @@
 /**
- * Ambiente de documentos do acervo — anexos por item do catálogo exigido
+ * Ambiente de documentos do processo — anexos por item do catálogo exigido
  * pelo ITCMD-SP/inventário, lupa de pré-visualização e a montagem final:
  * PDF unificado do processo ou ZIP com PDFs individualizados, tudo no
- * navegador (nenhum arquivo sai da máquina).
+ * navegador (nenhum arquivo sai da máquina). Os arquivos lidos pelo cofre
+ * da etapa 0 chegam aqui já classificados.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { ZoomIn } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
 import {
   CATALOGO_DOCUMENTOS,
   ROTULO_GRUPO,
@@ -15,10 +19,35 @@ import { montarPdfUnificado, montarZipIndividualizado } from '@/lib/partilha/pro
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { LupaPreview } from './preview';
 
-/** Alias estrutural — compatível com o ChangeEvent de input file. */
-type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
-
 export type AnexosProcesso = Record<string, File[]>;
+
+function BotaoAnexar({ onFiles }: { onFiles: (lista: FileList) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <span style={{ display: 'inline-block', marginTop: 8 }}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="rounded-full"
+        onClick={() => ref.current?.click()}
+      >
+        + anexar arquivo(s)
+      </Button>
+      <input
+        ref={ref}
+        type="file"
+        multiple
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) onFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
+    </span>
+  );
+}
 
 export function DocumentosView({
   anexos,
@@ -37,8 +66,7 @@ export function DocumentosView({
   const totalAnexos = Object.values(anexos).reduce((acc, fs) => acc + fs.length, 0);
   const itensComAnexo = CATALOGO_DOCUMENTOS.filter((d) => (anexos[d.id] ?? []).length > 0).length;
 
-  const anexar = (docId: string, lista: FileList | null) => {
-    if (!lista || lista.length === 0) return;
+  const anexar = (docId: string, lista: FileList) => {
     setAnexos({ ...anexos, [docId]: [...(anexos[docId] ?? []), ...Array.from(lista)] });
   };
 
@@ -95,7 +123,7 @@ export function DocumentosView({
       <h2>Documentos do processo</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
         O que o ITCMD-SP e o tabelionato exigem, na ordem de montagem. Anexe conforme for
-        recebendo (inclusive o que chegar pelo cofre de documentos) e, no final, gere o
+        recebendo — o que a etapa 0 leu já chegou classificado — e, no final, gere o
         processo em PDF único ou individualizado. Os arquivos ficam só neste navegador.
       </p>
       <p className="progresso num">
@@ -117,32 +145,28 @@ export function DocumentosView({
                     {arquivos.map((f, i) => (
                       <p className="anexo-linha" key={`${f.name}-${i}`}>
                         <span className="num">{f.name}</span>
-                        <button
+                        <Button
                           type="button"
-                          className="lupa"
+                          variant="ghost"
+                          size="icon-sm"
                           title={`Pré-visualizar ${f.name}`}
                           aria-label={`Pré-visualizar ${f.name}`}
                           onClick={() => setPreview(f)}
                         >
-                          🔍
-                        </button>
-                        <button type="button" className="remover" onClick={() => remover(doc.id, i)}>
+                          <ZoomIn className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => remover(doc.id, i)}
+                        >
                           remover
-                        </button>
+                        </Button>
                       </p>
                     ))}
-                    <label className="anexar">
-                      + anexar arquivo(s)
-                      <input
-                        type="file"
-                        multiple
-                        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp"
-                        onChange={(e: Ev) => {
-                          anexar(doc.id, e.target.files ?? null);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
+                    <BotaoAnexar onFiles={(lista) => anexar(doc.id, lista)} />
                   </div>
                   <span />
                 </div>
@@ -157,20 +181,21 @@ export function DocumentosView({
         Imagens viram página A4; PDFs entram como estão. A ordem é a do catálogo acima.
       </p>
       <div className="escolha">
-        <button
-          className="acao"
+        <Button
           disabled={gerando !== null || totalAnexos === 0}
+          loading={gerando === 'pdf'}
           onClick={gerarUnificado}
         >
-          {gerando === 'pdf' ? 'Gerando PDF…' : 'Gerar PDF unificado'}
-        </button>
-        <button
-          className="acao fantasma"
+          Gerar PDF unificado
+        </Button>
+        <Button
+          variant="outline"
           disabled={gerando !== null || totalAnexos === 0}
+          loading={gerando === 'zip'}
           onClick={gerarIndividualizado}
         >
-          {gerando === 'zip' ? 'Gerando ZIP…' : 'Baixar PDFs individualizados (ZIP)'}
-        </button>
+          Baixar PDFs individualizados (ZIP)
+        </Button>
       </div>
       {erro && <p className="mono-alerta">{erro}</p>}
       {avisos.map((a, i) => (

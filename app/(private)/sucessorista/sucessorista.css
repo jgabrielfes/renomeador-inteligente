@@ -1,15 +1,16 @@
 /* Identidade do Sucessorista ("livro de notas"), escopada em .sucessorista
-   para nao vazar nos demais modulos. Gerada a partir do globals.css do
-   pacote motor-partilha; mudancas de estilo entram AQUI, sempre com o
-   prefixo .sucessorista. */
+   para não vazar nos demais módulos.
 
-/* Identidade: livro de notas. Papel de registro, tinta notarial,
-   lacre reservado a divergência e bloqueio, bronze para a fé pública
-   (fundamentos legais). Números sempre tabulares. */
+   A interface usa os componentes do shadcn/ui (convenção do repositório);
+   a identidade entra por CIMA deles: este arquivo re-mapeia as variáveis de
+   tema do shadcn (--background, --primary, --border…) dentro do escopo, então
+   Button/Input/Select/Dialog vestem papel, tinta, bronze e lacre sozinhos.
+   Identidade fixa clara (color-scheme: light) — decisão deliberada do módulo. */
 
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&display=swap');
 
 .sucessorista {
+  /* --- paleta da identidade --- */
   --papel: #f6f4ee;
   --papel-alto: #fdfcf9;
   --tinta: #1a2320;
@@ -21,13 +22,33 @@
   --fio-forte: #b9b29c;
   --display: 'Fraunces', Georgia, serif;
   --texto: 'Archivo', system-ui, sans-serif;
+
+  /* --- tema shadcn re-mapeado para a identidade (não remover) --- */
+  --background: var(--papel);
+  --foreground: var(--tinta);
+  --card: var(--papel-alto);
+  --card-foreground: var(--tinta);
+  --popover: var(--papel-alto);
+  --popover-foreground: var(--tinta);
+  --primary: var(--tinta);
+  --primary-foreground: var(--papel);
+  --secondary: #ece8dc;
+  --secondary-foreground: var(--tinta);
+  --muted: #ece8dc;
+  --muted-foreground: var(--tinta-media);
+  --accent: #efeadd;
+  --accent-foreground: var(--tinta);
+  --destructive: var(--lacre);
+  --border: var(--fio-forte);
+  --input: var(--fio-forte);
+  --ring: var(--bronze);
+  --radius: 0.375rem;
 }
 
-.sucessorista * { box-sizing: border-box; margin: 0; }
-
-.sucessorista { color-scheme: light; }
+.sucessorista * { box-sizing: border-box; }
 
 .sucessorista {
+  color-scheme: light;
   background: var(--papel);
   color: var(--tinta);
   font-family: var(--texto);
@@ -41,11 +62,11 @@
   font-feature-settings: 'tnum';
 }
 
-/* ---------- estrutura: lombada + folha ---------- */
+/* ---------- estrutura: lombada + folha + painel ---------- */
 
 .sucessorista .processo {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr) 340px;
   min-height: 100vh;
 }
 
@@ -89,7 +110,6 @@
   letter-spacing: 0.04em;
   text-align: left;
   padding: 11px 18px 11px 14px;
-  margin-right: 0;
   border-radius: 6px 0 0 6px;
   cursor: pointer;
 }
@@ -118,9 +138,99 @@
 }
 
 .sucessorista .folha {
-  padding: 44px 56px 96px;
-  max-width: 980px;
+  padding: 44px 48px 96px;
+  max-width: 900px;
+  min-width: 0;
 }
+
+.sucessorista input:focus-visible,
+.sucessorista .aba:focus-visible {
+  outline: 2px solid var(--bronze);
+  outline-offset: 1px;
+}
+
+/* ---------- painel do caso (coluna direita) ---------- */
+
+.sucessorista .painel {
+  border-left: 1px solid var(--fio);
+  background: var(--papel-alto);
+  padding: 28px 24px 40px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sucessorista .painel h2 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 19px;
+  margin: 0 0 4px;
+}
+
+.sucessorista .painel .sub {
+  font-size: 11.5px;
+  color: var(--tinta-media);
+  margin-bottom: 18px;
+}
+
+.sucessorista .metrica {
+  border-top: 1px solid var(--fio);
+  padding: 13px 0;
+}
+
+.sucessorista .metrica .k {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+  font-weight: 600;
+}
+
+.sucessorista .metrica .v {
+  font-family: var(--display);
+  font-size: 24px;
+  margin-top: 3px;
+}
+
+.sucessorista .metrica .v.sm { font-size: 17px; }
+.sucessorista .metrica .v.lacre { color: var(--lacre); }
+.sucessorista .metrica .v.verde { color: var(--verde-registro); }
+
+.sucessorista .metrica .rodape {
+  font-size: 11.5px;
+  color: var(--tinta-media);
+  margin-top: 4px;
+}
+
+.sucessorista .pilha {
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.sucessorista .pilha > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sucessorista .pilha .rotulo { color: var(--tinta-media); }
+
+.sucessorista .alerta-painel {
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 3px;
+  background: #f5e7e2;
+  color: #7d2b1d;
+  margin-top: 7px;
+}
+
+.sucessorista .alerta-painel.info { background: #efe7d4; color: #6b4f27; }
+
+.sucessorista .vazio { font-size: 12.5px; color: var(--tinta-media); font-style: italic; }
 
 /* ---------- tipografia ---------- */
 
@@ -129,10 +239,10 @@
   font-weight: 600;
   font-size: 32px;
   letter-spacing: -0.01em;
-  margin-bottom: 6px;
+  margin: 0 0 6px;
 }
 
-.sucessorista .subtitulo { color: var(--tinta-media); margin-bottom: 32px; max-width: 62ch; }
+.sucessorista .subtitulo { color: var(--tinta-media); margin: 0 0 32px; max-width: 62ch; }
 
 .sucessorista h2 {
   font-family: var(--display);
@@ -140,6 +250,8 @@
   font-size: 20px;
   margin: 36px 0 14px;
 }
+
+.sucessorista h1 + .subtitulo { margin-top: 0; }
 
 .sucessorista .eyebrow {
   font-size: 11px;
@@ -149,58 +261,25 @@
   color: var(--bronze);
 }
 
-/* ---------- formulário ---------- */
+/* ---------- formulário (rótulo em pilha sobre componentes shadcn) ---------- */
 
 .sucessorista .grade { display: grid; gap: 14px; }
 .sucessorista .grade.c2 { grid-template-columns: 1fr 1fr; }
 .sucessorista .grade.c3 { grid-template-columns: 2fr 1fr 1fr; }
+.sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
 
-.sucessorista label.campo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
-
-.sucessorista input[type='text'], .sucessorista input[type='date'], .sucessorista select {
-  font: 400 15px var(--texto);
-  color: var(--tinta);
-  background: var(--papel-alto);
-  border: 1px solid var(--fio-forte);
-  border-radius: 4px;
-  padding: 9px 11px;
+.sucessorista label.campo,
+.sucessorista .campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.sucessorista input:focus-visible, .sucessorista select:focus-visible, .sucessorista button:focus-visible, .sucessorista .aba:focus-visible {
-  outline: 2px solid var(--bronze);
-  outline-offset: 1px;
-}
+.sucessorista .campo .dica { font-weight: 400; color: var(--tinta-media); }
 
 .sucessorista .escolha { display: flex; gap: 8px; flex-wrap: wrap; }
-
-.sucessorista .escolha button {
-  font: 500 13px var(--texto);
-  padding: 8px 14px;
-  border: 1px solid var(--fio-forte);
-  border-radius: 999px;
-  background: var(--papel-alto);
-  color: var(--tinta);
-  cursor: pointer;
-}
-
-.sucessorista .escolha button[aria-pressed='true'] {
-  background: var(--tinta);
-  border-color: var(--tinta);
-  color: var(--papel);
-}
-
-.sucessorista .acao {
-  font: 600 14px var(--texto);
-  padding: 11px 22px;
-  border-radius: 4px;
-  border: 1px solid var(--tinta);
-  background: var(--tinta);
-  color: var(--papel);
-  cursor: pointer;
-}
-
-.sucessorista .acao.fantasma { background: transparent; color: var(--tinta); }
-.sucessorista .acao:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sucessorista .linha-item {
   display: grid;
@@ -209,11 +288,6 @@
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid var(--fio);
-}
-
-.sucessorista .remover {
-  border: 0; background: none; color: var(--lacre);
-  font-size: 13px; cursor: pointer; padding: 4px;
 }
 
 /* ---------- espelho da partilha (assinatura visual) ---------- */
@@ -267,25 +341,39 @@
 .sucessorista .nota.registro { border-left-color: var(--verde-registro); }
 .sucessorista .nota.registro .eyebrow { color: var(--verde-registro); }
 
-.sucessorista .nota h3 { font-family: var(--display); font-size: 16px; margin-bottom: 6px; }
-.sucessorista .nota p { font-size: 13.5px; color: var(--tinta-media); }
+.sucessorista .nota h3 { font-family: var(--display); font-size: 16px; margin: 0 0 6px; }
+.sucessorista .nota p { font-size: 13.5px; color: var(--tinta-media); margin: 0; }
+.sucessorista .nota p + p { margin-top: 8px; }
 .sucessorista .nota .cenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
 .sucessorista .nota .cenarios > div { background: var(--papel); border: 1px solid var(--fio); border-radius: 4px; padding: 10px 12px; font-size: 13px; }
 
-.sucessorista .selo-via {
-  display: inline-block;
-  font: 600 12px/1 var(--texto);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 8px 14px;
-  border: 1.5px solid currentColor;
-  border-radius: 2px;
-  transform: rotate(-1.2deg);
+/* ---------- área de arraste do cofre (etapa 0) ---------- */
+
+.sucessorista .arrasto {
+  border: 1.5px dashed var(--fio-forte);
+  border-radius: 6px;
+  padding: 34px 24px;
+  text-align: center;
+  background: var(--papel-alto);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.sucessorista .selo-via.ok { color: var(--verde-registro); }
-.sucessorista .selo-via.cond { color: var(--bronze); }
-.sucessorista .selo-via.jud { color: var(--lacre); }
+.sucessorista .arrasto:hover,
+.sucessorista .arrasto.ativo {
+  border-color: var(--bronze);
+  background: #fffef9;
+}
+
+.sucessorista .arrasto b {
+  font-family: var(--display);
+  font-size: 17px;
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.sucessorista .arrasto .dica { font-size: 12.5px; color: var(--tinta-media); }
 
 /* ---------- checklist ---------- */
 
@@ -307,18 +395,9 @@
   padding-top: 2px;
 }
 
-.sucessorista .check-item h4 { font-size: 14px; font-weight: 600; }
-.sucessorista .check-item p { font-size: 12.5px; color: var(--tinta-media); margin-top: 2px; max-width: 68ch; }
-.sucessorista .check-item .alerta { color: var(--lacre); font-size: 12px; margin-top: 3px; }
+.sucessorista .check-item h4 { font-size: 14px; font-weight: 600; margin: 0; }
+.sucessorista .check-item p { font-size: 12.5px; color: var(--tinta-media); margin: 2px 0 0; max-width: 68ch; }
 .sucessorista .check-item a { color: var(--bronze); }
-
-.sucessorista .status-sel {
-  font: 500 12px var(--texto);
-  border: 1px solid var(--fio-forte);
-  border-radius: 999px;
-  padding: 5px 10px;
-  background: var(--papel-alto);
-}
 
 .sucessorista .progresso { font-size: 13px; color: var(--tinta-media); margin: 8px 0 16px; }
 
@@ -326,27 +405,9 @@
 
 .sucessorista .passos { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
 
-.sucessorista .passos button {
-  font: 500 12px var(--texto);
-  border: 1px solid var(--fio-forte);
-  background: var(--papel-alto);
-  border-radius: 3px;
-  padding: 7px 12px;
-  color: var(--tinta-media);
-  cursor: pointer;
-}
-
-.sucessorista .passos button[aria-current='true'] {
-  background: var(--tinta); color: var(--papel); border-color: var(--tinta);
-}
-
-.sucessorista .rodape-acoes { display: flex; justify-content: space-between; margin-top: 30px; }
+.sucessorista .rodape-acoes { display: flex; justify-content: space-between; margin-top: 30px; gap: 12px; }
 
 .sucessorista .mono-alerta { color: var(--lacre); font-size: 13px; margin-top: 10px; }
-
-/* ---------- qualificação e formulários ---------- */
-
-.sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
 
 .sucessorista .ficha {
   border-left: 3px solid var(--fio-forte);
@@ -355,10 +416,6 @@
   margin: 0 0 14px;
   border-radius: 0 4px 4px 0;
 }
-
-.sucessorista .erro-campo { color: var(--lacre); font-size: 12px; font-weight: 500; }
-
-/* ---------- isenções, régua de prazo e faixas ---------- */
 
 .sucessorista label.marcar {
   display: flex;
@@ -370,7 +427,7 @@
   max-width: 68ch;
 }
 
-.sucessorista label.marcar input[type='checkbox'] { width: auto; flex-shrink: 0; }
+/* ---------- régua de prazo ---------- */
 
 .sucessorista .regua { margin: 10px 0 12px; }
 
@@ -398,14 +455,6 @@
   margin-top: 5px;
 }
 
-.sucessorista input.aliquota-campo {
-  max-width: 88px;
-  text-align: right;
-  padding: 6px 9px;
-}
-
-/* ---------- anexos e lupa ---------- */
-
 .sucessorista .anexo-linha {
   display: flex;
   align-items: center;
@@ -414,89 +463,18 @@
   margin-top: 4px;
 }
 
-.sucessorista .lupa {
-  border: 0;
-  background: none;
-  font-size: 14px;
-  line-height: 1;
-  padding: 2px 4px;
-  cursor: pointer;
+/* ---------- responsivo ---------- */
+
+@media (max-width: 1280px) {
+  .sucessorista .processo { grid-template-columns: 200px minmax(0, 1fr); }
+  .sucessorista .painel {
+    grid-column: 1 / -1;
+    position: static;
+    height: auto;
+    border-left: none;
+    border-top: 1px solid var(--fio-forte);
+  }
 }
-
-.sucessorista label.anexar {
-  display: inline-block;
-  margin-top: 8px;
-  font: 500 12.5px var(--texto);
-  color: var(--bronze);
-  border: 1px dashed var(--fio-forte);
-  border-radius: 999px;
-  padding: 5px 12px;
-  cursor: pointer;
-}
-
-.sucessorista label.anexar input[type='file'] { display: none; }
-
-/* Visor da lupa: overlay abaixo da barra de progresso (z-60) e no nível dos dialogs. */
-.sucessorista .visor {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(26, 35, 32, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.sucessorista .visor-caixa {
-  background: var(--papel-alto);
-  border-radius: 6px;
-  width: min(960px, 100%);
-  height: min(85vh, 100%);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
-}
-
-.sucessorista .visor-topo {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--fio-forte);
-  font-size: 13px;
-}
-
-.sucessorista .visor-topo strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sucessorista .visor-topo button {
-  border: 0;
-  background: none;
-  color: var(--lacre);
-  font: 500 13px var(--texto);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.sucessorista .visor-caixa iframe { flex: 1; border: 0; width: 100%; }
-
-.sucessorista .visor-img {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-  background: var(--papel);
-}
-
-.sucessorista .visor-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 @media (max-width: 860px) {
   .sucessorista .processo { grid-template-columns: 1fr; }

@@ -3,37 +3,55 @@
 /**
  * O Sucessorista — folha de trabalho do inventário.
  *
- * Abas do processo: I A família · II Acervo · III Partilha (3 passos) ·
- * IV Cofre de documentos · V ITCMD.
- * O cálculo roda no navegador: o motor é função pura importada direto.
- * Identidade visual própria ("livro de notas"), escopada em .sucessorista.
+ * Esqueleto do protótipo aprovado: entrada pelo cofre (etapa 0, leitura real
+ * dos documentos), navegação LIVRE entre as etapas (nada bloqueia nada) e o
+ * painel do caso fixo à direita — cada campo digitado move um número lá na
+ * hora. Abas: 0 O caso · I A família · II O acervo · III Partilha ·
+ * IV Documentos (ambiente + cofre de convites) · V ITCMD.
+ *
+ * O cálculo roda no navegador (motor puro em lib/partilha); a leitura da
+ * etapa 0 usa a rota interna /api/sucessorista. Identidade "livro de notas"
+ * escopada em .sucessorista, por cima dos componentes do shadcn.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
 
-/** Alias estrutural — compatível com o ChangeEvent de input, select e checkbox. */
-type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
+import { Button } from '@/components/ui/button';
+
 import { partilhar } from '@/lib/partilha/engine';
 import { apurarAtribuicao, type TitularidadeBem, type TituloCessao } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
-import type { Caso, Bem, TipoBem } from '@/lib/partilha/types';
-import { QUALIFICACAO_VAZIA, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
+import type { Caso, Bem } from '@/lib/partilha/types';
+import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
+import { isencoesArt6, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
+import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
-import { FamiliaView, type EstadoFamilia } from './familia';
+
+import { CasoView, type ArquivoClassificado } from './caso-view';
+import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
+import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
-import { ItcmdView } from './itcmd-view';
 import { DocumentosView, type AnexosProcesso } from './documentos';
+import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
+import { PainelCaso } from './painel-caso';
 
 /* ---------- helpers ---------- */
 
 const brl = (v: string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
-let seq = 0;
-const uid = (p: string) => `${p}${(seq += 1)}`;
+// Aleatório (não sequencial): o caso é restaurado do sessionStorage e um
+// contador zerado no reload geraria ids que colidem com os restaurados.
+const uid = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}`;
+
+function hojeIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 const FALECIDO_VAZIO: DadosFalecido = {
   nome: '',
@@ -43,10 +61,47 @@ const FALECIDO_VAZIO: DadosFalecido = {
   ultimoDomicilio: '',
 };
 
-type Aba = 'familia' | 'acervo' | 'partilha' | 'cofre' | 'itcmd';
+type Aba = 'caso' | 'familia' | 'acervo' | 'partilha' | 'documentos' | 'itcmd';
+
+const ABAS: readonly Aba[] = ['caso', 'familia', 'acervo', 'partilha', 'documentos', 'itcmd'];
+
+// Valida contra a lista fechada, com default explícito (convenção de query string).
+const abaValida = (v: string | null): Aba =>
+  (ABAS as readonly string[]).includes(v ?? '') ? (v as Aba) : 'caso';
+
+/** Snapshot do caso no sessionStorage: sobrevive ao F5, morre com a aba do
+ *  navegador. Arquivos (anexos do processo) não são serializáveis — só eles
+ *  precisam ser anexados de novo após recarregar. */
+const CHAVE_CASO = 'sucessorista-caso';
+
+interface CasoSalvo {
+  v: 1;
+  familia: EstadoFamilia;
+  bens: Bem[];
+  dividasEspolio: string;
+  /** Só os status, por id da fonte — robusto a mudanças no catálogo. */
+  statusAcervo: Record<string, StatusItemAcervo>;
+  fiscal: EstadoFiscal;
+  passo: number;
+  usufrutoAtivo: boolean;
+  titulo: TituloCessao;
+  casoId: string;
+  convites: Record<string, ConviteHerdeiro>;
+}
 
 export default function SucessoristaClient() {
-  const [abaProc, setAbaProc] = useState<Aba>('familia');
+  // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
+  // compartilhável. A troca usa history.replaceState — atualização rasa, sem
+  // round-trip ao servidor nem barra de progresso a cada clique de aba.
+  const searchParams = useSearchParams();
+  const [abaProc, setAbaProc] = useState<Aba>(() => abaValida(searchParams.get('etapa')));
+
+  const irPara = (aba: Aba) => {
+    setAbaProc(aba);
+    const url = new URL(window.location.href);
+    url.searchParams.set('etapa', aba);
+    window.history.replaceState(null, '', url);
+  };
 
   /* --- I: a família (falecido, herdeiros, qualificação, perguntas ITCMD) --- */
   const [familia, setFamilia] = useState<EstadoFamilia>({
@@ -61,11 +116,22 @@ export default function SucessoristaClient() {
   });
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = familia;
 
-  /* --- III: partilha (3 passos: bens · espelho · diferenciada) --- */
-  const [passo, setPasso] = useState(1);
+  /* --- II: acervo (bens, dívidas, fontes de pesquisa) --- */
   const [bens, setBens] = useState<Bem[]>([]);
   /** Dívidas e despesas do espólio (R$) — abatem a massa antes da partilha. */
   const [dividasEspolio, setDividasEspolio] = useState('');
+  const [checklistAcervo, setChecklistAcervo] = useState(montarChecklistAcervo());
+
+  /* --- III: partilha (2 passos: espelho · diferenciada) --- */
+  const [passo, setPasso] = useState(1);
+
+  /* --- IV: documentos (ambiente + convites do cofre) --- */
+  const [anexosProcesso, setAnexosProcesso] = useState<AnexosProcesso>({});
+  const [casoId, setCasoId] = useState(() => uid('caso') + Date.now().toString(36));
+  const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
+
+  /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
+  const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
 
   const caso: Caso = useMemo(() => {
     const limpo = dividasEspolio.replace(/\./g, '').replace(',', '.');
@@ -100,9 +166,109 @@ export default function SucessoristaClient() {
     }
   }, [caso, bens.length, herdeiros.length, temSobrevivente]);
 
-  /* --- passo 3: partilha diferenciada --- */
+  /* --- fiscal computado uma vez, compartilhado entre o painel e o item V --- */
+  const hoje = hojeIso();
+  const ufespObito = falecido.dataObito
+    ? ufespDoAno(Number(falecido.dataObito.slice(0, 4)))
+    : null;
+
+  const isencoes = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
+    return isencoesArt6({
+      bens: bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+      ufespObito: ufespObito.valor,
+      aplicarImovelResidencial: fiscal.isencaoResidencial,
+      aplicarDepositos: fiscal.isencaoDepositos,
+    });
+  }, [resultado, ufespObito, bens, fiscal.isencaoResidencial, fiscal.isencaoDepositos]);
+
+  const provisao = useMemo(() => {
+    if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;
+    const herancaBruta = Number(resultado.heranca.total);
+    const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
+    const fator = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
+    return provisionarItcmd({
+      dataObito: falecido.dataObito,
+      dataReferencia: hoje,
+      baseCalculo: baseLiquida,
+      dataProtocolo: fiscal.inventarioAberto && fiscal.dataProtocolo ? fiscal.dataProtocolo : null,
+      quinhoes: resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) * fator })),
+      faixasProgressivas: fiscal.faixas,
+      vigenciaProgressiva: fiscal.vigencia,
+    });
+  }, [falecido.dataObito, resultado, hoje, isencoes, fiscal]);
+
+  /* --- passo 2 da partilha: diferenciada --- */
   const [usufrutoAtivo, setUsufrutoAtivo] = useState(false);
   const [titulo, setTitulo] = useState<TituloCessao>('GRATUITO');
+
+  /* --- persistência no sessionStorage: F5 não apaga a folha --- */
+
+  // Restaura UMA vez, antes de qualquer gravação — o efeito de salvar espera
+  // a flag (sem ela, gravaria o estado vazio por cima do snapshot). O apply é
+  // diferido (setTimeout 0): evita setState síncrono em efeito (regra do
+  // lint) e garante que a flag só liga DEPOIS de o snapshot ser aplicado.
+  const restauradoRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const bruto = sessionStorage.getItem(CHAVE_CASO);
+        if (bruto) {
+          const salvo = JSON.parse(bruto) as CasoSalvo;
+          if (salvo?.v === 1) {
+            if (salvo.familia?.falecido) setFamilia(salvo.familia);
+            if (Array.isArray(salvo.bens)) setBens(salvo.bens);
+            if (typeof salvo.dividasEspolio === 'string') setDividasEspolio(salvo.dividasEspolio);
+            if (salvo.statusAcervo && typeof salvo.statusAcervo === 'object') {
+              setChecklistAcervo((prev) =>
+                prev.map((item) =>
+                  salvo.statusAcervo[item.fonte.id]
+                    ? { ...item, status: salvo.statusAcervo[item.fonte.id] }
+                    : item
+                )
+              );
+            }
+            if (salvo.fiscal) setFiscal(salvo.fiscal);
+            if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
+            setUsufrutoAtivo(salvo.usufrutoAtivo === true);
+            if (salvo.titulo === 'GRATUITO' || salvo.titulo === 'ONEROSO') setTitulo(salvo.titulo);
+            if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
+            if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
+          }
+        }
+      } catch {
+        // snapshot corrompido: recomeça em branco
+      }
+      restauradoRef.current = true;
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Grava o snapshot a cada mudança. Arquivos (File) ficam de fora — não são
+  // serializáveis; os anexos precisam ser reanexados após recarregar.
+  useEffect(() => {
+    if (!restauradoRef.current) return;
+    try {
+      const statusAcervo: Record<string, StatusItemAcervo> = {};
+      for (const item of checklistAcervo) statusAcervo[item.fonte.id] = item.status;
+      const salvo: CasoSalvo = {
+        v: 1,
+        familia,
+        bens,
+        dividasEspolio,
+        statusAcervo,
+        fiscal,
+        passo,
+        usufrutoAtivo,
+        titulo,
+        casoId,
+        convites,
+      };
+      sessionStorage.setItem(CHAVE_CASO, JSON.stringify(salvo));
+    } catch {
+      // sem espaço ou modo restrito: a persistência é conforto, não requisito
+    }
+  }, [familia, bens, dividasEspolio, checklistAcervo, fiscal, passo, usufrutoAtivo, titulo, casoId, convites]);
 
   const atribuicao = useMemo(() => {
     if (!resultado || !usufrutoAtivo || resultado.bloqueios.length > 0) return null;
@@ -124,15 +290,95 @@ export default function SucessoristaClient() {
     });
   }, [resultado, usufrutoAtivo, titulo, caso, bens, herdeiros, temSobrevivente]);
 
-  /* --- II: acervo --- */
-  const [acervo, setAcervo] = useState(montarChecklistAcervo());
-  const feitos = acervo.filter((i) => i.status === 'RECEBIDO' || i.status === 'NAO_SE_APLICA').length;
-  /** Anexos do ambiente de documentos (vivem só neste navegador). */
-  const [anexosProcesso, setAnexosProcesso] = useState<AnexosProcesso>({});
+  /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
+  const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
+    if (arquivos.length > 0) {
+      setAnexosProcesso((prev) => {
+        const proximos = { ...prev };
+        for (const a of arquivos) {
+          const id = a.documentoId ?? 'outros';
+          proximos[id] = [...(proximos[id] ?? []), a.file];
+        }
+        return proximos;
+      });
+    }
 
-  /* --- IV: cofre de documentos --- */
-  const [casoId] = useState(() => uid('caso-') + Date.now().toString(36));
-  const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
+    setFamilia((prev) => {
+      const fal = { ...prev.falecido };
+      if (!fal.nome && lido.falecido.nome) fal.nome = lido.falecido.nome;
+      if (!fal.cpf && lido.falecido.cpf) fal.cpf = lido.falecido.cpf;
+      if (!fal.dataObito && lido.falecido.dataObito) fal.dataObito = lido.falecido.dataObito;
+      if (!fal.dataCasamento && lido.falecido.dataCasamento)
+        fal.dataCasamento = lido.falecido.dataCasamento;
+      if (!fal.ultimoDomicilio && lido.falecido.ultimoDomicilio)
+        fal.ultimoDomicilio = lido.falecido.ultimoDomicilio;
+
+      const nomesAtuais = new Set(prev.herdeiros.map((h) => h.nome.trim().toLowerCase()));
+      const novos = lido.herdeiros
+        .filter((h) => !nomesAtuais.has(h.nome.trim().toLowerCase()))
+        .map((h) => ({
+          id: uid('h'),
+          nome: h.nome,
+          classe: 'DESCENDENTE' as const,
+          grau: 1,
+          status: 'ATIVO' as const,
+          filhoDoSobrevivente: h.filhoDoSobrevivente ?? true,
+        }));
+      const qualificacoes: Record<string, Qualificacao> = { ...prev.qualificacoes };
+      const perguntas = { ...prev.perguntas };
+      for (const n of novos) {
+        qualificacoes[n.id] = QUALIFICACAO_VAZIA;
+        perguntas[n.id] = PERGUNTAS_ITCMD_VAZIAS;
+      }
+
+      return {
+        ...prev,
+        falecido: fal,
+        temSobrevivente:
+          lido.sobrevivente.existe !== null ? lido.sobrevivente.existe : prev.temSobrevivente,
+        vinculo: lido.sobrevivente.vinculo ?? prev.vinculo,
+        regime: lido.sobrevivente.regime ?? prev.regime,
+        nomeSobrev: prev.nomeSobrev || (lido.sobrevivente.nome ?? ''),
+        herdeiros: [...prev.herdeiros, ...novos],
+        qualificacoes,
+        perguntas,
+      };
+    });
+
+    if (lido.bens.length > 0) {
+      setBens((prev) => {
+        const descricoes = new Set(prev.map((b) => b.descricao.trim().toLowerCase()));
+        const novos = lido.bens
+          .filter((b) => !descricoes.has(b.descricao.trim().toLowerCase()))
+          .map((b) => ({
+            id: uid('b'),
+            descricao: b.descricao,
+            valor: b.valor ?? '0.00',
+            natureza: b.natureza ?? ('COMUM' as const),
+            tipo: b.tipo ?? ('OUTRO' as const),
+          }));
+        return [...prev, ...novos];
+      });
+    }
+  };
+
+  /** Início rápido: só a data do óbito (+ valor estimado) acorda o painel. */
+  const inicioRapido = (dataObito: string, valorEstimado: string) => {
+    setFamilia((prev) => ({ ...prev, falecido: { ...prev.falecido, dataObito } }));
+    if (valorEstimado.trim()) {
+      const valor = paraDecimal(valorEstimado);
+      setBens((prev) => [
+        ...prev.filter((b) => b.id !== 'estimativa'),
+        {
+          id: 'estimativa',
+          descricao: 'Acervo estimado (início rápido — substitua pelos bens reais)',
+          valor,
+          natureza: 'COMUM',
+          tipo: 'OUTRO',
+        },
+      ]);
+    }
+  };
 
   const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
     const atual = familia.qualificacoes[herdeiroId] ?? QUALIFICACAO_VAZIA;
@@ -145,7 +391,7 @@ export default function SucessoristaClient() {
       ...familia,
       qualificacoes: { ...familia.qualificacoes, [herdeiroId]: mesclada },
     });
-    setAbaProc('familia');
+    irPara('familia');
   };
 
   /* ---------- render ---------- */
@@ -161,10 +407,11 @@ export default function SucessoristaClient() {
         </div>
         {(
           [
+            ['caso', '0', 'O caso'],
             ['familia', 'I', 'A família'],
-            ['acervo', 'II', 'Acervo'],
+            ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
-            ['cofre', 'IV', 'Cofre de documentos'],
+            ['documentos', 'IV', 'Documentos'],
             ['itcmd', 'V', 'ITCMD'],
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -172,7 +419,7 @@ export default function SucessoristaClient() {
             key={id}
             className="aba"
             aria-current={abaProc === id}
-            onClick={() => setAbaProc(id)}
+            onClick={() => irPara(id)}
           >
             <span className="indice">{ind}</span>
             {rotulo}
@@ -186,121 +433,74 @@ export default function SucessoristaClient() {
       </nav>
 
       <main className="folha">
+        {abaProc === 'caso' && (
+          <CasoView
+            aplicarLeitura={aplicarLeitura}
+            onInicioRapido={inicioRapido}
+            irParaFamilia={() => irPara('familia')}
+          />
+        )}
+
         {abaProc === 'familia' && (
           <FamiliaView
             estado={familia}
             onChange={setFamilia}
-            avancar={() => setAbaProc('acervo')}
+            avancar={() => irPara('acervo')}
           />
         )}
 
         {abaProc === 'acervo' && (
-          <section>
-            <h1>Acervo</h1>
-            <p className="subtitulo">
-              O que mais atrasa inventário é herdeiro que não sabe o que o falecido tinha.
-              Percorra as fontes na ordem — o testamento primeiro, porque decide a via — e
-              anexe cada documento recebido no ambiente logo abaixo.
-            </p>
-            <h2 style={{ marginTop: 0 }}>Fontes de pesquisa</h2>
-            <p className="progresso num">
-              {feitos} de {acervo.length} fontes concluídas
-            </p>
-            <div className="check">
-              {acervo.map((item, idx) => (
-                <div className="check-item" key={item.fonte.id}>
-                  <span className="prio">P{item.fonte.prioridade}</span>
-                  <div>
-                    <h4>{item.fonte.nome}</h4>
-                    <p>{item.fonte.oQueRevela}</p>
-                    <p>
-                      <strong>Como:</strong> {item.fonte.comoConsultar}{' '}
-                      {item.fonte.url && (
-                        <a href={item.fonte.url} target="_blank" rel="noreferrer">
-                          abrir portal ↗
-                        </a>
-                      )}
-                    </p>
-                  </div>
-                  <select
-                    className="status-sel"
-                    value={item.status}
-                    aria-label={`Status de ${item.fonte.nome}`}
-                    onChange={(e: Ev) =>
-                      setAcervo((prev) =>
-                        prev.map((x, i) =>
-                          i === idx ? { ...x, status: e.target.value as StatusItemAcervo } : x,
-                        ),
-                      )
-                    }
-                  >
-                    <option value="PENDENTE">Pendente</option>
-                    <option value="SOLICITADO">Solicitado</option>
-                    <option value="RECEBIDO">Recebido</option>
-                    <option value="NAO_SE_APLICA">Não se aplica</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            <DocumentosView
-              anexos={anexosProcesso}
-              setAnexos={setAnexosProcesso}
-              nomeCaso={falecido.nome}
-            />
-
-            <div className="rodape-acoes">
-              <button className="acao fantasma" onClick={() => setAbaProc('familia')}>
-                Voltar à família
-              </button>
-              <button className="acao" onClick={() => setAbaProc('partilha')}>
-                Avançar à partilha
-              </button>
-            </div>
-          </section>
+          <AcervoView
+            bens={bens}
+            setBens={setBens}
+            dividas={dividasEspolio}
+            setDividas={setDividasEspolio}
+            checklist={checklistAcervo}
+            setChecklist={setChecklistAcervo}
+            voltar={() => irPara('familia')}
+            avancar={() => {
+              irPara('partilha');
+              setPasso(1);
+            }}
+          />
         )}
 
         {abaProc === 'partilha' && (
           <>
             <h1>Partilha</h1>
             <p className="subtitulo">
-              Dos bens ao espelho da partilha — com o fundamento legal de cada lançamento e
-              a apuração de torna quando a família convenciona diferente do direito. O
-              vínculo, o regime e os herdeiros vêm do item I.
+              O espelho da partilha com o fundamento legal de cada lançamento — e a apuração
+              de torna quando a família convenciona diferente do direito. O vínculo, o regime
+              e os herdeiros vêm do item I; os bens, do item II.
             </p>
 
             <div className="passos" role="tablist" aria-label="Passos">
-              {['Bens', 'Espelho da partilha', 'Partilha diferenciada'].map((t, i) => (
-                <button key={t} aria-current={passo === i + 1} onClick={() => setPasso(i + 1)}>
+              {['Espelho da partilha', 'Partilha diferenciada'].map((t, i) => (
+                <Button
+                  key={t}
+                  size="sm"
+                  variant={passo === i + 1 ? 'default' : 'outline'}
+                  aria-current={passo === i + 1}
+                  onClick={() => setPasso(i + 1)}
+                >
                   {i + 1}. {t}
-                </button>
+                </Button>
               ))}
             </div>
 
             {passo === 1 && (
-              <EditorBens
+              <EspelhoView
+                resultado={resultado}
                 bens={bens}
-                setBens={setBens}
-                dividas={dividasEspolio}
-                setDividas={setDividasEspolio}
-                voltar={() => setAbaProc('familia')}
+                nomeCaso={falecido.nome}
+                voltar={() => irPara('acervo')}
                 avancar={() => setPasso(2)}
               />
             )}
 
             {passo === 2 && (
-              <EspelhoView
-                resultado={resultado}
-                bens={bens}
-                nomeCaso={falecido.nome}
-                voltar={() => setPasso(1)}
-                avancar={() => setPasso(3)}
-              />
-            )}
-
-            {passo === 3 && (
               <section>
-                <span className="eyebrow">Passo 3</span>
+                <span className="eyebrow">Passo 2</span>
                 <h2>Partilha diferenciada — usufruto e torna</h2>
                 <p className="subtitulo">
                   Quando o(a) sobrevivente reserva o usufruto do acervo inteiro e os
@@ -308,24 +508,24 @@ export default function SucessoristaClient() {
                   atribuição é a torna — e a torna é fato gerador.
                 </p>
                 <div className="escolha">
-                  <button aria-pressed={!usufrutoAtivo} onClick={() => setUsufrutoAtivo(false)}>
+                  <Pilula ativo={!usufrutoAtivo} onClick={() => setUsufrutoAtivo(false)}>
                     Partilha na proporção do direito
-                  </button>
-                  <button aria-pressed={usufrutoAtivo} onClick={() => setUsufrutoAtivo(true)}>
+                  </Pilula>
+                  <Pilula ativo={usufrutoAtivo} onClick={() => setUsufrutoAtivo(true)}>
                     Usufruto ao sobrevivente + nua-propriedade aos descendentes
-                  </button>
+                  </Pilula>
                 </div>
 
                 {usufrutoAtivo && (
                   <>
                     <h2>Título da cessão do excedente</h2>
                     <div className="escolha">
-                      <button aria-pressed={titulo === 'GRATUITO'} onClick={() => setTitulo('GRATUITO')}>
+                      <Pilula ativo={titulo === 'GRATUITO'} onClick={() => setTitulo('GRATUITO')}>
                         Gratuito (doação — ITCMD)
-                      </button>
-                      <button aria-pressed={titulo === 'ONEROSO'} onClick={() => setTitulo('ONEROSO')}>
+                      </Pilula>
+                      <Pilula ativo={titulo === 'ONEROSO'} onClick={() => setTitulo('ONEROSO')}>
                         Oneroso (reposição — ITBI)
-                      </button>
+                      </Pilula>
                     </div>
 
                     {atribuicao && atribuicao.bloqueios.length === 0 && (
@@ -405,28 +605,38 @@ export default function SucessoristaClient() {
                   </>
                 )}
                 <div className="rodape-acoes">
-                  <button className="acao fantasma" onClick={() => setPasso(2)}>
+                  <Button variant="outline" onClick={() => setPasso(1)}>
                     Voltar ao espelho
-                  </button>
-                  <button className="acao" onClick={() => setAbaProc('itcmd')}>
-                    Ver ITCMD
-                  </button>
+                  </Button>
+                  <Button onClick={() => irPara('itcmd')}>Ver ITCMD</Button>
                 </div>
               </section>
             )}
           </>
         )}
 
-        {abaProc === 'cofre' && (
-          <CofreView
-            herdeiros={herdeiros}
-            nomeFalecido={falecido.nome}
-            casoId={casoId}
-            convites={convites}
-            setConvites={setConvites}
-            onImportarQualificacao={importarQualificacao}
-            irParaFamilia={() => setAbaProc('familia')}
-          />
+        {abaProc === 'documentos' && (
+          <section>
+            <h1>Documentos</h1>
+            <p className="subtitulo">
+              O que o caso exige, cruzado com o que já está na pasta — e o cofre de convites
+              para os herdeiros mandarem o que falta.
+            </p>
+            <DocumentosView
+              anexos={anexosProcesso}
+              setAnexos={setAnexosProcesso}
+              nomeCaso={falecido.nome}
+            />
+            <CofreView
+              herdeiros={herdeiros}
+              nomeFalecido={falecido.nome}
+              casoId={casoId}
+              convites={convites}
+              setConvites={setConvites}
+              onImportarQualificacao={importarQualificacao}
+              irParaFamilia={() => irPara('familia')}
+            />
+          </section>
         )}
 
         {abaProc === 'itcmd' && (
@@ -439,159 +649,35 @@ export default function SucessoristaClient() {
             qualificacoes={familia.qualificacoes}
             bens={bens}
             resultado={resultado}
-            irParaFamilia={() => setAbaProc('familia')}
-            irParaPartilha={() => {
-              setAbaProc('partilha');
-              setPasso(1);
-            }}
+            fiscal={fiscal}
+            setFiscal={setFiscal}
+            isencoes={isencoes}
+            provisao={provisao}
+            hoje={hoje}
+            irParaFamilia={() => irPara('familia')}
+            irParaAcervo={() => irPara('acervo')}
           />
         )}
       </main>
+
+      <PainelCaso
+        falecido={falecido}
+        temSobrevivente={temSobrevivente}
+        vinculo={vinculo}
+        regime={regime}
+        herdeiros={herdeiros}
+        bens={bens}
+        resultado={resultado}
+        provisao={provisao}
+        isencoes={isencoes}
+        faixas={fiscal.faixas}
+      />
     </div>
     </div>
   );
 }
 
-/* ================= componentes ================= */
-
-const ROTULO_TIPO_BEM: Record<TipoBem, string> = {
-  IMOVEL: 'imóvel',
-  VEICULO: 'veículo',
-  FINANCEIRO: 'conta/aplicação',
-  QUOTAS: 'quotas/ações',
-  OUTRO: 'outro',
-};
-
-function EditorBens({
-  bens,
-  setBens,
-  dividas,
-  setDividas,
-  voltar,
-  avancar,
-}: {
-  bens: Bem[];
-  setBens: (b: Bem[]) => void;
-  dividas: string;
-  setDividas: (v: string) => void;
-  voltar: () => void;
-  avancar: () => void;
-}) {
-  const [descricao, setDescricao] = useState('');
-  const [valor, setValor] = useState('');
-  const [natureza, setNatureza] = useState<'COMUM' | 'PARTICULAR'>('COMUM');
-  const [tipo, setTipo] = useState<TipoBem>('IMOVEL');
-
-  const adicionar = () => {
-    const limpo = valor.replace(/\./g, '').replace(',', '.');
-    if (!descricao.trim() || !/^\d+(\.\d{1,2})?$/.test(limpo)) return;
-    setBens([
-      ...bens,
-      { id: uid('b'), descricao: descricao.trim(), valor: Number(limpo).toFixed(2), natureza, tipo },
-    ]);
-    setDescricao('');
-    setValor('');
-  };
-
-  return (
-    <section>
-      <span className="eyebrow">Passo 1</span>
-      <h2>Bens do acervo</h2>
-      <p className="subtitulo">
-        Valores na data do óbito. A distinção comum × particular decide, na comunhão parcial,
-        se o sobrevivente concorre — e sobre o quê. O tipo do bem alimenta as isenções e o
-        checklist do ITCMD.
-      </p>
-      <div className="grade c2">
-        <label className="campo">
-          Descrição
-          <input
-            type="text"
-            value={descricao}
-            onChange={(e: Ev) => setDescricao(e.target.value)}
-            placeholder="Imóvel mat. 12.345 — Guarulhos/SP"
-          />
-        </label>
-        <label className="campo">
-          Valor (R$)
-          <input
-            type="text"
-            inputMode="decimal"
-            className="num"
-            value={valor}
-            onChange={(e: Ev) => setValor(e.target.value)}
-            placeholder="900.000,00"
-          />
-        </label>
-        <label className="campo">
-          Tipo do bem
-          <select value={tipo} onChange={(e: Ev) => setTipo(e.target.value as TipoBem)}>
-            <option value="IMOVEL">Imóvel</option>
-            <option value="VEICULO">Veículo</option>
-            <option value="FINANCEIRO">Conta/aplicação</option>
-            <option value="QUOTAS">Quotas/ações</option>
-            <option value="OUTRO">Outro</option>
-          </select>
-        </label>
-        <label className="campo">
-          Natureza
-          <select value={natureza} onChange={(e: Ev) => setNatureza(e.target.value as 'COMUM' | 'PARTICULAR')}>
-            <option value="COMUM">Comum (adquirido na constância)</option>
-            <option value="PARTICULAR">Particular (herança, doação, anterior)</option>
-          </select>
-        </label>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <button className="acao fantasma" onClick={adicionar}>
-          Lançar bem
-        </button>
-      </div>
-      {bens.map((b) => (
-        <div className="linha-item" key={b.id}>
-          <span>
-            <strong>{b.descricao}</strong>
-            <span className="fracao num">
-              {' '}
-              · {brl(b.valor)} · {ROTULO_TIPO_BEM[b.tipo ?? 'OUTRO']} ·{' '}
-              {b.natureza === 'COMUM' ? 'comum' : 'particular'}
-            </span>
-          </span>
-          <button className="remover" onClick={() => setBens(bens.filter((x) => x.id !== b.id))}>
-            remover
-          </button>
-        </div>
-      ))}
-
-      <h2>Passivo do espólio</h2>
-      <div className="grade c2">
-        <label className="campo">
-          Dívidas e despesas do espólio (R$)
-          <input
-            type="text"
-            inputMode="decimal"
-            className="num"
-            value={dividas}
-            onChange={(e: Ev) => setDividas(e.target.value)}
-            placeholder="0,00"
-          />
-        </label>
-      </div>
-      <p className="fund" style={{ marginTop: 6 }}>
-        Financiamentos, empréstimos e despesas abatem a massa antes da partilha — e reduzem a
-        base do ITCMD.
-      </p>
-
-      <div className="rodape-acoes">
-        <button className="acao fantasma" onClick={voltar}>
-          Voltar à família
-        </button>
-        <button className="acao" onClick={avancar} disabled={bens.length === 0}>
-          Calcular o espelho
-        </button>
-      </div>
-    </section>
-  );
-}
+/* ================= espelho da partilha ================= */
 
 function EspelhoView({
   resultado,
@@ -613,12 +699,12 @@ function EspelhoView({
       <section>
         <div className="nota">
           <h3>Faltam dados</h3>
-          <p>Lance ao menos um bem e cadastre a família (item I) para calcular.</p>
+          <p>Lance ao menos um bem (item II) e cadastre a família (item I) para calcular.</p>
         </div>
         <div className="rodape-acoes">
-          <button className="acao fantasma" onClick={voltar}>
-            Voltar
-          </button>
+          <Button variant="outline" onClick={voltar}>
+            Voltar ao acervo
+          </Button>
           <span />
         </div>
       </section>
@@ -668,7 +754,7 @@ function EspelhoView({
 
   return (
     <section>
-      <span className="eyebrow">Passo 2</span>
+      <span className="eyebrow">Passo 1</span>
       <h2>Espelho da partilha</h2>
 
       {resultado.bloqueios.map((b, i) => (
@@ -723,9 +809,9 @@ function EspelhoView({
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <button className="acao fantasma" onClick={exportarExcel} disabled={exportando}>
-              {exportando ? 'Gerando planilha…' : 'Exportar em Excel (.xlsx)'}
-            </button>
+            <Button variant="outline" onClick={exportarExcel} loading={exportando}>
+              Exportar em Excel (.xlsx)
+            </Button>
           </div>
 
           {resultado.divergencias.map((d, i) => (
@@ -762,12 +848,12 @@ function EspelhoView({
       )}
 
       <div className="rodape-acoes">
-        <button className="acao fantasma" onClick={voltar}>
-          Voltar aos bens
-        </button>
-        <button className="acao" onClick={avancar} disabled={resultado.bloqueios.length > 0}>
+        <Button variant="outline" onClick={voltar}>
+          Voltar ao acervo
+        </Button>
+        <Button onClick={avancar} disabled={resultado.bloqueios.length > 0}>
           Partilha diferenciada
-        </button>
+        </Button>
       </div>
     </section>
   );

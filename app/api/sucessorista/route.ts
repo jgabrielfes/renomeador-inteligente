@@ -1,0 +1,92 @@
+// POST /api/sucessorista — proxy autenticado para a leitura do cofre do
+// Sucessorista. Recebe os arquivos da pasta do caso (multipart, chave "item"
+// repetida) e devolve { caso: CasoExtraido } com os campos da folha de
+// trabalho + a classificação de cada arquivo no catálogo do processo.
+// Mesmo desenho do /api/rename: a chave do Gemini fica em GEMINI_API_KEY,
+// só no servidor; sem sessão a rota nem lê o corpo (401).
+
+import { GeminiError } from "@/lib/gemini";
+import { extrairCasoDoCofre, type ArquivoCofre } from "@/lib/gemini-sucessorista";
+import { auth } from "@/lib/auth";
+import { registrarErro } from "@/lib/error-log";
+
+// Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
+export const maxDuration = 60;
+
+// Margem sob o limite de corpo das funções serverless (Vercel: ~4,5 MB).
+const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
+const MAX_ITEMS = 10;
+
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session) {
+    return Response.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return Response.json(
+      { error: "GEMINI_API_KEY não configurada no servidor." },
+      { status: 503 }
+    );
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return Response.json(
+      { error: "Corpo inválido: esperado multipart/form-data." },
+      { status: 400 }
+    );
+  }
+
+  const arquivos: ArquivoCofre[] = [];
+  let totalBytes = 0;
+  for (const [key, value] of form.entries()) {
+    if (key !== "item" || !(value instanceof File)) continue;
+    totalBytes += value.size;
+    arquivos.push({ fileName: value.name, data: await value.arrayBuffer() });
+  }
+
+  if (arquivos.length === 0) {
+    return Response.json({ error: "Envie ao menos um arquivo." }, { status: 400 });
+  }
+  if (arquivos.length > MAX_ITEMS) {
+    return Response.json(
+      { error: `Máximo de ${MAX_ITEMS} arquivos por leitura.` },
+      { status: 400 }
+    );
+  }
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    return Response.json(
+      { error: "Lote grande demais — envie menos arquivos por vez." },
+      { status: 413 }
+    );
+  }
+
+  try {
+    const caso = await extrairCasoDoCofre(apiKey, arquivos);
+    return Response.json({ caso });
+  } catch (err) {
+    if (err instanceof GeminiError) {
+      await registrarErro({
+        origem: "api/sucessorista",
+        mensagem: err.message,
+        status: err.status,
+      });
+      return Response.json(
+        {
+          error: err.message,
+          geminiStatus: err.status,
+          retryDelaySeconds: err.retryDelaySeconds ?? null,
+          dailyQuota: err.dailyQuota,
+        },
+        { status: 502 }
+      );
+    }
+    const mensagem = err instanceof Error ? err.message : String(err);
+    await registrarErro({ origem: "api/sucessorista", mensagem, status: 500 });
+    return Response.json({ error: mensagem }, { status: 500 });
+  }
+}
