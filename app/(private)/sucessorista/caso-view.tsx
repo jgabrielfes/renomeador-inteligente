@@ -24,8 +24,18 @@ import { filesFromDataTransfer } from '@/lib/fs';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 
 // Pasta arrastada vem com lixo de sistema (.DS_Store, Thumbs.db…) — fora.
+// A ordem é alfabética pelo caminho relativo (subpasta junto do que é dela),
+// para a leitura e a classificação saírem estáveis entre visitas.
 const LIXO_DE_SISTEMA = /^\.|^(thumbs\.db|desktop\.ini)$/i;
-const semLixo = (lista: File[]) => lista.filter((f) => !LIXO_DE_SISTEMA.test(f.name));
+function preparar(lista: File[]): File[] {
+  return lista
+    .filter((f) => !LIXO_DE_SISTEMA.test(f.name))
+    .sort((a, b) => {
+      const pa = (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
+      const pb = (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
+      return pa.localeCompare(pb, 'pt-BR');
+    });
+}
 
 export interface ArquivoClassificado {
   file: File;
@@ -192,7 +202,21 @@ export function CasoView({
           // (dataTransfer.files sozinho as ignora) — e precisa ser chamado
           // de forma síncrona dentro do evento.
           const coleta = filesFromDataTransfer(e.dataTransfer);
-          void coleta.then((lista) => lerArquivos(semLixo(lista)));
+          void coleta.then((coletados) => {
+            const lista = preparar(coletados);
+            if (lista.length === 0) {
+              toast.error('Nenhum arquivo encontrado no que foi solto', {
+                description:
+                  'Se o navegador bloqueou a pasta arrastada, use o botão "Selecionar pasta" logo abaixo.',
+              });
+              return;
+            }
+            toast.info(
+              `${lista.length} arquivo(s) coletado(s) — subpastas incluídas`,
+              { description: 'Iniciando a leitura…' },
+            );
+            void lerArquivos(lista);
+          });
         }}
       >
         <b>{lendo ? progresso || 'Lendo os documentos…' : 'Arraste a pasta do caso — ou os arquivos'}</b>
@@ -234,7 +258,7 @@ export function CasoView({
           accept=".pdf,.jpg,.jpeg,.png,.webp"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) void lerArquivos(semLixo(Array.from(e.target.files)));
+            if (e.target.files) void lerArquivos(preparar(Array.from(e.target.files)));
             e.target.value = '';
           }}
         />
@@ -246,8 +270,23 @@ export function CasoView({
           // @ts-expect-error webkitdirectory é fora do padrão mas universal
           webkitdirectory=""
           onChange={(e) => {
-            if (e.target.files) void lerArquivos(semLixo(Array.from(e.target.files)));
+            const lista = preparar(Array.from(e.target.files ?? []));
             e.target.value = '';
+            if (lista.length === 0) return;
+            // O seletor do navegador envia a pasta ABERTA no diálogo — quem
+            // entra numa subpasta acaba selecionando só ela. O aviso mostra
+            // qual pasta veio, para o erro ficar visível na hora.
+            const raiz = (lista[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split('/')[0];
+            toast.info(
+              raiz
+                ? `Pasta "${raiz}": ${lista.length} arquivo(s), subpastas incluídas`
+                : `${lista.length} arquivo(s) selecionado(s)`,
+              {
+                description:
+                  'Se veio menos do que esperava, selecione a pasta RAIZ do caso sem entrar nela (um clique + "Selecionar pasta") — ou arraste a pasta inteira para cá.',
+              },
+            );
+            void lerArquivos(lista);
           }}
         />
       </div>
