@@ -7,6 +7,7 @@
  * cada lançamento.
  */
 
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -60,6 +61,14 @@ type NovoBem = z.infer<typeof esquemaBem>;
 export function paraDecimal(valor: string): string {
   const limpo = valor.replace(/\./g, '').replace(',', '.');
   return Number(limpo).toFixed(2);
+}
+
+/** Decimal armazenado ("900000.00") → texto mascarado do CurrencyInput. */
+function paraMascara(valorDecimal: string): string {
+  return Number(valorDecimal).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function AcervoView({
@@ -198,25 +207,12 @@ export function AcervoView({
       </form>
 
       {bens.map((b) => (
-        <div className="linha-item" key={b.id}>
-          <span>
-            <strong>{b.descricao}</strong>
-            <span className="fracao num">
-              {' '}
-              · {brl(b.valor)} · {ROTULO_TIPO_BEM[b.tipo ?? 'OUTRO']} ·{' '}
-              {b.natureza === 'COMUM' ? 'comum' : 'particular'}
-            </span>
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive"
-            onClick={() => setBens(bens.filter((x) => x.id !== b.id))}
-          >
-            remover
-          </Button>
-        </div>
+        <LinhaBem
+          key={b.id}
+          bem={b}
+          onSalvar={(atualizado) => setBens(bens.map((x) => (x.id === b.id ? atualizado : x)))}
+          onRemover={() => setBens(bens.filter((x) => x.id !== b.id))}
+        />
       ))}
 
       <h2>Passivo do espólio</h2>
@@ -289,5 +285,136 @@ export function AcervoView({
         </Button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Linha de bem lançado, com edição inline (convenção do projeto: edição de
+ * valores em lista usa validação ad-hoc, não react-hook-form).
+ */
+function LinhaBem({
+  bem,
+  onSalvar,
+  onRemover,
+}: {
+  bem: Bem;
+  onSalvar: (b: Bem) => void;
+  onRemover: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [descricao, setDescricao] = useState(bem.descricao);
+  const [valor, setValor] = useState('');
+  const [tipo, setTipo] = useState<TipoBem>(bem.tipo ?? 'OUTRO');
+  const [natureza, setNatureza] = useState<Bem['natureza']>(bem.natureza);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const abrir = () => {
+    setDescricao(bem.descricao);
+    setValor(paraMascara(bem.valor));
+    setTipo(bem.tipo ?? 'OUTRO');
+    setNatureza(bem.natureza);
+    setErro(null);
+    setEditando(true);
+  };
+
+  const salvar = () => {
+    if (!descricao.trim()) {
+      setErro('Descreva o bem.');
+      return;
+    }
+    if (!VALOR_PTBR.test(valor.trim())) {
+      setErro('Valor inválido — use o formato 900.000,00.');
+      return;
+    }
+    onSalvar({ ...bem, descricao: descricao.trim(), valor: paraDecimal(valor), tipo, natureza });
+    setEditando(false);
+  };
+
+  if (!editando) {
+    return (
+      <div className="linha-item">
+        <span>
+          <strong>{bem.descricao}</strong>
+          <span className="fracao num">
+            {' '}
+            · {brl(bem.valor)} · {ROTULO_TIPO_BEM[bem.tipo ?? 'OUTRO']} ·{' '}
+            {bem.natureza === 'COMUM' ? 'comum' : 'particular'}
+          </span>
+        </span>
+        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <Button type="button" variant="ghost" size="sm" onClick={abrir}>
+            editar
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={onRemover}
+          >
+            remover
+          </Button>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ficha" style={{ marginTop: 8 }}>
+      <span className="eyebrow">Editando bem</span>
+      <div className="grade c2" style={{ marginTop: 8 }}>
+        <label className="campo">
+          Descrição
+          <Input
+            value={descricao}
+            aria-invalid={Boolean(erro && !descricao.trim())}
+            onChange={(e) => setDescricao(e.target.value)}
+          />
+        </label>
+        <label className="campo">
+          Valor (R$)
+          <CurrencyInput value={valor} onChange={setValor} placeholder="900.000,00" />
+        </label>
+        <label className="campo">
+          Tipo do bem
+          <Select value={tipo} onValueChange={(v) => v && setTipo(v as TipoBem)}>
+            <SelectTrigger aria-label="Tipo do bem">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="IMOVEL">Imóvel</SelectItem>
+              <SelectItem value="VEICULO">Veículo</SelectItem>
+              <SelectItem value="FINANCEIRO">Conta/aplicação</SelectItem>
+              <SelectItem value="QUOTAS">Quotas/ações</SelectItem>
+              <SelectItem value="OUTRO">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="campo">
+          Natureza
+          <Select
+            value={natureza}
+            onValueChange={(v) => v && setNatureza(v as Bem['natureza'])}
+          >
+            <SelectTrigger aria-label="Natureza do bem">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="COMUM">Comum (adquirido na constância)</SelectItem>
+              <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+      </div>
+      {erro && <p className="mono-alerta">{erro}</p>}
+      <div className="escolha" style={{ marginTop: 12 }}>
+        <Button type="button" size="sm" onClick={salvar}>
+          Salvar alterações
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setEditando(false)}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
   );
 }

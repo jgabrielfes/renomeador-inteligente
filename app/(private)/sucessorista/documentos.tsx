@@ -53,13 +53,16 @@ export function DocumentosView({
   anexos,
   setAnexos,
   nomeCaso,
+  onGerarPeticao,
 }: {
   anexos: AnexosProcesso;
   setAnexos: (a: AnexosProcesso) => void;
   nomeCaso: string;
+  /** Gera a minuta de petição ao Tabelionato (.docx) a partir da folha. */
+  onGerarPeticao?: () => Promise<void>;
 }) {
   const [preview, setPreview] = useState<File | null>(null);
-  const [gerando, setGerando] = useState<'pdf' | 'zip' | null>(null);
+  const [gerando, setGerando] = useState<'pdf' | 'zip' | 'peticao' | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -178,7 +181,9 @@ export function DocumentosView({
 
       <h2>Montar o processo</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
-        Imagens viram página A4; PDFs entram como estão. A ordem é a do catálogo acima.
+        Imagens viram página A4; PDFs entram como estão. A ordem é a do catálogo acima. A
+        minuta de petição sai em DOCX editável, com a qualificação das partes, o plano de
+        partilha fundamentado, o ITCMD e o rol dos documentos juntados.
       </p>
       <div className="escolha">
         <Button
@@ -196,6 +201,26 @@ export function DocumentosView({
         >
           Baixar PDFs individualizados (ZIP)
         </Button>
+        {onGerarPeticao && (
+          <Button
+            variant="outline"
+            disabled={gerando !== null}
+            loading={gerando === 'peticao'}
+            onClick={async () => {
+              setGerando('peticao');
+              setErro(null);
+              try {
+                await onGerarPeticao();
+              } catch (e) {
+                setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da petição.');
+              } finally {
+                setGerando(null);
+              }
+            }}
+          >
+            Gerar minuta de petição ao Tabelionato (DOCX)
+          </Button>
+        )}
       </div>
       {erro && <p className="mono-alerta">{erro}</p>}
       {avisos.map((a, i) => (

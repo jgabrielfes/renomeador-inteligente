@@ -61,6 +61,8 @@ export interface EstadoFamilia {
   qualificacoes: Record<string, Qualificacao>;
   /** Respostas das perguntas do ITCMD por herdeiro. */
   perguntas: Record<string, PerguntasItcmd>;
+  /** Inventariante indicado: '__sobrevivente__', id de herdeiro ou null. */
+  inventarianteId: string | null;
 }
 
 /** Pílula de escolha (Sim/Não, vínculo, regime) sobre o Button do shadcn. */
@@ -199,6 +201,18 @@ export function FamiliaView({
               />
             </label>
           </div>
+          <div style={{ marginTop: 10 }}>
+            <label className="marcar" style={{ margin: 0 }}>
+              <Checkbox
+                checked={estado.inventarianteId === '__sobrevivente__'}
+                onCheckedChange={(v) =>
+                  set({ inventarianteId: v === true ? '__sobrevivente__' : null })
+                }
+              />
+              É o(a) inventariante indicado(a) — preferência legal do cônjuge/companheiro
+              (CPC, art. 617, I)
+            </label>
+          </div>
           <QualificacaoEditor
             titulo={`Qualificação — ${nomeSobrev || 'viúvo(a)'}`}
             valor={estado.qualificacoes['__sobrevivente__'] ?? QUALIFICACAO_VAZIA}
@@ -309,6 +323,7 @@ function EditorHerdeiros({
       herdeiros: herdeiros.filter((x) => x.id !== id),
       qualificacoes,
       perguntas,
+      inventarianteId: estado.inventarianteId === id ? null : estado.inventarianteId,
     });
   };
 
@@ -400,8 +415,29 @@ function EditorHerdeiros({
                 {h.filhoDoSobrevivente === false ? ' · de outro relacionamento' : ''}
                 {h.menorOuIncapaz ? ' · menor/incapaz' : ''}
               </span>
+              {estado.inventarianteId === h.id && (
+                <span className="fund" style={{ marginLeft: 6 }}>
+                  ★ inventariante
+                </span>
+              )}
             </span>
             <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                style={
+                  estado.inventarianteId === h.id ? { color: 'var(--verde-registro)' } : undefined
+                }
+                onClick={() =>
+                  onChange({
+                    ...estado,
+                    inventarianteId: estado.inventarianteId === h.id ? null : h.id,
+                  })
+                }
+              >
+                {estado.inventarianteId === h.id ? 'inventariante ✓' : 'tornar inventariante'}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

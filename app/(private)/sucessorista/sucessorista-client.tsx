@@ -113,6 +113,7 @@ export default function SucessoristaClient() {
     herdeiros: [],
     qualificacoes: {},
     perguntas: {},
+    inventarianteId: null,
   });
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = familia;
 
@@ -216,7 +217,9 @@ export default function SucessoristaClient() {
         if (bruto) {
           const salvo = JSON.parse(bruto) as CasoSalvo;
           if (salvo?.v === 1) {
-            if (salvo.familia?.falecido) setFamilia(salvo.familia);
+            // Snapshot de versão anterior pode não ter inventarianteId.
+            if (salvo.familia?.falecido)
+              setFamilia({ ...salvo.familia, inventarianteId: salvo.familia.inventarianteId ?? null });
             if (Array.isArray(salvo.bens)) setBens(salvo.bens);
             if (typeof salvo.dividasEspolio === 'string') setDividasEspolio(salvo.dividasEspolio);
             if (salvo.statusAcervo && typeof salvo.statusAcervo === 'object') {
@@ -400,6 +403,34 @@ export default function SucessoristaClient() {
         },
       ]);
     }
+  };
+
+  /** Minuta de petição ao Tabelionato (.docx) a partir da folha inteira. */
+  const gerarPeticao = async () => {
+    const { montarPeticaoDocx } = await import('@/lib/partilha/peticao');
+    const { CATALOGO_DOCUMENTOS } = await import('@/lib/partilha/documentos');
+    const blob = await montarPeticaoDocx({
+      falecido,
+      temSobrevivente,
+      nomeSobrev,
+      vinculo,
+      regime,
+      herdeiros,
+      qualificacoes: familia.qualificacoes,
+      inventarianteId: familia.inventarianteId ?? null,
+      bens,
+      dividas: dividasEspolio.trim() ? paraDecimal(dividasEspolio) : '',
+      resultado,
+      provisao,
+      documentos: CATALOGO_DOCUMENTOS.map((d) => ({
+        titulo: d.titulo,
+        arquivos: (anexosProcesso[d.id] ?? []).map((f) => f.name),
+      })),
+    });
+    baixarBlob(
+      blob,
+      `Peticao - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`,
+    );
   };
 
   const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
@@ -648,6 +679,7 @@ export default function SucessoristaClient() {
               anexos={anexosProcesso}
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
+              onGerarPeticao={gerarPeticao}
             />
             <CofreView
               herdeiros={herdeiros}
