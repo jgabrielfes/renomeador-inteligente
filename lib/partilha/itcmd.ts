@@ -114,6 +114,133 @@ export interface ResultadoIsencoes {
   avisos: string[];
 }
 
+/* ---------- leitura automática das isenções, bem a bem ---------- */
+
+export interface AnaliseIsencaoBem {
+  /** Mesma numeração da listagem do acervo (1-based). */
+  indice: number;
+  descricao: string;
+  valor: number;
+  verdito: 'ISENTO_POSSIVEL' | 'TRIBUTADO' | 'AVALIAR';
+  /** Hipótese legal aplicável (ex.: 'art. 6º, I, "a"'), ou null. */
+  hipotese: string | null;
+  explicacao: string;
+  /** Requisitos que o sistema NÃO consegue verificar — confirmar caso a caso. */
+  condicoes: string[];
+}
+
+/**
+ * Interpretação AUTOMÁTICA das isenções do art. 6º, I, da Lei 10.705/2000
+ * sobre os bens lançados — Lei do ITCMD-SP e orientações da Sefaz-SP. O
+ * sistema demonstra a hipótese e o enquadramento pelo VALOR (medido em
+ * UFESPs da data do óbito, teto que NÃO é franquia); requisitos de fato
+ * (residência da família, único imóvel etc.) saem como condições a
+ * confirmar. A isenção é declarada no próprio sistema da declaração do
+ * ITCMD — não há pedido apartado.
+ */
+export function analisarIsencoesPorBem(
+  bens: { tipo?: string; valor: number; descricao?: string }[],
+  ufespObito: number,
+): AnaliseIsencaoBem[] {
+  const teto = (u: number) => u * ufespObito;
+  const imoveis = bens.filter((b) => b.tipo === 'IMOVEL' && b.valor > 0);
+  const totalFinanceiro = bens
+    .filter((b) => b.tipo === 'FINANCEIRO' && b.valor > 0)
+    .reduce((a, b) => a + b.valor, 0);
+  const ehVerbaAlimentar = (d: string) =>
+    /FGTS|PIS|PASEP|SALDO DE SALARIO|VERBA (TRABALHISTA|RESCISORIA)|RESCISO|PREVIDENC|APOSENTADORIA NAO RECEBIDA/i.test(
+      d.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+    );
+
+  return bens.map((b, i) => {
+    const base = {
+      indice: i + 1,
+      descricao: b.descricao || `Bem ${i + 1}`,
+      valor: b.valor,
+    };
+    if (b.tipo === 'IMOVEL') {
+      if (imoveis.length === 1 && b.valor <= teto(2500)) {
+        return {
+          ...base,
+          verdito: 'ISENTO_POSSIVEL' as const,
+          hipotese: 'art. 6º, I, "b"',
+          explicacao: `Único imóvel transmitido, dentro de 2.500 UFESPs (${fmt(teto(2500))}) — isento independentemente de ser residencial.`,
+          condicoes: ['Confirmar que não há outro imóvel transmitido fora do acervo lançado.'],
+        };
+      }
+      if (b.valor <= teto(5000)) {
+        return {
+          ...base,
+          verdito: 'ISENTO_POSSIVEL' as const,
+          hipotese: 'art. 6º, I, "a"',
+          explicacao: `Dentro de 5.000 UFESPs (${fmt(teto(5000))}) — isenção do imóvel de residência.`,
+          condicoes: [
+            'Ser imóvel de residência (urbano ou rural).',
+            'Os familiares beneficiados nele residirem.',
+            'Os beneficiados não terem outro imóvel.',
+          ],
+        };
+      }
+      return {
+        ...base,
+        verdito: 'TRIBUTADO' as const,
+        hipotese: null,
+        explicacao: `Acima de 5.000 UFESPs (${fmt(teto(5000))}): nenhuma hipótese do art. 6º alcança — o teto não é franquia, o bem é tributado por inteiro.`,
+        condicoes: [],
+      };
+    }
+    if (b.tipo === 'FINANCEIRO') {
+      if (totalFinanceiro <= teto(1000)) {
+        return {
+          ...base,
+          verdito: 'ISENTO_POSSIVEL' as const,
+          hipotese: 'art. 6º, I, "d"',
+          explicacao: `O CONJUNTO de depósitos e aplicações (${fmt(totalFinanceiro)}) cabe em 1.000 UFESPs (${fmt(teto(1000))}).`,
+          condicoes: [],
+        };
+      }
+      return {
+        ...base,
+        verdito: 'TRIBUTADO' as const,
+        hipotese: null,
+        explicacao: `O conjunto de depósitos e aplicações (${fmt(totalFinanceiro)}) ultrapassa 1.000 UFESPs (${fmt(teto(1000))}) — a alínea "d" mede o total, não cada conta.`,
+        condicoes: [],
+      };
+    }
+    if (b.tipo === 'OUTRO' && b.descricao && ehVerbaAlimentar(b.descricao)) {
+      return {
+        ...base,
+        verdito: 'ISENTO_POSSIVEL' as const,
+        hipotese: 'art. 6º, I, "e"',
+        explicacao:
+          'Verba não recebida em vida (empregador, previdência, FGTS/PIS-PASEP) — isenta sem teto de valor.',
+        condicoes: ['Confirmar a natureza da verba na documentação de origem.'],
+      };
+    }
+    if (b.tipo === 'OUTRO' && b.valor <= teto(1500)) {
+      return {
+        ...base,
+        verdito: 'AVALIAR' as const,
+        hipotese: 'art. 6º, I, "c"',
+        explicacao: `Dentro de 1.500 UFESPs (${fmt(teto(1500))}) — pode caber a isenção de utensílios/bens móveis de pequeno valor.`,
+        condicoes: [
+          'Ser ferramenta/equipamento agrícola de uso manual, roupa, aparelho de uso doméstico ou móvel de pequeno valor que guarneça o imóvel da alínea "a".',
+        ],
+      };
+    }
+    return {
+      ...base,
+      verdito: 'TRIBUTADO' as const,
+      hipotese: null,
+      explicacao:
+        b.tipo === 'VEICULO' || b.tipo === 'QUOTAS'
+          ? 'Veículos e participações societárias não têm hipótese de isenção no art. 6º — tributados por inteiro.'
+          : 'Sem hipótese de isenção do art. 6º aplicável.',
+      condicoes: [],
+    };
+  });
+}
+
 /**
  * Isenções do art. 6º da Lei 10.705/2000 marcadas pelo advogado.
  * Atenção à mecânica legal: o teto NÃO é franquia — bem que ultrapassa o

@@ -32,6 +32,7 @@ import { mascararCpf } from '@/lib/cpf';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
   composicaoFamiliar,
+  nomeProprio,
   QUALIFICACAO_VAZIA,
   PERGUNTAS_ITCMD_VAZIAS,
   ROTULOS_PERGUNTAS_ITCMD,
@@ -154,6 +155,18 @@ export function FamiliaView({
           />
         </label>
       </div>
+
+      {/* Ficha completa do "de cujus" (RG, nascimento, filiação, endereço…):
+          qualifica o(a) falecido(a) na escritura e nas petições. A leitura da
+          certidão de óbito preenche o que constar. */}
+      <QualificacaoEditor
+        titulo="Qualificação do(a) autor(a) da herança (para a escritura)"
+        valor={estado.qualificacoes['__falecido__'] ?? QUALIFICACAO_VAZIA}
+        onChange={(q) =>
+          onChange({ ...estado, qualificacoes: { ...estado.qualificacoes, ['__falecido__']: q } })
+        }
+        comConjuge={false}
+      />
 
       <h2>Havia cônjuge ou companheiro(a)?</h2>
       <div className="escolha">
@@ -294,7 +307,7 @@ function EditorHerdeiros({
   const adicionar = (dados: NovoHerdeiro) => {
     const novo: Herdeiro = {
       id: uid('h'),
-      nome: dados.nome,
+      nome: nomeProprio(dados.nome),
       classe: 'DESCENDENTE',
       grau: 1,
       status: dados.status,
@@ -546,6 +559,7 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   {
     rotulo: 'Dados pessoais',
     campos: [
+      { campo: 'nacionalidade', rotulo: 'Nacionalidade', placeholder: 'brasileiro(a)' },
       { campo: 'estadoCivil', rotulo: 'Estado civil' },
       { campo: 'profissao', rotulo: 'Profissão' },
       { campo: 'email', rotulo: 'E-mail', placeholder: 'parte@exemplo.com' },
@@ -566,15 +580,28 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
 
 /** Só para herdeiros — o viúvo(a) não tem "cônjuge do cônjuge". */
 const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
-  rotulo: 'Cônjuge do herdeiro (se casado)',
+  rotulo: 'Cônjuge do herdeiro (se casado) e casamento',
   campos: [
     { campo: 'conjugeNome', rotulo: 'Nome completo' },
+    { campo: 'conjugeNacionalidade', rotulo: 'Nacionalidade', placeholder: 'brasileiro(a)' },
     { campo: 'conjugeCpf', rotulo: 'CPF', placeholder: '123.456.789-00' },
     { campo: 'conjugeRg', rotulo: 'RG' },
+    { campo: 'conjugeDataNascimento', rotulo: 'Data de nascimento' },
+    { campo: 'conjugeFiliacao', rotulo: 'Filiação' },
     { campo: 'conjugeProfissao', rotulo: 'Profissão' },
     { campo: 'conjugeEmail', rotulo: 'E-mail' },
+    { campo: 'casamentoData', rotulo: 'Data do casamento' },
+    { campo: 'casamentoRegime', rotulo: 'Regime de bens', placeholder: 'comunhão parcial de bens' },
+    { campo: 'casamentoCertidao', rotulo: 'Certidão de casamento (matrícula/ORCPN)' },
   ],
 };
+
+/** Campos de data da ficha — entram com o DateInput, não com Input livre. */
+const CAMPOS_DE_DATA = new Set<keyof Qualificacao>([
+  'dataNascimento',
+  'conjugeDataNascimento',
+  'casamentoData',
+]);
 
 export function QualificacaoEditor({
   titulo,
@@ -599,7 +626,7 @@ export function QualificacaoEditor({
             {grupo.campos.map(({ campo, rotulo, placeholder }) => (
               <label className="campo" key={campo}>
                 {rotulo}
-                {campo === 'dataNascimento' ? (
+                {CAMPOS_DE_DATA.has(campo) ? (
                   <DateInput
                     value={valor[campo]}
                     onChange={(iso) => onChange({ ...valor, [campo]: iso })}

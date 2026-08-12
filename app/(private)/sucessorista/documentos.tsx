@@ -10,14 +10,11 @@ import { useRef, useState } from 'react';
 import { ZoomIn } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   CATALOGO_DOCUMENTOS,
   ROTULO_GRUPO,
   type GrupoDocumento,
 } from '@/lib/partilha/documentos';
-import { ROTULO_MODALIDADE, type ModalidadeEscritura } from '@/lib/partilha/escritura';
-import { Pilula } from './familia';
 import { montarPdfUnificado, montarZipIndividualizado } from '@/lib/partilha/processo';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { LupaPreview } from './preview';
@@ -57,34 +54,17 @@ export function DocumentosView({
   setAnexos,
   nomeCaso,
   temSobrevivente = true,
-  perfil = 'ADVOGADO',
-  onGerarPeticao,
-  onGerarPeticaoJudicial,
-  onGerarEscritura,
 }: {
   anexos: AnexosProcesso;
   setAnexos: (a: AnexosProcesso) => void;
   nomeCaso: string;
   /** false esconde o grupo do cônjuge supérstite — sucessão sem essa parte. */
   temSobrevivente?: boolean;
-  /** Advogado(a) gera petições; escrevente gera a minuta da escritura. */
-  perfil?: 'ADVOGADO' | 'ESCREVENTE';
-  /** Gera a minuta de petição ao Tabelionato (.docx) a partir da folha. */
-  onGerarPeticao?: () => Promise<void>;
-  /** Gera a minuta de petição INICIAL do inventário judicial (IA + fallback). */
-  onGerarPeticaoJudicial?: () => Promise<void>;
-  /** Gera a minuta da ESCRITURA (perfil escrevente), na modalidade indicada. */
-  onGerarEscritura?: (modalidade: ModalidadeEscritura, partesRemotas: string) => Promise<void>;
 }) {
   const [preview, setPreview] = useState<File | null>(null);
-  const [gerando, setGerando] = useState<
-    'pdf' | 'zip' | 'peticao' | 'peticao-judicial' | 'escritura' | null
-  >(null);
+  const [gerando, setGerando] = useState<'pdf' | 'zip' | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
-  /** Modalidade do ato notarial — muda introdução/encerramento da escritura. */
-  const [modalidade, setModalidade] = useState<ModalidadeEscritura>('PRESENCIAL');
-  const [partesRemotas, setPartesRemotas] = useState('');
 
   const catalogoDoCasoTopo = CATALOGO_DOCUMENTOS.filter(
     (doc) => temSobrevivente || doc.grupo !== 'SOBREVIVENTE',
@@ -206,10 +186,8 @@ export function DocumentosView({
 
       <h2>Montar o processo</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
-        Imagens viram página A4; PDFs entram como estão. A ordem é a do catálogo acima.{' '}
-        {perfil === 'ADVOGADO'
-          ? 'As minutas saem em DOCX editável, com a qualificação das partes, o plano de partilha fundamentado, o ITCMD e o rol dos documentos: requerimento ao Tabelionato (via extrajudicial) ou petição inicial completa (via judicial, com redação por IA).'
-          : 'A minuta da escritura sai em DOCX editável, com as cláusulas padrão intactas e as variáveis acompanhando a família, o acervo e a forma da partilha — tabelionato, escrevente e tabelião ficam em branco para preencher.'}
+        Imagens viram página A4; PDFs entram como estão. A ordem é a do catálogo acima. As
+        minutas (petições e escritura) têm aba própria na lombada, conforme o seu perfil.
       </p>
       <div className="escolha">
         <Button
@@ -228,91 +206,6 @@ export function DocumentosView({
           Baixar PDFs individualizados (ZIP)
         </Button>
       </div>
-
-      {perfil === 'ADVOGADO' ? (
-        <div className="escolha" style={{ marginTop: 10 }}>
-          {onGerarPeticao && (
-            <Button
-              variant="outline"
-              disabled={gerando !== null}
-              loading={gerando === 'peticao'}
-              onClick={async () => {
-                setGerando('peticao');
-                setErro(null);
-                try {
-                  await onGerarPeticao();
-                } catch (e) {
-                  setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da petição.');
-                } finally {
-                  setGerando(null);
-                }
-              }}
-            >
-              Minuta ao Tabelionato — extrajudicial (DOCX)
-            </Button>
-          )}
-          {onGerarPeticaoJudicial && (
-            <Button
-              variant="outline"
-              disabled={gerando !== null}
-              loading={gerando === 'peticao-judicial'}
-              onClick={async () => {
-                setGerando('peticao-judicial');
-                setErro(null);
-                try {
-                  await onGerarPeticaoJudicial();
-                } catch (e) {
-                  setErro(e instanceof Error ? e.message : 'Falha ao gerar a petição inicial.');
-                } finally {
-                  setGerando(null);
-                }
-              }}
-            >
-              Petição inicial — inventário judicial (DOCX, IA)
-            </Button>
-          )}
-        </div>
-      ) : (
-        onGerarEscritura && (
-          <div style={{ marginTop: 12 }}>
-            <span className="eyebrow">Modalidade do ato</span>
-            <div className="escolha" style={{ margin: '8px 0' }}>
-              {(Object.keys(ROTULO_MODALIDADE) as ModalidadeEscritura[]).map((m) => (
-                <Pilula key={m} ativo={modalidade === m} onClick={() => setModalidade(m)}>
-                  {ROTULO_MODALIDADE[m]}
-                </Pilula>
-              ))}
-            </div>
-            {modalidade === 'HIBRIDA' && (
-              <label className="campo" style={{ maxWidth: 480, marginBottom: 10 }}>
-                Quem participa por videoconferência
-                <Input
-                  value={partesRemotas}
-                  placeholder="ex.: a herdeira Renata Pummer Carvalho Lavruhin"
-                  onChange={(e) => setPartesRemotas(e.target.value)}
-                />
-              </label>
-            )}
-            <Button
-              disabled={gerando !== null}
-              loading={gerando === 'escritura'}
-              onClick={async () => {
-                setGerando('escritura');
-                setErro(null);
-                try {
-                  await onGerarEscritura(modalidade, partesRemotas);
-                } catch (e) {
-                  setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da escritura.');
-                } finally {
-                  setGerando(null);
-                }
-              }}
-            >
-              Gerar minuta da escritura (DOCX)
-            </Button>
-          </div>
-        )
-      )}
       {erro && <p className="mono-alerta">{erro}</p>}
       {avisos.map((a, i) => (
         <p key={i} className="mono-alerta">

@@ -40,7 +40,7 @@ import {
 } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { Caso, Bem } from '@/lib/partilha/types';
-import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
+import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { isencoesArt6, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import {
   avaliarQuotas,
@@ -59,6 +59,7 @@ import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
 import { HonorariosView } from './honorarios-view';
+import { MinutasView, EscrituraView } from './minutas-view';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, salvarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -133,9 +134,28 @@ const FALECIDO_VAZIO: DadosFalecido = {
   ultimoDomicilio: '',
 };
 
-type Aba = 'caso' | 'familia' | 'acervo' | 'partilha' | 'documentos' | 'itcmd' | 'honorarios';
+type Aba =
+  | 'caso'
+  | 'familia'
+  | 'acervo'
+  | 'partilha'
+  | 'documentos'
+  | 'itcmd'
+  | 'honorarios'
+  | 'minutas'
+  | 'escritura';
 
-const ABAS: readonly Aba[] = ['caso', 'familia', 'acervo', 'partilha', 'documentos', 'itcmd', 'honorarios'];
+const ABAS: readonly Aba[] = [
+  'caso',
+  'familia',
+  'acervo',
+  'partilha',
+  'documentos',
+  'itcmd',
+  'honorarios',
+  'minutas',
+  'escritura',
+];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
 const abaValida = (v: string | null): Aba =>
@@ -597,7 +617,7 @@ export default function SucessoristaClient() {
 
     setFamilia((prev) => {
       const fal = { ...prev.falecido };
-      if (!fal.nome && lido.falecido.nome) fal.nome = lido.falecido.nome;
+      if (!fal.nome && lido.falecido.nome) fal.nome = nomeProprio(lido.falecido.nome);
       if (!fal.cpf && lido.falecido.cpf) fal.cpf = lido.falecido.cpf;
       if (!fal.dataObito && lido.falecido.dataObito) fal.dataObito = lido.falecido.dataObito;
       if (!fal.dataCasamento && lido.falecido.dataCasamento)
@@ -617,11 +637,12 @@ export default function SucessoristaClient() {
         if (nomeSobrevivente && mesmaPessoa(h.nome, nomeSobrevivente)) continue;
         const visto = lidos.find((x) => mesmaPessoa(x.nome, h.nome));
         if (visto) {
-          if (h.nome.trim().length > visto.nome.trim().length) visto.nome = h.nome;
+          if (h.nome.trim().length > visto.nome.trim().length) visto.nome = nomeProprio(h.nome);
           if (!visto.qualificacao && h.qualificacao) visto.qualificacao = h.qualificacao;
           continue;
         }
-        lidos.push({ ...h });
+        // Nome padronizado: primeira maiúscula, resto minúsculo (partículas preservadas).
+        lidos.push({ ...h, nome: nomeProprio(h.nome) });
       }
 
       const qualificacoes: Record<string, Qualificacao> = { ...prev.qualificacoes };
@@ -692,6 +713,15 @@ export default function SucessoristaClient() {
         );
       }
 
+      // Ficha do(a) falecido(a) (certidão de óbito/planilha) — qualifica o
+      // "de cujus" na escritura e nas petições.
+      if (lido.falecido.qualificacao) {
+        qualificacoes['__falecido__'] = preencherVazios(
+          qualificacoes['__falecido__'] ?? QUALIFICACAO_VAZIA,
+          lido.falecido.qualificacao,
+        );
+      }
+
       return {
         ...prev,
         falecido: fal,
@@ -699,7 +729,7 @@ export default function SucessoristaClient() {
           lido.sobrevivente.existe !== null ? lido.sobrevivente.existe : prev.temSobrevivente,
         vinculo: lido.sobrevivente.vinculo ?? prev.vinculo,
         regime: lido.sobrevivente.regime ?? prev.regime,
-        nomeSobrev: prev.nomeSobrev || (lido.sobrevivente.nome ?? ''),
+        nomeSobrev: prev.nomeSobrev || nomeProprio(lido.sobrevivente.nome ?? ''),
         herdeiros: todos,
         qualificacoes,
         perguntas,
@@ -709,7 +739,27 @@ export default function SucessoristaClient() {
 
     if (lido.bens.length > 0) {
       setBens((prev) => {
-        const descricoes = new Set(prev.map((b) => b.descricao.trim().toLowerCase()));
+        // Bem já lançado ganha os DETALHES lidos (matrícula, valores venais,
+        // CRLV) que ainda não tinha; bem novo entra com tudo.
+        const atualizados = prev.map((bem) => {
+          const lidoB = lido.bens.find(
+            (x) => x.descricao.trim().toLowerCase() === bem.descricao.trim().toLowerCase(),
+          );
+          if (!lidoB) return bem;
+          const proximo = { ...bem };
+          if (!proximo.imovel && lidoB.imovel) {
+            proximo.imovel = Object.fromEntries(
+              Object.entries(lidoB.imovel).filter(([, v]) => v !== null),
+            );
+          }
+          if (!proximo.veiculo && lidoB.veiculo) {
+            proximo.veiculo = Object.fromEntries(
+              Object.entries(lidoB.veiculo).filter(([, v]) => v !== null),
+            );
+          }
+          return proximo;
+        });
+        const descricoes = new Set(atualizados.map((b) => b.descricao.trim().toLowerCase()));
         const novos = lido.bens
           .filter((b) => !descricoes.has(b.descricao.trim().toLowerCase()))
           .map((b) => ({
@@ -718,8 +768,14 @@ export default function SucessoristaClient() {
             valor: b.valor ?? '0.00',
             natureza: b.natureza ?? ('COMUM' as const),
             tipo: b.tipo ?? ('OUTRO' as const),
+            ...(b.imovel
+              ? { imovel: Object.fromEntries(Object.entries(b.imovel).filter(([, v]) => v !== null)) }
+              : {}),
+            ...(b.veiculo
+              ? { veiculo: Object.fromEntries(Object.entries(b.veiculo).filter(([, v]) => v !== null)) }
+              : {}),
           }));
-        return [...prev, ...novos];
+        return [...atualizados, ...novos];
       });
     }
 
@@ -961,6 +1017,7 @@ export default function SucessoristaClient() {
       modalidade,
       partesRemotas,
       falecido,
+      qualificacaoFalecido: familia.qualificacoes['__falecido__'],
       temSobrevivente,
       nomeSobrev,
       vinculo,
@@ -1027,12 +1084,16 @@ export default function SucessoristaClient() {
             ['partilha', 'III', 'Partilha'],
             ['itcmd', 'IV', 'ITCMD'],
             ['documentos', 'V', 'Documentos'],
-            ['honorarios', 'VI', 'Honorários'],
+            // Abas finais por perfil: honorários e minutas são do advogado;
+            // a escritura é o item VI do balcão do escrevente.
+            ...(perfil === 'ADVOGADO'
+              ? ([
+                  ['honorarios', 'VI', 'Honorários'],
+                  ['minutas', 'VII', 'Minutas'],
+                ] as const)
+              : ([['escritura', 'VI', 'Escritura']] as const)),
           ] as const
-        )
-          // Honorários advocatícios não fazem parte do balcão do escrevente.
-          .filter(([id]) => perfil === 'ADVOGADO' || id !== 'honorarios')
-          .map(([id, ind, rotulo]) => (
+        ).map(([id, ind, rotulo]) => (
           <button
             key={id}
             className="aba"
@@ -1132,6 +1193,7 @@ export default function SucessoristaClient() {
                 nomeCaso={falecido.nome}
                 voltar={() => irPara('acervo')}
                 avancar={() => setPasso(2)}
+                irParaItcmd={() => irPara('itcmd')}
               />
             )}
 
@@ -1355,10 +1417,6 @@ export default function SucessoristaClient() {
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
-              perfil={perfil}
-              onGerarPeticao={gerarPeticao}
-              onGerarPeticaoJudicial={gerarPeticaoJudicial}
-              onGerarEscritura={gerarEscritura}
             />
             <CofreView
               herdeiros={herdeiros}
@@ -1405,6 +1463,17 @@ export default function SucessoristaClient() {
             setCondicoes={setCondicoesHonorarios}
           />
         )}
+
+        {abaProc === 'minutas' && perfil === 'ADVOGADO' && (
+          <MinutasView
+            onGerarPeticao={gerarPeticao}
+            onGerarPeticaoJudicial={gerarPeticaoJudicial}
+          />
+        )}
+
+        {abaProc === 'escritura' && perfil === 'ESCREVENTE' && (
+          <EscrituraView onGerarEscritura={gerarEscritura} />
+        )}
       </main>
 
       <PainelCaso
@@ -1432,12 +1501,14 @@ function EspelhoView({
   nomeCaso,
   voltar,
   avancar,
+  irParaItcmd,
 }: {
   resultado: ReturnType<typeof partilhar> | null;
   bens: Bem[];
   nomeCaso: string;
   voltar: () => void;
   avancar: () => void;
+  irParaItcmd: () => void;
 }) {
   const [exportando, setExportando] = useState(false);
 
@@ -1644,9 +1715,12 @@ function EspelhoView({
         <Button variant="outline" onClick={voltar}>
           Voltar ao acervo
         </Button>
-        <Button onClick={avancar} disabled={resultado.bloqueios.length > 0}>
-          Partilha diferenciada
-        </Button>
+        <span style={{ display: 'inline-flex', gap: 8 }}>
+          <Button variant="outline" onClick={avancar} disabled={resultado.bloqueios.length > 0}>
+            Partilha diferenciada
+          </Button>
+          <Button onClick={irParaItcmd}>Avançar ao ITCMD (IV)</Button>
+        </span>
       </div>
     </section>
   );

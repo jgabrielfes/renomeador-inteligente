@@ -33,13 +33,16 @@ import {
 } from '@/lib/partilha/familia';
 import {
   ALIQUOTA_ITCMD_SP,
+  analisarIsencoesPorBem,
   impostoProgressivo,
+  ufespDoAno,
   FAIXAS_PL7_2024,
   FAIXAS_TETO_NACIONAL,
   type FaixaProgressiva,
   type ProvisaoItcmd,
   type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
+import { Pilula } from './familia';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -254,6 +257,65 @@ export function ItcmdView({
           </div>
 
           <h2>Isenções (art. 6º da Lei 10.705/2000)</h2>
+
+          {/* Leitura AUTOMÁTICA: o sistema interpreta cada bem contra as
+              hipóteses do art. 6º, I (medidas em UFESPs do ano do óbito) e
+              demonstra o enquadramento; requisitos de fato saem como
+              condições a confirmar antes de marcar a isenção abaixo. */}
+          {falecido.dataObito && bens.length > 0 && (
+            <>
+              <span className="eyebrow">Leitura automática do acervo</span>
+              <div className="check" style={{ margin: '6px 0 14px' }}>
+                {analisarIsencoesPorBem(
+                  bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+                  ufespDoAno(Number(falecido.dataObito.slice(0, 4))).valor,
+                ).map((a) => (
+                  <div className="check-item" key={a.indice}>
+                    <span
+                      className="prio"
+                      style={{
+                        color:
+                          a.verdito === 'ISENTO_POSSIVEL'
+                            ? 'var(--verde-registro)'
+                            : a.verdito === 'AVALIAR'
+                              ? 'var(--bronze)'
+                              : 'var(--lacre)',
+                      }}
+                    >
+                      {a.verdito === 'ISENTO_POSSIVEL' ? '✓' : a.verdito === 'AVALIAR' ? '?' : '✗'}
+                    </span>
+                    <div>
+                      <h4>
+                        {a.indice}. {a.descricao}{' '}
+                        <span className="num" style={{ fontWeight: 400 }}>· {brl(a.valor)}</span>
+                      </h4>
+                      <p>
+                        <strong>
+                          {a.verdito === 'ISENTO_POSSIVEL'
+                            ? `Possivelmente ISENTO (${a.hipotese})`
+                            : a.verdito === 'AVALIAR'
+                              ? `Avaliar (${a.hipotese})`
+                              : 'Tributado'}
+                        </strong>{' '}
+                        — {a.explicacao}
+                      </p>
+                      {a.condicoes.map((c, j) => (
+                        <p key={j} style={{ color: 'var(--tinta-media)' }}>
+                          Confirmar: {c}
+                        </p>
+                      ))}
+                    </div>
+                    <span />
+                  </div>
+                ))}
+              </div>
+              <p className="fund" style={{ marginBottom: 10 }}>
+                A isenção é declarada no próprio sistema da declaração do ITCMD (Sefaz-SP) —
+                confirmadas as condições, marque abaixo para o sistema abater da base.
+              </p>
+            </>
+          )}
+
           <label className="marcar">
             <Checkbox
               checked={fiscal.isencaoResidencial}
@@ -304,21 +366,17 @@ export function ItcmdView({
           {/* ---------- provisão ---------- */}
           <h2>Provisão do imposto em {formatarData(hoje)}</h2>
           <div className="grade c2" style={{ margin: '10px 0 4px' }}>
-            <label className="campo">
+            <div className="campo">
               O inventário já foi aberto (protocolado)?
-              <Select
-                value={fiscal.inventarioAberto ? 's' : 'n'}
-                onValueChange={(v) => v && patch({ inventarioAberto: v === 's' })}
-              >
-                <SelectTrigger aria-label="O inventário já foi aberto?">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="n">Ainda não</SelectItem>
-                  <SelectItem value="s">Sim</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
+              <div className="escolha">
+                <Pilula ativo={fiscal.inventarioAberto} onClick={() => patch({ inventarioAberto: true })}>
+                  Sim
+                </Pilula>
+                <Pilula ativo={!fiscal.inventarioAberto} onClick={() => patch({ inventarioAberto: false })}>
+                  Não
+                </Pilula>
+              </div>
+            </div>
             {fiscal.inventarioAberto && (
               <label className="campo">
                 Data do protocolo
@@ -397,9 +455,18 @@ export function ItcmdView({
             <div className="nota">
               <span className="eyebrow">Como recolher</span>
               <p>
-                Declaração no sistema da Sefaz-SP (www10.fazenda.sp.gov.br/ITCMD_DEC) e DARE
-                emitido lá — o demonstrativo oficial fecha centavos com a Selic efetiva do
-                Banco Central. Esta provisão orienta a reserva de caixa da família.
+                Declaração no{' '}
+                <a
+                  href="https://www10.fazenda.sp.gov.br/ITCMD_DEC/Default.aspx"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'underline', fontWeight: 600 }}
+                >
+                  sistema da declaração do ITCMD (Sefaz-SP)
+                </a>{' '}
+                e DARE emitido lá — o demonstrativo oficial fecha centavos com a Selic
+                efetiva do Banco Central. Esta provisão orienta a reserva de caixa da
+                família.
               </p>
             </div>
           </div>

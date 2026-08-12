@@ -32,6 +32,7 @@ export type TipoBemExtraido = "IMOVEL" | "VEICULO" | "FINANCEIRO" | "QUOTAS" | "
  * que a planilha do escritório trouxer e deixar em branco só o que faltar.
  */
 export interface QualificacaoExtraida {
+  nacionalidade: string | null;
   rg: string | null;
   cpf: string | null;
   dataNascimento: string | null;
@@ -46,10 +47,39 @@ export interface QualificacaoExtraida {
   uf: string | null;
   cep: string | null;
   conjugeNome: string | null;
+  conjugeNacionalidade: string | null;
   conjugeRg: string | null;
   conjugeCpf: string | null;
+  conjugeDataNascimento: string | null;
+  conjugeFiliacao: string | null;
   conjugeProfissao: string | null;
   conjugeEmail: string | null;
+  casamentoData: string | null;
+  casamentoRegime: string | null;
+  casamentoCertidao: string | null;
+}
+
+/** Dados da matrícula/certidões de valor venal, por imóvel. */
+export interface ImovelExtraido {
+  aquisicao: string | null;
+  matricula: string | null;
+  registroImoveis: string | null;
+  municipio: string | null;
+  inscricaoCadastral: string | null;
+  valorVenalObito: string | null;
+  exercicioObito: string | null;
+  valorVenalAtual: string | null;
+  exercicioAtual: string | null;
+}
+
+/** Dados do CRLV, por veículo. */
+export interface VeiculoExtraido {
+  marcaModelo: string | null;
+  anoFabricacao: string | null;
+  anoModelo: string | null;
+  renavam: string | null;
+  placa: string | null;
+  chassi: string | null;
 }
 
 export interface CasoExtraido {
@@ -59,6 +89,8 @@ export interface CasoExtraido {
     dataObito: string | null;
     dataCasamento: string | null;
     ultimoDomicilio: string | null;
+    /** RG, nascimento, filiação etc. — a certidão de óbito costuma trazer. */
+    qualificacao: QualificacaoExtraida | null;
   };
   sobrevivente: {
     existe: boolean | null;
@@ -79,6 +111,8 @@ export interface CasoExtraido {
     tipo: TipoBemExtraido | null;
     valor: string | null;
     natureza: "COMUM" | "PARTICULAR" | null;
+    imovel: ImovelExtraido | null;
+    veiculo: VeiculoExtraido | null;
   }>;
   /**
    * Pessoas jurídicas documentadas (contrato social/alteração + balanço).
@@ -106,6 +140,7 @@ const texto = { type: "string", nullable: true } as const;
 
 /** Schema da qualificação — os MESMOS campos da ficha da folha. */
 const QUALI_PROPS = {
+  nacionalidade: texto,
   rg: texto,
   cpf: texto,
   dataNascimento: texto,
@@ -120,10 +155,37 @@ const QUALI_PROPS = {
   uf: texto,
   cep: texto,
   conjugeNome: texto,
+  conjugeNacionalidade: texto,
   conjugeRg: texto,
   conjugeCpf: texto,
+  conjugeDataNascimento: texto,
+  conjugeFiliacao: texto,
   conjugeProfissao: texto,
   conjugeEmail: texto,
+  casamentoData: texto,
+  casamentoRegime: texto,
+  casamentoCertidao: texto,
+} as const;
+
+const IMOVEL_PROPS = {
+  aquisicao: texto,
+  matricula: texto,
+  registroImoveis: texto,
+  municipio: texto,
+  inscricaoCadastral: texto,
+  valorVenalObito: texto,
+  exercicioObito: texto,
+  valorVenalAtual: texto,
+  exercicioAtual: texto,
+} as const;
+
+const VEICULO_PROPS = {
+  marcaModelo: texto,
+  anoFabricacao: texto,
+  anoModelo: texto,
+  renavam: texto,
+  placa: texto,
+  chassi: texto,
 } as const;
 
 const RESPONSE_SCHEMA = {
@@ -137,6 +199,7 @@ const RESPONSE_SCHEMA = {
         dataObito: texto,
         dataCasamento: texto,
         ultimoDomicilio: texto,
+        qualificacao: { type: "object", nullable: true, properties: QUALI_PROPS },
       },
     },
     sobrevivente: {
@@ -183,6 +246,8 @@ const RESPONSE_SCHEMA = {
           },
           valor: texto,
           natureza: { type: "string", enum: ["COMUM", "PARTICULAR"], nullable: true },
+          imovel: { type: "object", nullable: true, properties: IMOVEL_PROPS },
+          veiculo: { type: "object", nullable: true, properties: VEICULO_PROPS },
         },
         required: ["descricao"],
       },
@@ -244,10 +309,10 @@ function prompt(total: number): string {
 
 Extraia APENAS o que constar dos documentos, para preencher a folha de trabalho do inventário:
 
-1. falecido — REGRA CRÍTICA: identifique primeiro a CERTIDÃO DE ÓBITO entre os documentos; o(a) falecido(a) é EXCLUSIVAMENTE a pessoa declarada morta nela (nome, CPF no formato 000.000.000-00, dataObito em YYYY-MM-DD, ultimoDomicilio como "Cidade/UF"). NUNCA aponte como falecido: o(a) declarante da certidão de óbito, o(a) titular de CNH/RG/CPF/comprovantes (na pasta de um inventário esses documentos são normalmente do CÔNJUGE SOBREVIVENTE ou de herdeiros), nem uma das partes da certidão de casamento isoladamente. Documento mais legível NÃO significa pessoa falecida. Sem certidão de óbito legível no lote, deixe falecido.nome = null — não deduza pelo nome dos arquivos nem por quem aparece mais. dataCasamento (YYYY-MM-DD) sai da certidão de casamento. HAVENDO MAIS DE UMA certidão de óbito no lote: o(a) autor(a) da herança é quem o conjunto aponta (a certidão mais recente ou a coerente com casamento/herdeiros); as DEMAIS pessoas falecidas entram em outrosFalecidos (nome + dataObito) — típico de herdeiro pré-morto ou de dupla sucessão (os dois pais).
+1. falecido — REGRA CRÍTICA: identifique primeiro a CERTIDÃO DE ÓBITO entre os documentos; o(a) falecido(a) é EXCLUSIVAMENTE a pessoa declarada morta nela (nome, CPF no formato 000.000.000-00, dataObito em YYYY-MM-DD, ultimoDomicilio como "Cidade/UF"). Preencha também falecido.qualificacao com o que os documentos trouxerem do(a) PRÓPRIO(A) falecido(a): nacionalidade, RG, data de nascimento, filiação (a certidão de óbito costuma trazer), profissão, endereço completo — a escritura qualifica o "de cujus" com esses dados. NUNCA aponte como falecido: o(a) declarante da certidão de óbito, o(a) titular de CNH/RG/CPF/comprovantes (na pasta de um inventário esses documentos são normalmente do CÔNJUGE SOBREVIVENTE ou de herdeiros), nem uma das partes da certidão de casamento isoladamente. Documento mais legível NÃO significa pessoa falecida. Sem certidão de óbito legível no lote, deixe falecido.nome = null — não deduza pelo nome dos arquivos nem por quem aparece mais. dataCasamento (YYYY-MM-DD) sai da certidão de casamento. HAVENDO MAIS DE UMA certidão de óbito no lote: o(a) autor(a) da herança é quem o conjunto aponta (a certidão mais recente ou a coerente com casamento/herdeiros); as DEMAIS pessoas falecidas entram em outrosFalecidos (nome + dataObito) — típico de herdeiro pré-morto ou de dupla sucessão (os dois pais).
 2. sobrevivente — existe = true se os documentos indicarem cônjuge ou companheiro(a) vivo(a) na data do óbito (false apenas com indicação clara em contrário, ex.: certidão de óbito dizendo viúvo/divorciado sem união posterior). O(a) sobrevivente é o cônjuge da certidão de casamento que NÃO é o(a) falecido(a) — tipicamente o(a) declarante do óbito e o(a) titular dos documentos pessoais da pasta. vinculo e regime saem da certidão de casamento ou escritura de união estável (regime: atenção à data do casamento — antes de 1977 o regime legal era a comunhão universal). Quando houver planilha/minuta de qualificação (a coluna "VIÚVO(A)"/"CÔNJUGE SUPÉRSTITE"), preencha sobrevivente.qualificacao com TODOS os campos que constarem.
 3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). REGRAS DE UNICIDADE (críticas): cada pessoa aparece UMA ÚNICA VEZ, sempre com o nome MAIS COMPLETO que os documentos trouxerem — "Renata" e "Renata Pummer Carvalho Lavruhin" são a MESMA pessoa (una os registros; diferenças de acento como "Márcio"/"Marcio" também são a mesma pessoa); NUNCA inclua na lista o(a) falecido(a) nem o(a) cônjuge/companheiro(a) sobrevivente (o viúvo NÃO é herdeiro aqui — ele já está no item 2); NUNCA inclua o cônjuge de herdeiro como herdeiro (ele entra na qualificacao do herdeiro, campos conjuge*). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. PLANILHAS DE QUALIFICAÇÃO do escritório costumam ter uma COLUNA por pessoa (AUTOR(A) DA HERANÇA, VIÚVO(A), Herdeiro 1, 2, 3…) e uma LINHA por campo (NOME, RG, CPF, DATA DE NASCIMENTO, FILIAÇÃO, ESTADO CIVIL, PROFISSÃO, E-MAIL, ENDEREÇO, COMPLEMENTO, BAIRRO, CIDADE, ESTADO/UF, CEP e o bloco CÔNJUGE do herdeiro casado) — extraia TUDO o que constar para a qualificacao de cada pessoa (dataNascimento em YYYY-MM-DD; CPF como 000.000.000-00; uf com 2 letras; campo ausente = null; sem qualquer dado, qualificacao = null). Deixe em branco (null) apenas o que realmente não estiver nos documentos.
-4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR). NÃO lance participação societária (quotas/ações) em bens — ela entra em "sociedades" e o sistema calcula o valor.
+4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR). Para IMÓVEL, extraia da MATRÍCULA e das CERTIDÕES DE VALOR VENAL o bloco imovel: aquisicao = o registro/averbação pelo qual o(a) falecido(a) adquiriu (ex.: "R.4"), matricula, registroImoveis (ex.: "1º Registro de Imóveis de Guarulhos/SP"), municipio, inscricaoCadastral (nº do contribuinte/inscrição municipal), valorVenalObito + exercicioObito (certidão do exercício do óbito) e valorVenalAtual + exercicioAtual (certidão do exercício corrente) — valores em reais com ponto decimal. Para VEÍCULO, extraia do CRLV (ou da própria descrição, quando constar) o bloco veiculo: marcaModelo, anoFabricacao, anoModelo, renavam, placa, chassi. NÃO lance participação societária (quotas/ações) em bens — ela entra em "sociedades" e o sistema calcula o valor.
 5. sociedades — uma por pessoa jurídica documentada. Do CONTRATO SOCIAL (ou última alteração/consolidação): empresa (razão social), cnpj, capitalSocial em reais com ponto decimal, e socios = TODOS os sócios do quadro societário com o percentual de cada um no capital (0 a 100; calcule pela proporção das quotas se o documento só trouxer quantidades — ex.: 50.000 de 100.000 quotas = 50). Do BALANÇO PATRIMONIAL: patrimonioLiquido em reais com ponto decimal (o total do grupo "Patrimônio Líquido"). Emita a sociedade mesmo que só um dos dois documentos esteja no lote — campos ausentes ficam null. NÃO calcule o valor das quotas.
 6. arquivos — para CADA documento (indice 1 a ${total}): tipoDetectado (rótulo curto, ex.: "Certidão de Óbito") e documentoId = o id do catálogo abaixo em que o arquivo deve ser arquivado (null se nenhum servir). Documentos pessoais (RG/CNH/CPF/comprovante de endereço) classificam-se pelo DONO: do(a) falecido(a) → docs-falecido; do cônjuge/companheiro(a) sobrevivente → docs-sobrevivente; de herdeiro ou cônjuge de herdeiro → docs-herdeiros.
 
@@ -283,6 +348,7 @@ function sanitizarQualificacao(q: unknown): QualificacaoExtraida | null {
   if (!q || typeof q !== "object") return null;
   const o = q as Record<string, unknown>;
   const saida: QualificacaoExtraida = {
+    nacionalidade: limpar(o.nacionalidade, 40),
     rg: limpar(o.rg, 30),
     cpf: limpar(o.cpf, 14),
     dataNascimento: dataIso(o.dataNascimento),
@@ -297,10 +363,47 @@ function sanitizarQualificacao(q: unknown): QualificacaoExtraida | null {
     uf: limpar(o.uf, 2),
     cep: limpar(o.cep, 10),
     conjugeNome: limpar(o.conjugeNome, 120),
+    conjugeNacionalidade: limpar(o.conjugeNacionalidade, 40),
     conjugeRg: limpar(o.conjugeRg, 30),
     conjugeCpf: limpar(o.conjugeCpf, 14),
+    conjugeDataNascimento: dataIso(o.conjugeDataNascimento),
+    conjugeFiliacao: limpar(o.conjugeFiliacao, 160),
     conjugeProfissao: limpar(o.conjugeProfissao, 60),
     conjugeEmail: limpar(o.conjugeEmail, 120),
+    casamentoData: dataIso(o.casamentoData),
+    casamentoRegime: limpar(o.casamentoRegime, 60),
+    casamentoCertidao: limpar(o.casamentoCertidao, 160),
+  };
+  return Object.values(saida).some((v) => v !== null) ? saida : null;
+}
+
+function sanitizarImovel(q: unknown): ImovelExtraido | null {
+  if (!q || typeof q !== "object") return null;
+  const o = q as Record<string, unknown>;
+  const saida: ImovelExtraido = {
+    aquisicao: limpar(o.aquisicao, 60),
+    matricula: limpar(o.matricula, 40),
+    registroImoveis: limpar(o.registroImoveis, 120),
+    municipio: limpar(o.municipio, 60),
+    inscricaoCadastral: limpar(o.inscricaoCadastral, 60),
+    valorVenalObito: valorDecimal(o.valorVenalObito),
+    exercicioObito: limpar(o.exercicioObito, 4),
+    valorVenalAtual: valorDecimal(o.valorVenalAtual),
+    exercicioAtual: limpar(o.exercicioAtual, 4),
+  };
+  return Object.values(saida).some((v) => v !== null) ? saida : null;
+}
+
+function sanitizarVeiculo(q: unknown): VeiculoExtraido | null {
+  if (!q || typeof q !== "object") return null;
+  const o = q as Record<string, unknown>;
+  const saida: VeiculoExtraido = {
+    marcaModelo: limpar(o.marcaModelo, 80),
+    anoFabricacao: limpar(o.anoFabricacao, 4),
+    anoModelo: limpar(o.anoModelo, 4),
+    renavam: limpar(o.renavam, 20),
+    placa: limpar(o.placa, 10),
+    chassi: limpar(o.chassi, 30),
   };
   return Object.values(saida).some((v) => v !== null) ? saida : null;
 }
@@ -438,6 +541,7 @@ export async function extrairCasoDoCofre(
       dataObito: dataIso(f.dataObito),
       dataCasamento: dataIso(f.dataCasamento),
       ultimoDomicilio: limpar(f.ultimoDomicilio, 80),
+      qualificacao: sanitizarQualificacao(f.qualificacao),
     },
     sobrevivente: {
       existe: typeof s.existe === "boolean" ? s.existe : null,
@@ -475,6 +579,8 @@ export async function extrairCasoDoCofre(
           tipo: umDe(item.tipo, ["IMOVEL", "VEICULO", "FINANCEIRO", "QUOTAS", "OUTRO"] as const),
           valor: valorDecimal(item.valor),
           natureza: umDe(item.natureza, ["COMUM", "PARTICULAR"] as const),
+          imovel: sanitizarImovel(item.imovel),
+          veiculo: sanitizarVeiculo(item.veiculo),
         };
       })
       .filter((b): b is NonNullable<typeof b> => b !== null)

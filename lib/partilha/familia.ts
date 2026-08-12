@@ -9,6 +9,28 @@
 
 import type { Herdeiro, Regime, Vinculo } from './types';
 
+const PARTICULAS_DE_NOME = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+/**
+ * Nome de pessoa padronizado: primeira letra maiúscula em cada palavra e o
+ * resto minúsculo ("RENATA PUMMER" → "Renata Pummer"), preservando as
+ * partículas (de, da, dos…) em minúsculas. Documentos que exigem caixa alta
+ * aplicam .toUpperCase() na saída — o dado guardado fica legível.
+ */
+export function nomeProprio(s: string): string {
+  const limpo = s.replace(/\s+/g, ' ').trim();
+  if (!limpo) return limpo;
+  return limpo
+    .toLocaleLowerCase('pt-BR')
+    .split(' ')
+    .map((p, i) =>
+      i > 0 && PARTICULAS_DE_NOME.has(p)
+        ? p
+        : p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1),
+    )
+    .join(' ');
+}
+
 /** Dados do autor da herança que abrem o caso. */
 export interface DadosFalecido {
   nome: string;
@@ -22,6 +44,7 @@ export interface DadosFalecido {
 
 /** Qualificação de uma parte (colunas da planilha do escritório). */
 export interface Qualificacao {
+  nacionalidade: string;
   rg: string;
   cpf: string;
   dataNascimento: string;
@@ -37,13 +60,21 @@ export interface Qualificacao {
   cep: string;
   /** Cônjuge da parte (bloco "CÔNJUGE" da planilha) — herdeiro casado. */
   conjugeNome: string;
+  conjugeNacionalidade: string;
   conjugeRg: string;
   conjugeCpf: string;
+  conjugeDataNascimento: string;
+  conjugeFiliacao: string;
   conjugeProfissao: string;
   conjugeEmail: string;
+  /** Casamento da parte: a escritura qualifica com data, regime e certidão. */
+  casamentoData: string;
+  casamentoRegime: string;
+  casamentoCertidao: string;
 }
 
 export const QUALIFICACAO_VAZIA: Qualificacao = {
+  nacionalidade: '',
   rg: '',
   cpf: '',
   dataNascimento: '',
@@ -58,10 +89,16 @@ export const QUALIFICACAO_VAZIA: Qualificacao = {
   uf: '',
   cep: '',
   conjugeNome: '',
+  conjugeNacionalidade: '',
   conjugeRg: '',
   conjugeCpf: '',
+  conjugeDataNascimento: '',
+  conjugeFiliacao: '',
   conjugeProfissao: '',
   conjugeEmail: '',
+  casamentoData: '',
+  casamentoRegime: '',
+  casamentoCertidao: '',
 };
 
 /**

@@ -10,6 +10,7 @@ import {
   jurosArt20,
   UFESP_POR_ANO,
   isencoesArt6,
+  analisarIsencoesPorBem,
   impostoProgressivo,
   FAIXAS_PL7_2024,
   FAIXAS_TETO_NACIONAL,
@@ -170,6 +171,53 @@ eq('óbito após a vigência: progressivo aplicado', provProg.parcelas[0].rotulo
 eq('aviso de simulação presente', provProg.avisos.some((a) => a.includes('SIMULAÇÃO')), true);
 // Base atualizada = base (mesmo ano estimado): 8% de 1M = 80.000.
 aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
+
+
+/* ---------- leitura automática das isenções por bem ---------- */
+{
+  const ufesp = 38.42; // 2026
+  // Único imóvel ≤ 2.500 UFESPs → alínea "b".
+  const a1 = analisarIsencoesPorBem([{ tipo: 'IMOVEL', valor: 90_000, descricao: 'Casa' }], ufesp);
+  eq('isenção b: único imóvel pequeno', [a1[0].verdito, a1[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "b"']);
+  // Imóvel ≤ 5.000 UFESPs com outro imóvel no acervo → alínea "a" com condições.
+  const a2 = analisarIsencoesPorBem(
+    [
+      { tipo: 'IMOVEL', valor: 150_000, descricao: 'Casa' },
+      { tipo: 'IMOVEL', valor: 800_000, descricao: 'Prédio' },
+    ],
+    ufesp,
+  );
+  eq('isenção a: hipótese com condições', [a2[0].verdito, a2[0].hipotese, a2[0].condicoes.length > 0], ['ISENTO_POSSIVEL', 'art. 6º, I, "a"', true]);
+  eq('imóvel caro: tributado por inteiro', a2[1].verdito, 'TRIBUTADO');
+  // Financeiro mede o CONJUNTO.
+  const a3 = analisarIsencoesPorBem(
+    [
+      { tipo: 'FINANCEIRO', valor: 15_000, descricao: 'Conta A' },
+      { tipo: 'FINANCEIRO', valor: 20_000, descricao: 'Conta B' },
+    ],
+    ufesp,
+  );
+  eq('financeiro dentro do conjunto: isento d', [a3[0].verdito, a3[1].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "d"']);
+  const a4 = analisarIsencoesPorBem(
+    [
+      { tipo: 'FINANCEIRO', valor: 30_000, descricao: 'Conta A' },
+      { tipo: 'FINANCEIRO', valor: 30_000, descricao: 'Conta B' },
+    ],
+    ufesp,
+  );
+  eq('financeiro acima no conjunto: tributado', a4[0].verdito, 'TRIBUTADO');
+  // Veículo: sem hipótese; FGTS: alínea "e".
+  const a5 = analisarIsencoesPorBem(
+    [
+      { tipo: 'VEICULO', valor: 40_000, descricao: 'Gol' },
+      { tipo: 'OUTRO', valor: 12_000, descricao: 'Saldo de FGTS não recebido em vida' },
+    ],
+    ufesp,
+  );
+  eq('veículo tributado', a5[0].verdito, 'TRIBUTADO');
+  eq('FGTS isento e', [a5[1].verdito, a5[1].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
+}
+
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

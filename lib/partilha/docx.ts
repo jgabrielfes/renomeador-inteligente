@@ -16,7 +16,23 @@ export interface Paragrafo {
   titulo?: boolean;
   /** Fonte menor (9pt) — linhas de contato do cabeçalho do escritório. */
   discreto?: boolean;
+  sublinhado?: boolean;
+  /** Tamanho da fonte em half-points (22 = 11pt); default do documento. */
+  tamanho?: number;
 }
+
+/** Tabela simples com bordas (formato dos modelos notariais). */
+export interface TabelaDocx {
+  /** Largura das colunas em twips (1/20 pt). */
+  colunas: number[];
+  linhas: { celulas: string[]; negrito?: boolean }[];
+  /** Tamanho da fonte das células em half-points. */
+  tamanho?: number;
+}
+
+export type BlocoDocx =
+  | ({ tipo: 'p' } & Paragrafo)
+  | ({ tipo: 'tabela' } & TabelaDocx);
 
 export interface LogoDocx {
   /** data URL image/png ou image/jpeg (validada aqui). */
@@ -33,18 +49,57 @@ export function escaparXml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function paragrafoXml(par: Paragrafo): string {
-  const jc = par.centrado ? 'center' : par.titulo ? 'left' : 'both';
+interface EstiloDoc {
+  fonte: string;
+  /** Tamanho padrão do corpo em half-points. */
+  tamanho: number;
+  /** Títulos de seção centralizados (modelos notariais) em vez de à esquerda. */
+  tituloCentrado?: boolean;
+}
+
+const ESTILO_PADRAO: EstiloDoc = { fonte: 'Times New Roman', tamanho: 24 };
+
+function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
+  const jc = par.centrado ? 'center' : par.titulo ? (estilo.tituloCentrado ? 'center' : 'left') : 'both';
   const negrito = par.negrito || par.titulo;
-  const sz = par.discreto ? '18' : '24'; // half-points: 9pt | 12pt
-  const rPr = `<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>${
+  const sz = String(par.tamanho ?? (par.discreto ? 18 : estilo.tamanho));
+  const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
     negrito ? '<w:b/>' : ''
-  }<w:sz w:val="${sz}"/></w:rPr>`;
+  }${par.sublinhado ? '<w:u w:val="single"/>' : ''}<w:sz w:val="${sz}"/></w:rPr>`;
   // Ordem dos filhos de pPr conforme o esquema (spacing antes de jc, rPr por último).
   const pPr = `<w:pPr><w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
     par.titulo ? '240' : par.discreto ? '40' : '160'
   }"/><w:jc w:val="${jc}"/>${negrito ? `<w:rPr><w:b/></w:rPr>` : ''}</w:pPr>`;
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(par.texto)}</w:t></w:r></w:p>`;
+}
+
+function tabelaXml(t: TabelaDocx, estilo: EstiloDoc): string {
+  const borda = 'w:sz="4" w:space="0" w:color="000000"';
+  const tblPr =
+    `<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>` +
+    `<w:top w:val="single" ${borda}/><w:left w:val="single" ${borda}/>` +
+    `<w:bottom w:val="single" ${borda}/><w:right w:val="single" ${borda}/>` +
+    `<w:insideH w:val="single" ${borda}/><w:insideV w:val="single" ${borda}/>` +
+    `</w:tblBorders></w:tblPr>`;
+  const grid = `<w:tblGrid>${t.colunas.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+  const sz = String(t.tamanho ?? estilo.tamanho);
+  const linhas = t.linhas
+    .map((linha) => {
+      const celulas = linha.celulas
+        .map((c, i) => {
+          const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
+            linha.negrito ? '<w:b/>' : ''
+          }<w:sz w:val="${sz}"/></w:rPr>`;
+          const pPr = `<w:pPr><w:spacing w:before="20" w:after="20"/>${linha.negrito ? '<w:rPr><w:b/></w:rPr>' : ''}</w:pPr>`;
+          return `<w:tc><w:tcPr><w:tcW w:w="${t.colunas[i] ?? 0}" w:type="dxa"/></w:tcPr><w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(c)}</w:t></w:r></w:p></w:tc>`;
+        })
+        .join('');
+      return `<w:tr>${celulas}</w:tr>`;
+    })
+    .join('');
+  // Parágrafo vazio após a tabela: exigência do esquema quando duas tabelas
+  // se seguem, e respiro visual como no modelo.
+  return `<w:tbl>${tblPr}${grid}${linhas}</w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="120"/></w:pPr></w:p>`;
 }
 
 /* ---------- logotipo (imagem inline) ---------- */
@@ -140,8 +195,28 @@ export async function montarDocx(
   paragrafos: Paragrafo[],
   opcoes?: { logo?: LogoDocx | null },
 ): Promise<Blob> {
+  return montarDocxRico(
+    paragrafos.map((p) => ({ tipo: 'p' as const, ...p })),
+    { logo: opcoes?.logo ?? null },
+  );
+}
+
+/**
+ * Gera o .docx a partir de BLOCOS (parágrafos + tabelas) com o estilo do
+ * documento (fonte/tamanho) — usado pela escritura, que segue a formatação
+ * exata do modelo do balcão (Tahoma, títulos centralizados, tabelas).
+ */
+export async function montarDocxRico(
+  blocos: BlocoDocx[],
+  opcoes?: { logo?: LogoDocx | null; estilo?: Partial<EstiloDoc> },
+): Promise<Blob> {
+  const estilo: EstiloDoc = { ...ESTILO_PADRAO, ...opcoes?.estilo };
   const logo = opcoes?.logo ? prepararLogo(opcoes.logo) : null;
-  const corpo = (logo ? logoXml(logo) : '') + paragrafos.map(paragrafoXml).join('');
+  const corpo =
+    (logo ? logoXml(logo) : '') +
+    blocos
+      .map((b) => (b.tipo === 'tabela' ? tabelaXml(b, estilo) : paragrafoXml(b, estilo)))
+      .join('');
   const documento = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1701" w:left="1701"/></w:sectPr></w:body>

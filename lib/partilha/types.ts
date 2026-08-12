@@ -41,6 +41,32 @@ export interface Herdeiro {
 
 export type TipoBem = 'IMOVEL' | 'VEICULO' | 'FINANCEIRO' | 'QUOTAS' | 'OUTRO';
 
+/** Dados da matrícula e das certidões de valor venal — alimentam a escritura. */
+export interface DetalhesImovel {
+  /** Registro/averbação da aquisição pelo falecido (ex.: "R.4"). */
+  aquisicao?: string;
+  matricula?: string;
+  /** Ex.: "1º Registro de Imóveis de Guarulhos/SP". */
+  registroImoveis?: string;
+  municipio?: string;
+  inscricaoCadastral?: string;
+  /** Valores venais decimais + exercícios (óbito × corrente). */
+  valorVenalObito?: string;
+  exercicioObito?: string;
+  valorVenalAtual?: string;
+  exercicioAtual?: string;
+}
+
+/** Dados do CRLV — alimentam a escritura e a Carta de Anuência. */
+export interface DetalhesVeiculo {
+  marcaModelo?: string;
+  anoFabricacao?: string;
+  anoModelo?: string;
+  renavam?: string;
+  placa?: string;
+  chassi?: string;
+}
+
 export interface Bem {
   id: string;
   descricao: string;
@@ -48,6 +74,8 @@ export interface Bem {
   natureza: Natureza;
   /** Classe do bem — alimenta isenções do ITCMD e o checklist de documentos. */
   tipo?: TipoBem;
+  imovel?: DetalhesImovel;
+  veiculo?: DetalhesVeiculo;
 }
 
 export interface Divida {
