@@ -41,7 +41,7 @@ import {
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { Caso, Bem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
-import { isencoesArt6, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
+import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -292,15 +292,33 @@ export default function SucessoristaClient() {
     ? ufespDoAno(Number(falecido.dataObito.slice(0, 4)))
     : null;
 
+  /**
+   * Isenções do art. 6º aplicadas AUTOMATICAMENTE pela leitura do acervo:
+   * bem possivelmente isento entra abatendo a base na hora — o advogado só
+   * desmarca quando a condição de fato não se confirma (isencoesRecusadas).
+   */
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
-    return isencoesArt6({
-      bens: bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
-      ufespObito: ufespObito.valor,
-      aplicarImovelResidencial: fiscal.isencaoResidencial,
-      aplicarDepositos: fiscal.isencaoDepositos,
+    const analise = analisarIsencoesPorBem(
+      bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+      ufespObito.valor,
+    );
+    const recusadas = new Set(fiscal.isencoesRecusadas ?? []);
+    let valorIsento = 0;
+    const detalhes: string[] = [];
+    const avisos: string[] = [];
+    analise.forEach((a, i) => {
+      const bem = bens[i];
+      if (a.verdito !== 'ISENTO_POSSIVEL' || !bem) return;
+      if (recusadas.has(bem.id)) {
+        avisos.push(`Bem ${a.indice}: isenção (${a.hipotese}) recusada pelo advogado — tributado.`);
+        return;
+      }
+      valorIsento += a.valor;
+      detalhes.push(`Bem ${a.indice} isento (${a.hipotese}) — ${brl(a.valor.toFixed(2))} abatido da base.`);
     });
-  }, [resultado, ufespObito, bens, fiscal.isencaoResidencial, fiscal.isencaoDepositos]);
+    return { valorIsento, detalhes, avisos };
+  }, [resultado, ufespObito, bens, fiscal.isencoesRecusadas]);
 
   const provisao = useMemo(() => {
     if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;

@@ -49,8 +49,11 @@ const brl = (v: number | string) =>
 
 /** Estado fiscal do caso — elevado ao client para alimentar também o painel. */
 export interface EstadoFiscal {
-  isencaoResidencial: boolean;
-  isencaoDepositos: boolean;
+  /**
+   * Ids de bens cuja isenção AUTOMÁTICA o advogado recusou (condição de fato
+   * não confirmada). A leitura do art. 6º aplica sozinha; aqui só a exceção.
+   */
+  isencoesRecusadas: string[];
   /** Cenário da reforma: início de vigência da tabela progressiva. */
   vigencia: string;
   faixas: FaixaProgressiva[];
@@ -59,8 +62,7 @@ export interface EstadoFiscal {
 }
 
 export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
-  isencaoResidencial: false,
-  isencaoDepositos: false,
+  isencoesRecusadas: [],
   vigencia: '2027-01-01',
   faixas: FAIXAS_PL7_2024.map((f) => ({ ...f })),
   inventarioAberto: false,
@@ -240,7 +242,7 @@ export function ItcmdView({
               <>
                 <div className="lanc">
                   <span className="nome">(−) Isenções do art. 6º</span>
-                  <span className="fracao">marcadas abaixo</span>
+                  <span className="fracao">aplicadas pela leitura automática</span>
                   <span className="valor num" style={{ color: 'var(--verde-registro)' }}>
                     {brl(isencoes.valorIsento)}
                   </span>
@@ -258,93 +260,76 @@ export function ItcmdView({
 
           <h2>Isenções (art. 6º da Lei 10.705/2000)</h2>
 
-          {/* Leitura AUTOMÁTICA: o sistema interpreta cada bem contra as
-              hipóteses do art. 6º, I (medidas em UFESPs do ano do óbito) e
-              demonstra o enquadramento; requisitos de fato saem como
-              condições a confirmar antes de marcar a isenção abaixo. */}
-          {falecido.dataObito && bens.length > 0 && (
-            <>
-              <span className="eyebrow">Leitura automática do acervo</span>
-              <div className="check" style={{ margin: '6px 0 14px' }}>
-                {analisarIsencoesPorBem(
-                  bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
-                  ufespDoAno(Number(falecido.dataObito.slice(0, 4))).valor,
-                ).map((a) => (
-                  <div className="check-item" key={a.indice}>
-                    <span
-                      className="prio"
-                      style={{
-                        color:
-                          a.verdito === 'ISENTO_POSSIVEL'
-                            ? 'var(--verde-registro)'
-                            : a.verdito === 'AVALIAR'
-                              ? 'var(--bronze)'
-                              : 'var(--lacre)',
-                      }}
-                    >
-                      {a.verdito === 'ISENTO_POSSIVEL' ? '✓' : a.verdito === 'AVALIAR' ? '?' : '✗'}
-                    </span>
-                    <div>
-                      <h4>
-                        {a.indice}. {a.descricao}{' '}
-                        <span className="num" style={{ fontWeight: 400 }}>· {brl(a.valor)}</span>
-                      </h4>
-                      <p>
-                        <strong>
+          {/* Leitura AUTOMÁTICA e sucinta: só os bens com hipótese de isenção
+              aparecem (checkbox já aplicado — desmarque se a condição de fato
+              não se confirmar); os demais viram uma linha única. O valor
+              isento abate a base do imposto na hora, no espelho acima. */}
+          {falecido.dataObito && bens.length > 0 ? (
+            (() => {
+              const analise = analisarIsencoesPorBem(
+                bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+                ufespDoAno(Number(falecido.dataObito.slice(0, 4))).valor,
+              );
+              const recusadas = new Set(fiscal.isencoesRecusadas ?? []);
+              const comHipotese = analise.filter((a) => a.verdito !== 'TRIBUTADO');
+              const tributados = analise.filter((a) => a.verdito === 'TRIBUTADO');
+              const alternar = (bemId: string, aplicar: boolean) =>
+                patch({
+                  isencoesRecusadas: aplicar
+                    ? (fiscal.isencoesRecusadas ?? []).filter((id) => id !== bemId)
+                    : [...(fiscal.isencoesRecusadas ?? []), bemId],
+                });
+              return (
+                <>
+                  {comHipotese.length === 0 && (
+                    <p className="fund">
+                      Nenhum bem do acervo se enquadra nas hipóteses do art. 6º — imposto
+                      sobre a base cheia.
+                    </p>
+                  )}
+                  {comHipotese.map((a) => {
+                    const bem = bens[a.indice - 1];
+                    const aplicada = a.verdito === 'ISENTO_POSSIVEL' && !recusadas.has(bem.id);
+                    return (
+                      <label className="marcar" key={bem.id}>
+                        {a.verdito === 'ISENTO_POSSIVEL' ? (
+                          <Checkbox
+                            checked={aplicada}
+                            onCheckedChange={(v) => alternar(bem.id, v === true)}
+                          />
+                        ) : (
+                          <span style={{ color: 'var(--bronze)', fontWeight: 700 }}>?</span>
+                        )}
+                        <span>
+                          <strong>Bem {a.indice}</strong> · {brl(a.valor)} —{' '}
                           {a.verdito === 'ISENTO_POSSIVEL'
-                            ? `Possivelmente ISENTO (${a.hipotese})`
-                            : a.verdito === 'AVALIAR'
-                              ? `Avaliar (${a.hipotese})`
-                              : 'Tributado'}
-                        </strong>{' '}
-                        — {a.explicacao}
-                      </p>
-                      {a.condicoes.map((c, j) => (
-                        <p key={j} style={{ color: 'var(--tinta-media)' }}>
-                          Confirmar: {c}
-                        </p>
-                      ))}
-                    </div>
-                    <span />
-                  </div>
-                ))}
-              </div>
-              <p className="fund" style={{ marginBottom: 10 }}>
-                A isenção é declarada no próprio sistema da declaração do ITCMD (Sefaz-SP) —
-                confirmadas as condições, marque abaixo para o sistema abater da base.
-              </p>
-            </>
+                            ? `isento (${a.hipotese})`
+                            : `avaliar (${a.hipotese})`}
+                          {a.condicoes.length > 0 && (
+                            <span className="fund" style={{ display: 'block' }}>
+                              Confirmar: {a.condicoes.join(' ')}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {tributados.length > 0 && (
+                    <p className="fund">
+                      Demais bens tributados ({tributados.map((a) => a.indice).join(', ')}):
+                      sem hipótese do art. 6º — o teto não é franquia.
+                    </p>
+                  )}
+                  <p className="fund">
+                    Isenção aplicada abate a base no espelho acima e a isenção é declarada no
+                    próprio sistema da declaração do ITCMD (Sefaz-SP).
+                  </p>
+                </>
+              );
+            })()
+          ) : (
+            <p className="fund">Informe a data do óbito e lance os bens para a leitura automática.</p>
           )}
-
-          <label className="marcar">
-            <Checkbox
-              checked={fiscal.isencaoResidencial}
-              onCheckedChange={(v) => patch({ isencaoResidencial: v === true })}
-            />
-            <span>
-              Imóvel residencial em que os familiares residem, sem outro imóvel — isento até
-              5.000 UFESPs (art. 6º, I, &quot;a&quot;)
-            </span>
-          </label>
-          <label className="marcar">
-            <Checkbox
-              checked={fiscal.isencaoDepositos}
-              onCheckedChange={(v) => patch({ isencaoDepositos: v === true })}
-            />
-            <span>
-              Depósitos bancários e aplicações financeiras — isentos até 1.000 UFESPs no
-              conjunto (art. 6º, I, &quot;d&quot;)
-            </span>
-          </label>
-          <p className="fund">
-            O teto não é franquia: bem que ultrapassa o limite é tributado por inteiro.
-            Confirme os requisitos caso a caso antes de aplicar.
-          </p>
-          {isencoes?.detalhes.map((d, i) => (
-            <p key={i} className="fund" style={{ color: 'var(--verde-registro)' }}>
-              {d}
-            </p>
-          ))}
           {isencoes?.avisos.map((a, i) => (
             <p key={i} className="mono-alerta">
               {a}
