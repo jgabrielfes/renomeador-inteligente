@@ -210,14 +210,28 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
       });
     }
     d.resultado.quinhoes.forEach((q) => {
+      // Fração ideal POR BEM: nos comuns já vem descontada a meação (viúva
+      // meeira + 3 filhos = 1/6 de cada bem comum, não 1/3).
+      const porBem = [
+        q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+        q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+      ]
+        .filter(Boolean)
+        .join(' e ');
       p.push({
-        texto: `A ${q.nome.toUpperCase()}, na fração de ${q.fracaoHeranca} da herança, o quinhão de ${brl(q.valor)}${
+        texto: `A ${q.nome.toUpperCase()}, na fração de ${q.fracaoHeranca} da herança${
+          porBem ? ` — fração ideal de ${porBem} —` : ','
+        } o quinhão de ${brl(q.valor)}${
           q.reservaUmQuartoAplicada ? ', observada a reserva de 1/4 do art. 1.832 do Código Civil' : ''
         } — fundamento: ${q.fundamento}${q.precedente ? ` (${q.precedente})` : ''}.`,
       });
     });
     p.push({
-      texto: 'Os bens são partilhados em frações ideais, na proporção dos quinhões acima, salvo atribuição diversa consignada na escritura.',
+      texto: `Os bens são partilhados nas frações ideais acima${
+        d.resultado.meacao
+          ? ' — nos bens comuns, a fração dos herdeiros incide sobre a metade que não integra a meação'
+          : ''
+      }, salvo atribuição diversa consignada na escritura.`,
     });
     for (const a of d.resultado.avisos) p.push({ texto: `Observação: ${a}` });
   }

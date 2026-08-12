@@ -331,6 +331,47 @@ console.log('\nMotor de partilha — casos do spec\n');
   eq('caso 18 · resíduo registrado', r.residuo.ajustados.length, 1);
 }
 
+// 19 — fração ideal POR BEM: viúva meeira + 3 filhos, bens todos comuns.
+// Cada filho tem 1/3 da herança, mas 1/6 de cada BEM (a outra metade do bem
+// é a meação) — o caso relatado do balcão.
+{
+  const c = base({
+    sobrevivente: { vinculo: 'CASAMENTO', regime: 'COMUNHAO_PARCIAL' },
+    herdeiros: [filho('f1'), filho('f2'), filho('f3')],
+    bens: [
+      { id: 'b1', descricao: 'casa', valor: '600000.00', natureza: 'COMUM' },
+      { id: 'b2', descricao: 'saldo', valor: '300000.00', natureza: 'COMUM' },
+    ],
+  });
+  const r = partilhar(c);
+  const f1 = r.quinhoes.find((q) => q.herdeiroId === 'f1')!;
+  eq('caso 19 · fração da herança 1/3', f1.fracaoHeranca, '1/3');
+  eq('caso 19 · fração de cada bem comum 1/6', f1.fracaoBemComum, '1/6');
+  eq('caso 19 · sem bem particular', f1.fracaoBemParticular, undefined);
+}
+
+// 20 — mistura comum + particular na comunhão parcial: cônjuge concorre só
+// nos particulares; frações por bem separadas por natureza.
+{
+  const c = base({
+    sobrevivente: { vinculo: 'CASAMENTO', regime: 'COMUNHAO_PARCIAL' },
+    herdeiros: [filho('f1'), filho('f2')],
+    bens: [
+      { id: 'b1', descricao: 'aquesto', valor: '400000.00', natureza: 'COMUM' },
+      { id: 'b2', descricao: 'herdado', valor: '300000.00', natureza: 'PARTICULAR' },
+    ],
+  });
+  const r = partilhar(c);
+  const f1 = r.quinhoes.find((q) => q.herdeiroId === 'f1')!;
+  const s = r.quinhoes.find((q) => q.herdeiroId === '__sobrevivente__')!;
+  // Comum: meação 1/2; filhos dividem a outra metade → 1/4 cada.
+  eq('caso 20 · filho: 1/4 de cada bem comum', f1.fracaoBemComum, '1/4');
+  // Particular: cônjuge concorre em igualdade com 2 filhos → 1/3 cada.
+  eq('caso 20 · filho: 1/3 de cada bem particular', f1.fracaoBemParticular, '1/3');
+  eq('caso 20 · cônjuge: 1/3 de cada bem particular', s.fracaoBemParticular, '1/3');
+  eq('caso 20 · cônjuge: sem quinhão nos comuns (meação à parte)', s.fracaoBemComum, undefined);
+}
+
 /* ---------------------------------------------------------------- */
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);

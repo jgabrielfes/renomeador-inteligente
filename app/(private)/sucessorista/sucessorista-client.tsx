@@ -1220,15 +1220,26 @@ function EspelhoView({
       if (resultado.meacao) {
         linhas.push([
           { tipo: 'texto', valor: `${resultado.meacao.beneficiario} (meação — não é herança)` },
-          { tipo: 'texto', valor: patrimonio },
+          { tipo: 'texto', valor: `${resultado.meacao.fracao} — sobre: ${patrimonio}` },
           { tipo: 'pct', valor: massa > 0 ? Number(resultado.meacao.valor) / massa : 0 },
           { tipo: 'moeda', valor: Number(resultado.meacao.valor) },
         ]);
       }
       for (const q of resultado.quinhoes) {
+        // Fração ideal POR BEM (nos comuns, já descontada a meação) — é a que
+        // vai para a escritura; a fração da herança fica como referência.
+        const porBem = [
+          q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+          q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+        ]
+          .filter(Boolean)
+          .join(' e ');
         linhas.push([
           { tipo: 'texto', valor: q.nome },
-          { tipo: 'texto', valor: `Fração ideal (${q.fracaoHeranca} da herança) sobre: ${patrimonio}` },
+          {
+            tipo: 'texto',
+            valor: `${porBem || `fração ideal de ${q.fracaoHeranca}`} (${q.fracaoHeranca} da herança) — sobre: ${patrimonio}`,
+          },
           { tipo: 'pct', valor: massa > 0 ? Number(q.valor) / massa : 0 },
           { tipo: 'moeda', valor: Number(q.valor) },
         ]);
@@ -1278,7 +1289,11 @@ function EspelhoView({
                 <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 24 }}>
                   {brl(resultado.meacao.valor)}
                 </p>
-                <p className="fund">{resultado.meacao.fundamento}</p>
+                <p className="fund">
+                  {resultado.meacao.fracao} — não é herança: essa metade de cada bem já é
+                  do(a) meeiro(a), e as frações dos herdeiros abaixo incidem sobre a outra
+                  metade. {resultado.meacao.fundamento}
+                </p>
               </div>
             )}
           </div>
@@ -1301,25 +1316,40 @@ function EspelhoView({
           <div className="espelho">
             <div className="cabeca">
               <span>Herdeiro</span>
-              <span>Fração</span>
+              <span>Fração da herança</span>
               <span style={{ textAlign: 'right' }}>Quinhão</span>
             </div>
-            {resultado.quinhoes.map((q) => (
-              <div key={q.herdeiroId}>
-                <div className="lanc">
-                  <span className="nome">
-                    {q.nome}
-                    {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
-                  </span>
-                  <span className="fracao num">{q.fracaoHeranca}</span>
-                  <span className="valor num">{brl(q.valor)}</span>
+            {resultado.quinhoes.map((q) => {
+              // Fração ideal de CADA BEM (a que vai para a escritura): nos
+              // comuns já desconta a meação — 3 filhos + viúva meeira = 1/6.
+              const porBem = [
+                q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+                q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <div key={q.herdeiroId}>
+                  <div className="lanc">
+                    <span className="nome">
+                      {q.nome}
+                      {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
+                    </span>
+                    <span className="fracao num">{q.fracaoHeranca}</span>
+                    <span className="valor num">{brl(q.valor)}</span>
+                  </div>
+                  {porBem && (
+                    <div className="fund num" style={{ fontWeight: 600 }}>
+                      Fração ideal por bem: {porBem}
+                    </div>
+                  )}
+                  <div className="fund">
+                    {q.fundamento}
+                    {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
+                  </div>
                 </div>
-                <div className="fund">
-                  {q.fundamento}
-                  {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ marginTop: 14 }}>

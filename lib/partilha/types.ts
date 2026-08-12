@@ -100,6 +100,13 @@ export interface QuinhaoSaida {
   nome: string;
   papel: 'SOBREVIVENTE' | 'HERDEIRO' | 'LEGATARIO';
   fracaoHeranca: string;
+  /**
+   * Fração ideal de CADA BEM COMUM que cabe a este quinhão, já descontada a
+   * meação — viúvo(a) meeiro(a) + 3 filhos: fracaoHeranca 1/3, aqui 1/6.
+   */
+  fracaoBemComum?: string;
+  /** Fração ideal de cada bem PARTICULAR que cabe a este quinhão. */
+  fracaoBemParticular?: string;
   valor: string;
   fundamento: string;
   precedente?: string;

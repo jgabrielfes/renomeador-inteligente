@@ -500,6 +500,15 @@ export function partilhar(caso: Caso): Resultado {
   }
   const heranca = herancaComum.add(herancaParticular);
 
+  // Fração de cada BEM que integra a herança, por bolsa — o restante é a
+  // meação (1 sem meação sobre a bolsa; 1/2 quando o regime a dá). É a base
+  // da fração ideal POR BEM dos quinhões: com viúvo(a) meeiro(a) e 3 filhos,
+  // cada filho tem 1/3 da herança mas 1/6 de cada bem COMUM.
+  // Bolsa vazia → fator ZERO: sem bens daquela natureza não existe fração
+  // por bem a exibir (a distribuição interna da bolsa vazia é abstrata).
+  const fatorBemComum = massaComum.isZero() ? ZERO : herancaComum.div(massaComum);
+  const fatorBemParticular = massaParticular.isZero() ? ZERO : herancaParticular.div(massaParticular);
+
   /* ---------- elegibilidade extrajudicial ---------- */
 
   let elegivel = true;
@@ -539,6 +548,8 @@ export function partilhar(caso: Caso): Resultado {
       herancaComum,
       herancaParticular,
       heranca,
+      fatorBemComum,
+      fatorBemParticular,
       reservaAplicada: false,
     });
   }
@@ -568,11 +579,20 @@ export function partilhar(caso: Caso): Resultado {
       );
     }
     const fator = ONE.sub(totalLegado);
-    partesFinais = partes.map((p) => ({ ...p, fr: p.fr.mul(fator) }));
+    partesFinais = partes.map((p) => ({
+      ...p,
+      fr: p.fr.mul(fator),
+      frComum: p.frComum.mul(fator),
+      frParticular: p.frParticular.mul(fator),
+    }));
     legados.forEach((l, i) => {
+      // Legado em fração da herança total: incide proporcionalmente sobre as
+      // duas bolsas — a fração dentro de cada uma é a mesma.
       partesFinais.push({
         id: `__legatario_${i}__`,
         fr: Rat.fraction(l.fracaoDaHeranca),
+        frComum: Rat.fraction(l.fracaoDaHeranca),
+        frParticular: Rat.fraction(l.fracaoDaHeranca),
         nome: l.beneficiario,
         papel: 'LEGATARIO',
       });
@@ -595,6 +615,8 @@ export function partilhar(caso: Caso): Resultado {
     herancaComum,
     herancaParticular,
     heranca,
+    fatorBemComum,
+    fatorBemParticular,
     reservaAplicada: c.distParticular.reservaAplicada || c.distComum.reservaAplicada,
   });
 }
@@ -606,6 +628,10 @@ export function partilhar(caso: Caso): Resultado {
 interface ParteConsolidada {
   id: string;
   fr: Rat;
+  /** Fração da pessoa DENTRO da herança comum (base da fração por bem). */
+  frComum: Rat;
+  /** Fração da pessoa DENTRO da herança particular. */
+  frParticular: Rat;
   por?: QuinhaoSaida['por'];
   nome?: string;
   papel?: QuinhaoSaida['papel'];
@@ -619,22 +645,31 @@ function consolidar(
 ): ParteConsolidada[] {
   const acc = new Map<string, Rat>();
   const por = new Map<string, QuinhaoSaida['por']>();
+  const accComum = new Map<string, Rat>();
+  const accParticular = new Map<string, Rat>();
 
-  const aplicar = (d: { partes: ParteFr[] }, valorBolsa: Rat) => {
+  const aplicar = (d: { partes: ParteFr[] }, valorBolsa: Rat, accBolsa: Map<string, Rat>) => {
     if (heranca.isZero()) return;
     const peso = valorBolsa.div(heranca);
     for (const p of d.partes) {
       acc.set(p.id, (acc.get(p.id) ?? ZERO).add(p.fr.mul(peso)));
+      accBolsa.set(p.id, (accBolsa.get(p.id) ?? ZERO).add(p.fr));
       if (p.por && !por.has(p.id)) por.set(p.id, p.por);
     }
   };
 
-  aplicar(c.distComum, herancaComum);
-  aplicar(c.distParticular, herancaParticular);
+  aplicar(c.distComum, herancaComum, accComum);
+  aplicar(c.distParticular, herancaParticular, accParticular);
 
   return [...acc.entries()]
     .filter(([, fr]) => !fr.isZero())
-    .map(([id, fr]) => ({ id, fr, por: por.get(id) }));
+    .map(([id, fr]) => ({
+      id,
+      fr,
+      frComum: accComum.get(id) ?? ZERO,
+      frParticular: accParticular.get(id) ?? ZERO,
+      por: por.get(id),
+    }));
 }
 
 function montarDivergencias(
@@ -721,6 +756,9 @@ interface Ctx {
   herancaComum: Rat;
   herancaParticular: Rat;
   heranca: Rat;
+  /** Fração de cada bem comum/particular que integra a herança (resto = meação). */
+  fatorBemComum: Rat;
+  fatorBemParticular: Rat;
   reservaAplicada: boolean;
 }
 
@@ -740,6 +778,14 @@ function montar(caso: Caso, ctx: Ctx): Resultado {
       nome: p.nome ?? nomeDe(caso, p.id),
       papel: p.papel ?? (ehSobrev ? 'SOBREVIVENTE' : 'HERDEIRO'),
       fracaoHeranca: p.fr.toString(),
+      fracaoBemComum:
+        p.frComum.isZero() || ctx.fatorBemComum.isZero()
+          ? undefined
+          : p.frComum.mul(ctx.fatorBemComum).toString(),
+      fracaoBemParticular:
+        p.frParticular.isZero() || ctx.fatorBemParticular.isZero()
+          ? undefined
+          : p.frParticular.mul(ctx.fatorBemParticular).toString(),
       valor: centsToStr(porId.get(p.id) ?? 0n),
       fundamento: p.papel === 'LEGATARIO' ? 'CC art. 1.857 — disposição testamentária' : f.fundamento,
       precedente: f.precedente,
