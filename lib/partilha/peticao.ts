@@ -278,6 +278,19 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
 }
 
 /** Gera a minuta em .docx (builder compartilhado — A4, Times 12, justificado). */
-export async function montarPeticaoDocx(dados: DadosPeticao): Promise<Blob> {
-  return montarDocx(montarParagrafos(dados));
+export async function montarPeticaoDocx(
+  dados: DadosPeticao,
+  /** Seções adicionais (instruções do advogado redigidas pela IA) — entram antes do fecho. */
+  extras?: { titulo: string; paragrafos: string[] }[] | null,
+): Promise<Blob> {
+  const paragrafos = montarParagrafos(dados);
+  if (extras && extras.length > 0) {
+    const fecho = paragrafos.findIndex((p) => p.texto.startsWith('Nestes termos'));
+    const inseridos = extras.flatMap((s) => [
+      { texto: s.titulo, titulo: true },
+      ...s.paragrafos.map((texto) => ({ texto })),
+    ]);
+    paragrafos.splice(fecho < 0 ? paragrafos.length : fecho, 0, ...inseridos);
+  }
+  return montarDocx(paragrafos);
 }

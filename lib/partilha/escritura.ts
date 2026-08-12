@@ -74,6 +74,11 @@ export interface DadosEscritura {
     pagamentos: PagamentoDiferenciado[];
     tornas: { de: string; para: string; valor: string; titulo: string }[];
   } | null;
+  /**
+   * Cláusulas adicionais pedidas pelo(a) escrevente no campo de instruções
+   * (redigidas pela IA) — entram antes do encerramento, com o retângulo.
+   */
+  clausulasExtras?: { titulo: string; paragrafos: string[] }[] | null;
 }
 
 /* ---------- helpers ---------- */
@@ -535,6 +540,12 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
   p(
     'Nos termos do Provimento CNJ nº 149/2023, fica consignado, para validade, consulta e verificação da autenticidade deste ato notarial: (a) que a Matrícula Notarial Eletrônica — MNE serve como chave de identificação individualizada do presente escrito notarial; (b) "Consulte a validade deste ato notarial em: www.docautentico.com.br/valida"; e (c) que a MNE, a chave de acesso e o QR Code deste ato notarial constam do respectivo "Manifesto de Assinaturas", gerado na plataforma e-Notariado, e que integra o ato.',
   );
+
+  /* cláusulas adicionais das instruções do(a) escrevente (redação por IA) */
+  for (const extra of d.clausulasExtras ?? []) {
+    secao(extra.titulo.toUpperCase());
+    for (const texto of extra.paragrafos) p(texto);
+  }
 
   /* encerramento — variantes do modelo por modalidade */
   secao('DO ENCERRAMENTO E ASSINATURAS');

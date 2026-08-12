@@ -46,7 +46,10 @@ export async function POST(request: Request) {
       return Response.json({ error: "JSON inválido." }, { status: 400 });
     }
     const tipo =
-      corpo.tipo === "CONTRATO" || corpo.tipo === "PROPOSTA" || corpo.tipo === "PETICAO_JUDICIAL"
+      corpo.tipo === "CONTRATO" ||
+      corpo.tipo === "PROPOSTA" ||
+      corpo.tipo === "PETICAO_JUDICIAL" ||
+      corpo.tipo === "CLAUSULAS"
         ? corpo.tipo
         : null;
     const contexto = typeof corpo.contexto === "string" ? corpo.contexto.trim().slice(0, 20_000) : "";
@@ -54,13 +57,17 @@ export async function POST(request: Request) {
       typeof corpo.modeloEscritorio === "string" && corpo.modeloEscritorio.trim()
         ? corpo.modeloEscritorio.trim().slice(0, 40_000)
         : null;
+    const instrucoes =
+      typeof corpo.instrucoes === "string" && corpo.instrucoes.trim()
+        ? corpo.instrucoes.trim().slice(0, 4_000)
+        : null;
     if (!tipo || !contexto) {
       return Response.json(
-        { error: "Informe tipo (PROPOSTA|CONTRATO|PETICAO_JUDICIAL) e contexto." },
+        { error: "Informe tipo (PROPOSTA|CONTRATO|PETICAO_JUDICIAL|CLAUSULAS) e contexto." },
         { status: 400 }
       );
     }
-    const entrada: EntradaRedacaoHonorarios = { tipo, contexto, modeloEscritorio: modelo };
+    const entrada: EntradaRedacaoHonorarios = { tipo, contexto, modeloEscritorio: modelo, instrucoes };
     try {
       const secoes = await redigirHonorarios(apiKey, entrada);
       return Response.json({ secoes });

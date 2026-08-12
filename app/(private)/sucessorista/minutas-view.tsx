@@ -13,18 +13,45 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ROTULO_MODALIDADE, type ModalidadeEscritura } from '@/lib/partilha/escritura';
 import { Pilula } from './familia';
+
+/** Campo de prompt à IA — instruções livres antes de gerar o DOCX. */
+function CampoInstrucoes({
+  valor,
+  onChange,
+  exemplo,
+}: {
+  valor: string;
+  onChange: (v: string) => void;
+  exemplo: string;
+}) {
+  return (
+    <label className="campo" style={{ maxWidth: 640, margin: '14px 0' }}>
+      <span>
+        Instruções à IA <span className="dica">— opcional, aplicadas nesta geração</span>
+      </span>
+      <Textarea
+        value={valor}
+        rows={3}
+        placeholder={exemplo}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
 
 export function MinutasView({
   onGerarPeticao,
   onGerarPeticaoJudicial,
 }: {
-  onGerarPeticao: () => Promise<void>;
-  onGerarPeticaoJudicial: () => Promise<void>;
+  onGerarPeticao: (instrucoes: string) => Promise<void>;
+  onGerarPeticaoJudicial: (instrucoes: string) => Promise<void>;
 }) {
   const [gerando, setGerando] = useState<'tabelionato' | 'judicial' | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [instrucoes, setInstrucoes] = useState('');
 
   const executar = async (qual: 'tabelionato' | 'judicial', fn: () => Promise<void>) => {
     setGerando(qual);
@@ -47,6 +74,12 @@ export function MinutasView({
         em DOCX editável, como MINUTA para sua revisão e assinatura.
       </p>
 
+      <CampoInstrucoes
+        valor={instrucoes}
+        onChange={setInstrucoes}
+        exemplo="ex.: incluir cláusula de cessão de direitos hereditários da herdeira Renata ao irmão; pedir prioridade de tramitação (idoso)…"
+      />
+
       <div className="check">
         <div className="check-item">
           <span className="prio">§</span>
@@ -60,7 +93,7 @@ export function MinutasView({
               <Button
                 disabled={gerando !== null}
                 loading={gerando === 'tabelionato'}
-                onClick={() => executar('tabelionato', onGerarPeticao)}
+                onClick={() => executar('tabelionato', () => onGerarPeticao(instrucoes))}
               >
                 Gerar minuta ao Tabelionato (DOCX)
               </Button>
@@ -83,7 +116,7 @@ export function MinutasView({
                 variant="outline"
                 disabled={gerando !== null}
                 loading={gerando === 'judicial'}
-                onClick={() => executar('judicial', onGerarPeticaoJudicial)}
+                onClick={() => executar('judicial', () => onGerarPeticaoJudicial(instrucoes))}
               >
                 Gerar petição inicial (DOCX, IA)
               </Button>
@@ -100,10 +133,15 @@ export function MinutasView({
 export function EscrituraView({
   onGerarEscritura,
 }: {
-  onGerarEscritura: (modalidade: ModalidadeEscritura, partesRemotas: string) => Promise<void>;
+  onGerarEscritura: (
+    modalidade: ModalidadeEscritura,
+    partesRemotas: string,
+    instrucoes: string,
+  ) => Promise<void>;
 }) {
   const [modalidade, setModalidade] = useState<ModalidadeEscritura>('PRESENCIAL');
   const [partesRemotas, setPartesRemotas] = useState('');
+  const [instrucoes, setInstrucoes] = useState('');
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -140,6 +178,12 @@ export function EscrituraView({
         </label>
       )}
 
+      <CampoInstrucoes
+        valor={instrucoes}
+        onChange={setInstrucoes}
+        exemplo="ex.: incluir cláusula de reserva de usufruto do imóvel 1 em favor da viúva; consignar alvará para venda do veículo…"
+      />
+
       <div className="escolha">
         <Button
           loading={gerando}
@@ -147,7 +191,7 @@ export function EscrituraView({
             setGerando(true);
             setErro(null);
             try {
-              await onGerarEscritura(modalidade, partesRemotas);
+              await onGerarEscritura(modalidade, partesRemotas, instrucoes);
             } catch (e) {
               setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da escritura.');
             } finally {

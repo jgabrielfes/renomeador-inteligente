@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { CurrencyInput } from '@/components/currency-input';
 
 import type { Bem, Resultado } from '@/lib/partilha/types';
@@ -232,6 +233,8 @@ export function HonorariosView({
 
   /* --- geração --- */
   const [gerando, setGerando] = useState<TipoDoc | null>(null);
+  /** Campo de prompt à IA — instruções livres aplicadas nesta geração. */
+  const [instrucoes, setInstrucoes] = useState('');
 
   const montarContexto = (tipo: TipoDoc): string => {
     const linhas: string[] = [];
@@ -268,7 +271,9 @@ export function HonorariosView({
     setGerando(tipo);
     try {
       let secoes: SecaoRedigida[] | null = null;
-      if (usarIa) {
+      // Instruções digitadas exigem a IA mesmo no modo local — sem ela não
+      // há como atendê-las (o aviso de fallback cobre a falha).
+      if (usarIa || instrucoes.trim()) {
         try {
           const modelo = tipo === 'PROPOSTA' ? modeloProposta : modeloContrato;
           const r = await fetch('/api/sucessorista', {
@@ -278,6 +283,7 @@ export function HonorariosView({
               tipo,
               contexto: montarContexto(tipo),
               modeloEscritorio: modelo?.texto ?? null,
+              instrucoes: instrucoes.trim() || null,
             }),
           });
           const corpo = (await r.json().catch(() => null)) as { secoes?: SecaoRedigida[]; error?: string } | null;
@@ -539,6 +545,17 @@ export function HonorariosView({
       ))}
 
       <h2>Gerar</h2>
+      <label className="campo" style={{ maxWidth: 640, marginBottom: 12 }}>
+        <span>
+          Instruções à IA <span className="dica">— opcional, aplicadas nesta geração</span>
+        </span>
+        <Textarea
+          value={instrucoes}
+          rows={3}
+          placeholder="ex.: prever honorários de êxito de 10% sobre valores recuperados de terceiros; parcelamento em 6 vezes com correção pelo IPCA…"
+          onChange={(e) => setInstrucoes(e.target.value)}
+        />
+      </label>
       <div className="escolha">
         <Button loading={gerando === 'PROPOSTA'} disabled={gerando !== null} onClick={() => gerar('PROPOSTA')}>
           Baixar proposta de honorários (DOCX)

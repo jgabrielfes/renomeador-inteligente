@@ -872,8 +872,40 @@ export default function SucessoristaClient() {
     }
   };
 
+  /**
+   * Cláusulas adicionais redigidas pela IA a partir das INSTRUÇÕES digitadas
+   * no campo de prompt — para os documentos determinísticos (minuta ao
+   * tabelionato e escritura). Falha vira aviso; a geração segue sem elas.
+   */
+  const redigirClausulas = async (alvo: string, instrucoes: string): Promise<SecaoRedigida[] | null> => {
+    if (!instrucoes.trim()) return null;
+    try {
+      const r = await fetch('/api/sucessorista', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'CLAUSULAS',
+          contexto: `Documento-alvo: ${alvo}.\n${contextoDoCaso()}`,
+          modeloEscritorio: null,
+          instrucoes,
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as { secoes?: SecaoRedigida[]; error?: string } | null;
+      if (!r.ok || !corpo?.secoes?.length) throw new Error(corpo?.error ?? `HTTP ${r.status}`);
+      return corpo.secoes;
+    } catch (e) {
+      toast.warning('As instruções à IA não puderam ser atendidas — o documento saiu sem as cláusulas adicionais.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+      return null;
+    }
+  };
+
   /** Minuta de petição ao Tabelionato (.docx) a partir da folha inteira. */
-  const gerarPeticao = async () => {
+  const gerarPeticao = async (instrucoes = '') => {
+    const extras = instrucoes.trim()
+      ? await redigirClausulas('minuta de requerimento de lavratura de escritura de inventário e partilha, dirigida a Tabelionato de Notas (estilo forense)', instrucoes)
+      : null;
     const { montarPeticaoDocx } = await import('@/lib/partilha/peticao');
     const { CATALOGO_DOCUMENTOS } = await import('@/lib/partilha/documentos');
     const blob = await montarPeticaoDocx({
@@ -893,7 +925,7 @@ export default function SucessoristaClient() {
         titulo: d.titulo,
         arquivos: (anexosProcesso[d.id] ?? []).map((f) => f.name),
       })),
-    });
+    }, extras);
     baixarBlob(
       blob,
       `Peticao - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`,
@@ -977,13 +1009,18 @@ export default function SucessoristaClient() {
   };
 
   /** Minuta de petição INICIAL de inventário judicial (IA + fallback local). */
-  const gerarPeticaoJudicial = async () => {
+  const gerarPeticaoJudicial = async (instrucoes = '') => {
     let secoes: SecaoRedigida[] | null = null;
     try {
       const r = await fetch('/api/sucessorista', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tipo: 'PETICAO_JUDICIAL', contexto: contextoDoCaso(), modeloEscritorio: null }),
+        body: JSON.stringify({
+          tipo: 'PETICAO_JUDICIAL',
+          contexto: contextoDoCaso(),
+          modeloEscritorio: null,
+          instrucoes: instrucoes.trim() || null,
+        }),
       });
       const corpo = (await r.json().catch(() => null)) as { secoes?: SecaoRedigida[]; error?: string } | null;
       if (r.ok && corpo?.secoes?.length) secoes = corpo.secoes;
@@ -1013,7 +1050,14 @@ export default function SucessoristaClient() {
   };
 
   /** Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo. */
-  const gerarEscritura = async (modalidade: ModalidadeEscritura, partesRemotas: string) => {
+  const gerarEscritura = async (
+    modalidade: ModalidadeEscritura,
+    partesRemotas: string,
+    instrucoes = '',
+  ) => {
+    const clausulasExtras = instrucoes.trim()
+      ? await redigirClausulas('escritura pública de inventário e partilha de bens (estilo notarial, cláusulas com título em caixa alta)', instrucoes)
+      : null;
     // Partilha diferenciada da matriz vira os PAGAMENTOS da escritura.
     let diferenciada: DadosEscritura['diferenciada'] = null;
     if (atribuicao && atribuicao.bloqueios.length === 0 && atribuicao.posicoes.length > 0) {
@@ -1053,6 +1097,7 @@ export default function SucessoristaClient() {
       resultado,
       provisao,
       diferenciada,
+      clausulasExtras,
     });
     baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
   };
