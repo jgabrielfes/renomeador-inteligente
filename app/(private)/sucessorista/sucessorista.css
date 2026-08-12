@@ -268,6 +268,14 @@
 .sucessorista .grade.c3 { grid-template-columns: 2fr 1fr 1fr; }
 .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
 
+/* Número de ordem do bem na listagem do acervo (mesma sequência na partilha). */
+.sucessorista .numero-bem {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--bronze);
+  margin-right: 2px;
+}
+
 /* Subtítulo dos grupos da ficha de qualificação (Identificação, Endereço…). */
 .sucessorista .q-grupo {
   font-size: 12px;

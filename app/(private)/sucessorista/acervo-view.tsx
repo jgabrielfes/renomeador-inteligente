@@ -215,14 +215,30 @@ export function AcervoView({
         </div>
       </form>
 
-      {bens.map((b) => (
+      {bens.map((b, i) => (
         <LinhaBem
           key={b.id}
           bem={b}
+          numero={i + 1}
+          ehPrimeiro={i === 0}
+          ehUltimo={i === bens.length - 1}
+          onMover={(delta) => {
+            const destino = i + delta;
+            if (destino < 0 || destino >= bens.length) return;
+            const proximos = [...bens];
+            [proximos[i], proximos[destino]] = [proximos[destino], proximos[i]];
+            setBens(proximos);
+          }}
           onSalvar={(atualizado) => setBens(bens.map((x) => (x.id === b.id ? atualizado : x)))}
           onRemover={() => setBens(bens.filter((x) => x.id !== b.id))}
         />
       ))}
+      {bens.length > 1 && (
+        <p className="fund" style={{ marginTop: 6 }}>
+          A numeração acima é a ordem oficial do caso: partilha, planilha e petição seguem a
+          mesma sequência — use as setas para reordenar.
+        </p>
+      )}
 
       {sociedades.length > 0 && (
         <>
@@ -356,10 +372,18 @@ export function AcervoView({
  */
 function LinhaBem({
   bem,
+  numero,
+  ehPrimeiro,
+  ehUltimo,
+  onMover,
   onSalvar,
   onRemover,
 }: {
   bem: Bem;
+  numero: number;
+  ehPrimeiro: boolean;
+  ehUltimo: boolean;
+  onMover: (delta: number) => void;
   onSalvar: (b: Bem) => void;
   onRemover: () => void;
 }) {
@@ -396,6 +420,7 @@ function LinhaBem({
     return (
       <div className="linha-item">
         <span>
+          <span className="numero-bem num">{numero}.</span>{' '}
           <strong>{bem.descricao}</strong>
           <span className="fracao num">
             {' '}
@@ -404,6 +429,28 @@ function LinhaBem({
           </span>
         </span>
         <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Mover o bem ${numero} para cima`}
+            title="Mover para cima"
+            disabled={ehPrimeiro}
+            onClick={() => onMover(-1)}
+          >
+            ↑
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Mover o bem ${numero} para baixo`}
+            title="Mover para baixo"
+            disabled={ehUltimo}
+            onClick={() => onMover(1)}
+          >
+            ↓
+          </Button>
           <Button type="button" variant="ghost" size="sm" onClick={abrir}>
             editar
           </Button>
@@ -423,7 +470,7 @@ function LinhaBem({
 
   return (
     <div className="ficha" style={{ marginTop: 8 }}>
-      <span className="eyebrow">Editando bem</span>
+      <span className="eyebrow">Editando o bem {numero}</span>
       <div className="grade c2" style={{ marginTop: 8 }}>
         <label className="campo">
           Descrição

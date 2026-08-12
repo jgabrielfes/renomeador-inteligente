@@ -861,7 +861,8 @@ function EspelhoView({
     setExportando(true);
     try {
       const massa = Number(resultado.acervo.massaPartilhavel);
-      const patrimonio = bens.map((b) => b.descricao).join('; ');
+      // Mesma numeração da listagem do acervo (a ordem do array é a oficial).
+      const patrimonio = bens.map((b, i) => `${i + 1}. ${b.descricao}`).join('; ');
       const linhas: CelulaXlsx[][] = [];
       if (resultado.meacao) {
         linhas.push([
@@ -927,6 +928,21 @@ function EspelhoView({
                 <p className="fund">{resultado.meacao.fundamento}</p>
               </div>
             )}
+          </div>
+
+          {/* Relação de bens na MESMA numeração e ordem da listagem do acervo. */}
+          <span className="eyebrow">Relação de bens partilhados</span>
+          <div className="check" style={{ margin: '6px 0 18px' }}>
+            {bens.map((b, i) => (
+              <div className="check-item" key={b.id}>
+                <span className="prio num">{i + 1}.</span>
+                <p style={{ fontSize: 13.5 }}>
+                  {b.descricao}
+                  <span className="fracao num"> · {brl(b.valor)} · {b.natureza === 'COMUM' ? 'comum' : 'particular'}</span>
+                </p>
+                <span />
+              </div>
+            ))}
           </div>
 
           <div className="espelho">
