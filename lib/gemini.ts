@@ -184,11 +184,23 @@ async function fetchGeminiJson(
   return JSON.parse(text);
 }
 
-// Orçamento de tempo da cadeia inteira: as rotas rodam com maxDuration 60 na
-// Vercel — estourar isso vira 504 SEM corpo. Com o teto aqui, a rota sempre
-// responde JSON (com geminiStatus/retryDelay) antes de a Vercel matar.
-const PRAZO_TOTAL_MS = 45_000;
-const PRAZO_POR_CHAMADA_MS = 25_000;
+// Orçamento de tempo da cadeia inteira. As rotas rodam com `maxDuration = 60`
+// na Vercel; estourar isso vira 504 SEM corpo (o cliente fica sem saber o que
+// houve). O teto aqui garante resposta JSON antes disso — mas ele NÃO deve
+// cortar chamada que ainda ia responder: lote de 10 PDFs leva dezenas de
+// segundos legitimamente. Daí o orçamento usar quase todo o maxDuration e a
+// reserva para o modelo seguinte ser pequena.
+const MAX_DURATION_MS = 60_000;
+// Folga para multipart + montagem do payload + resposta (fora do fetch).
+const FOLGA_DA_ROTA_MS = 8_000;
+const PRAZO_TOTAL_MS = MAX_DURATION_MS - FOLGA_DA_ROTA_MS;
+// Reservado ao modelo reserva quando o principal consome tudo. Curto de
+// propósito: é melhor dar tempo ao principal (que costuma responder) do que
+// guardar muito para um reserva que talvez nem seja usado.
+const RESERVA_PROXIMO_MODELO_MS = 14_000;
+// Nunca abortar antes disso, mesmo com pouco orçamento: abaixo de ~20s a
+// chance de o corte ser nosso (e não do Gemini) é alta.
+const PISO_POR_CHAMADA_MS = 20_000;
 
 // Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo), 404
 // (modelo aposentado), 503 (sobrecarregado, após retentativa curta) e 504
@@ -202,10 +214,17 @@ export async function geminiJson(
 ): Promise<unknown> {
   const inicio = Date.now();
   const restante = () => PRAZO_TOTAL_MS - (Date.now() - inicio);
-  const teto = () => Math.min(PRAZO_POR_CHAMADA_MS, restante());
+  // O ÚLTIMO modelo da cadeia recebe todo o tempo que sobrou; os anteriores
+  // guardam uma reserva para ele — sem descer do piso.
+  const teto = (indice: number) => {
+    const sobra = restante();
+    const ehUltimo = indice >= GEMINI_MODELS.length - 1;
+    if (ehUltimo) return sobra;
+    return Math.max(PISO_POR_CHAMADA_MS, sobra - RESERVA_PROXIMO_MODELO_MS);
+  };
 
   const failures: GeminiError[] = [];
-  for (const model of GEMINI_MODELS) {
+  for (const [indice, model] of GEMINI_MODELS.entries()) {
     // Sem tempo útil para mais uma tentativa: devolve o melhor erro que há.
     if (restante() < 5_000) break;
     try {
@@ -215,7 +234,7 @@ export async function geminiJson(
         parts,
         responseSchema,
         temperature,
-        teto()
+        teto(indice)
       );
     } catch (err) {
       if (!(err instanceof GeminiError)) throw err;
@@ -223,7 +242,7 @@ export async function geminiJson(
       // UMA retentativa curta no MESMO modelo antes de cair para o reserva —
       // o pico costuma passar em segundos, e o modelo reserva tem cota bem
       // menor (não vale queimá-la de primeira). Só se sobrar orçamento.
-      if (err.status === 503 && restante() > 10_000) {
+      if (err.status === 503 && restante() > 25_000) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         try {
           return await fetchGeminiJson(
@@ -232,7 +251,7 @@ export async function geminiJson(
             parts,
             responseSchema,
             temperature,
-            teto()
+            teto(indice)
           );
         } catch (retryErr) {
           if (!(retryErr instanceof GeminiError)) throw retryErr;

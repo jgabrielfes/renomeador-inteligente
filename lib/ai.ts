@@ -91,9 +91,40 @@ export interface AiLessons {
   corrections?: Array<{ tipo: string; sugerido: string; corrigido: string }>;
 }
 
-// Envia um lote e devolve os resultados alinhados à ordem dos itens
-// (null = o modelo não respondeu aquele item; o chamador faz fallback local).
+/**
+ * Envia um lote com DIVISÃO adaptativa. O que mais faz o Gemini demorar é o
+ * TAMANHO do lote: dez documentos numa chamada podem passar do tempo da
+ * função serverless, e aí a rota devolve 504 ("sem resposta no tempo"). Em vez
+ * de cair direto no motor local, o lote é partido ao meio e reenviado — duas
+ * metades quase sempre respondem dentro do orçamento. Só depois disso o
+ * chamador faz o fallback local.
+ *
+ * Resultados voltam alinhados à ordem dos itens (null = o modelo não respondeu
+ * aquele item).
+ */
 export async function aiProposeBatch(
+  items: AiBatchItem[],
+  lessons?: AiLessons,
+  profundidade = 0
+): Promise<Array<AiProposal | null>> {
+  try {
+    return await enviarLote(items, lessons);
+  } catch (err) {
+    const semTempo =
+      err instanceof AiError &&
+      (err.geminiStatus === 504 || /sem resposta em/i.test(err.message));
+    // 10 → 5 → 2/3 itens: dois níveis bastam para sair do estouro de tempo
+    // sem multiplicar requisições (que reacenderiam a cota por minuto).
+    if (!semTempo || items.length < 2 || profundidade >= 2) throw err;
+
+    const meio = Math.ceil(items.length / 2);
+    const primeira = await aiProposeBatch(items.slice(0, meio), lessons, profundidade + 1);
+    const segunda = await aiProposeBatch(items.slice(meio), lessons, profundidade + 1);
+    return [...primeira, ...segunda];
+  }
+}
+
+async function enviarLote(
   items: AiBatchItem[],
   lessons?: AiLessons
 ): Promise<Array<AiProposal | null>> {

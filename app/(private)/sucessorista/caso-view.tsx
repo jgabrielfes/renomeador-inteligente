@@ -335,7 +335,11 @@ export function CasoView({
         }
       };
 
-      const executar = async (lote: { original: File; envio: File }[], rotulo: number) => {
+      const executar = async (
+        lote: { original: File; envio: File }[],
+        rotulo: number,
+        profundidade = 0,
+      ) => {
         try {
           const caso = await lerLote(lote);
           const classificados: ArquivoClassificado[] = lote.map((par, idx) => {
@@ -357,18 +361,32 @@ export function CasoView({
           bensLidos += caso.bens.length;
           lidos += lote.length;
         } catch (err) {
-          lotesFalhos += 1;
           const mensagem = err instanceof Error ? err.message : String(err);
+          // Estouro de tempo é quase sempre TAMANHO do lote: parte ao meio e
+          // tenta de novo (duas metades cabem no orçamento da função) antes de
+          // desistir e deixar os arquivos só com a classificação pelo nome.
+          const semTempo = /sem resposta em|HTTP 504|504/i.test(mensagem);
+          if (semTempo && lote.length > 1 && profundidade < 2) {
+            const meio = Math.ceil(lote.length / 2);
+            await executar(lote.slice(0, meio), rotulo, profundidade + 1);
+            await executar(lote.slice(meio), rotulo, profundidade + 1);
+            return;
+          }
+          lotesFalhos += 1;
           toast.error(`Lote ${rotulo} de ${lotes.length} sem leitura por IA`, {
             description: `Os arquivos dele seguem anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
           });
         } finally {
-          concluidos += 1;
-          setProgresso(
-            lotes.length > 1
-              ? `Leitura por IA em segundo plano: ${concluidos} de ${lotes.length} lote(s)…`
-              : 'Lendo os documentos por IA…',
-          );
+          // Só a chamada de topo conta no progresso — as metades da divisão
+          // pertencem ao mesmo lote e inflariam o contador.
+          if (profundidade === 0) {
+            concluidos += 1;
+            setProgresso(
+              lotes.length > 1
+                ? `Leitura por IA em segundo plano: ${concluidos} de ${lotes.length} lote(s)…`
+                : 'Lendo os documentos por IA…',
+            );
+          }
         }
       };
 
