@@ -1182,20 +1182,25 @@ export default function SucessoristaClient() {
                               </TableCell>
                               {participantes.map((p) => (
                                 <TableCell key={p.id}>
-                                  <Input
-                                    className="pct num"
-                                    inputMode="decimal"
-                                    placeholder="—"
-                                    aria-label={`Percentual do bem ${i + 1} para ${p.nome}`}
-                                    value={linha[p.id] ?? ''}
-                                    onChange={(e) => {
-                                      const v = e.target.value.replace(/[^\d.,]/g, '').slice(0, 6);
-                                      setMatriz((prev) => ({
-                                        ...prev,
-                                        [b.id]: { ...(prev[b.id] ?? {}), [p.id]: v },
-                                      }));
-                                    }}
-                                  />
+                                  {/* Sufixo % fixo dentro do campo: o valor digitado
+                                      é sempre percentual do bem. */}
+                                  <span className="pct-campo">
+                                    <Input
+                                      className="pct num"
+                                      inputMode="decimal"
+                                      placeholder="—"
+                                      aria-label={`Percentual do bem ${i + 1} para ${p.nome}`}
+                                      value={linha[p.id] ?? ''}
+                                      onChange={(e) => {
+                                        const v = e.target.value.replace(/[^\d.,]/g, '').slice(0, 6);
+                                        setMatriz((prev) => ({
+                                          ...prev,
+                                          [b.id]: { ...(prev[b.id] ?? {}), [p.id]: v },
+                                        }));
+                                      }}
+                                    />
+                                    <span aria-hidden="true">%</span>
+                                  </span>
                                 </TableCell>
                               ))}
                               <TableCell className={`col-total num ${fecha ? '' : 'nao-fecha'}`}>

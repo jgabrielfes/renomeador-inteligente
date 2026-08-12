@@ -381,10 +381,26 @@
 
 .sucessorista .matriz-partilha .col-total.nao-fecha { color: var(--lacre); }
 
+/* Campo de percentual com o sufixo % fixo dentro do input. */
+.sucessorista .matriz-partilha .pct-campo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sucessorista .matriz-partilha .pct-campo > span {
+  position: absolute;
+  right: 9px;
+  font-size: 12px;
+  color: var(--tinta-media);
+  pointer-events: none;
+}
+
 .sucessorista .matriz-partilha input.pct {
-  width: 76px;
+  width: 86px;
   height: 30px;
   text-align: right;
+  padding-right: 24px;
 }
 
 .sucessorista .matriz-partilha tfoot td {
