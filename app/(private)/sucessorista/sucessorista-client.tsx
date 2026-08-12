@@ -705,6 +705,28 @@ export default function SucessoristaClient() {
     }
   };
 
+  /**
+   * A leitura por IA terminou DEPOIS do anexo imediato: move cada arquivo já
+   * anexado para o item do catálogo que ela apontou (identidade do objeto
+   * File). Arquivo que a IA confirmou no mesmo item apenas permanece.
+   */
+  const reclassificarArquivos = (itens: ArquivoClassificado[]) => {
+    if (itens.length === 0) return;
+    setAnexosProcesso((prev) => {
+      const destino = new Map<File, string>(
+        itens.map((i) => [i.file, i.documentoId ?? 'outros']),
+      );
+      const proximos: AnexosProcesso = {};
+      for (const [id, files] of Object.entries(prev)) {
+        proximos[id] = files.filter((f) => !destino.has(f));
+      }
+      for (const [file, id] of destino) {
+        proximos[id] = [...(proximos[id] ?? []), file];
+      }
+      return proximos;
+    });
+  };
+
   /** Início rápido: só a data do óbito (+ valor estimado) acorda o painel. */
   const inicioRapido = (dataObito: string, valorEstimado: string) => {
     setFamilia((prev) => ({ ...prev, falecido: { ...prev.falecido, dataObito } }));
@@ -808,6 +830,7 @@ export default function SucessoristaClient() {
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
+            reclassificarArquivos={reclassificarArquivos}
             onInicioRapido={inicioRapido}
             irParaFamilia={() => irPara('familia')}
           />

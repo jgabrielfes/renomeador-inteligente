@@ -1,12 +1,14 @@
 /**
  * Etapa 0 — O caso.
  *
- * Porta de entrada da folha: solte a pasta do inventário e o cofre LÊ os
- * documentos de verdade (certidão de óbito, casamento, RG/CPF, matrículas…)
- * pela rota interna /api/sucessorista — o Gemini devolve a folha preenchida
- * para o advogado CONFERIR, não digitar. Cada arquivo já cai classificado no
- * catálogo do processo (item IV). Sem a pasta em mãos, o início rápido
- * (data do óbito + valor estimado) já acorda o painel ao lado.
+ * Porta de entrada da folha: solte a pasta do inventário e TODOS os arquivos
+ * são anexados NA HORA ao processo (item V), classificados pelo nome — a
+ * leitura de verdade (certidão de óbito, casamento, RG/CPF, matrículas…)
+ * roda em segundo plano pela rota interna /api/sucessorista, em lotes
+ * PARALELOS com fotos comprimidas no navegador, e depois só refina: move o
+ * arquivo para o item certo e preenche a folha para o advogado CONFERIR,
+ * não digitar. Sem a pasta em mãos, o início rápido (data do óbito + valor
+ * estimado) já acorda o painel ao lado.
  */
 
 import { useRef, useState } from 'react';
@@ -44,6 +46,49 @@ export interface ArquivoClassificado {
   tipoDetectado: string | null;
 }
 
+/** Leitura vazia — usada para anexar arquivos sem mexer nos campos da folha. */
+const CASO_VAZIO: CasoExtraido = {
+  falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null },
+  sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null },
+  herdeiros: [],
+  bens: [],
+  sociedades: [],
+  outrosFalecidos: [],
+  arquivos: [],
+};
+
+const EXT_IMAGEM = /\.(jpe?g|png|webp|bmp)$/i;
+
+/**
+ * Comprime foto/scan AQUI no navegador antes do envio (JPEG, lado maior
+ * 1800px): documento continua legível para a leitura, mas o upload cai de
+ * megabytes para centenas de KB — é o que mais acelera pastas de fotos, e
+ * torna legível a foto que estourava o limite de 4 MB. Qualquer falha (ou
+ * resultado maior que o original) devolve o arquivo intacto.
+ */
+async function comprimirImagem(file: File): Promise<File> {
+  if (file.size <= 350 * 1024 && !/\.bmp$/i.test(file.name)) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const LADO_MAX = 1800;
+    const escala = Math.min(1, LADO_MAX / Math.max(bitmap.width, bitmap.height));
+    const largura = Math.max(1, Math.round(bitmap.width * escala));
+    const altura = Math.max(1, Math.round(bitmap.height * escala));
+    const canvas = document.createElement('canvas');
+    canvas.width = largura;
+    canvas.height = altura;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, largura, altura);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.72));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], `${file.name.replace(/\.\w+$/, '')}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 const esquemaInicioRapido = z.object({
   dataObito: z
     .string()
@@ -61,11 +106,14 @@ type InicioRapido = z.infer<typeof esquemaInicioRapido>;
 
 export function CasoView({
   aplicarLeitura,
+  reclassificarArquivos,
   onInicioRapido,
   irParaFamilia,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
+  /** A IA refinou depois do anexo imediato: move os arquivos já anexados. */
+  reclassificarArquivos: (itens: ArquivoClassificado[]) => void;
   onInicioRapido: (dataObito: string, valorEstimado: string) => void;
   irParaFamilia: () => void;
 }) {
@@ -135,178 +183,204 @@ export function CasoView({
 
   async function lerArquivos(lista: File[]) {
     if (lendo || lista.length === 0) return;
+    setLendo(true);
+    setResumo(null);
+    setProgresso('Preparando os arquivos…');
 
-    // DOCX/XLSX (planilha de qualificação, minuta de partilha): o texto é
-    // extraído AQUI no navegador e segue como .txt para a leitura; o arquivo
-    // ORIGINAL é o que fica anexado no processo.
-    const { ehArquivoOffice, extrairTextoOffice } = await import('@/lib/office-texto');
-    const pares: { original: File; envio: File }[] = [];
-    const inelegiveis: File[] = [];
-    for (const f of lista) {
-      if (fileEligibleForAi(f)) {
-        pares.push({ original: f, envio: f });
-        continue;
-      }
-      if (ehArquivoOffice(f.name) && f.size <= 15 * 1024 * 1024) {
-        try {
-          const texto = await extrairTextoOffice(f);
-          if (texto.trim()) {
-            pares.push({
-              original: f,
-              envio: new File([texto], `${f.name}.txt`, { type: 'text/plain' }),
-            });
-            continue;
-          }
-        } catch {
-          // ilegível/corrompido: cai para o anexo sem leitura
+    try {
+      // DOCX/XLSX (planilha de qualificação, minuta de partilha): o texto é
+      // extraído AQUI no navegador e segue como .txt para a leitura; fotos e
+      // scans são COMPRIMIDOS aqui antes do envio. O arquivo ORIGINAL é o que
+      // fica anexado no processo.
+      const { ehArquivoOffice, extrairTextoOffice } = await import('@/lib/office-texto');
+      const pares: { original: File; envio: File }[] = [];
+      const inelegiveis: File[] = [];
+      for (let i = 0; i < lista.length; i++) {
+        const f = lista[i];
+        if (lista.length > 8) setProgresso(`Preparando os arquivos… ${i + 1}/${lista.length}`);
+        let envio = f;
+        if (EXT_IMAGEM.test(f.name)) envio = await comprimirImagem(f);
+        if (fileEligibleForAi(envio)) {
+          pares.push({ original: f, envio });
+          continue;
         }
+        if (ehArquivoOffice(f.name) && f.size <= 15 * 1024 * 1024) {
+          try {
+            const texto = await extrairTextoOffice(f);
+            if (texto.trim()) {
+              pares.push({
+                original: f,
+                envio: new File([texto], `${f.name}.txt`, { type: 'text/plain' }),
+              });
+              continue;
+            }
+          } catch {
+            // ilegível/corrompido: cai para o anexo sem leitura
+          }
+        }
+        inelegiveis.push(f);
       }
-      inelegiveis.push(f);
-    }
 
-    // Certidão de óbito PRIMEIRO no lote (depois casamento): é ela que define
-    // o falecido — a ordem alfabética da pasta costuma pôr CNH/RG na frente e
-    // já induziu identificação errada do falecido. A mesclagem preenche campo
-    // vazio primeiro, então o primeiro lote precisa ser o da fonte certa.
-    const prioridade = (nome: string): number => {
-      const n = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-      if (n.includes('OBITO')) return 0;
-      if (n.includes('CASAMENTO') || n.includes('UNIAO ESTAVEL')) return 1;
-      return 2;
-    };
-    pares.sort((a, b) => prioridade(a.original.name) - prioridade(b.original.name));
-
-    if (inelegiveis.length > 0) {
-      // Sem leitura para eles, mas nada se perde: o classificador de reserva
-      // usa o NOME do arquivo para acertar o item do catálogo.
+      // ANEXO IMEDIATO: todos os arquivos entram no processo AGORA,
+      // classificados pelo nome — nada de esperar a IA para trabalhar. A
+      // leitura roda em segundo plano e depois só REFINA: move o que
+      // classificar diferente e preenche a folha.
+      const todos = [...pares.map((p) => p.original), ...inelegiveis];
       aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
-        inelegiveis.map((file) => ({
+        CASO_VAZIO,
+        todos.map((file) => ({
           file,
           documentoId: classificarNoCatalogo('', file.name),
           tipoDetectado: null,
-        }))
+        })),
       );
-      toast.info(`${inelegiveis.length} arquivo(s) fora do formato/tamanho da leitura`, {
-        description: 'Foram anexados ao processo classificados pelo nome do arquivo — confira no item IV.',
+      toast.info(`${todos.length} arquivo(s) anexados ao processo`, {
+        description:
+          'Classificados pelo nome na hora — a leitura por IA segue em segundo plano preenchendo a folha e refinando a classificação. Você já pode navegar pelas abas.',
       });
-    }
-    if (pares.length === 0) return;
+      if (pares.length === 0) return;
 
-    // Lotes no mesmo limite do renomeador (nº de itens e corpo da função),
-    // medidos pelo arquivo que VIAJA (o .txt extraído é minúsculo).
-    const lotes: { original: File; envio: File }[][] = [];
-    let atual: { original: File; envio: File }[] = [];
-    let bytes = 0;
-    for (const par of pares) {
-      if (atual.length >= AI_BATCH_MAX_ITEMS || (atual.length > 0 && bytes + par.envio.size > AI_BATCH_MAX_BYTES)) {
-        lotes.push(atual);
-        atual = [];
-        bytes = 0;
-      }
-      atual.push(par);
-      bytes += par.envio.size;
-    }
-    if (atual.length > 0) lotes.push(atual);
+      // Certidão de óbito PRIMEIRO no lote (depois casamento): é ela que
+      // define o falecido — a ordem alfabética da pasta costuma pôr CNH/RG na
+      // frente e já induziu identificação errada. A mesclagem preenche campo
+      // vazio primeiro, então o primeiro lote precisa ser o da fonte certa.
+      const prioridade = (nome: string): number => {
+        const n = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+        if (n.includes('OBITO')) return 0;
+        if (n.includes('CASAMENTO') || n.includes('UNIAO ESTAVEL')) return 1;
+        return 2;
+      };
+      pares.sort((a, b) => prioridade(a.original.name) - prioridade(b.original.name));
 
-    setLendo(true);
-    setResumo(null);
-    let lidos = 0;
-    let lotesFalhos = 0;
-    let falecidoLido: string | null = null;
-    const outrosObitos = new Set<string>();
-    const tipos = new Set<string>();
-    const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    // Pasta pesada = vários lotes. Cada lote é independente: 429 espera o
-    // retry-after e tenta de novo UMA vez; falha definitiva anexa os arquivos
-    // do lote classificados pelo NOME e segue para o próximo — nunca aborta
-    // a leitura inteira.
-    const lerLote = async (lote: { original: File; envio: File }[]): Promise<CasoExtraido> => {
-      for (let tentativa = 0; ; tentativa++) {
-        const form = new FormData();
-        for (const par of lote) form.append('item', par.envio);
-        const res = await fetch('/api/sucessorista', { method: 'POST', body: form });
-        const payload = await res.json().catch(() => null);
-        if (res.ok) {
-          const caso = payload?.caso as CasoExtraido | undefined;
-          if (!caso) throw new Error('Resposta inválida da leitura.');
-          return caso;
+      // Lotes no mesmo limite do renomeador (nº de itens e corpo da função),
+      // medidos pelo arquivo que VIAJA (o .txt/JPEG comprimido é pequeno).
+      const lotes: { original: File; envio: File }[][] = [];
+      let atual: { original: File; envio: File }[] = [];
+      let bytes = 0;
+      for (const par of pares) {
+        if (atual.length >= AI_BATCH_MAX_ITEMS || (atual.length > 0 && bytes + par.envio.size > AI_BATCH_MAX_BYTES)) {
+          lotes.push(atual);
+          atual = [];
+          bytes = 0;
         }
-        const espera = Number(payload?.retryDelaySeconds);
-        if (tentativa === 0 && Number.isFinite(espera) && espera > 0 && !payload?.dailyQuota) {
-          const segundos = Math.min(Math.ceil(espera), 45);
-          setProgresso(`Limite de leituras por minuto — aguardando ${segundos}s para continuar…`);
-          await pausa(segundos * 1000);
-          continue;
-        }
-        throw new Error(payload?.error ?? `Falha na leitura (HTTP ${res.status}).`);
+        atual.push(par);
+        bytes += par.envio.size;
       }
-    };
+      if (atual.length > 0) lotes.push(atual);
 
-    for (let i = 0; i < lotes.length; i++) {
-      const lote = lotes[i];
+      let lidos = 0;
+      let concluidos = 0;
+      let lotesFalhos = 0;
+      let falecidoLido: string | null = null;
+      const outrosObitos = new Set<string>();
+      const tipos = new Set<string>();
+      const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      // Cada lote é independente: 429 espera o retry-after (até 2 novas
+      // tentativas); falha definitiva não perde nada — os arquivos já estão
+      // anexados pelo nome — e a leitura continua nos demais lotes.
+      const lerLote = async (lote: { original: File; envio: File }[]): Promise<CasoExtraido> => {
+        for (let tentativa = 0; ; tentativa++) {
+          const form = new FormData();
+          for (const par of lote) form.append('item', par.envio);
+          const res = await fetch('/api/sucessorista', { method: 'POST', body: form });
+          const payload = await res.json().catch(() => null);
+          if (res.ok) {
+            const caso = payload?.caso as CasoExtraido | undefined;
+            if (!caso) throw new Error('Resposta inválida da leitura.');
+            return caso;
+          }
+          const espera = Number(payload?.retryDelaySeconds);
+          if (tentativa < 2 && Number.isFinite(espera) && espera > 0 && !payload?.dailyQuota) {
+            await pausa(Math.min(Math.ceil(espera), 45) * 1000);
+            continue;
+          }
+          throw new Error(payload?.error ?? `Falha na leitura (HTTP ${res.status}).`);
+        }
+      };
+
+      const executar = async (lote: { original: File; envio: File }[], rotulo: number) => {
+        try {
+          const caso = await lerLote(lote);
+          const classificados: ArquivoClassificado[] = lote.map((par, idx) => {
+            const info = caso.arquivos.find((a) => a.indice === idx + 1);
+            if (info?.tipoDetectado) tipos.add(info.tipoDetectado);
+            return {
+              file: par.original,
+              documentoId:
+                info?.documentoId ??
+                classificarNoCatalogo(info?.tipoDetectado ?? '', par.original.name),
+              tipoDetectado: info?.tipoDetectado ?? null,
+            };
+          });
+          aplicarLeitura(caso, []); // só os campos da folha — o anexo já foi feito
+          reclassificarArquivos(classificados); // move para o item apontado pela IA
+          if (caso.falecido.nome && !falecidoLido) falecidoLido = caso.falecido.nome;
+          for (const o of caso.outrosFalecidos) outrosObitos.add(o.nome);
+          lidos += lote.length;
+        } catch (err) {
+          lotesFalhos += 1;
+          const mensagem = err instanceof Error ? err.message : String(err);
+          toast.error(`Lote ${rotulo} de ${lotes.length} sem leitura por IA`, {
+            description: `Os arquivos dele seguem anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
+          });
+        } finally {
+          concluidos += 1;
+          setProgresso(
+            lotes.length > 1
+              ? `Leitura por IA em segundo plano: ${concluidos} de ${lotes.length} lote(s)…`
+              : 'Lendo os documentos por IA…',
+          );
+        }
+      };
+
       setProgresso(
         lotes.length > 1
-          ? `Lendo lote ${i + 1} de ${lotes.length} (${lote.length} arquivo(s))…`
-          : `Lendo ${lote.length} arquivo(s)…`
+          ? `Leitura por IA em segundo plano: 0 de ${lotes.length} lote(s)…`
+          : 'Lendo os documentos por IA…',
       );
-      try {
-        const caso = await lerLote(lote);
-        const classificados: ArquivoClassificado[] = lote.map((par, idx) => {
-          const info = caso.arquivos.find((a) => a.indice === idx + 1);
-          if (info?.tipoDetectado) tipos.add(info.tipoDetectado);
-          return {
-            file: par.original,
-            documentoId:
-              info?.documentoId ??
-              classificarNoCatalogo(info?.tipoDetectado ?? '', par.original.name),
-            tipoDetectado: info?.tipoDetectado ?? null,
-          };
-        });
-        aplicarLeitura(caso, classificados);
-        if (caso.falecido.nome && !falecidoLido) falecidoLido = caso.falecido.nome;
-        for (const o of caso.outrosFalecidos) outrosObitos.add(o.nome);
-        lidos += lote.length;
-      } catch (err) {
-        lotesFalhos += 1;
-        const mensagem = err instanceof Error ? err.message : String(err);
-        // Arquivos do lote falho não se perdem: classificados pelo nome.
-        aplicarLeitura(
-          { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
-          lote.map((par) => ({
-            file: par.original,
-            documentoId: classificarNoCatalogo('', par.original.name),
-            tipoDetectado: null,
-          }))
+
+      // O 1º lote roda SOZINHO (é o do óbito/casamento — fixa o falecido);
+      // os demais rodam em PARALELO (3 por vez): é o que corta o tempo total
+      // da pasta pesada, no lugar da fila com pausa fixa entre lotes.
+      await executar(lotes[0], 1);
+      const restantes = lotes.slice(1);
+      if (restantes.length > 0) {
+        let cursor = 0;
+        const trabalhador = async () => {
+          for (;;) {
+            const i = cursor;
+            cursor += 1;
+            if (i >= restantes.length) return;
+            await executar(restantes[i], i + 2);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(3, restantes.length) }, () => trabalhador()),
         );
-        toast.error(`Lote ${i + 1} de ${lotes.length} sem leitura`, {
-          description: `Arquivos anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
+      }
+
+      setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
+      if (outrosObitos.size > 0) {
+        toast.warning(`Mais de um óbito detectado: ${[...outrosObitos].join(', ')}`, {
+          description:
+            'Se for herdeiro pré-morto, a folha marca a situação automaticamente quando o nome casa; se forem DUAS sucessões (ex.: pai e mãe), trate cada uma em um caso separado.',
+          duration: 12000,
         });
       }
-      // Respiro entre lotes: alivia o limite por minuto do free tier.
-      if (i < lotes.length - 1) await pausa(1200);
+      if (lidos > 0 && lotesFalhos === 0) {
+        toast.success('Leitura concluída — confira a folha', {
+          description: 'A IA preenche para você conferir: nenhum campo extraído dispensa a conferência no documento.',
+        });
+      } else if (lidos > 0) {
+        toast.warning(`Leitura parcial: ${lotesFalhos} lote(s) falharam`, {
+          description: 'Os arquivos desses lotes ficaram classificados pelo nome — confira o item V.',
+        });
+      }
+    } finally {
+      setLendo(false);
+      setProgresso('');
     }
-
-    setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
-    if (outrosObitos.size > 0) {
-      toast.warning(`Mais de um óbito detectado: ${[...outrosObitos].join(', ')}`, {
-        description:
-          'Se for herdeiro pré-morto, a folha marca a situação automaticamente quando o nome casa; se forem DUAS sucessões (ex.: pai e mãe), trate cada uma em um caso separado.',
-        duration: 12000,
-      });
-    }
-    if (lidos > 0 && lotesFalhos === 0) {
-      toast.success('Leitura concluída — confira a folha', {
-        description: 'A IA preenche para você conferir: nenhum campo extraído dispensa a conferência no documento.',
-      });
-    } else if (lidos > 0) {
-      toast.warning(`Leitura parcial: ${lotesFalhos} lote(s) falharam`, {
-        description: 'Os arquivos desses lotes foram anexados classificados pelo nome — confira o item IV.',
-      });
-    }
-    setLendo(false);
-    setProgresso('');
   }
 
   return (
@@ -361,8 +435,8 @@ export function CasoView({
         <b>{lendo ? progresso || 'Lendo os documentos…' : 'Arraste a pasta do caso — ou os arquivos'}</b>
         <span className="dica">
           {lendo
-            ? 'A leitura roda pela rota interna da plataforma — a chave da IA nunca sai do servidor.'
-            : 'PDF, JPG, PNG e WEBP (até 4 MB por arquivo) — e DOCX/XLSX, como a planilha de qualificação e a minuta de partilha, que viram texto aqui no navegador. Subpastas entram junto.'}
+            ? 'Os arquivos já estão anexados no item V — a leitura por IA roda em segundo plano pela rota interna (a chave nunca sai do servidor).'
+            : 'PDF, JPG, PNG e WEBP — fotos grandes são otimizadas aqui no navegador antes da leitura — e DOCX/XLSX, como a planilha de qualificação e a minuta de partilha, que viram texto aqui mesmo. Subpastas entram junto.'}
         </span>
         {!lendo && (
           <span className="arrasto-acoes">
