@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import {
   dataCurta,
+  idsDaBuscaDeUsuarios,
   parseBusca,
   parseOrdenacao,
   parsePaginacao,
@@ -70,15 +71,11 @@ export default async function UsuariosPage({
     direcao: "desc",
   });
 
-  // Busca no banco, em nome OU e-mail, sem diferenciar maiúsculas/acentos do
-  // que o Postgres já normaliza (insensitive cobre o caso de caixa).
+  // Busca em nome OU e-mail, indiferente a caixa E a acento — a comparação
+  // sem acento é do Postgres (unaccent), então o filtro vem como lista de ids
+  // e a ordenação/paginação seguem sendo as do Prisma.
   const where: Prisma.UserWhereInput = busca
-    ? {
-        OR: [
-          { name: { contains: busca, mode: "insensitive" } },
-          { email: { contains: busca, mode: "insensitive" } },
-        ],
-      }
+    ? { id: { in: await idsDaBuscaDeUsuarios(prisma, busca) } }
     : {};
 
   const [total, usuarios] = await Promise.all([

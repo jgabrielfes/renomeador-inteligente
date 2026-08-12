@@ -89,6 +89,29 @@ export function parseBusca(bruto: unknown): string {
   return typeof bruto === "string" ? bruto.trim().slice(0, MAX_BUSCA) : "";
 }
 
+/**
+ * Ids dos usuários que casam com a busca em nome OU e-mail, indiferente a
+ * CAIXA e a ACENTO ("tais" acha "Taís"). O `mode: "insensitive"` do Prisma só
+ * resolve a caixa, então a comparação sem acento é feita no Postgres com
+ * `unaccent` (extensão criada na migração `busca_sem_acento`).
+ *
+ * Os ids voltam para um `findMany` normal — assim a ordenação, a paginação e
+ * o `_count` continuam sendo os do Prisma, e o SQL cru fica restrito ao
+ * filtro (com o termo SEMPRE parametrizado, nunca interpolado).
+ */
+export async function idsDaBuscaDeUsuarios(
+  prisma: { $queryRaw: <T>(...args: [TemplateStringsArray, ...unknown[]]) => Promise<T> },
+  busca: string
+): Promise<string[]> {
+  const termo = `%${busca}%`;
+  const linhas = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM users
+    WHERE unaccent(name) ILIKE unaccent(${termo})
+       OR unaccent(email) ILIKE unaccent(${termo})
+    LIMIT 1000`;
+  return linhas.map((l) => l.id);
+}
+
 /** Monta a query string preservando os demais filtros ao trocar um deles. */
 export function queryDaTabela(params: {
   periodo?: string;
