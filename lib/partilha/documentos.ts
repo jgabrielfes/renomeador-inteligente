@@ -9,8 +9,10 @@
  */
 
 export type GrupoDocumento =
-  | 'PARTES'
   | 'OBITO_ESTADO_CIVIL'
+  | 'FALECIDO'
+  | 'SOBREVIVENTE'
+  | 'HERDEIROS'
   | 'TESTAMENTO'
   | 'IMOVEIS'
   | 'FINANCEIRO'
@@ -20,8 +22,10 @@ export type GrupoDocumento =
   | 'OUTROS';
 
 export const ROTULO_GRUPO: Record<GrupoDocumento, string> = {
-  PARTES: 'Documentos pessoais das partes',
   OBITO_ESTADO_CIVIL: 'Óbito e estado civil',
+  FALECIDO: 'Documentos pessoais do(a) de cujus',
+  SOBREVIVENTE: 'Documentos pessoais do cônjuge/companheiro(a) supérstite',
+  HERDEIROS: 'Documentos pessoais dos herdeiros',
   TESTAMENTO: 'Testamento',
   IMOVEIS: 'Imóveis',
   FINANCEIRO: 'Financeiro',
@@ -47,13 +51,6 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
     descricao: 'Abre o processo: prova o fato gerador e a data da abertura da sucessão.',
   },
   {
-    id: 'docs-pessoais',
-    grupo: 'PARTES',
-    titulo: 'Documento de identidade e CPF das partes',
-    descricao:
-      'RG ou CNH (com CPF) do falecido, do(a) viúvo(a) e de cada herdeiro e cônjuge de herdeiro. Os enviados pelo cofre de documentos entram aqui.',
-  },
-  {
     id: 'certidao-casamento-falecido',
     grupo: 'OBITO_ESTADO_CIVIL',
     titulo: 'Certidão de casamento do falecido',
@@ -61,16 +58,35 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
       'Atualizada (90 dias), com o regime de bens legível; havendo pacto antenupcial, o pacto registrado.',
   },
   {
+    id: 'docs-falecido',
+    grupo: 'FALECIDO',
+    titulo: 'RG/CNH e CPF do(a) de cujus',
+    descricao: 'Documento de identidade com CPF do(a) autor(a) da herança.',
+  },
+  {
+    id: 'docs-sobrevivente',
+    grupo: 'SOBREVIVENTE',
+    titulo: 'RG/CNH, CPF e comprovante de endereço do(a) supérstite',
+    descricao: 'Documento de identidade com CPF e comprovante de endereço do cônjuge/companheiro(a).',
+  },
+  {
+    id: 'docs-herdeiros',
+    grupo: 'HERDEIROS',
+    titulo: 'RG/CNH e CPF de cada herdeiro (e cônjuge de herdeiro)',
+    descricao:
+      'Documento de identidade com CPF de cada herdeiro e do cônjuge do herdeiro casado. Os enviados pelo cofre de documentos entram aqui.',
+  },
+  {
     id: 'certidoes-herdeiros',
-    grupo: 'OBITO_ESTADO_CIVIL',
+    grupo: 'HERDEIROS',
     titulo: 'Certidão de casamento ou nascimento de cada herdeiro',
     descricao: 'Atualizadas — provam a filiação e o estado civil que entram na escritura.',
   },
   {
     id: 'comprovantes-endereco',
-    grupo: 'PARTES',
-    titulo: 'Comprovantes de endereço das partes',
-    descricao: 'Conta de consumo ou correspondência bancária recente de cada parte.',
+    grupo: 'HERDEIROS',
+    titulo: 'Comprovantes de endereço dos herdeiros',
+    descricao: 'Conta de consumo ou correspondência bancária recente de cada herdeiro.',
   },
   {
     id: 'certidao-testamento',
@@ -132,3 +148,38 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
       'O que o caso pedir: alvarás, procurações, renúncias, certidões negativas, guias pagas…',
   },
 ];
+
+/**
+ * Classificação de RESERVA pelo nome do arquivo + tipo detectado — usada
+ * quando a leitura por IA não devolve o item do catálogo (falha do lote,
+ * arquivo fora do formato, documentoId nulo). A ORDEM importa: o específico
+ * vem antes. O que não casa vai para "outros" — nunca para um item errado.
+ */
+const REGRAS_CLASSIFICACAO: Array<[RegExp, string]> = [
+  [/OBITO/, 'certidao-obito'],
+  [/TESTAMENTO|CENSEC|RCTO/, 'certidao-testamento'],
+  [/CONTRATO SOCIAL|ALTERACAO CONTRATUAL|JUCESP|\bCNPJ\b|SOCIETARI/, 'contrato-social'],
+  [/BALANCO/, 'balanco-patrimonial'],
+  [/CASAMENTO|PACTO ANTENUPCIAL|UNIAO ESTAVEL/, 'certidao-casamento-falecido'],
+  [/NASCIMENTO/, 'certidoes-herdeiros'],
+  [/MATRICULA|INTEIRO TEOR|\bONUS\b|REGISTRO DE IMOVEIS/, 'matricula-imovel'],
+  [/VALOR VENAL|\bIPTU\b|\bCCIR\b|\bITR\b/, 'valor-venal'],
+  [/\bCRLV\b|\bCRV\b|\bDUT\b|VEICULO|RENAVAM|\bIPVA\b|\bFIPE\b/, 'doc-veiculos'],
+  [/EXTRATO|SALDO|APLICACAO|POUPANCA|PREVIDENCIA/, 'extratos-bancarios'],
+  [/IMPOSTO DE RENDA|\bIRPF\b|\bDIRPF\b|DECLARACAO DE AJUSTE/, 'declaracao-ir'],
+  [/RESIDENCIA|ENDERECO/, 'comprovantes-endereco'],
+  // Sem saber de QUEM é o RG/CNH, o palpite seguro é o grupo dos herdeiros
+  // (maioria das partes) — a IA é quem separa de cujus/supérstite.
+  [/\bRG\b|\bCNH\b|\bCPF\b|IDENTIDADE|PASSAPORTE|HABILITACAO/, 'docs-herdeiros'],
+];
+
+export function classificarNoCatalogo(tipoDetectado: string, fileName: string): string {
+  const n = `${tipoDetectado} ${fileName}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+  for (const [padrao, id] of REGRAS_CLASSIFICACAO) {
+    if (padrao.test(n)) return id;
+  }
+  return 'outros';
+}

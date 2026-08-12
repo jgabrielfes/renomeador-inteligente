@@ -21,6 +21,7 @@ import { DateInput } from '@/components/date-input';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib/ai';
 import { filesFromDataTransfer } from '@/lib/fs';
+import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 
 // Pasta arrastada vem com lixo de sistema (.DS_Store, Thumbs.db…) — fora.
@@ -88,6 +89,50 @@ export function CasoView({
     defaultValues: { dataObito: '', valorEstimado: '' },
   });
 
+  /**
+   * Seletor de pasta pelo File System Access API: marca a pasta RAIZ e
+   * confirma — sem o comportamento do diálogo clássico de entrar nas
+   * subpastas. Percorre tudo recursivamente; sem suporte (Firefox/Safari),
+   * cai no input webkitdirectory.
+   */
+  async function selecionarPasta() {
+    type ComPicker = Window & {
+      showDirectoryPicker?: (opts?: { mode?: string }) => Promise<FileSystemDirectoryHandle>;
+    };
+    const picker = (window as ComPicker).showDirectoryPicker;
+    if (!picker) {
+      inputPastaRef.current?.click();
+      return;
+    }
+    try {
+      const raiz = await picker.call(window, { mode: 'read' });
+      const arquivos: File[] = [];
+      const percorrer = async (dir: FileSystemDirectoryHandle): Promise<void> => {
+        for await (const handle of dir.values()) {
+          if (handle.kind === 'file') {
+            arquivos.push(await (handle as FileSystemFileHandle).getFile());
+          } else if (handle.kind === 'directory') {
+            await percorrer(handle as FileSystemDirectoryHandle);
+          }
+        }
+      };
+      await percorrer(raiz);
+      const lista = preparar(arquivos);
+      if (lista.length === 0) {
+        toast.info(`Pasta "${raiz.name}" sem arquivos legíveis.`);
+        return;
+      }
+      toast.info(`Pasta "${raiz.name}": ${lista.length} arquivo(s), subpastas incluídas`, {
+        description: 'Iniciando a leitura…',
+      });
+      void lerArquivos(lista);
+    } catch (err) {
+      // Cancelou o diálogo: silêncio. Outros erros caem no input clássico.
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      inputPastaRef.current?.click();
+    }
+  }
+
   async function lerArquivos(lista: File[]) {
     if (lendo || lista.length === 0) return;
 
@@ -132,13 +177,18 @@ export function CasoView({
     pares.sort((a, b) => prioridade(a.original.name) - prioridade(b.original.name));
 
     if (inelegiveis.length > 0) {
-      // Sem leitura para eles, mas nada se perde: entram no catálogo em "outros".
+      // Sem leitura para eles, mas nada se perde: o classificador de reserva
+      // usa o NOME do arquivo para acertar o item do catálogo.
       aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], arquivos: [] },
-        inelegiveis.map((file) => ({ file, documentoId: 'outros', tipoDetectado: null }))
+        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
+        inelegiveis.map((file) => ({
+          file,
+          documentoId: classificarNoCatalogo('', file.name),
+          tipoDetectado: null,
+        }))
       );
       toast.info(`${inelegiveis.length} arquivo(s) fora do formato/tamanho da leitura`, {
-        description: 'Foram anexados em "Outros documentos" para classificação manual.',
+        description: 'Foram anexados ao processo classificados pelo nome do arquivo — confira no item IV.',
       });
     }
     if (pares.length === 0) return;
@@ -162,57 +212,101 @@ export function CasoView({
     setLendo(true);
     setResumo(null);
     let lidos = 0;
+    let lotesFalhos = 0;
     let falecidoLido: string | null = null;
+    const outrosObitos = new Set<string>();
     const tipos = new Set<string>();
-    try {
-      for (let i = 0; i < lotes.length; i++) {
-        const lote = lotes[i];
-        setProgresso(
-          lotes.length > 1
-            ? `Lendo lote ${i + 1} de ${lotes.length} (${lote.length} arquivo(s))…`
-            : `Lendo ${lote.length} arquivo(s)…`
-        );
+    const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // Pasta pesada = vários lotes. Cada lote é independente: 429 espera o
+    // retry-after e tenta de novo UMA vez; falha definitiva anexa os arquivos
+    // do lote classificados pelo NOME e segue para o próximo — nunca aborta
+    // a leitura inteira.
+    const lerLote = async (lote: { original: File; envio: File }[]): Promise<CasoExtraido> => {
+      for (let tentativa = 0; ; tentativa++) {
         const form = new FormData();
         for (const par of lote) form.append('item', par.envio);
         const res = await fetch('/api/sucessorista', { method: 'POST', body: form });
         const payload = await res.json().catch(() => null);
-        if (!res.ok) {
-          throw new Error(payload?.error ?? `Falha na leitura (HTTP ${res.status}).`);
+        if (res.ok) {
+          const caso = payload?.caso as CasoExtraido | undefined;
+          if (!caso) throw new Error('Resposta inválida da leitura.');
+          return caso;
         }
-        const caso = payload?.caso as CasoExtraido | undefined;
-        if (!caso) throw new Error('Resposta inválida da leitura.');
+        const espera = Number(payload?.retryDelaySeconds);
+        if (tentativa === 0 && Number.isFinite(espera) && espera > 0 && !payload?.dailyQuota) {
+          const segundos = Math.min(Math.ceil(espera), 45);
+          setProgresso(`Limite de leituras por minuto — aguardando ${segundos}s para continuar…`);
+          await pausa(segundos * 1000);
+          continue;
+        }
+        throw new Error(payload?.error ?? `Falha na leitura (HTTP ${res.status}).`);
+      }
+    };
 
+    for (let i = 0; i < lotes.length; i++) {
+      const lote = lotes[i];
+      setProgresso(
+        lotes.length > 1
+          ? `Lendo lote ${i + 1} de ${lotes.length} (${lote.length} arquivo(s))…`
+          : `Lendo ${lote.length} arquivo(s)…`
+      );
+      try {
+        const caso = await lerLote(lote);
         const classificados: ArquivoClassificado[] = lote.map((par, idx) => {
           const info = caso.arquivos.find((a) => a.indice === idx + 1);
           if (info?.tipoDetectado) tipos.add(info.tipoDetectado);
           return {
             file: par.original,
-            documentoId: info?.documentoId ?? 'outros',
+            documentoId:
+              info?.documentoId ??
+              classificarNoCatalogo(info?.tipoDetectado ?? '', par.original.name),
             tipoDetectado: info?.tipoDetectado ?? null,
           };
         });
         aplicarLeitura(caso, classificados);
         if (caso.falecido.nome && !falecidoLido) falecidoLido = caso.falecido.nome;
+        for (const o of caso.outrosFalecidos) outrosObitos.add(o.nome);
         lidos += lote.length;
+      } catch (err) {
+        lotesFalhos += 1;
+        const mensagem = err instanceof Error ? err.message : String(err);
+        // Arquivos do lote falho não se perdem: classificados pelo nome.
+        aplicarLeitura(
+          { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
+          lote.map((par) => ({
+            file: par.original,
+            documentoId: classificarNoCatalogo('', par.original.name),
+            tipoDetectado: null,
+          }))
+        );
+        toast.error(`Lote ${i + 1} de ${lotes.length} sem leitura`, {
+          description: `Arquivos anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
+        });
       }
-      setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
+      // Respiro entre lotes: alivia o limite por minuto do free tier.
+      if (i < lotes.length - 1) await pausa(1200);
+    }
+
+    setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
+    if (outrosObitos.size > 0) {
+      toast.warning(`Mais de um óbito detectado: ${[...outrosObitos].join(', ')}`, {
+        description:
+          'Se for herdeiro pré-morto, a folha marca a situação automaticamente quando o nome casa; se forem DUAS sucessões (ex.: pai e mãe), trate cada uma em um caso separado.',
+        duration: 12000,
+      });
+    }
+    if (lidos > 0 && lotesFalhos === 0) {
       toast.success('Leitura concluída — confira a folha', {
         description: 'A IA preenche para você conferir: nenhum campo extraído dispensa a conferência no documento.',
       });
-    } catch (err) {
-      const mensagem = err instanceof Error ? err.message : String(err);
-      toast.error('Não foi possível ler os documentos', {
-        description: `Os arquivos foram anexados ao processo mesmo assim; preencha a folha manualmente. Detalhe: ${mensagem.slice(0, 140)}`,
+    } else if (lidos > 0) {
+      toast.warning(`Leitura parcial: ${lotesFalhos} lote(s) falharam`, {
+        description: 'Os arquivos desses lotes foram anexados classificados pelo nome — confira o item IV.',
       });
-      // A leitura falhou, mas os arquivos não se perdem: entram sem classificação.
-      aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], arquivos: [] },
-        pares.slice(lidos).map((par) => ({ file: par.original, documentoId: 'outros', tipoDetectado: null }))
-      );
-    } finally {
-      setLendo(false);
-      setProgresso('');
     }
+    setLendo(false);
+    setProgresso('');
   }
 
   return (
@@ -289,7 +383,7 @@ export function CasoView({
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                inputPastaRef.current?.click();
+                void selecionarPasta();
               }}
             >
               Selecionar pasta

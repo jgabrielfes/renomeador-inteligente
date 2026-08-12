@@ -53,11 +53,14 @@ export function DocumentosView({
   anexos,
   setAnexos,
   nomeCaso,
+  temSobrevivente = true,
   onGerarPeticao,
 }: {
   anexos: AnexosProcesso;
   setAnexos: (a: AnexosProcesso) => void;
   nomeCaso: string;
+  /** false esconde o grupo do cônjuge supérstite — sucessão sem essa parte. */
+  temSobrevivente?: boolean;
   /** Gera a minuta de petição ao Tabelionato (.docx) a partir da folha. */
   onGerarPeticao?: () => Promise<void>;
 }) {
@@ -66,8 +69,11 @@ export function DocumentosView({
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
+  const catalogoDoCasoTopo = CATALOGO_DOCUMENTOS.filter(
+    (doc) => temSobrevivente || doc.grupo !== 'SOBREVIVENTE',
+  );
   const totalAnexos = Object.values(anexos).reduce((acc, fs) => acc + fs.length, 0);
-  const itensComAnexo = CATALOGO_DOCUMENTOS.filter((d) => (anexos[d.id] ?? []).length > 0).length;
+  const itensComAnexo = catalogoDoCasoTopo.filter((d) => (anexos[d.id] ?? []).length > 0).length;
 
   const anexar = (docId: string, lista: FileList) => {
     setAnexos({ ...anexos, [docId]: [...(anexos[docId] ?? []), ...Array.from(lista)] });
@@ -114,8 +120,10 @@ export function DocumentosView({
   };
 
   // Agrupa preservando a ordem do catálogo (que é a ordem do processo).
+  // Sem cônjuge/companheiro(a) na sucessão, o grupo do supérstite nem abre
+  // (anexo que porventura caiu lá continua acessível se o grupo reabrir).
   const grupos: { grupo: GrupoDocumento; docs: typeof CATALOGO_DOCUMENTOS }[] = [];
-  for (const doc of CATALOGO_DOCUMENTOS) {
+  for (const doc of catalogoDoCasoTopo) {
     const g = grupos.find((x) => x.grupo === doc.grupo);
     if (g) g.docs.push(doc);
     else grupos.push({ grupo: doc.grupo, docs: [doc] });
@@ -130,7 +138,7 @@ export function DocumentosView({
         processo em PDF único ou individualizado. Os arquivos ficam só neste navegador.
       </p>
       <p className="progresso num">
-        {itensComAnexo} de {CATALOGO_DOCUMENTOS.length} itens com anexo · {totalAnexos} arquivo(s)
+        {itensComAnexo} de {catalogoDoCasoTopo.length} itens com anexo · {totalAnexos} arquivo(s)
       </p>
 
       {grupos.map(({ grupo, docs }) => (

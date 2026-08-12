@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select';
 import { useState } from 'react';
 
+import { mascararCpf } from '@/lib/cpf';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
   composicaoFamiliar,
@@ -128,8 +129,9 @@ export function FamiliaView({
           CPF
           <Input
             value={falecido.cpf}
-            onChange={(e) => setFalecido({ cpf: e.target.value })}
-            placeholder="000.000.000-00"
+            onChange={(e) => setFalecido({ cpf: mascararCpf(e.target.value) })}
+            inputMode="numeric"
+            placeholder="123.456.789-00"
           />
         </label>
         <label className="campo">
@@ -534,7 +536,7 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   {
     rotulo: 'Identificação',
     campos: [
-      { campo: 'cpf', rotulo: 'CPF', placeholder: '000.000.000-00' },
+      { campo: 'cpf', rotulo: 'CPF', placeholder: '123.456.789-00' },
       { campo: 'rg', rotulo: 'RG' },
       { campo: 'dataNascimento', rotulo: 'Data de nascimento' },
       { campo: 'filiacao', rotulo: 'Filiação' },
@@ -566,7 +568,7 @@ const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
   rotulo: 'Cônjuge do herdeiro (se casado)',
   campos: [
     { campo: 'conjugeNome', rotulo: 'Nome completo' },
-    { campo: 'conjugeCpf', rotulo: 'CPF' },
+    { campo: 'conjugeCpf', rotulo: 'CPF', placeholder: '123.456.789-00' },
     { campo: 'conjugeRg', rotulo: 'RG' },
     { campo: 'conjugeProfissao', rotulo: 'Profissão' },
     { campo: 'conjugeEmail', rotulo: 'E-mail' },
@@ -605,7 +607,16 @@ export function QualificacaoEditor({
                   <Input
                     value={valor[campo]}
                     placeholder={placeholder}
-                    onChange={(e) => onChange({ ...valor, [campo]: e.target.value })}
+                    inputMode={campo === 'cpf' || campo === 'conjugeCpf' ? 'numeric' : undefined}
+                    onChange={(e) =>
+                      onChange({
+                        ...valor,
+                        [campo]:
+                          campo === 'cpf' || campo === 'conjugeCpf'
+                            ? mascararCpf(e.target.value)
+                            : e.target.value,
+                      })
+                    }
                   />
                 )}
               </label>

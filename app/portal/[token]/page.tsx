@@ -18,6 +18,7 @@ import { LupaPreview } from '../../(private)/sucessorista/preview';
 
 /** Alias estrutural — compatível com o ChangeEvent de input file. */
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
+import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 
 const ROTULO: Record<string, string> = {
@@ -173,7 +174,19 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       <form noValidate onSubmit={handleSubmit(enviarQualificacao)}>
         <div className="grade q-grid" style={{ marginTop: 8 }}>
           <Campo rotulo="CPF" erro={errors.cpf?.message}>
-            <input type="text" inputMode="numeric" placeholder="000.000.000-00" aria-invalid={!!errors.cpf} {...register('cpf')} />
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="123.456.789-00"
+              aria-invalid={!!errors.cpf}
+              {...register('cpf', {
+                // Máscara progressiva no padrão 123.456.789-00 — o valor é
+                // reescrito no próprio evento antes de o react-hook-form ler.
+                onChange: (e: { target: { value: string } }) => {
+                  e.target.value = mascararCpf(e.target.value);
+                },
+              })}
+            />
           </Campo>
           <Campo rotulo="RG (opcional)" erro={errors.rg?.message}>
             <input type="text" {...register('rg')} />

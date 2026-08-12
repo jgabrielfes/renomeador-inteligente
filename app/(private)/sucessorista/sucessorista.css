@@ -288,6 +288,24 @@
   margin-bottom: 8px;
 }
 
+/* Seletor "fica com" da partilha diferenciada — select nativo vestido no
+   tema do livro (cabe na coluna de 150px do espelho). */
+.sucessorista select.destino-bem {
+  width: 100%;
+  padding: 5px 6px;
+  font-family: var(--texto);
+  font-size: 12.5px;
+  color: var(--tinta);
+  background: var(--papel-alto);
+  border: 1px solid var(--fio-forte);
+  border-radius: 6px;
+}
+
+.sucessorista select.destino-bem:focus-visible {
+  outline: 2px solid var(--bronze);
+  outline-offset: 1px;
+}
+
 .sucessorista label.campo,
 .sucessorista .campo {
   display: flex;
