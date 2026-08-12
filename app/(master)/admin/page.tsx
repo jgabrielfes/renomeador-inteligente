@@ -7,6 +7,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   FileCheck2,
+  FileWarning,
+  MousePointerClick,
+  Scale,
   Users,
 } from "lucide-react";
 
@@ -28,13 +31,28 @@ const LISTAGENS = [
     href: "/admin/usuarios",
     icon: Users,
     titulo: "Usuários",
-    descricao: "Contas cadastradas, confirmação de e-mail e papel de acesso.",
+    descricao:
+      "Contas cadastradas, papel de acesso e quantos acessos cada uma fez a cada módulo.",
   },
   {
     href: "/admin/renomeacoes",
     icon: FileCheck2,
     titulo: "Renomeações",
     descricao: "Lotes de arquivos renomeados, por usuário ou deslogado.",
+  },
+  {
+    href: "/admin/notas",
+    icon: FileWarning,
+    titulo: "Resolvedor de notas",
+    descricao:
+      "Notas triadas, vias de resolução exigidas, precisão do classificador e minutas geradas.",
+  },
+  {
+    href: "/admin/sucessorista",
+    icon: Scale,
+    titulo: "O Sucessorista",
+    descricao:
+      "Casos de inventário trabalhados, porte e rito, leitura do cofre e minutas entregues.",
   },
   {
     href: "/admin/erros",
@@ -54,19 +72,49 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   let usuarios: number | null = null;
   let arquivosRenomeados = 0;
   let erros = 0;
+  let exigencias = 0;
+  let notas = 0;
+  let casos = 0;
+  let minutas = 0;
+  let acessos = 0;
   try {
-    const [contagemUsuarios, somaRenomeados, contagemErros] =
-      await Promise.all([
-        prisma.user.count({ where: { createdAt } }),
-        prisma.renameEvent.aggregate({
-          _sum: { quantidade: true },
-          where: { createdAt },
-        }),
-        prisma.errorEvent.count({ where: { createdAt } }),
-      ]);
+    const [
+      contagemUsuarios,
+      somaRenomeados,
+      contagemErros,
+      agregadoNotas,
+      contagemCasos,
+      contagemMinutas,
+      contagemAcessos,
+    ] = await Promise.all([
+      prisma.user.count({ where: { createdAt } }),
+      prisma.renameEvent.aggregate({
+        _sum: { quantidade: true },
+        where: { createdAt },
+      }),
+      prisma.errorEvent.count({ where: { createdAt } }),
+      prisma.notaEvent.aggregate({
+        _sum: { quantidade: true },
+        _count: { _all: true },
+        where: { createdAt },
+      }),
+      // Uma linha de CALCULO por inventário: conta casos, não recálculos.
+      prisma.sucessoristaEvent.count({
+        where: { createdAt, acao: "CALCULO" },
+      }),
+      prisma.sucessoristaEvent.count({
+        where: { createdAt, acao: "DOCUMENTO" },
+      }),
+      prisma.moduleAccess.count({ where: { createdAt } }),
+    ]);
     usuarios = contagemUsuarios;
     arquivosRenomeados = somaRenomeados._sum.quantidade ?? 0;
     erros = contagemErros;
+    exigencias = agregadoNotas._sum.quantidade ?? 0;
+    notas = agregadoNotas._count._all;
+    casos = contagemCasos;
+    minutas = contagemMinutas;
+    acessos = contagemAcessos;
   } catch {
     // Banco indisponível/não configurado: a página avisa em vez de quebrar.
   }
@@ -113,12 +161,13 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
           <Card>
             <CardHeader>
               <CardDescription className="flex items-center gap-1.5">
-                <FileCheck2 className="size-4" />
-                Arquivos renomeados
+                <MousePointerClick className="size-4" />
+                Acessos aos módulos
               </CardDescription>
-              <CardTitle className="text-4xl tabular-nums">
-                {arquivosRenomeados}
-              </CardTitle>
+              <CardTitle className="text-4xl tabular-nums">{acessos}</CardTitle>
+              <CardDescription>
+                aberturas de ferramenta (uma por sessão)
+              </CardDescription>
             </CardHeader>
           </Card>
           <Card>
@@ -131,6 +180,54 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
             </CardHeader>
           </Card>
         </div>
+      )}
+
+      {usuarios !== null && (
+        <>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Produção por módulo no período
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5">
+                  <FileCheck2 className="size-4" />
+                  Arquivos renomeados
+                </CardDescription>
+                <CardTitle className="text-4xl tabular-nums">
+                  {arquivosRenomeados}
+                </CardTitle>
+                <CardDescription>Renomeador</CardDescription>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5">
+                  <FileWarning className="size-4" />
+                  Exigências classificadas
+                </CardDescription>
+                <CardTitle className="text-4xl tabular-nums">
+                  {exigencias}
+                </CardTitle>
+                <CardDescription>
+                  em {notas} nota(s) devolutiva(s) triada(s)
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5">
+                  <Scale className="size-4" />
+                  Casos de inventário
+                </CardDescription>
+                <CardTitle className="text-4xl tabular-nums">{casos}</CardTitle>
+                <CardDescription>
+                  {minutas} minuta(s)/planilha(s) gerada(s)
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        </>
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">

@@ -42,6 +42,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+import {
+  atualizarItemDaNota,
+  registrarTriagem,
+  type PatchItem,
+} from "@/app/(private)/notas/actions";
 import { extractDocxText, fillDocxTemplate } from "@/lib/notas/docx";
 import {
   casarComPasta,
@@ -243,6 +248,21 @@ function triggerDownload(blob: Blob, name: string) {
   URL.revokeObjectURL(url);
 }
 
+// Fora do componente de propósito: `performance.now` é impura e o lint do
+// React proíbe chamá-la direto no corpo de função declarada no componente.
+const agora = () => performance.now();
+
+/** Contexto da triagem para a telemetria (nada disso muda o resultado). */
+interface ContextoTriagem {
+  fonte?: Fonte;
+  /** true = texto colado/corrigido à mão; false = veio da pasta indexada. */
+  manual?: boolean;
+  arquivos?: number;
+  duracaoPasta?: number | null;
+  /** Documentos já indexados (o estado ainda não os tem no fluxo da pasta). */
+  docs?: ArquivoCaso[];
+}
+
 export default function NotasPage() {
   // --- pasta do caso ---
   const [arquivos, setArquivos] = React.useState<ArquivoCaso[]>([]);
@@ -265,6 +285,18 @@ export default function NotasPage() {
 
   // --- traslado (fonte interna das qualificações; sem card próprio) ---
   const [traslado, setTraslado] = React.useState<DadosTraslado | null>(null);
+
+  // Telemetria: liga a triagem em curso aos desfechos de cada exigência
+  // (via corrigida, minuta, download). Vive só nesta sessão da página.
+  const eventoNotaRef = React.useRef<string | null>(null);
+  // Documentos indexados, para a triagem medir cobertura da pasta sem
+  // depender do estado (que ainda não atualizou no fluxo automático).
+  const documentosDoCasoRef = React.useRef<ArquivoCaso[]>([]);
+
+  const marcarItem = React.useCallback((indice: number, patch: PatchItem) => {
+    const eventId = eventoNotaRef.current;
+    if (eventId) void atualizarItemDaNota(eventId, indice, patch);
+  }, []);
 
   // --- resolução / minuta ---
   const [itemPecaId, setItemPecaId] = React.useState<number | null>(null);
@@ -302,7 +334,8 @@ export default function NotasPage() {
     tabeliao: "",
   });
 
-  function triarDe(texto: string) {
+  function triarDe(texto: string, contexto?: ContextoTriagem) {
+    const inicio = agora();
     const classificados = triar(texto);
     setItens(
       classificados.map((c, i) => ({
@@ -315,12 +348,36 @@ export default function NotasPage() {
     );
     setItemPecaId(null);
     setMinuta(null);
+
+    // Telemetria: a triagem é o coração do módulo. Vão só as TAGS (via, alvos),
+    // contagens e flags — nada do texto da nota nem nomes de pessoa.
+    const docs = contexto?.docs ?? documentosDoCasoRef.current;
+    void registrarTriagem({
+      fonte: contexto?.fonte ?? notaFonte ?? "texto",
+      manual: contexto?.manual ?? true,
+      arquivos: contexto?.arquivos ?? 0,
+      duracaoMs: Math.round(agora() - inicio),
+      duracaoPasta: contexto?.duracaoPasta ?? null,
+      itens: classificados.map((c) => ({
+        via: c.via,
+        alvos: c.alvos,
+        temGatilho: c.gatilho !== null,
+        pessoas: c.pessoas.length,
+        achadosNaPasta: c.alvos.reduce(
+          (soma, alvo) => soma + casarComPasta(alvo, c.pessoas, docs).length,
+          0
+        ),
+      })),
+    }).then((evento) => {
+      eventoNotaRef.current = evento?.id ?? null;
+    });
+
     return classificados.length;
   }
 
   // Aplica o texto de um arquivo como nota devolutiva: preenche os campos que
   // a própria nota declara e roda a triagem.
-  function aplicarNota(texto: string, fonte: Fonte) {
+  function aplicarNota(texto: string, fonte: Fonte, contexto?: ContextoTriagem) {
     setNotaTexto(texto);
     setNotaFonte(fonte);
     const pren = extrairPrenotacao(texto);
@@ -329,7 +386,7 @@ export default function NotasPage() {
     if (pz) setPrazo(pz);
     const sv = extrairServentia(texto);
     if (sv) setServentia(sv);
-    return triarDe(texto);
+    return triarDe(texto, { ...contexto, fonte });
   }
 
   async function gerarPreviewNota(a: ArquivoCaso) {
@@ -362,6 +419,7 @@ export default function NotasPage() {
     if (uteis.length === 0) return;
     setIndexando(true);
     setProgresso("");
+    const inicioPasta = agora();
     try {
       // 1. texto barato de todos (sem OCR)
       const lidos: ArquivoCaso[] = [];
@@ -404,13 +462,19 @@ export default function NotasPage() {
       }
 
       setArquivos(lidos);
+      documentosDoCasoRef.current = lidos.filter((a) => a.papel === "documento");
 
       // 4. resolução automática
       const trasladoArq = lidos.find((a) => a.papel === "traslado");
       if (trasladoArq) aplicarTraslado(trasladoArq.texto, trasladoArq.fonte);
       if (nota) await gerarPreviewNota(nota);
       if (nota && nota.texto) {
-        const n = aplicarNota(nota.texto, nota.fonte);
+        const n = aplicarNota(nota.texto, nota.fonte, {
+          manual: false,
+          arquivos: lidos.length,
+          duracaoPasta: Math.round(agora() - inicioPasta),
+          docs: documentosDoCasoRef.current,
+        });
         toast.success(
           `Pasta indexada: ${lidos.length} arquivo(s), ${n} exigência(s) na nota` +
             (trasladoArq ? `, traslado “${trasladoArq.nome}”` : "")
@@ -479,9 +543,22 @@ export default function NotasPage() {
     setItens((prev) =>
       prev.map((it) => (it.id === id ? { ...it, ...patch } : it))
     );
+    // Telemetria: a via escolhida pelo humano ≠ sugerida é a métrica de
+    // precisão do classificador; o status conta o desfecho da exigência.
+    if (patch.viaEscolhida || patch.status) {
+      marcarItem(id, {
+        ...(patch.viaEscolhida ? { viaFinal: patch.viaEscolhida } : {}),
+        ...(patch.status ? { status: patch.status } : {}),
+      });
+    }
   }
 
   const documentosDoCaso = arquivos.filter((a) => a.papel === "documento");
+  // Espelho para a triagem medir cobertura da pasta (ela roda em handler, não
+  // em render, então precisa do valor mais recente sem virar dependência).
+  React.useEffect(() => {
+    documentosDoCasoRef.current = arquivos.filter((a) => a.papel === "documento");
+  }, [arquivos]);
 
   // Casa uma exigência de juntada com o acervo: os nomes de `alvos` e os
   // tipos do índice usam o mesmo vocabulário; documento pessoal é filtrado
@@ -490,11 +567,17 @@ export default function NotasPage() {
     return casarComPasta(alvo, pessoas, documentosDoCaso);
   }
 
-  async function baixarParaAssinatura(doc: ArquivoCaso, itemRef: string) {
+  async function baixarParaAssinatura(
+    doc: ArquivoCaso,
+    itemRef: string,
+    itemId: number
+  ) {
     setBaixandoDoc(doc.id);
     try {
       const r = await documentoParaAssinatura(doc.file);
       triggerDownload(r.blob, `item ${itemRef} - ${r.nome}`);
+      // Desfecho da via JUNTADA: o documento saiu para assinatura.
+      marcarItem(itemId, { baixouJuntada: true });
       toast.success(
         r.convertido
           ? "Documento convertido para PDF/A — pronto para o Assinador ONR."
@@ -601,6 +684,8 @@ export default function NotasPage() {
       else setRerrat((prev) => ({ ...prev, ...novos }));
 
       const n = Object.keys(novos).length;
+      // Telemetria: houve redação assistida e quantos campos a IA preencheu.
+      marcarItem(itemPeca.id, { comIa: true, camposIa: n });
       if (n === 0) {
         toast.info("A IA não teve base para preencher os campos vazios.", {
           description:
@@ -650,6 +735,9 @@ export default function NotasPage() {
         faltando,
       });
       mudarItem(itemPeca.id, { status: "em_preparo" });
+      // Telemetria: qual peça saiu e quantos placeholders ficaram vazios
+      // (completude do preenchimento).
+      marcarItem(itemPeca.id, { peca: tipoPeca, faltando: faltando.length });
       if (faltando.length > 0) {
         toast.warning(
           `Minuta gerada com ${faltando.length} campo(s) sem dado`,
@@ -1144,7 +1232,9 @@ export default function NotasPage() {
                               size="sm"
                               variant="outline"
                               disabled={baixandoDoc === doc.id}
-                              onClick={() => baixarParaAssinatura(doc, it.ref)}
+                              onClick={() =>
+                                baixarParaAssinatura(doc, it.ref, it.id)
+                              }
                             >
                               {baixandoDoc === doc.id ? (
                                 <Loader2 className="size-3.5 animate-spin" />
@@ -1670,9 +1760,13 @@ export default function NotasPage() {
                           {minuta && (
                             <Button
                               variant="outline"
-                              onClick={() =>
-                                triggerDownload(minuta.blob, minuta.nome)
-                              }
+                              onClick={() => {
+                                triggerDownload(minuta.blob, minuta.nome);
+                                // Desfecho: a minuta saiu para o cliente.
+                                if (itemPeca) {
+                                  marcarItem(itemPeca.id, { baixouMinuta: true });
+                                }
+                              }}
                             >
                               <Download className="size-4" />
                               Baixar .docx

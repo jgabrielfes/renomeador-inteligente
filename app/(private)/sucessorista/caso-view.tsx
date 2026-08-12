@@ -34,6 +34,11 @@ import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib
 import { filesFromDataTransfer } from '@/lib/fs';
 import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
+import { registrarLeituraDoCofre } from './actions';
+
+// Fora do componente: `performance.now` é impura e o lint do React proíbe
+// chamá-la direto no corpo de função declarada dentro do componente.
+const agora = () => performance.now();
 
 // Pasta arrastada vem com lixo de sistema (.DS_Store, Thumbs.db…) — fora.
 // A ordem é alfabética pelo caminho relativo (subpasta junto do que é dela),
@@ -122,6 +127,8 @@ export function CasoView({
   onExportarCaso,
   onImportarCaso,
   onNovoCaso,
+  casoId,
+  perfil,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -134,6 +141,9 @@ export function CasoView({
   onExportarCaso: () => void;
   onImportarCaso: (file: File) => Promise<void>;
   onNovoCaso: () => Promise<void>;
+  /** Telemetria: id aleatório do caso e perfil ativo (sem dado pessoal). */
+  casoId: string;
+  perfil: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -208,6 +218,7 @@ export function CasoView({
     setLendo(true);
     setResumo(null);
     setProgresso('Preparando os arquivos…');
+    const inicioLeitura = agora();
 
     try {
       // DOCX/XLSX (planilha de qualificação, minuta de partilha): o texto é
@@ -294,6 +305,9 @@ export function CasoView({
       let concluidos = 0;
       let lotesFalhos = 0;
       let falecidoLido: string | null = null;
+      // Telemetria: só as CONTAGENS do que a leitura trouxe (os nomes, não).
+      let herdeirosLidos = 0;
+      let bensLidos = 0;
       const outrosObitos = new Set<string>();
       const tipos = new Set<string>();
       const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -339,6 +353,8 @@ export function CasoView({
           reclassificarArquivos(classificados); // move para o item apontado pela IA
           if (caso.falecido.nome && !falecidoLido) falecidoLido = caso.falecido.nome;
           for (const o of caso.outrosFalecidos) outrosObitos.add(o.nome);
+          herdeirosLidos += caso.herdeiros.length;
+          bensLidos += caso.bens.length;
           lidos += lote.length;
         } catch (err) {
           lotesFalhos += 1;
@@ -383,6 +399,22 @@ export function CasoView({
       }
 
       setResumo({ arquivos: lidos, tipos: [...tipos], falecido: falecidoLido });
+      // Telemetria da etapa 0: tags de tipo, contagens e flags — nunca o nome
+      // do falecido (só a flag de que a leitura o identificou).
+      void registrarLeituraDoCofre({
+        casoId,
+        perfil,
+        lidos,
+        selecionados: lista.length,
+        inelegiveis: inelegiveis.length,
+        lotesFalhos,
+        duracaoMs: Math.round(agora() - inicioLeitura),
+        tipos: [...tipos],
+        identificouFalecido: falecidoLido !== null,
+        outrosObitos: outrosObitos.size,
+        herdeirosLidos,
+        bensLidos,
+      });
       if (outrosObitos.size > 0) {
         toast.warning(`Mais de um óbito detectado: ${[...outrosObitos].join(', ')}`, {
           description:

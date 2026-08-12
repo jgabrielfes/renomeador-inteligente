@@ -33,8 +33,32 @@ model User {
   renameEvents RenameEvent[]
   errorEvents  ErrorEvent[]
   lessons      RenamerLessons?
+  accesses     ModuleAccess[]
+  notaEvents   NotaEvent[]
+  sucessoristaEvents SucessoristaEvent[]
 
   @@map("users")
+}
+
+// Ferramentas da plataforma — dimensão comum das métricas de uso.
+enum Modulo {
+  RENOMEADOR
+  NOTAS
+  SUCESSORISTA
+}
+
+// Abertura de um módulo: uma linha por módulo por sessão do navegador (a
+// guarda do "uma vez por sessão" é do cliente — components/access-tracker).
+// NÃO é login: mede quem abriu qual ferramenta, e quantas vezes.
+model ModuleAccess {
+  id        String   @id @default(cuid())
+  modulo    Modulo
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, modulo])
+  @@map("module_accesses")
 }
 
 // Aprendizado do escritório do renomeador ("Regras do escritório" + correções
@@ -97,4 +121,71 @@ model RenameEvent {
   createdAt  DateTime      @default(now())
 
   @@map("rename_events")
+}
+
+// Telemetria do Resolvedor de Notas: um evento por TRIAGEM de nota
+// devolutiva (o momento em que a nota é decomposta em exigências e cada uma
+// é classificada numa via de resolução). Os desfechos de cada exigência
+// (via corrigida à mão, minuta gerada, download) são gravados depois, por
+// índice, como no renomeador.
+// Privacidade: NADA do texto da nota, nomes de pessoa/arquivo, prenotação ou
+// serventia — só as TAGS do vocabulário fechado do módulo e contagens.
+model NotaEvent {
+  id         String   @id @default(cuid())
+  // Exigências detectadas na nota.
+  quantidade Int
+  // Fonte do texto: docx | pdf-nativo | pdf-escaneado | texto | imagem | outro
+  fonte      String
+  // true = texto colado/corrigido à mão (a leitura automática da pasta falhou).
+  manual     Boolean  @default(false)
+  // Arquivos indexados na pasta do caso (0 = trabalhou sem pasta).
+  arquivos   Int      @default(0)
+  duracaoPasta Int?
+  duracaoMs  Int?
+  // Array<{ via, alvos: string[], temGatilho, pessoas: number,
+  //          viaFinal?, status?, peca?, comIa?, camposIa?, faltando?,
+  //          baixouMinuta?, baixouJuntada?, achadosNaPasta? }>
+  itens      Json?
+  // { minutas?: number; downloads?: number; resolvidos?: number }
+  desfecho   Json?
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@map("notas_events")
+}
+
+// Ações medidas no Sucessorista (uma linha por ação relevante do caso).
+enum AcaoSucessorista {
+  LEITURA_COFRE // etapa 0: documentos lidos pela IA
+  CALCULO       // espelho da partilha calculado (o caso "fechou")
+  DOCUMENTO     // minuta/planilha/processo gerado
+  PORTAL        // convite ao herdeiro gerado
+}
+
+// Telemetria do Sucessorista. Privacidade: nenhum nome de parte, CPF, nome de
+// arquivo ou VALOR ABSOLUTO do acervo — o porte do caso entra como FAIXA
+// (decisão explícita do dono do produto), o resto é contagem/tag/enum.
+model SucessoristaEvent {
+  id         String           @id @default(cuid())
+  acao       AcaoSucessorista
+  // Identificador aleatório do caso (crypto.randomUUID no cliente) — amarra os
+  // eventos de um mesmo inventário SEM identificar ninguém. Permite contar
+  // casos distintos e atualizar o retrato do caso em vez de duplicar linhas.
+  casoId     String?
+  // Perfil ativo na lombada: ADVOGADO | ESCREVENTE.
+  perfil     String?
+  // Documentos lidos, arquivos gerados, herdeiros do caso… (depende da ação).
+  quantidade Int              @default(0)
+  duracaoMs  Int?
+  // Contexto estrutural: { herdeiros, bens, tiposBem[], regime, vinculo, rito,
+  //   porte, temSobrevivente, incapaz, isencoes, progressivo, documento, tipos[] }
+  dados      Json?
+  userId     String?
+  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([casoId, acao])
+  @@map("sucessorista_events")
 }

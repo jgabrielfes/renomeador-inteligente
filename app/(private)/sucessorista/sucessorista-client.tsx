@@ -14,7 +14,7 @@
  * escopada em .sucessorista, por cima dos componentes do shadcn.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
@@ -52,6 +52,8 @@ import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 
+import { porteDoAcervo } from '@/lib/porte';
+import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
 import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
@@ -348,6 +350,70 @@ export default function SucessoristaClient() {
   const [perfil, setPerfil] = useState<Perfil>('ADVOGADO');
   const [rascunhoSalvoEm, setRascunhoSalvoEm] = useState<string | null>(null);
 
+  /* --- telemetria (privacidade: nada de nome, CPF ou valor absoluto) --- */
+
+  // A apuração da partilha diferenciada é calculada mais abaixo; o ref evita
+  // depender da ordem de declaração dentro do componente.
+  const atribuicaoRef = useRef<{ transferencias: unknown[] } | null>(null);
+
+  /** Registra o documento gerado — o desfecho que vale para o escritório. */
+  const registrarDoc = useCallback(
+    (documento: string, extras?: { comIa?: boolean; comInstrucoes?: boolean; modalidade?: string | null; itens?: number }) => {
+      void registrarDocumentoGerado({ casoId, perfil, documento, ...extras });
+    },
+    [casoId, perfil],
+  );
+
+  /**
+   * Retrato estrutural do caso: o motor recalcula a cada tecla, então o envio
+   * é DEBOUNCED e a action faz upsert por casoId — uma linha por inventário
+   * com o estado mais recente, em vez de um evento por digitação.
+   */
+  useEffect(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return;
+    const t = setTimeout(() => {
+      void registrarCaso({
+        casoId,
+        perfil,
+        herdeiros: herdeiros.length,
+        bens: bens.length,
+        tiposBem: bens.map((b) => b.tipo ?? 'OUTRO'),
+        regime: temSobrevivente ? regime : null,
+        vinculo: temSobrevivente ? vinculo : null,
+        temSobrevivente,
+        incapazes: herdeiros.filter((h) => h.menorOuIncapaz).length,
+        extrajudicial: resultado.elegivelExtrajudicial,
+        // Só a FAIXA de porte: o valor do acervo nunca sai do navegador.
+        porte: porteDoAcervo(Number(resultado.acervo.massaPartilhavel)),
+        bloqueios: resultado.bloqueios.length,
+        divergencias: resultado.divergencias.length,
+        temasDivergencia: resultado.divergencias.map((d) => d.tema),
+        diferenciada: Object.keys(matriz).length > 0,
+        torna: (atribuicaoRef.current?.transferencias.length ?? 0) > 0,
+        isencoes: isencoes?.detalhes.length ?? 0,
+        parcelasItcmd: (provisao?.parcelas ?? []).map((p) => p.id),
+        progressivo: Boolean(provisao && falecido.dataObito >= fiscal.vigencia),
+      });
+      // 15s: o retrato não precisa ser em tempo real, e a folha é editada
+      // continuamente — janela curta viraria uma gravação a cada pausa.
+    }, 15_000);
+    return () => clearTimeout(t);
+  }, [
+    casoId,
+    perfil,
+    resultado,
+    herdeiros,
+    bens,
+    regime,
+    vinculo,
+    temSobrevivente,
+    matriz,
+    isencoes,
+    provisao,
+    falecido.dataObito,
+    fiscal.vigencia,
+  ]);
+
   /* --- persistência no sessionStorage: F5 não apaga a folha --- */
 
   // Restaura UMA vez, antes de qualquer gravação — o efeito de salvar espera
@@ -619,6 +685,11 @@ export default function SucessoristaClient() {
       },
     });
   }, [resultado, titulo, caso, bens, matriz, participantes, direitoPorParticipante]);
+
+  // Espelho para a telemetria do caso (o retrato é montado antes daqui).
+  useEffect(() => {
+    atribuicaoRef.current = atribuicao;
+  }, [atribuicao]);
 
   /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
   const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
@@ -930,6 +1001,11 @@ export default function SucessoristaClient() {
       blob,
       `Peticao - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`,
     );
+    registrarDoc('MINUTA_TABELIONATO', {
+      comIa: extras !== null,
+      comInstrucoes: instrucoes.trim().length > 0,
+      itens: herdeiros.length,
+    });
   };
 
   /* --- Arquivo do caso (.json): salva na pasta do processo, reabre depois --- */
@@ -948,6 +1024,7 @@ export default function SucessoristaClient() {
       description:
         'Guarde o .json na pasta do processo, junto dos documentos. Os anexos não vão no arquivo — ficam na própria pasta.',
     });
+    registrarDoc('ARQUIVO_CASO', { itens: bens.length });
   };
 
   const importarCaso = async (file: File) => {
@@ -1047,6 +1124,13 @@ export default function SucessoristaClient() {
       secoes,
     });
     baixarBlob(blob, `Peticao inicial - Inventario judicial${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
+    // comIa=false aqui significa que a IA falhou e valeu o fallback local —
+    // é a métrica de saúde da redação assistida neste módulo.
+    registrarDoc('PETICAO_JUDICIAL', {
+      comIa: secoes !== null,
+      comInstrucoes: instrucoes.trim().length > 0,
+      itens: herdeiros.length,
+    });
   };
 
   /** Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo. */
@@ -1100,6 +1184,12 @@ export default function SucessoristaClient() {
       clausulasExtras,
     });
     baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
+    registrarDoc('ESCRITURA', {
+      comIa: clausulasExtras !== null,
+      comInstrucoes: instrucoes.trim().length > 0,
+      modalidade,
+      itens: diferenciada?.pagamentos.length ?? 0,
+    });
   };
 
   const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
@@ -1204,6 +1294,8 @@ export default function SucessoristaClient() {
             onExportarCaso={exportarCaso}
             onImportarCaso={importarCaso}
             onNovoCaso={novoCaso}
+            casoId={casoId}
+            perfil={perfil}
           />
         )}
 
@@ -1263,6 +1355,9 @@ export default function SucessoristaClient() {
                 voltar={() => irPara('acervo')}
                 avancar={() => setPasso(2)}
                 irParaItcmd={() => irPara('itcmd')}
+                onExportado={(quinhoes) =>
+                  registrarDoc('XLSX_PARTILHA', { itens: quinhoes })
+                }
               />
             )}
 
@@ -1486,6 +1581,7 @@ export default function SucessoristaClient() {
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
+              onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
             <CofreView
               herdeiros={herdeiros}
@@ -1530,6 +1626,12 @@ export default function SucessoristaClient() {
             )}
             condicoes={condicoesHonorarios}
             setCondicoes={setCondicoesHonorarios}
+            onGerado={(tipo, extras) =>
+              registrarDoc(
+                tipo === 'PROPOSTA' ? 'PROPOSTA_HONORARIOS' : 'CONTRATO_HONORARIOS',
+                { comIa: extras.comIa, comInstrucoes: extras.comInstrucoes },
+              )
+            }
           />
         )}
 
@@ -1571,6 +1673,7 @@ function EspelhoView({
   voltar,
   avancar,
   irParaItcmd,
+  onExportado,
 }: {
   resultado: ReturnType<typeof partilhar> | null;
   bens: Bem[];
@@ -1578,6 +1681,8 @@ function EspelhoView({
   voltar: () => void;
   avancar: () => void;
   irParaItcmd: () => void;
+  /** Telemetria: a planilha da partilha saiu (quantidade de quinhões). */
+  onExportado: (quinhoes: number) => void;
 }) {
   const [exportando, setExportando] = useState(false);
 
@@ -1646,6 +1751,7 @@ function EspelhoView({
         [34, 60, 18, 18],
       );
       baixarBlob(blob, `Partilha${nomeCaso ? ` - ${nomeCaso}` : ''}.xlsx`);
+      onExportado(resultado.quinhoes.length);
     } finally {
       setExportando(false);
     }

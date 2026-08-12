@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { Herdeiro } from '@/lib/partilha/types';
 import type { ConviteHerdeiro, QualificacaoHerdeiro } from '@/lib/portal/store';
+import { registrarPortal } from './actions';
 
 export function CofreView({
   herdeiros,
@@ -53,7 +54,14 @@ export function CofreView({
       const { token } = (await r.json()) as { token: string };
       const conviteR = await fetch(`/api/portal/${token}`);
       if (!conviteR.ok) throw new Error('Convite criado, mas não foi possível carregá-lo.');
-      setConvites({ ...convites, [h.id]: (await conviteR.json()) as ConviteHerdeiro });
+      const convite = (await conviteR.json()) as ConviteHerdeiro;
+      setConvites({ ...convites, [h.id]: convite });
+      // Telemetria: link enviado ao herdeiro (sem nome — só a contagem).
+      void registrarPortal({
+        casoId,
+        etapa: 'CONVITE',
+        quantidade: convite.documentos.length,
+      });
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro inesperado ao gerar o link.');
     } finally {

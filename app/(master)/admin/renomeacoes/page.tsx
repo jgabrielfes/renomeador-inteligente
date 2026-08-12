@@ -9,8 +9,10 @@ import {
   RenameEventDetails,
   type DetalhesEvento,
 } from "@/components/admin/rename-event-details";
+import { SortableHeader } from "@/components/admin/sortable-header";
 import { Badge } from "@/components/ui/badge";
 import type { MetodoAnalise } from "@/lib/generated/prisma/enums";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import {
   Table,
   TableBody,
@@ -19,9 +21,35 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { dataCurta, parsePaginacao } from "@/lib/admin";
+import {
+  dataCurta,
+  parseOrdenacao,
+  parsePaginacao,
+  queryDaTabela,
+} from "@/lib/admin";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+const COLUNAS = ["data", "usuario", "metodo", "arquivos", "duracao"] as const;
+type Coluna = (typeof COLUNAS)[number];
+
+function ordemDoPrisma(
+  coluna: Coluna,
+  direcao: "asc" | "desc"
+): Prisma.RenameEventOrderByWithRelationInput {
+  switch (coluna) {
+    case "usuario":
+      return { user: { name: direcao } };
+    case "metodo":
+      return { metodo: direcao };
+    case "arquivos":
+      return { quantidade: direcao };
+    case "duracao":
+      return { duracaoMs: direcao };
+    default:
+      return { createdAt: direcao };
+  }
+}
 
 export default async function RenomeacoesPage({
   searchParams,
@@ -30,12 +58,17 @@ export default async function RenomeacoesPage({
 
   const params = await searchParams;
   const paginacao = parsePaginacao(params);
+  const ordenacao = parseOrdenacao<Coluna>(params, COLUNAS, {
+    coluna: "data",
+    direcao: "desc",
+  });
+  const query = queryDaTabela({ paginacao, ordenacao });
 
   const [total, eventos] = await Promise.all([
     prisma.renameEvent.count(),
     prisma.renameEvent.findMany({
       include: { user: { select: { name: true, email: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
       take: paginacao.porPagina,
     }),
@@ -64,10 +97,39 @@ export default async function RenomeacoesPage({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Usuário</TableHead>
-              <TableHead>Método</TableHead>
-              <TableHead className="text-right">Arquivos</TableHead>
+              <SortableHeader
+                coluna="data"
+                ordenacao={ordenacao}
+                basePath="/admin/renomeacoes"
+                query={query}
+              >
+                Data
+              </SortableHeader>
+              <SortableHeader
+                coluna="usuario"
+                ordenacao={ordenacao}
+                basePath="/admin/renomeacoes"
+                query={query}
+              >
+                Usuário
+              </SortableHeader>
+              <SortableHeader
+                coluna="metodo"
+                ordenacao={ordenacao}
+                basePath="/admin/renomeacoes"
+                query={query}
+              >
+                Método
+              </SortableHeader>
+              <SortableHeader
+                coluna="arquivos"
+                ordenacao={ordenacao}
+                basePath="/admin/renomeacoes"
+                query={query}
+                className="text-right"
+              >
+                Arquivos
+              </SortableHeader>
               <TableHead className="w-12">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -118,6 +180,7 @@ export default async function RenomeacoesPage({
         basePath="/admin/renomeacoes"
         paginacao={paginacao}
         totalDeItens={total}
+        queryExtra={{ ordenar: ordenacao.coluna, direcao: ordenacao.direcao }}
       />
     </main>
   );

@@ -48,6 +48,57 @@ export function parsePaginacao(params: {
   return { pagina, porPagina };
 }
 
+/* ---------- ordenação (?ordenar=coluna&direcao=asc|desc) ---------- */
+
+export type Direcao = "asc" | "desc";
+
+export interface Ordenacao<C extends string = string> {
+  coluna: C;
+  direcao: Direcao;
+}
+
+/**
+ * Lê a ordenação da URL validando a coluna contra a lista fechada de cada
+ * tabela (nome de coluna vem do usuário e entra no `orderBy` do Prisma —
+ * lista fechada é o que impede pedir ordem por campo que não deveria).
+ * A ordenação é feita SEMPRE no banco, nunca no cliente.
+ */
+export function parseOrdenacao<C extends string>(
+  params: { ordenar?: unknown; direcao?: unknown },
+  colunas: readonly C[],
+  padrao: Ordenacao<C>
+): Ordenacao<C> {
+  const coluna = colunas.includes(params.ordenar as C)
+    ? (params.ordenar as C)
+    : padrao.coluna;
+  const direcao: Direcao =
+    params.direcao === "asc" || params.direcao === "desc"
+      ? params.direcao
+      : coluna === padrao.coluna
+        ? padrao.direcao
+        : "desc";
+  return { coluna, direcao };
+}
+
+/** Monta a query string preservando período/paginação ao trocar a ordem. */
+export function queryDaTabela(params: {
+  periodo?: string;
+  paginacao?: Paginacao;
+  ordenacao?: Ordenacao;
+}): URLSearchParams {
+  const query = new URLSearchParams();
+  if (params.periodo) query.set("periodo", params.periodo);
+  if (params.paginacao) {
+    query.set("pagina", String(params.paginacao.pagina));
+    query.set("porPagina", String(params.paginacao.porPagina));
+  }
+  if (params.ordenacao) {
+    query.set("ordenar", params.ordenacao.coluna);
+    query.set("direcao", params.ordenacao.direcao);
+  }
+  return query;
+}
+
 export const dataCurta = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
   timeStyle: "short",

@@ -3,11 +3,17 @@
 
 import RenomeadorClient from "./renomeador-client";
 import { carregarLicoes } from "./licoes-actions";
+import { AccessTracker } from "@/components/access-tracker";
 import { requireSession } from "@/lib/auth";
 
 export default async function RenomeadorPage() {
   await requireSession("/renomeador");
   // Regras + correções da conta, já no primeiro render (sem flash de vazio).
   const licoes = await carregarLicoes();
-  return <RenomeadorClient initialLessons={licoes} />;
+  return (
+    <>
+      <AccessTracker modulo="RENOMEADOR" />
+      <RenomeadorClient initialLessons={licoes} />
+    </>
+  );
 }

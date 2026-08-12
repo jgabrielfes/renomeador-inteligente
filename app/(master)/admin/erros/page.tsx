@@ -9,7 +9,9 @@ import {
   ErrorEventDetails,
 } from "@/components/admin/error-event-details";
 import { QueryPagination } from "@/components/admin/query-pagination";
+import { SortableHeader } from "@/components/admin/sortable-header";
 import { Badge } from "@/components/ui/badge";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import {
   Table,
   TableBody,
@@ -18,9 +20,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { dataCurta, parsePaginacao } from "@/lib/admin";
+import {
+  dataCurta,
+  parseOrdenacao,
+  parsePaginacao,
+  queryDaTabela,
+} from "@/lib/admin";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+const COLUNAS = ["data", "origem", "usuario", "status"] as const;
+type Coluna = (typeof COLUNAS)[number];
+
+function ordemDoPrisma(
+  coluna: Coluna,
+  direcao: "asc" | "desc"
+): Prisma.ErrorEventOrderByWithRelationInput {
+  switch (coluna) {
+    case "origem":
+      return { origem: direcao };
+    case "usuario":
+      return { user: { name: direcao } };
+    case "status":
+      return { status: direcao };
+    default:
+      return { createdAt: direcao };
+  }
+}
 
 export default async function ErrosPage({
   searchParams,
@@ -29,12 +55,17 @@ export default async function ErrosPage({
 
   const params = await searchParams;
   const paginacao = parsePaginacao(params);
+  const ordenacao = parseOrdenacao<Coluna>(params, COLUNAS, {
+    coluna: "data",
+    direcao: "desc",
+  });
+  const query = queryDaTabela({ paginacao, ordenacao });
 
   const [total, erros] = await Promise.all([
     prisma.errorEvent.count(),
     prisma.errorEvent.findMany({
       include: { user: { select: { name: true, email: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
       take: paginacao.porPagina,
     }),
@@ -62,10 +93,38 @@ export default async function ErrosPage({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Origem</TableHead>
-              <TableHead>Usuário</TableHead>
-              <TableHead>Status</TableHead>
+              <SortableHeader
+                coluna="data"
+                ordenacao={ordenacao}
+                basePath="/admin/erros"
+                query={query}
+              >
+                Data
+              </SortableHeader>
+              <SortableHeader
+                coluna="origem"
+                ordenacao={ordenacao}
+                basePath="/admin/erros"
+                query={query}
+              >
+                Origem
+              </SortableHeader>
+              <SortableHeader
+                coluna="usuario"
+                ordenacao={ordenacao}
+                basePath="/admin/erros"
+                query={query}
+              >
+                Usuário
+              </SortableHeader>
+              <SortableHeader
+                coluna="status"
+                ordenacao={ordenacao}
+                basePath="/admin/erros"
+                query={query}
+              >
+                Status
+              </SortableHeader>
               <TableHead className="w-12">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -121,6 +180,7 @@ export default async function ErrosPage({
         basePath="/admin/erros"
         paginacao={paginacao}
         totalDeItens={total}
+        queryExtra={{ ordenar: ordenacao.coluna, direcao: ordenacao.direcao }}
       />
     </main>
   );

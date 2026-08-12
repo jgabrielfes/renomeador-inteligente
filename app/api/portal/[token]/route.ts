@@ -3,6 +3,7 @@ import {
   CAMPOS_QUALIFICACAO_HERDEIRO,
   type QualificacaoHerdeiro,
 } from '@/lib/portal/store';
+import { registrarPortal } from '@/app/(private)/sucessorista/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
     const atualizado = await store.salvarQualificacao(token, qualificacao);
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    // Telemetria: o herdeiro respondeu a ficha. Só a CONTAGEM de campos —
+    // os valores são CPF/RG/endereço e nunca entram. Evento sem usuário: o
+    // herdeiro convidado não tem login (o casoId amarra ao caso).
+    void registrarPortal({
+      casoId: atualizado.casoId,
+      etapa: 'QUALIFICACAO',
+      quantidade: Object.keys(qualificacao).length,
+      comUsuario: false,
+    });
     return Response.json(atualizado);
   }
 
@@ -62,5 +72,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const atualizado = await store.atualizarDocumento(token, body.docId, patch);
   if (!atualizado) return Response.json({ erro: 'Convite ou documento não encontrado' }, { status: 404 });
+  if (patch.status === 'ENVIADO') {
+    // Documento anexado pelo herdeiro: a TAG do tipo detectado é segura; o
+    // nome do arquivo, não — ele fica de fora.
+    void registrarPortal({
+      casoId: atualizado.casoId,
+      etapa: 'DOCUMENTO',
+      quantidade: atualizado.documentos.filter((d) => d.status !== 'PENDENTE').length,
+      tipoDetectado: patch.tipoDetectado ?? null,
+      comUsuario: false,
+    });
+  }
   return Response.json(atualizado);
 }

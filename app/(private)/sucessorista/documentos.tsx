@@ -54,12 +54,15 @@ export function DocumentosView({
   setAnexos,
   nomeCaso,
   temSobrevivente = true,
+  onMontado,
 }: {
   anexos: AnexosProcesso;
   setAnexos: (a: AnexosProcesso) => void;
   nomeCaso: string;
   /** false esconde o grupo do cônjuge supérstite — sucessão sem essa parte. */
   temSobrevivente?: boolean;
+  /** Telemetria: o processo foi montado (só o formato e a contagem). */
+  onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
 }) {
   const [preview, setPreview] = useState<File | null>(null);
   const [gerando, setGerando] = useState<'pdf' | 'zip' | null>(null);
@@ -94,6 +97,7 @@ export function DocumentosView({
       const r = await montarPdfUnificado(itensOrdenados());
       setAvisos(r.avisos);
       baixarBlob(r.blob, `Processo${nomeCaso ? ` - ${nomeCaso}` : ''}.pdf`);
+      onMontado?.('PDF_PROCESSO', totalAnexos);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao gerar o PDF unificado.');
     } finally {
@@ -109,6 +113,7 @@ export function DocumentosView({
       const r = await montarZipIndividualizado(itensOrdenados());
       setAvisos(r.avisos);
       baixarBlob(r.blob, `Processo${nomeCaso ? ` - ${nomeCaso}` : ''} (individualizado).zip`);
+      onMontado?.('ZIP_PROCESSO', totalAnexos);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao gerar o ZIP.');
     } finally {

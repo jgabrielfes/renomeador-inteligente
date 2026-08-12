@@ -65,6 +65,7 @@ export function HonorariosView({
   temPartilhaDiferenciada,
   condicoes,
   setCondicoes,
+  onGerado,
 }: {
   familia: EstadoFamilia;
   bens: Bem[];
@@ -73,6 +74,11 @@ export function HonorariosView({
   temPartilhaDiferenciada: boolean;
   condicoes: CondicoesHonorarios;
   setCondicoes: (c: CondicoesHonorarios) => void;
+  /** Telemetria: proposta/contrato gerado (só tags e flags — nunca valores). */
+  onGerado?: (
+    tipo: TipoDoc,
+    extras: { comIa: boolean; comInstrucoes: boolean; nivel: string; forma: string },
+  ) => void;
 }) {
   const { falecido, temSobrevivente, nomeSobrev, herdeiros, qualificacoes } = familia;
 
@@ -314,6 +320,12 @@ export function HonorariosView({
       });
       const rotulo = tipo === 'PROPOSTA' ? 'Proposta de honorarios' : 'Contrato de honorarios';
       baixarBlob(blob, `${rotulo}${falecido.nome ? ` - Inventario de ${falecido.nome}` : ''}.docx`);
+      onGerado?.(tipo, {
+        comIa: secoes !== null,
+        comInstrucoes: instrucoes.trim().length > 0,
+        nivel: avaliacao.nivel,
+        forma: condicoes.forma,
+      });
     } catch (e) {
       toast.error('Falha ao gerar o documento.', {
         description: e instanceof Error ? e.message : undefined,

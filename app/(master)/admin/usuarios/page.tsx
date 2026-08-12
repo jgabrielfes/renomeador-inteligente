@@ -1,11 +1,16 @@
 // /admin/usuarios — tabela paginada de contas (somente MASTER).
-// Paginação via query string: ?pagina=&porPagina= (10/25/50/100).
+// Query string: ?pagina=&porPagina= (10/25/50/100) e ?ordenar=&direcao=
+// (ordenação SEMPRE no banco, coluna validada contra lista fechada).
+// A coluna "Acessos" conta ABERTURAS de módulo (não logins) — o olho abre o
+// detalhamento por ferramenta.
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { MasterToggle } from "@/components/admin/master-toggle";
 import { QueryPagination } from "@/components/admin/query-pagination";
+import { SortableHeader } from "@/components/admin/sortable-header";
+import { UserAccessDetails } from "@/components/admin/user-access-details";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -15,9 +20,40 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { dataCurta, parsePaginacao } from "@/lib/admin";
+import {
+  dataCurta,
+  parseOrdenacao,
+  parsePaginacao,
+  queryDaTabela,
+} from "@/lib/admin";
 import { requireMaster } from "@/lib/auth";
+import { MODULOS, ROTULO_MODULO } from "@/lib/modulos";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
+
+const COLUNAS = ["nome", "email", "confirmado", "cadastro", "papel", "acessos"] as const;
+type Coluna = (typeof COLUNAS)[number];
+
+function ordemDoPrisma(
+  coluna: Coluna,
+  direcao: "asc" | "desc"
+): Prisma.UserOrderByWithRelationInput {
+  switch (coluna) {
+    case "nome":
+      return { name: direcao };
+    case "email":
+      return { email: direcao };
+    case "confirmado":
+      return { emailVerified: direcao };
+    case "papel":
+      return { role: direcao };
+    case "acessos":
+      // Prisma ordena por contagem da relação — a agregação é do banco.
+      return { accesses: { _count: direcao } };
+    default:
+      return { createdAt: direcao };
+  }
+}
 
 export default async function UsuariosPage({
   searchParams,
@@ -26,15 +62,30 @@ export default async function UsuariosPage({
 
   const params = await searchParams;
   const paginacao = parsePaginacao(params);
+  const ordenacao = parseOrdenacao<Coluna>(params, COLUNAS, {
+    coluna: "cadastro",
+    direcao: "desc",
+  });
 
   const [total, usuarios] = await Promise.all([
     prisma.user.count(),
     prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { accesses: true } } },
+      orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
       take: paginacao.porPagina,
     }),
   ]);
+
+  // Acessos por módulo só das contas desta página (uma consulta agregada).
+  const porModulo = await prisma.moduleAccess.groupBy({
+    by: ["userId", "modulo"],
+    where: { userId: { in: usuarios.map((u) => u.id) } },
+    _count: { _all: true },
+    _max: { createdAt: true },
+  });
+
+  const query = queryDaTabela({ paginacao, ordenacao });
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
@@ -49,7 +100,8 @@ export default async function UsuariosPage({
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Usuários</h1>
         <p className="text-sm text-muted-foreground">
-          {total} conta(s) cadastrada(s).
+          {total} conta(s) cadastrada(s). &ldquo;Acessos&rdquo; conta aberturas
+          de módulo (uma por sessão do navegador), não logins.
         </p>
       </header>
 
@@ -57,62 +109,134 @@ export default async function UsuariosPage({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>E-mail</TableHead>
-              <TableHead>E-mail confirmado</TableHead>
-              <TableHead>Cadastro</TableHead>
-              <TableHead>Papel</TableHead>
+              <SortableHeader
+                coluna="nome"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+              >
+                Nome
+              </SortableHeader>
+              <SortableHeader
+                coluna="email"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+              >
+                E-mail
+              </SortableHeader>
+              <SortableHeader
+                coluna="confirmado"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+              >
+                E-mail confirmado
+              </SortableHeader>
+              <SortableHeader
+                coluna="cadastro"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+              >
+                Cadastro
+              </SortableHeader>
+              <SortableHeader
+                coluna="papel"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+              >
+                Papel
+              </SortableHeader>
+              <SortableHeader
+                coluna="acessos"
+                ordenacao={ordenacao}
+                basePath="/admin/usuarios"
+                query={query}
+                className="text-right"
+              >
+                Acessos
+              </SortableHeader>
               <TableHead>Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {usuarios.map((u) => (
-              <TableRow key={u.id}>
-                <TableCell className="font-medium">{u.name}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {u.email}
-                </TableCell>
-                <TableCell>
-                  {u.emailVerified ? (
-                    <Badge variant="secondary">Sim</Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-500/50 text-amber-600"
-                    >
-                      Não
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {dataCurta.format(u.createdAt)}
-                </TableCell>
-                <TableCell>
-                  {u.role === "MASTER" ? (
-                    <Badge>Master</Badge>
-                  ) : (
-                    <Badge variant="secondary">Usuário</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {u.id === session.user.id ? (
-                    <span className="text-xs text-muted-foreground">
-                      (você)
+            {usuarios.map((u) => {
+              const modulos = MODULOS.map((modulo) => {
+                const linha = porModulo.find(
+                  (p) => p.userId === u.id && p.modulo === modulo
+                );
+                return {
+                  modulo,
+                  rotulo: ROTULO_MODULO[modulo],
+                  quantidade: linha?._count._all ?? 0,
+                  ultimo: linha?._max.createdAt
+                    ? dataCurta.format(linha._max.createdAt)
+                    : null,
+                };
+              });
+              return (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium">{u.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {u.email}
+                  </TableCell>
+                  <TableCell>
+                    {u.emailVerified ? (
+                      <Badge variant="secondary">Sim</Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500/50 text-amber-600"
+                      >
+                        Não
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {dataCurta.format(u.createdAt)}
+                  </TableCell>
+                  <TableCell>
+                    {u.role === "MASTER" ? (
+                      <Badge>Master</Badge>
+                    ) : (
+                      <Badge variant="secondary">Usuário</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="font-medium tabular-nums">
+                        {u._count.accesses}
+                      </span>
+                      <UserAccessDetails
+                        nome={u.name}
+                        email={u.email}
+                        total={u._count.accesses}
+                        modulos={modulos}
+                      />
                     </span>
-                  ) : (
-                    <MasterToggle
-                      userId={u.id}
-                      nome={u.name}
-                      ehMaster={u.role === "MASTER"}
-                    />
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    {u.id === session.user.id ? (
+                      <span className="text-xs text-muted-foreground">
+                        (você)
+                      </span>
+                    ) : (
+                      <MasterToggle
+                        userId={u.id}
+                        nome={u.name}
+                        ehMaster={u.role === "MASTER"}
+                      />
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {usuarios.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-center text-muted-foreground"
                 >
                   Nenhum usuário nesta página.
@@ -127,6 +251,7 @@ export default async function UsuariosPage({
         basePath="/admin/usuarios"
         paginacao={paginacao}
         totalDeItens={total}
+        queryExtra={{ ordenar: ordenacao.coluna, direcao: ordenacao.direcao }}
       />
     </main>
   );
