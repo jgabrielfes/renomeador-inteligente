@@ -6,7 +6,12 @@
 // só no servidor; sem sessão a rota nem lê o corpo (401).
 
 import { GeminiError } from "@/lib/gemini";
-import { extrairCasoDoCofre, type ArquivoCofre } from "@/lib/gemini-sucessorista";
+import {
+  extrairCasoDoCofre,
+  redigirHonorarios,
+  type ArquivoCofre,
+  type EntradaRedacaoHonorarios,
+} from "@/lib/gemini-sucessorista";
 import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 
@@ -29,6 +34,54 @@ export async function POST(request: Request) {
       { error: "GEMINI_API_KEY não configurada no servidor." },
       { status: 503 }
     );
+  }
+
+  // Corpo JSON = redação de honorários (proposta/contrato); multipart = leitura
+  // do cofre. Nos dois casos a chave do Gemini fica só aqui no servidor.
+  if (request.headers.get("content-type")?.includes("application/json")) {
+    let corpo: Record<string, unknown>;
+    try {
+      corpo = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return Response.json({ error: "JSON inválido." }, { status: 400 });
+    }
+    const tipo = corpo.tipo === "CONTRATO" ? "CONTRATO" : corpo.tipo === "PROPOSTA" ? "PROPOSTA" : null;
+    const contexto = typeof corpo.contexto === "string" ? corpo.contexto.trim().slice(0, 20_000) : "";
+    const modelo =
+      typeof corpo.modeloEscritorio === "string" && corpo.modeloEscritorio.trim()
+        ? corpo.modeloEscritorio.trim().slice(0, 40_000)
+        : null;
+    if (!tipo || !contexto) {
+      return Response.json(
+        { error: "Informe tipo (PROPOSTA|CONTRATO) e contexto." },
+        { status: 400 }
+      );
+    }
+    const entrada: EntradaRedacaoHonorarios = { tipo, contexto, modeloEscritorio: modelo };
+    try {
+      const secoes = await redigirHonorarios(apiKey, entrada);
+      return Response.json({ secoes });
+    } catch (err) {
+      if (err instanceof GeminiError) {
+        await registrarErro({
+          origem: "api/sucessorista",
+          mensagem: err.message,
+          status: err.status,
+        });
+        return Response.json(
+          {
+            error: err.message,
+            geminiStatus: err.status,
+            retryDelaySeconds: err.retryDelaySeconds ?? null,
+            dailyQuota: err.dailyQuota,
+          },
+          { status: 502 }
+        );
+      }
+      const mensagem = err instanceof Error ? err.message : String(err);
+      await registrarErro({ origem: "api/sucessorista", mensagem, status: 500 });
+      return Response.json({ error: mensagem }, { status: 500 });
+    }
   }
 
   let form: FormData;

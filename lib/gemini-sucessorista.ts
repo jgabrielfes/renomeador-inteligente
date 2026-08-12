@@ -253,6 +253,86 @@ function umDe<T extends string>(v: unknown, opcoes: readonly T[]): T | null {
   return typeof v === "string" && (opcoes as readonly string[]).includes(v) ? (v as T) : null;
 }
 
+/* ---------- redação de honorários (proposta/contrato) ---------- */
+
+export interface EntradaRedacaoHonorarios {
+  tipo: "PROPOSTA" | "CONTRATO";
+  /** Resumo do caso + valores montado no cliente (a IA não recebe documentos). */
+  contexto: string;
+  /** Texto do modelo do próprio escritório, quando anexado — a IA o segue. */
+  modeloEscritorio: string | null;
+}
+
+export interface SecaoHonorarios {
+  titulo: string;
+  paragrafos: string[];
+}
+
+const SCHEMA_HONORARIOS = {
+  type: "object",
+  properties: {
+    secoes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          titulo: { type: "string" },
+          paragrafos: { type: "array", items: { type: "string" } },
+        },
+        required: ["titulo", "paragrafos"],
+      },
+    },
+  },
+  required: ["secoes"],
+} as const;
+
+function promptHonorarios(e: EntradaRedacaoHonorarios): string {
+  const doc =
+    e.tipo === "CONTRATO"
+      ? "um CONTRATO de prestação de serviços advocatícios e honorários (cláusulas numeradas: objeto, obrigações do contratado, obrigações dos contratantes, honorários e forma de pagamento com base no art. 22 da Lei 8.906/1994, despesas e custas por conta dos contratantes, rescisão com honorários proporcionais, foro)"
+      : "uma PROPOSTA de honorários advocatícios (seções: objeto, escopo dos serviços, honorários propostos com a justificativa de complexidade, o que não está incluído, condições de pagamento, validade de 30 dias e aceite)";
+  return `Você é advogado(a) redator(a) experiente em direito sucessório no Brasil. Redija o CORPO de ${doc} para o inventário descrito no contexto abaixo, em português do Brasil, texto objetivo e eficiente de escritório de primeira linha.
+
+${e.modeloEscritorio ? `MODELO DO ESCRITÓRIO (siga FIELMENTE a estrutura, a ordem das cláusulas/seções e o estilo deste modelo, adaptando o conteúdo ao caso do contexto; não copie dados de outras partes que porventura constem do modelo):\n---\n${e.modeloEscritorio}\n---\n\n` : ""}CONTEXTO DO CASO (única fonte de dados):
+---
+${e.contexto}
+---
+
+REGRAS INEGOCIÁVEIS:
+- Use SOMENTE os dados do contexto; dado ausente vira a lacuna "______" — nunca invente nome, valor, data ou percentual.
+- Os VALORES de honorários, percentuais e condições de pagamento são EXATAMENTE os do contexto (o sistema ainda anexa um quadro-resumo determinístico — não contradiga os números).
+- NÃO redija cabeçalho/logotipo, qualificação das partes nem bloco de assinaturas: o sistema monta essas partes com os dados oficiais da folha.
+- Devolva apenas o JSON: secoes = lista de { titulo (curto, em CAIXA ALTA), paragrafos (parágrafos completos, sem markdown) }.`;
+}
+
+/** Redige o corpo da proposta/contrato de honorários, já saneado. */
+export async function redigirHonorarios(
+  apiKey: string,
+  entrada: EntradaRedacaoHonorarios
+): Promise<SecaoHonorarios[]> {
+  const parts = [{ text: promptHonorarios(entrada) }];
+  const bruto = (await geminiJson(apiKey, parts, SCHEMA_HONORARIOS)) as Record<string, unknown>;
+  const secoes = Array.isArray(bruto?.secoes) ? bruto.secoes : [];
+  const saida = secoes
+    .map((s) => {
+      const item = s as Record<string, unknown>;
+      const titulo = limpar(item?.titulo, 120);
+      if (!titulo) return null;
+      const paragrafos = (Array.isArray(item.paragrafos) ? item.paragrafos : [])
+        .map((par) => (typeof par === "string" ? par.trim().slice(0, 4000) : ""))
+        .filter(Boolean)
+        .slice(0, 12);
+      if (paragrafos.length === 0) return null;
+      return { titulo, paragrafos };
+    })
+    .filter((s): s is SecaoHonorarios => s !== null)
+    .slice(0, 24);
+  if (saida.length === 0) {
+    throw new GeminiError("Redação vazia — use a redação padrão local.", 502);
+  }
+  return saida;
+}
+
 /** Lê o lote de documentos e devolve o caso extraído, já saneado. */
 export async function extrairCasoDoCofre(
   apiKey: string,

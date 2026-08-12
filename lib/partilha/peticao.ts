@@ -13,6 +13,7 @@
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from './types';
 import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
+import { montarDocx, type Paragrafo } from './docx';
 
 export interface DadosPeticao {
   falecido: DadosFalecido;
@@ -35,9 +36,9 @@ export interface DadosPeticao {
 
 /* ---------- texto ---------- */
 
-const LACUNA = '______________';
+export const LACUNA = '______________';
 
-const brl = (v: string | number) =>
+export const brl = (v: string | number) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const ROTULO_REGIME: Record<Regime, string> = {
@@ -56,13 +57,13 @@ const ROTULO_TIPO: Record<string, string> = {
   OUTRO: 'bem',
 };
 
-function dataPorExtenso(iso?: string): string {
+export function dataPorExtenso(iso?: string): string {
   const d = iso ? new Date(`${iso}T00:00`) : new Date();
   return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** "NOME, estado civil, profissão, RG n, CPF n, e-mail, residente em …" */
-function qualificar(nome: string, q?: Qualificacao): string {
+export function qualificar(nome: string, q?: Qualificacao): string {
   const partes: string[] = [nome.toUpperCase()];
   partes.push(q?.estadoCivil?.trim() || `estado civil ${LACUNA}`);
   partes.push(q?.profissao?.trim() || `profissão ${LACUNA}`);
@@ -83,13 +84,6 @@ function qualificar(nome: string, q?: Qualificacao): string {
     }`;
   }
   return texto;
-}
-
-interface Paragrafo {
-  texto: string;
-  negrito?: boolean;
-  centrado?: boolean;
-  titulo?: boolean;
 }
 
 function montarParagrafos(d: DadosPeticao): Paragrafo[] {
@@ -267,61 +261,7 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
   return p;
 }
 
-/* ---------- DOCX ---------- */
-
-function escaparXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function paragrafoXml(par: Paragrafo): string {
-  const jc = par.centrado ? 'center' : par.titulo ? 'left' : 'both';
-  const negrito = par.negrito || par.titulo;
-  const rPr = `<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>${
-    negrito ? '<w:b/>' : ''
-  }<w:sz w:val="24"/></w:rPr>`;
-  // Ordem dos filhos de pPr conforme o esquema (spacing antes de jc, rPr por último).
-  const pPr = `<w:pPr><w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
-    par.titulo ? '240' : '160'
-  }"/><w:jc w:val="${jc}"/>${negrito ? `<w:rPr><w:b/></w:rPr>` : ''}</w:pPr>`;
-  return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(par.texto)}</w:t></w:r></w:p>`;
-}
-
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`;
-
-const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`;
-
-// Sem este arquivo (mesmo vazio) o LibreOffice recusa o pacote.
-const RELS_DOCUMENTO = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
-
-/** Gera a minuta em .docx (A4, Times 12, corpo justificado). */
+/** Gera a minuta em .docx (builder compartilhado — A4, Times 12, justificado). */
 export async function montarPeticaoDocx(dados: DadosPeticao): Promise<Blob> {
-  const corpo = montarParagrafos(dados).map(paragrafoXml).join('');
-  const documento = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-<w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1701" w:left="1701"/></w:sectPr></w:body>
-</w:document>`;
-
-  const { default: JSZip } = await import('jszip');
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', CONTENT_TYPES);
-  zip.file('_rels/.rels', RELS);
-  zip.file('word/_rels/document.xml.rels', RELS_DOCUMENTO);
-  zip.file('word/document.xml', documento);
-  const bytes = await zip.generateAsync({ type: 'uint8array' });
-  return new Blob([bytes as BlobPart], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
+  return montarDocx(montarParagrafos(dados));
 }

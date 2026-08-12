@@ -48,6 +48,8 @@ import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
+import { HonorariosView } from './honorarios-view';
+import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { PainelCaso } from './painel-caso';
 
 /* ---------- helpers ---------- */
@@ -72,9 +74,9 @@ const FALECIDO_VAZIO: DadosFalecido = {
   ultimoDomicilio: '',
 };
 
-type Aba = 'caso' | 'familia' | 'acervo' | 'partilha' | 'documentos' | 'itcmd';
+type Aba = 'caso' | 'familia' | 'acervo' | 'partilha' | 'documentos' | 'itcmd' | 'honorarios';
 
-const ABAS: readonly Aba[] = ['caso', 'familia', 'acervo', 'partilha', 'documentos', 'itcmd'];
+const ABAS: readonly Aba[] = ['caso', 'familia', 'acervo', 'partilha', 'documentos', 'itcmd', 'honorarios'];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
 const abaValida = (v: string | null): Aba =>
@@ -99,6 +101,8 @@ interface CasoSalvo {
   /** Partilha diferenciada: bemId → com quem fica ('' = proporção do direito). */
   atribuicoes?: Record<string, string>;
   titulo: TituloCessao;
+  /** Condições de honorários do caso (o perfil do escritório é do navegador). */
+  honorarios?: CondicoesHonorarios;
   casoId: string;
   convites: Record<string, ConviteHerdeiro>;
 }
@@ -233,6 +237,10 @@ export default function SucessoristaClient() {
   const [atribuicoes, setAtribuicoes] = useState<Record<string, string>>({});
   const [titulo, setTitulo] = useState<TituloCessao>('GRATUITO');
 
+  /* --- VI: honorários do caso (perfil do escritório fica na própria view) --- */
+  const [condicoesHonorarios, setCondicoesHonorarios] =
+    useState<CondicoesHonorarios>(CONDICOES_INICIAIS);
+
   /* --- persistência no sessionStorage: F5 não apaga a folha --- */
 
   // Restaura UMA vez, antes de qualquer gravação — o efeito de salvar espera
@@ -268,6 +276,8 @@ export default function SucessoristaClient() {
             if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object')
               setAtribuicoes(salvo.atribuicoes);
             if (salvo.titulo === 'GRATUITO' || salvo.titulo === 'ONEROSO') setTitulo(salvo.titulo);
+            if (salvo.honorarios && typeof salvo.honorarios === 'object')
+              setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
             if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
             if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
           }
@@ -298,6 +308,7 @@ export default function SucessoristaClient() {
         passo,
         atribuicoes,
         titulo,
+        honorarios: condicoesHonorarios,
         casoId,
         convites,
       };
@@ -305,7 +316,7 @@ export default function SucessoristaClient() {
     } catch {
       // sem espaço ou modo restrito: a persistência é conforto, não requisito
     }
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, atribuicoes, titulo, casoId, convites]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, atribuicoes, titulo, condicoesHonorarios, casoId, convites]);
 
   /* --- sociedades lidas → bem de quotas no acervo ---
      Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
@@ -629,6 +640,7 @@ export default function SucessoristaClient() {
             ['partilha', 'III', 'Partilha'],
             ['documentos', 'IV', 'Documentos'],
             ['itcmd', 'V', 'ITCMD'],
+            ['honorarios', 'VI', 'Honorários'],
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
@@ -929,6 +941,18 @@ export default function SucessoristaClient() {
             hoje={hoje}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
+          />
+        )}
+
+        {abaProc === 'honorarios' && (
+          <HonorariosView
+            familia={familia}
+            bens={bens}
+            dividas={dividasEspolio}
+            resultado={resultado}
+            temPartilhaDiferenciada={bens.some((b) => Boolean(atribuicoes[b.id]))}
+            condicoes={condicoesHonorarios}
+            setCondicoes={setCondicoesHonorarios}
           />
         )}
       </main>
