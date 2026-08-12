@@ -87,7 +87,8 @@ export function PainelCaso({
   const extrajudicial = resultado ? resultado.elegivelExtrajudicial : !incapaz;
 
   const travas: string[] = [];
-  if (incapaz) travas.push('Herdeiro incapaz — via judicial (art. 610 do CPC)');
+  if (incapaz)
+    travas.push('Herdeiro incapaz — extrajudicial só com parecer favorável do MP (Res. CNJ 571/2024)');
   if (bens.some((b) => b.tipo === 'QUOTAS'))
     travas.push('Quotas no acervo — base a valor de mercado (LC 227/2026)');
   if (
@@ -220,10 +221,10 @@ export function PainelCaso({
         </div>
         <p className="rodape">
           {extrajudicial
-            ? 'Herdeiros capazes e consenso permitem escritura em qualquer tabelionato.'
-            : incapaz
-              ? 'Herdeiro incapaz impede a escritura pública (art. 610 do CPC).'
-              : 'Há bloqueio apontado pelo motor — ver pontos de atenção.'}
+            ? incapaz
+              ? 'Com herdeiro incapaz, a escritura exige parecer favorável do Ministério Público (Res. CNJ 571/2024).'
+              : 'Herdeiros capazes e consenso permitem escritura em qualquer tabelionato.'
+            : 'Há bloqueio apontado pelo motor — ver pontos de atenção.'}
         </p>
       </div>
 

@@ -240,7 +240,7 @@ export function HonorariosView({
       `Inventário de ${falecido.nome || '(nome não informado)'}${falecido.dataObito ? `, óbito em ${falecido.dataObito}` : ''}${falecido.ultimoDomicilio ? `, último domicílio ${falecido.ultimoDomicilio}` : ''}.`,
     );
     linhas.push(
-      `Via provável: ${avaliacao.viaJudicial ? 'JUDICIAL (há herdeiro menor ou incapaz — CPC, art. 610)' : 'extrajudicial (CPC, art. 610, § 1º)'}.`,
+      `Via provável: extrajudicial (CPC, art. 610, § 1º)${avaliacao.exigeParecerMp ? ', com parecer favorável do Ministério Público em razão de herdeiro menor ou incapaz (Res. CNJ 571/2024)' : ''}.`,
     );
     linhas.push(
       `Partes: ${temSobrevivente && nomeSobrev.trim() ? `cônjuge/companheiro(a) sobrevivente ${nomeSobrev.trim()}; ` : ''}${herdeiros.length} herdeiro(s): ${herdeiros.map((h) => h.nome).join(', ') || '(nenhum lançado)'}.`,
@@ -404,7 +404,7 @@ export function HonorariosView({
         <span className="eyebrow">Avaliação automática da folha</span>
         <h3>
           Complexidade {ROTULO_NIVEL[avaliacao.nivel]} · <span className="num">{avaliacao.pontos}</span> ponto(s)
-          {avaliacao.viaJudicial ? ' · via judicial' : ''}
+          {avaliacao.exigeParecerMp ? ' · parecer do MP (Res. CNJ 571/2024)' : ''}
         </h3>
         {avaliacao.fatores.length === 0 ? (
           <p>Nenhum fator de agravamento identificado — caso de rotina pelo que a folha mostra.</p>

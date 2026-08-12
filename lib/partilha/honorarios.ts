@@ -38,8 +38,8 @@ export interface AvaliacaoComplexidade {
   nivel: NivelComplexidade;
   /** Percentual sugerido sobre o monte-mor (ponto de partida editável). */
   percentualSugerido: number;
-  /** Via provável: menor/incapaz veda a extrajudicial (CPC, art. 610). */
-  viaJudicial: boolean;
+  /** Menor/incapaz: a extrajudicial exige parecer favorável do MP (Res. CNJ 571/2024). */
+  exigeParecerMp: boolean;
 }
 
 export const ROTULO_NIVEL: Record<NivelComplexidade, string> = {
@@ -64,7 +64,11 @@ export function avaliarComplexidade(e: EntradaComplexidade): AvaliacaoComplexida
     if (cond) fatores.push({ rotulo, pontos });
   };
 
-  add(e.temMenorOuIncapaz, 'Herdeiro menor ou incapaz — via judicial obrigatória (CPC, art. 610)', 3);
+  add(
+    e.temMenorOuIncapaz,
+    'Herdeiro menor ou incapaz — parecer favorável do MP na extrajudicial (Res. CNJ 571/2024) ou via judicial',
+    3,
+  );
   add(e.temPreMorto, 'Herdeiro pré-morto — sucessão por representação', 2);
   add(e.temRenunciante, 'Renúncia de herdeiro — escritura própria e reflexos na partilha', 1);
   add(e.qtdHerdeiros > 8, 'Mais de 8 herdeiros para reunir e qualificar', 2);
@@ -92,7 +96,7 @@ export function avaliarComplexidade(e: EntradaComplexidade): AvaliacaoComplexida
     pontos,
     nivel,
     percentualSugerido: PERCENTUAL_POR_NIVEL[nivel],
-    viaJudicial: e.temMenorOuIncapaz,
+    exigeParecerMp: e.temMenorOuIncapaz,
   };
 }
 

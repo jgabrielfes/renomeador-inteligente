@@ -26,6 +26,32 @@ export type RegimeExtraido =
 
 export type TipoBemExtraido = "IMOVEL" | "VEICULO" | "FINANCEIRO" | "QUOTAS" | "OUTRO";
 
+/**
+ * Qualificação completa de uma parte — espelha a ficha da folha (Qualificacao
+ * de lib/partilha/familia), campo a campo, para a mesclagem preencher TUDO o
+ * que a planilha do escritório trouxer e deixar em branco só o que faltar.
+ */
+export interface QualificacaoExtraida {
+  rg: string | null;
+  cpf: string | null;
+  dataNascimento: string | null;
+  filiacao: string | null;
+  profissao: string | null;
+  estadoCivil: string | null;
+  email: string | null;
+  endereco: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
+  conjugeNome: string | null;
+  conjugeRg: string | null;
+  conjugeCpf: string | null;
+  conjugeProfissao: string | null;
+  conjugeEmail: string | null;
+}
+
 export interface CasoExtraido {
   falecido: {
     nome: string | null;
@@ -39,23 +65,14 @@ export interface CasoExtraido {
     nome: string | null;
     vinculo: "CASAMENTO" | "UNIAO_ESTAVEL" | null;
     regime: RegimeExtraido | null;
+    /** Qualificação do(a) supérstite (coluna "VIÚVO(A)" das planilhas). */
+    qualificacao: QualificacaoExtraida | null;
   };
   herdeiros: Array<{
     nome: string;
     filhoDoSobrevivente: boolean | null;
     /** Qualificação quando constar (planilha do escritório, minutas): apoio, nunca verdade. */
-    qualificacao: {
-      rg: string | null;
-      cpf: string | null;
-      dataNascimento: string | null;
-      profissao: string | null;
-      estadoCivil: string | null;
-      email: string | null;
-      endereco: string | null;
-      cidade: string | null;
-      uf: string | null;
-      cep: string | null;
-    } | null;
+    qualificacao: QualificacaoExtraida | null;
   }>;
   bens: Array<{
     descricao: string;
@@ -87,6 +104,28 @@ const IDS_CATALOGO = CATALOGO_DOCUMENTOS.map((d) => d.id);
 
 const texto = { type: "string", nullable: true } as const;
 
+/** Schema da qualificação — os MESMOS campos da ficha da folha. */
+const QUALI_PROPS = {
+  rg: texto,
+  cpf: texto,
+  dataNascimento: texto,
+  filiacao: texto,
+  profissao: texto,
+  estadoCivil: texto,
+  email: texto,
+  endereco: texto,
+  complemento: texto,
+  bairro: texto,
+  cidade: texto,
+  uf: texto,
+  cep: texto,
+  conjugeNome: texto,
+  conjugeRg: texto,
+  conjugeCpf: texto,
+  conjugeProfissao: texto,
+  conjugeEmail: texto,
+} as const;
+
 const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
@@ -116,6 +155,7 @@ const RESPONSE_SCHEMA = {
           ],
           nullable: true,
         },
+        qualificacao: { type: "object", nullable: true, properties: QUALI_PROPS },
       },
     },
     herdeiros: {
@@ -125,22 +165,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           nome: { type: "string" },
           filhoDoSobrevivente: { type: "boolean", nullable: true },
-          qualificacao: {
-            type: "object",
-            nullable: true,
-            properties: {
-              rg: texto,
-              cpf: texto,
-              dataNascimento: texto,
-              profissao: texto,
-              estadoCivil: texto,
-              email: texto,
-              endereco: texto,
-              cidade: texto,
-              uf: texto,
-              cep: texto,
-            },
-          },
+          qualificacao: { type: "object", nullable: true, properties: QUALI_PROPS },
         },
         required: ["nome"],
       },
@@ -220,8 +245,8 @@ function prompt(total: number): string {
 Extraia APENAS o que constar dos documentos, para preencher a folha de trabalho do inventário:
 
 1. falecido — REGRA CRÍTICA: identifique primeiro a CERTIDÃO DE ÓBITO entre os documentos; o(a) falecido(a) é EXCLUSIVAMENTE a pessoa declarada morta nela (nome, CPF no formato 000.000.000-00, dataObito em YYYY-MM-DD, ultimoDomicilio como "Cidade/UF"). NUNCA aponte como falecido: o(a) declarante da certidão de óbito, o(a) titular de CNH/RG/CPF/comprovantes (na pasta de um inventário esses documentos são normalmente do CÔNJUGE SOBREVIVENTE ou de herdeiros), nem uma das partes da certidão de casamento isoladamente. Documento mais legível NÃO significa pessoa falecida. Sem certidão de óbito legível no lote, deixe falecido.nome = null — não deduza pelo nome dos arquivos nem por quem aparece mais. dataCasamento (YYYY-MM-DD) sai da certidão de casamento. HAVENDO MAIS DE UMA certidão de óbito no lote: o(a) autor(a) da herança é quem o conjunto aponta (a certidão mais recente ou a coerente com casamento/herdeiros); as DEMAIS pessoas falecidas entram em outrosFalecidos (nome + dataObito) — típico de herdeiro pré-morto ou de dupla sucessão (os dois pais).
-2. sobrevivente — existe = true se os documentos indicarem cônjuge ou companheiro(a) vivo(a) na data do óbito (false apenas com indicação clara em contrário, ex.: certidão de óbito dizendo viúvo/divorciado sem união posterior). O(a) sobrevivente é o cônjuge da certidão de casamento que NÃO é o(a) falecido(a) — tipicamente o(a) declarante do óbito e o(a) titular dos documentos pessoais da pasta. vinculo e regime saem da certidão de casamento ou escritura de união estável (regime: atenção à data do casamento — antes de 1977 o regime legal era a comunhão universal).
-3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. Planilhas e minutas do escritório (qualificação, partilha) frequentemente trazem RG, CPF, data de nascimento, profissão, estado civil, e-mail e endereço de cada herdeiro — quando constarem, preencha qualificacao (dataNascimento em YYYY-MM-DD; campo ausente = null; sem qualquer dado, qualificacao = null).
+2. sobrevivente — existe = true se os documentos indicarem cônjuge ou companheiro(a) vivo(a) na data do óbito (false apenas com indicação clara em contrário, ex.: certidão de óbito dizendo viúvo/divorciado sem união posterior). O(a) sobrevivente é o cônjuge da certidão de casamento que NÃO é o(a) falecido(a) — tipicamente o(a) declarante do óbito e o(a) titular dos documentos pessoais da pasta. vinculo e regime saem da certidão de casamento ou escritura de união estável (regime: atenção à data do casamento — antes de 1977 o regime legal era a comunhão universal). Quando houver planilha/minuta de qualificação (a coluna "VIÚVO(A)"/"CÔNJUGE SUPÉRSTITE"), preencha sobrevivente.qualificacao com TODOS os campos que constarem.
+3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). REGRAS DE UNICIDADE (críticas): cada pessoa aparece UMA ÚNICA VEZ, sempre com o nome MAIS COMPLETO que os documentos trouxerem — "Renata" e "Renata Pummer Carvalho Lavruhin" são a MESMA pessoa (una os registros; diferenças de acento como "Márcio"/"Marcio" também são a mesma pessoa); NUNCA inclua na lista o(a) falecido(a) nem o(a) cônjuge/companheiro(a) sobrevivente (o viúvo NÃO é herdeiro aqui — ele já está no item 2); NUNCA inclua o cônjuge de herdeiro como herdeiro (ele entra na qualificacao do herdeiro, campos conjuge*). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. PLANILHAS DE QUALIFICAÇÃO do escritório costumam ter uma COLUNA por pessoa (AUTOR(A) DA HERANÇA, VIÚVO(A), Herdeiro 1, 2, 3…) e uma LINHA por campo (NOME, RG, CPF, DATA DE NASCIMENTO, FILIAÇÃO, ESTADO CIVIL, PROFISSÃO, E-MAIL, ENDEREÇO, COMPLEMENTO, BAIRRO, CIDADE, ESTADO/UF, CEP e o bloco CÔNJUGE do herdeiro casado) — extraia TUDO o que constar para a qualificacao de cada pessoa (dataNascimento em YYYY-MM-DD; CPF como 000.000.000-00; uf com 2 letras; campo ausente = null; sem qualquer dado, qualificacao = null). Deixe em branco (null) apenas o que realmente não estiver nos documentos.
 4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR). NÃO lance participação societária (quotas/ações) em bens — ela entra em "sociedades" e o sistema calcula o valor.
 5. sociedades — uma por pessoa jurídica documentada. Do CONTRATO SOCIAL (ou última alteração/consolidação): empresa (razão social), cnpj, capitalSocial em reais com ponto decimal, e socios = TODOS os sócios do quadro societário com o percentual de cada um no capital (0 a 100; calcule pela proporção das quotas se o documento só trouxer quantidades — ex.: 50.000 de 100.000 quotas = 50). Do BALANÇO PATRIMONIAL: patrimonioLiquido em reais com ponto decimal (o total do grupo "Patrimônio Líquido"). Emita a sociedade mesmo que só um dos dois documentos esteja no lote — campos ausentes ficam null. NÃO calcule o valor das quotas.
 6. arquivos — para CADA documento (indice 1 a ${total}): tipoDetectado (rótulo curto, ex.: "Certidão de Óbito") e documentoId = o id do catálogo abaixo em que o arquivo deve ser arquivado (null se nenhum servir). Documentos pessoais (RG/CNH/CPF/comprovante de endereço) classificam-se pelo DONO: do(a) falecido(a) → docs-falecido; do cônjuge/companheiro(a) sobrevivente → docs-sobrevivente; de herdeiro ou cônjuge de herdeiro → docs-herdeiros.
@@ -251,6 +276,33 @@ function valorDecimal(v: unknown): string | null {
 
 function umDe<T extends string>(v: unknown, opcoes: readonly T[]): T | null {
   return typeof v === "string" && (opcoes as readonly string[]).includes(v) ? (v as T) : null;
+}
+
+/** Sanitiza a qualificação de uma parte; devolve null quando não há nada. */
+function sanitizarQualificacao(q: unknown): QualificacaoExtraida | null {
+  if (!q || typeof q !== "object") return null;
+  const o = q as Record<string, unknown>;
+  const saida: QualificacaoExtraida = {
+    rg: limpar(o.rg, 30),
+    cpf: limpar(o.cpf, 14),
+    dataNascimento: dataIso(o.dataNascimento),
+    filiacao: limpar(o.filiacao, 160),
+    profissao: limpar(o.profissao, 60),
+    estadoCivil: limpar(o.estadoCivil, 40),
+    email: limpar(o.email, 120),
+    endereco: limpar(o.endereco, 160),
+    complemento: limpar(o.complemento, 60),
+    bairro: limpar(o.bairro, 60),
+    cidade: limpar(o.cidade, 60),
+    uf: limpar(o.uf, 2),
+    cep: limpar(o.cep, 10),
+    conjugeNome: limpar(o.conjugeNome, 120),
+    conjugeRg: limpar(o.conjugeRg, 30),
+    conjugeCpf: limpar(o.conjugeCpf, 14),
+    conjugeProfissao: limpar(o.conjugeProfissao, 60),
+    conjugeEmail: limpar(o.conjugeEmail, 120),
+  };
+  return Object.values(saida).some((v) => v !== null) ? saida : null;
 }
 
 /* ---------- redação de honorários (proposta/contrato) ---------- */
@@ -393,6 +445,7 @@ export async function extrairCasoDoCofre(
         "SEPARACAO_CONVENCIONAL",
         "SEPARACAO_OBRIGATORIA",
       ] as const),
+      qualificacao: sanitizarQualificacao(s.qualificacao),
     },
     herdeiros: herdeiros
       .map((h) => {
@@ -400,28 +453,10 @@ export async function extrairCasoDoCofre(
         const nome = limpar(item?.nome);
         if (!nome) return null;
         const filho = item?.filhoDoSobrevivente;
-        const q = (item?.qualificacao ?? null) as Record<string, unknown> | null;
-        const qualificacao =
-          q && typeof q === "object"
-            ? {
-                rg: limpar(q.rg, 30),
-                cpf: limpar(q.cpf, 14),
-                dataNascimento: dataIso(q.dataNascimento),
-                profissao: limpar(q.profissao, 60),
-                estadoCivil: limpar(q.estadoCivil, 40),
-                email: limpar(q.email, 120),
-                endereco: limpar(q.endereco, 160),
-                cidade: limpar(q.cidade, 60),
-                uf: limpar(q.uf, 2),
-                cep: limpar(q.cep, 10),
-              }
-            : null;
-        const temAlgo =
-          qualificacao && Object.values(qualificacao).some((v) => v !== null);
         return {
           nome,
           filhoDoSobrevivente: typeof filho === "boolean" ? filho : null,
-          qualificacao: temAlgo ? qualificacao : null,
+          qualificacao: sanitizarQualificacao(item?.qualificacao),
         };
       })
       .filter((h): h is NonNullable<typeof h> => h !== null)

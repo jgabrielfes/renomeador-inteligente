@@ -40,13 +40,14 @@ const simples = avaliarComplexidade(BASE);
 eq('caso simples: sem fatores', simples.fatores.length, 0);
 eq('caso simples: nível baixo', simples.nivel, 'BAIXA');
 eq('caso simples: 3%', simples.percentualSugerido, 3);
-eq('caso simples: via extrajudicial', simples.viaJudicial, false);
+eq('caso simples: sem parecer do MP', simples.exigeParecerMp, false);
 
-// Menor/incapaz sozinho já leva a médio e marca via judicial.
+// Menor/incapaz sozinho já leva a médio e exige o parecer do MP na
+// extrajudicial (Res. CNJ 571/2024 — não veda mais a escritura).
 const comMenor = avaliarComplexidade({ ...BASE, temMenorOuIncapaz: true });
 eq('menor: 3 pontos', comMenor.pontos, 3);
 eq('menor: nível médio', comMenor.nivel, 'MEDIA');
-eq('menor: via judicial', comMenor.viaJudicial, true);
+eq('menor: exige parecer do MP', comMenor.exigeParecerMp, true);
 
 // Caso carregado: pré-morto + quotas + partilha diferenciada + monte alto = alta.
 const carregado = avaliarComplexidade({

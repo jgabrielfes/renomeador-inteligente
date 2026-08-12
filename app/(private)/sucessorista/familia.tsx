@@ -230,7 +230,8 @@ export function FamiliaView({
       <p className="subtitulo" style={{ marginBottom: 14 }}>
         Marque quem é filho(a) também do sobrevivente — em filiação híbrida a lei diverge e
         o espelho da partilha mostrará os dois cenários. Herdeiro menor ou incapaz muda o
-        rito no painel: fecha a via extrajudicial. As três perguntas de cada herdeiro são
+        rito no painel: a via extrajudicial passa a exigir parecer favorável do Ministério
+        Público (Res. CNJ 571/2024). As três perguntas de cada herdeiro são
         as da declaração do ITCMD e entram prontas no item V.
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
@@ -479,7 +480,7 @@ function EditorHerdeiros({
                     checked={h.menorOuIncapaz === true}
                     onCheckedChange={(v) => patchHerdeiro(h.id, { menorOuIncapaz: v === true })}
                   />
-                  Menor ou incapaz (muda o rito para judicial)
+                  Menor ou incapaz (extrajudicial só com parecer favorável do MP — Res. CNJ 571/2024)
                 </label>
               </div>
               <QualificacaoEditor

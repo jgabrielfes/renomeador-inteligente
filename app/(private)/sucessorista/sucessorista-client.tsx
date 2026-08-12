@@ -7,7 +7,7 @@
  * dos documentos), navegação LIVRE entre as etapas (nada bloqueia nada) e o
  * painel do caso fixo à direita — cada campo digitado move um número lá na
  * hora. Abas: 0 O caso · I A família · II O acervo · III Partilha ·
- * IV Documentos (ambiente + cofre de convites) · V ITCMD.
+ * IV ITCMD · V Documentos (ambiente + cofre de convites) · VI Honorários.
  *
  * O cálculo roda no navegador (motor puro em lib/partilha); a leitura da
  * etapa 0 usa a rota interna /api/sucessorista. Identidade "livro de notas"
@@ -20,6 +20,16 @@ import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 import { partilhar } from '@/lib/partilha/engine';
 import {
@@ -61,6 +71,47 @@ const brl = (v: string) =>
 // contador zerado no reload geraria ids que colidem com os restaurados.
 const uid = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}`;
 
+/** Nome normalizado para comparação: sem acento, caixa alta, espaços únicos. */
+const chaveNome = (s: string) =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Mesma pessoa: nomes iguais após normalizar OU um contido no outro —
+ * "Renata" e "Renata Pummer Carvalho Lavruhin" são a mesma herdeira, assim
+ * como "Márcio"/"Marcio". É o critério de TODA mesclagem de pessoas da folha.
+ */
+const mesmaPessoa = (a: string, b: string) => {
+  const na = chaveNome(a);
+  const nb = chaveNome(b);
+  if (!na || !nb) return false;
+  return na === nb || na.includes(nb) || nb.includes(na);
+};
+
+/** Copia da origem apenas os campos VAZIOS da ficha (extração é apoio). */
+function preencherVazios(
+  destino: Qualificacao,
+  origem: Partial<Record<keyof Qualificacao, string | null>> | null | undefined,
+): Qualificacao {
+  if (!origem) return destino;
+  const ficha = { ...destino };
+  for (const campo of Object.keys(QUALIFICACAO_VAZIA) as (keyof Qualificacao)[]) {
+    const v = origem[campo];
+    if (v && !ficha[campo]) ficha[campo] = v;
+  }
+  return ficha;
+}
+
+/** "%" digitado na matriz da partilha → número (aceita vírgula); vazio = 0. */
+const pctNum = (v: string | undefined): number => {
+  if (!v) return 0;
+  const n = Number(v.replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+/** Descrição enxuta do bem para a matriz (o título completo fica no title). */
+const descricaoCurta = (s: string): string =>
+  s.length > 64 ? `${s.slice(0, 61).trimEnd()}…` : s;
+
 function hojeIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -98,8 +149,10 @@ interface CasoSalvo {
   sociedades?: Record<string, SociedadeExtraida>;
   fiscal: EstadoFiscal;
   passo: number;
-  /** Partilha diferenciada: bemId → com quem fica ('' = proporção do direito). */
+  /** Partilha diferenciada (formato antigo, migrado): bemId → com quem ficava. */
   atribuicoes?: Record<string, string>;
+  /** Partilha diferenciada: bemId → { participanteId → % do bem (texto) }. */
+  atribuicoesPct?: Record<string, Record<string, string>>;
   titulo: TituloCessao;
   /** Condições de honorários do caso (o perfil do escritório é do navegador). */
   honorarios?: CondicoesHonorarios;
@@ -233,8 +286,8 @@ export default function SucessoristaClient() {
     });
   }, [falecido.dataObito, resultado, hoje, isencoes, fiscal]);
 
-  /* --- passo 2 da partilha: diferenciada (bem → com quem fica) --- */
-  const [atribuicoes, setAtribuicoes] = useState<Record<string, string>>({});
+  /* --- passo 2 da partilha: matriz bem × participante (% de cada bem) --- */
+  const [matriz, setMatriz] = useState<Record<string, Record<string, string>>>({});
   const [titulo, setTitulo] = useState<TituloCessao>('GRATUITO');
 
   /* --- VI: honorários do caso (perfil do escritório fica na própria view) --- */
@@ -273,8 +326,16 @@ export default function SucessoristaClient() {
               setSociedades(salvo.sociedades);
             if (salvo.fiscal) setFiscal(salvo.fiscal);
             if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
-            if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object')
-              setAtribuicoes(salvo.atribuicoes);
+            if (salvo.atribuicoesPct && typeof salvo.atribuicoesPct === 'object') {
+              setMatriz(salvo.atribuicoesPct);
+            } else if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object') {
+              // Migra o formato antigo (bem inteiro para uma pessoa) → 100%.
+              const migrada: Record<string, Record<string, string>> = {};
+              for (const [bemId, destino] of Object.entries(salvo.atribuicoes)) {
+                if (destino) migrada[bemId] = { [destino]: '100' };
+              }
+              setMatriz(migrada);
+            }
             if (salvo.titulo === 'GRATUITO' || salvo.titulo === 'ONEROSO') setTitulo(salvo.titulo);
             if (salvo.honorarios && typeof salvo.honorarios === 'object')
               setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
@@ -306,7 +367,7 @@ export default function SucessoristaClient() {
         sociedades,
         fiscal,
         passo,
-        atribuicoes,
+        atribuicoesPct: matriz,
         titulo,
         honorarios: condicoesHonorarios,
         casoId,
@@ -316,7 +377,7 @@ export default function SucessoristaClient() {
     } catch {
       // sem espaço ou modo restrito: a persistência é conforto, não requisito
     }
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, atribuicoes, titulo, condicoesHonorarios, casoId, convites]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites]);
 
   /* --- sociedades lidas → bem de quotas no acervo ---
      Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
@@ -380,46 +441,86 @@ export default function SucessoristaClient() {
     return lista;
   }, [resultado]);
 
+  /** Quinhão de direito em R$ por participante (meação + quinhões). */
+  const direitoPorParticipante = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    if (!resultado || resultado.bloqueios.length > 0) return mapa;
+    if (resultado.meacao) mapa['__sobrevivente__'] = Number(resultado.meacao.valor);
+    for (const q of resultado.quinhoes)
+      mapa[q.herdeiroId] = (mapa[q.herdeiroId] ?? 0) + Number(q.valor);
+    return mapa;
+  }, [resultado]);
+
   /**
-   * Partilha diferenciada aberta: cada bem vai para quem o operador indicar
-   * (propriedade plena); o que fica "na proporção do direito" é repartido
-   * pelas frações exatas de direito (meação + quinhão) — neutro na conta.
-   * O desvio entre recebido e direito vira o acerto, com o imposto da cessão.
+   * Partilha diferenciada em MATRIZ: cada linha (bem) distribui percentuais
+   * entre os participantes; linha toda vazia segue a proporção exata do
+   * direito (meação + quinhão — neutro na conta). Linha preenchida precisa
+   * fechar 100%. O desvio entre recebido e direito vira o acerto (torna),
+   * com o imposto da cessão.
    */
   const atribuicao = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || bens.length === 0) return null;
     if (participantes.length === 0) return null;
-    if (!bens.some((b) => atribuicoes[b.id])) return null; // tudo na proporção do direito
+
+    const linhas = bens.map((b, i) => {
+      const linha = matriz[b.id] ?? {};
+      const pcts = participantes.map((p) => pctNum(linha[p.id]));
+      return { bem: b, indice: i, pcts, total: pcts.reduce((a, v) => a + v, 0) };
+    });
+    if (!linhas.some((l) => l.total > 0)) return null; // tudo na proporção do direito
+
+    // Linha preenchida tem de fechar 100% (tolerância de dízima: ±0,05).
+    const invalidas = linhas.filter((l) => l.total > 0 && Math.abs(l.total - 100) > 0.05);
+    if (invalidas.length > 0) {
+      return {
+        posicoes: [],
+        transferencias: [],
+        totalTorna: '0.00',
+        avisos: [],
+        bloqueios: invalidas.map(
+          (l) =>
+            `Bem ${l.indice + 1}: os percentuais somam ${l.total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% — a linha precisa fechar 100% (ou ficar toda vazia para seguir a proporção do direito).`,
+        ),
+      };
+    }
 
     const direitoCents = new Map<string, number>();
-    if (resultado.meacao) {
-      direitoCents.set('__sobrevivente__', Math.round(Number(resultado.meacao.valor) * 100));
-    }
-    for (const q of resultado.quinhoes) {
-      direitoCents.set(
-        q.herdeiroId,
-        (direitoCents.get(q.herdeiroId) ?? 0) + Math.round(Number(q.valor) * 100),
-      );
+    for (const [id, v] of Object.entries(direitoPorParticipante)) {
+      direitoCents.set(id, Math.round(v * 100));
     }
     const totalCents = [...direitoCents.values()].reduce((a, v) => a + v, 0);
     if (totalCents <= 0) return null;
 
     const titularidades: TitularidadeBem[] = [];
-    for (const b of bens) {
-      const destino = atribuicoes[b.id];
-      if (destino && direitoCents.has(destino)) {
-        titularidades.push({ bemId: b.id, titularId: destino, direito: 'PLENA', fracao: '1' });
-      } else {
+    for (const l of linhas) {
+      if (l.total === 0) {
         for (const [id, cents] of direitoCents) {
           if (cents <= 0) continue;
           titularidades.push({
-            bemId: b.id,
+            bemId: l.bem.id,
             titularId: id,
             direito: 'PLENA',
             fracao: `${cents}/${totalCents}`,
           });
         }
+        continue;
       }
+      // Pontos-base normalizados para fechar EXATAMENTE 10000 — o motor exige
+      // soma 1 por bem ("33,33" três vezes viraria 9999 sem o ajuste).
+      const bps = l.pcts.map((p) => Math.round((p / l.total) * 10000));
+      const soma = bps.reduce((a, v) => a + v, 0);
+      let maior = 0;
+      for (let i = 1; i < bps.length; i++) if (bps[i] > bps[maior]) maior = i;
+      bps[maior] += 10000 - soma;
+      participantes.forEach((p, i) => {
+        if (bps[i] > 0)
+          titularidades.push({
+            bemId: l.bem.id,
+            titularId: p.id,
+            direito: 'PLENA',
+            fracao: `${bps[i]}/10000`,
+          });
+      });
     }
 
     // Isenção de doação por donatário/ano (art. 6º, II, "a"): 2.500 UFESPs.
@@ -432,7 +533,7 @@ export default function SucessoristaClient() {
         isencaoDoacaoAnualPorDonatario: (2500 * ufespAtual).toFixed(2),
       },
     });
-  }, [resultado, titulo, caso, bens, atribuicoes, participantes]);
+  }, [resultado, titulo, caso, bens, matriz, participantes, direitoPorParticipante]);
 
   /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
   const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
@@ -457,9 +558,58 @@ export default function SucessoristaClient() {
       if (!fal.ultimoDomicilio && lido.falecido.ultimoDomicilio)
         fal.ultimoDomicilio = lido.falecido.ultimoDomicilio;
 
-      const nomesAtuais = new Set(prev.herdeiros.map((h) => h.nome.trim().toLowerCase()));
-      const novos = lido.herdeiros
-        .filter((h) => !nomesAtuais.has(h.nome.trim().toLowerCase()))
+      // Higiene da lista LIDA: cada pessoa uma única vez (une "Renata" com
+      // "Renata Pummer Carvalho Lavruhin" e variações de acento, ficando o
+      // nome mais completo) — e nem o(a) falecido(a) nem o(a) sobrevivente
+      // entram como herdeiros (o viúvo não é herdeiro na lista).
+      const nomeFalecido = fal.nome || lido.falecido.nome || '';
+      const nomeSobrevivente = prev.nomeSobrev || lido.sobrevivente.nome || '';
+      const lidos: typeof lido.herdeiros = [];
+      for (const h of lido.herdeiros) {
+        if (nomeFalecido && mesmaPessoa(h.nome, nomeFalecido)) continue;
+        if (nomeSobrevivente && mesmaPessoa(h.nome, nomeSobrevivente)) continue;
+        const visto = lidos.find((x) => mesmaPessoa(x.nome, h.nome));
+        if (visto) {
+          if (h.nome.trim().length > visto.nome.trim().length) visto.nome = h.nome;
+          if (!visto.qualificacao && h.qualificacao) visto.qualificacao = h.qualificacao;
+          continue;
+        }
+        lidos.push({ ...h });
+      }
+
+      const qualificacoes: Record<string, Qualificacao> = { ...prev.qualificacoes };
+      const perguntas = { ...prev.perguntas };
+      let inventarianteId = prev.inventarianteId;
+
+      // Também deduplica a lista JÁ LANÇADA (leituras anteriores podem ter
+      // duplicado): a primeira ocorrência fica (id preservado) com o nome
+      // mais completo; a ficha ganha os campos vazios da duplicata removida.
+      const mantidos: typeof prev.herdeiros = [];
+      for (const h of prev.herdeiros) {
+        const original = mantidos.find((x) => mesmaPessoa(x.nome, h.nome));
+        if (!original) {
+          mantidos.push({ ...h });
+          continue;
+        }
+        if (h.nome.trim().length > original.nome.trim().length) original.nome = h.nome;
+        qualificacoes[original.id] = preencherVazios(
+          qualificacoes[original.id] ?? QUALIFICACAO_VAZIA,
+          qualificacoes[h.id],
+        );
+        delete qualificacoes[h.id];
+        delete perguntas[h.id];
+        if (inventarianteId === h.id) inventarianteId = original.id;
+      }
+
+      // Nome mais completo lido atualiza quem já estava lançado.
+      for (const m of mantidos) {
+        const correspondente = lidos.find((x) => mesmaPessoa(x.nome, m.nome));
+        if (correspondente && correspondente.nome.trim().length > m.nome.trim().length)
+          m.nome = correspondente.nome;
+      }
+
+      const novos = lidos
+        .filter((h) => !mantidos.some((x) => mesmaPessoa(x.nome, h.nome)))
         .map((h) => ({
           id: uid('h'),
           nome: h.nome,
@@ -468,33 +618,31 @@ export default function SucessoristaClient() {
           status: 'ATIVO' as const,
           filhoDoSobrevivente: h.filhoDoSobrevivente ?? true,
         }));
-      const qualificacoes: Record<string, Qualificacao> = { ...prev.qualificacoes };
-      const perguntas = { ...prev.perguntas };
       for (const n of novos) {
         qualificacoes[n.id] = QUALIFICACAO_VAZIA;
         perguntas[n.id] = PERGUNTAS_ITCMD_VAZIAS;
       }
 
       // Qualificação extraída (planilha do escritório, minutas): preenche só
-      // campo VAZIO da ficha, casando por nome — vale para herdeiro novo e
+      // campo VAZIO da ficha, casando por pessoa — vale para herdeiro novo e
       // para quem já estava lançado. Extração é apoio: a UI pede conferência.
-      const todos = [...prev.herdeiros, ...novos];
+      const todos = [...mantidos, ...novos];
       for (const lidoH of lido.herdeiros) {
         if (!lidoH.qualificacao) continue;
-        const alvo = todos.find(
-          (h) => h.nome.trim().toLowerCase() === lidoH.nome.trim().toLowerCase(),
-        );
+        const alvo = todos.find((h) => mesmaPessoa(h.nome, lidoH.nome));
         if (!alvo) continue;
-        const ficha = { ...(qualificacoes[alvo.id] ?? QUALIFICACAO_VAZIA) };
-        for (const campo of Object.keys(lidoH.qualificacao) as (keyof NonNullable<
-          typeof lidoH.qualificacao
-        >)[]) {
-          const v = lidoH.qualificacao[campo];
-          if (v && campo in ficha && !ficha[campo as keyof Qualificacao]) {
-            ficha[campo as keyof Qualificacao] = v;
-          }
-        }
-        qualificacoes[alvo.id] = ficha;
+        qualificacoes[alvo.id] = preencherVazios(
+          qualificacoes[alvo.id] ?? QUALIFICACAO_VAZIA,
+          lidoH.qualificacao,
+        );
+      }
+
+      // Qualificação do(a) sobrevivente (coluna "VIÚVO(A)" das planilhas).
+      if (lido.sobrevivente.qualificacao) {
+        qualificacoes['__sobrevivente__'] = preencherVazios(
+          qualificacoes['__sobrevivente__'] ?? QUALIFICACAO_VAZIA,
+          lido.sobrevivente.qualificacao,
+        );
       }
 
       return {
@@ -505,9 +653,10 @@ export default function SucessoristaClient() {
         vinculo: lido.sobrevivente.vinculo ?? prev.vinculo,
         regime: lido.sobrevivente.regime ?? prev.regime,
         nomeSobrev: prev.nomeSobrev || (lido.sobrevivente.nome ?? ''),
-        herdeiros: [...prev.herdeiros, ...novos],
+        herdeiros: todos,
         qualificacoes,
         perguntas,
+        inventarianteId,
       };
     });
 
@@ -531,15 +680,10 @@ export default function SucessoristaClient() {
     // automaticamente (a certidão de óbito dele está na pasta). Nome sem
     // correspondência fica só no alerta da leitura — pode ser 2ª sucessão.
     if (lido.outrosFalecidos.length > 0) {
-      const bate = (a: string, b: string) => {
-        const na = a.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-        const nb = b.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-        return na === nb || na.includes(nb) || nb.includes(na);
-      };
       setFamilia((prev) => ({
         ...prev,
         herdeiros: prev.herdeiros.map((h) =>
-          lido.outrosFalecidos.some((o) => bate(o.nome, h.nome)) && h.status === 'ATIVO'
+          lido.outrosFalecidos.some((o) => mesmaPessoa(o.nome, h.nome)) && h.status === 'ATIVO'
             ? { ...h, status: 'PRE_MORTO' as const }
             : h,
         ),
@@ -638,8 +782,8 @@ export default function SucessoristaClient() {
             ['familia', 'I', 'A família'],
             ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
-            ['documentos', 'IV', 'Documentos'],
-            ['itcmd', 'V', 'ITCMD'],
+            ['itcmd', 'IV', 'ITCMD'],
+            ['documentos', 'V', 'Documentos'],
             ['honorarios', 'VI', 'Honorários'],
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -732,10 +876,11 @@ export default function SucessoristaClient() {
                 <span className="eyebrow">Passo 2</span>
                 <h2>Partilha diferenciada</h2>
                 <p className="subtitulo">
-                  Monte a partilha como a família combinou: diga com quem fica cada bem. O
-                  que ficar &quot;na proporção do direito&quot; continua repartido conforme o
-                  espelho. As diferenças aparecem embaixo, com o acerto entre as partes e o
-                  imposto de transmissão — devido ou isento.
+                  Monte a partilha como a família combinou: distribua o percentual de cada
+                  bem entre as partes — cada linha preenchida precisa fechar 100%; linha em
+                  branco segue a proporção do direito. Embaixo, o total que cada um recebe,
+                  a diferença de quinhão (a provisão de torna) e o imposto de transmissão —
+                  devido ou isento.
                 </p>
 
                 {(!resultado || resultado.bloqueios.length > 0 || participantes.length === 0) && (
@@ -747,38 +892,109 @@ export default function SucessoristaClient() {
 
                 {resultado && resultado.bloqueios.length === 0 && participantes.length > 0 && (
                   <>
-                    <div className="espelho">
-                      <div className="cabeca">
-                        <span>Bem</span>
-                        <span style={{ textAlign: 'right' }}>Valor</span>
-                        <span>Fica com</span>
-                      </div>
-                      {bens.map((b, i) => (
-                        <div className="lanc" key={b.id} style={{ alignItems: 'center' }}>
-                          <span className="nome">
-                            <span className="numero-bem num">{i + 1}.</span> {b.descricao}
-                          </span>
-                          <span className="fracao num" style={{ textAlign: 'right' }}>{brl(b.valor)}</span>
-                          <span>
-                            <select
-                              className="destino-bem"
-                              value={atribuicoes[b.id] ?? ''}
-                              aria-label={`Com quem fica o bem ${i + 1}`}
-                              onChange={(e) =>
-                                setAtribuicoes((prev) => ({ ...prev, [b.id]: e.target.value }))
-                              }
-                            >
-                              <option value="">Na proporção do direito</option>
+                    <Table className="matriz-partilha">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="col-bem">Bem</TableHead>
+                          {participantes.map((p) => (
+                            <TableHead key={p.id}>{p.nome}</TableHead>
+                          ))}
+                          <TableHead className="col-total">Σ %</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {bens.map((b, i) => {
+                          const linha = matriz[b.id] ?? {};
+                          const total = participantes.reduce((a, p) => a + pctNum(linha[p.id]), 0);
+                          const fecha = total === 0 || Math.abs(total - 100) <= 0.05;
+                          return (
+                            <TableRow key={b.id}>
+                              <TableCell className="col-bem" title={b.descricao}>
+                                <span className="numero-bem num">{i + 1}.</span>{' '}
+                                {descricaoCurta(b.descricao)}
+                                <span className="fund num" style={{ display: 'block' }}>
+                                  {brl(b.valor)}
+                                </span>
+                              </TableCell>
                               {participantes.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.nome}
-                                </option>
+                                <TableCell key={p.id}>
+                                  <Input
+                                    className="pct num"
+                                    inputMode="decimal"
+                                    placeholder="—"
+                                    aria-label={`Percentual do bem ${i + 1} para ${p.nome}`}
+                                    value={linha[p.id] ?? ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value.replace(/[^\d.,]/g, '').slice(0, 6);
+                                      setMatriz((prev) => ({
+                                        ...prev,
+                                        [b.id]: { ...(prev[b.id] ?? {}), [p.id]: v },
+                                      }));
+                                    }}
+                                  />
+                                </TableCell>
                               ))}
-                            </select>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                              <TableCell className={`col-total num ${fecha ? '' : 'nao-fecha'}`}>
+                                {total === 0
+                                  ? 'direito'
+                                  : `${total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                      <TableFooter>
+                        <TableRow>
+                          <TableCell>Total recebido</TableCell>
+                          {participantes.map((p) => {
+                            const pos = atribuicao?.posicoes.find((x) => x.titularId === p.id);
+                            return (
+                              <TableCell key={p.id} className="num">
+                                {pos ? brl(pos.valorAtribuido) : '—'}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell />
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Quinhão de direito</TableCell>
+                          {participantes.map((p) => (
+                            <TableCell key={p.id} className="num">
+                              {brl((direitoPorParticipante[p.id] ?? 0).toFixed(2))}
+                            </TableCell>
+                          ))}
+                          <TableCell />
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Diferença de quinhão</TableCell>
+                          {participantes.map((p) => {
+                            const pos = atribuicao?.posicoes.find((x) => x.titularId === p.id);
+                            const delta = pos ? Number(pos.delta) : null;
+                            return (
+                              <TableCell
+                                key={p.id}
+                                className="num"
+                                style={{
+                                  color:
+                                    delta === null || delta === 0
+                                      ? undefined
+                                      : delta > 0
+                                        ? 'var(--verde-registro)'
+                                        : 'var(--lacre)',
+                                }}
+                              >
+                                {pos ? `${Number(pos.delta) > 0 ? '+' : ''}${brl(pos.delta)}` : '—'}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell />
+                        </TableRow>
+                      </TableFooter>
+                    </Table>
+                    <p className="fund" style={{ marginTop: 6 }}>
+                      Diferença positiva = recebe além do quinhão (provisiona a torna e o
+                      imposto da cessão); negativa = deixa de receber (torna a receber).
+                    </p>
 
                     <h2>Se houver diferença, ela é…</h2>
                     <div className="escolha">
@@ -793,55 +1009,15 @@ export default function SucessoristaClient() {
                     {!atribuicao && (
                       <div className="nota" style={{ marginTop: 16 }}>
                         <p>
-                          Todos os bens estão na proporção do direito — a partilha segue o
-                          espelho, sem acerto entre as partes. Atribua um bem a alguém para
-                          ver o efeito.
+                          Todas as linhas estão em branco — a partilha segue o espelho, na
+                          proporção do direito, sem acerto entre as partes. Distribua os
+                          percentuais de um bem para ver o efeito.
                         </p>
                       </div>
                     )}
 
                     {atribuicao && atribuicao.bloqueios.length === 0 && (
                       <>
-                        <h2>Recebido × direito</h2>
-                        <div className="espelho">
-                          <div className="cabeca">
-                            <span>Quem</span>
-                            <span style={{ textAlign: 'right' }}>Direito</span>
-                            <span style={{ textAlign: 'right' }}>Diferença</span>
-                          </div>
-                          {atribuicao.posicoes.map((p) => (
-                            <div key={p.titularId}>
-                              <div className="lanc">
-                                <span className="nome">{p.nome}</span>
-                                <span className="fracao num" style={{ textAlign: 'right' }}>
-                                  {brl(p.valorDeDireito)}
-                                </span>
-                                <span
-                                  className="valor num"
-                                  style={{
-                                    color:
-                                      p.papel === 'CEDENTE'
-                                        ? 'var(--lacre)'
-                                        : p.papel === 'CESSIONARIO'
-                                          ? 'var(--verde-registro)'
-                                          : undefined,
-                                  }}
-                                >
-                                  {brl(p.delta)}
-                                </span>
-                              </div>
-                              <div className="fund">
-                                recebeu {brl(p.valorAtribuido)} ·{' '}
-                                {p.papel === 'CEDENTE'
-                                  ? 'ficou com menos que o direito — cede a diferença'
-                                  : p.papel === 'CESSIONARIO'
-                                    ? 'ficou com mais que o direito — recebe a diferença'
-                                    : 'exatamente o direito'}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
                         <h2>Acertos e impostos</h2>
                         {atribuicao.transferencias.map((tr, i) => {
                           const dentroDaIsencao =
@@ -950,7 +1126,9 @@ export default function SucessoristaClient() {
             bens={bens}
             dividas={dividasEspolio}
             resultado={resultado}
-            temPartilhaDiferenciada={bens.some((b) => Boolean(atribuicoes[b.id]))}
+            temPartilhaDiferenciada={bens.some((b) =>
+              Object.values(matriz[b.id] ?? {}).some((v) => pctNum(v) > 0),
+            )}
             condicoes={condicoesHonorarios}
             setCondicoes={setCondicoesHonorarios}
           />

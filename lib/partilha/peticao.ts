@@ -103,7 +103,7 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
   });
   if (temIncapaz) {
     p.push({
-      texto: 'ATENÇÃO: há herdeiro menor ou incapaz lançado na folha — a via extrajudicial é vedada (CPC, art. 610, caput). Esta minuta só serve se a situação tiver mudado.',
+      texto: 'ATENÇÃO: há herdeiro menor ou incapaz lançado na folha — a escritura depende de parecer favorável do Ministério Público e da preservação do quinhão do incapaz (Res. CNJ 35/2007, alterada pela Res. CNJ 571/2024); sem o parecer, o caso segue pela via judicial.',
       centrado: true,
       negrito: true,
     });
@@ -158,7 +158,9 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
   p.push({ texto: 'II — DO CABIMENTO DA VIA EXTRAJUDICIAL', titulo: true });
   p.push({
     texto: `As partes declaram, sob as penas da lei: (a) que ${
-      temIncapaz ? `há herdeiro menor ou incapaz — VERIFICAR: a via extrajudicial é vedada` : 'todos os herdeiros são maiores e capazes'
+      temIncapaz
+        ? 'há herdeiro menor ou incapaz, devidamente representado/assistido, hipótese hoje admitida na via extrajudicial mediante parecer favorável do Ministério Público e preservação integral do quinhão do incapaz (Resolução CNJ nº 35/2007, com as alterações da Resolução CNJ nº 571/2024), cuja colheita se requer'
+        : 'todos os herdeiros são maiores e capazes'
     }; (b) que há consenso quanto à partilha adiante descrita; e (c) que o(a) autor(a) da herança não deixou testamento conhecido, conforme certidão negativa do CENSEC/RCTO anexa — presentes, assim, os requisitos do art. 610, § 1º, do CPC e da Resolução CNJ nº 35/2007.`,
   });
 

@@ -317,6 +317,39 @@
   outline-offset: 1px;
 }
 
+/* Matriz da partilha diferenciada (bem × participante, % por célula). O
+   container do Table do shadcn já é ScrollArea horizontal — colunas a mais
+   (muitos herdeiros) rolam com a barra estilizada. */
+.sucessorista .matriz-partilha {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.sucessorista .matriz-partilha .col-bem {
+  min-width: 220px;
+  max-width: 300px;
+  white-space: normal;
+}
+
+.sucessorista .matriz-partilha .col-total {
+  min-width: 72px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.sucessorista .matriz-partilha .col-total.nao-fecha { color: var(--lacre); }
+
+.sucessorista .matriz-partilha input.pct {
+  width: 76px;
+  height: 30px;
+  text-align: right;
+}
+
+.sucessorista .matriz-partilha tfoot td {
+  font-weight: 600;
+  border-top: 2px solid var(--tinta);
+}
+
 /* Logo do escritório (marca branca dos honorários). */
 .sucessorista .logo-marca {
   display: flex;

@@ -75,11 +75,11 @@ export interface DadosHonorariosDocx {
 
 function descricaoDoServico(d: DadosHonorariosDocx): string {
   const nome = d.falecido.nome?.trim().toUpperCase() || LACUNA;
-  return `inventário e partilha dos bens deixados por ${nome}, pela via ${
-    d.avaliacao.viaJudicial
-      ? 'judicial (há herdeiro menor ou incapaz — CPC, art. 610, caput)'
-      : 'extrajudicial (CPC, art. 610, § 1º), com migração para a judicial se sobrevier hipótese legal'
-  }`;
+  return `inventário e partilha dos bens deixados por ${nome}, pela via extrajudicial (CPC, art. 610, § 1º)${
+    d.avaliacao.exigeParecerMp
+      ? ', com a colheita do parecer favorável do Ministério Público em razão de herdeiro menor ou incapaz (Res. CNJ 35/2007, alterada pela Res. CNJ 571/2024)'
+      : ''
+  }, com migração para a via judicial se sobrevier hipótese legal`;
 }
 
 function textoHonorarios(d: DadosHonorariosDocx): string {

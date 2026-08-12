@@ -180,7 +180,7 @@ export function CasoView({
       // Sem leitura para eles, mas nada se perde: o classificador de reserva
       // usa o NOME do arquivo para acertar o item do catálogo.
       aplicarLeitura(
-        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
+        { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
         inelegiveis.map((file) => ({
           file,
           documentoId: classificarNoCatalogo('', file.name),
@@ -273,7 +273,7 @@ export function CasoView({
         const mensagem = err instanceof Error ? err.message : String(err);
         // Arquivos do lote falho não se perdem: classificados pelo nome.
         aplicarLeitura(
-          { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
+          { falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null }, sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null }, herdeiros: [], bens: [], sociedades: [], outrosFalecidos: [], arquivos: [] },
           lote.map((par) => ({
             file: par.original,
             documentoId: classificarNoCatalogo('', par.original.name),

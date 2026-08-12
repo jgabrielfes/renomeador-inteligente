@@ -504,8 +504,12 @@ export function partilhar(caso: Caso): Resultado {
 
   let elegivel = true;
   if (caso.herdeiros.some((x) => x.menorOuIncapaz)) {
-    elegivel = false;
-    avisos.push('Há herdeiro menor ou incapaz: via judicial (CPC art. 610).');
+    // Res. CNJ 571/2024 (altera a Res. 35/2007): a presença de incapaz não
+    // veda mais a escritura — exige parecer favorável do Ministério Público
+    // e quinhão do incapaz preservado; sem o parecer, o caso segue judicial.
+    avisos.push(
+      'Há herdeiro menor ou incapaz: a via extrajudicial é possível com parecer favorável do Ministério Público e quinhão do incapaz preservado (Res. CNJ 35/2007, alterada pela Res. CNJ 571/2024) — sem o parecer, via judicial.',
+    );
   }
   if (caso.testamento?.existe) {
     elegivel = false;
