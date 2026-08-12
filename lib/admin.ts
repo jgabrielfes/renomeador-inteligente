@@ -80,14 +80,25 @@ export function parseOrdenacao<C extends string>(
   return { coluna, direcao };
 }
 
-/** Monta a query string preservando período/paginação ao trocar a ordem. */
+/* ---------- busca textual (?busca=) ---------- */
+
+const MAX_BUSCA = 80;
+
+/** Texto da busca, normalizado (vazio = sem filtro). */
+export function parseBusca(bruto: unknown): string {
+  return typeof bruto === "string" ? bruto.trim().slice(0, MAX_BUSCA) : "";
+}
+
+/** Monta a query string preservando os demais filtros ao trocar um deles. */
 export function queryDaTabela(params: {
   periodo?: string;
+  busca?: string;
   paginacao?: Paginacao;
   ordenacao?: Ordenacao;
 }): URLSearchParams {
   const query = new URLSearchParams();
   if (params.periodo) query.set("periodo", params.periodo);
+  if (params.busca) query.set("busca", params.busca);
   if (params.paginacao) {
     query.set("pagina", String(params.paginacao.pagina));
     query.set("porPagina", String(params.paginacao.porPagina));

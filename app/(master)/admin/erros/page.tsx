@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import {
   ErrorEventDetails,
 } from "@/components/admin/error-event-details";
+import { PeriodFilter } from "@/components/admin/period-filter";
 import { QueryPagination } from "@/components/admin/query-pagination";
 import { SortableHeader } from "@/components/admin/sortable-header";
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +23,10 @@ import {
 } from "@/components/ui/table";
 import {
   dataCurta,
+  filtroDeData,
   parseOrdenacao,
   parsePaginacao,
+  parsePeriodo,
   queryDaTabela,
 } from "@/lib/admin";
 import { requireMaster } from "@/lib/auth";
@@ -54,16 +57,19 @@ export default async function ErrosPage({
   await requireMaster();
 
   const params = await searchParams;
+  const periodo = parsePeriodo(params.periodo);
+  const createdAt = filtroDeData(periodo);
   const paginacao = parsePaginacao(params);
   const ordenacao = parseOrdenacao<Coluna>(params, COLUNAS, {
     coluna: "data",
     direcao: "desc",
   });
-  const query = queryDaTabela({ paginacao, ordenacao });
+  const query = queryDaTabela({ periodo, paginacao, ordenacao });
 
   const [total, erros] = await Promise.all([
-    prisma.errorEvent.count(),
+    prisma.errorEvent.count({ where: { createdAt } }),
     prisma.errorEvent.findMany({
+      where: { createdAt },
       include: { user: { select: { name: true, email: true } } },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
@@ -88,6 +94,8 @@ export default async function ErrosPage({
           excedida, indisponibilidade do Gemini e erros inesperados.
         </p>
       </header>
+
+      <PeriodFilter basePath="/admin/erros" atual={periodo} query={query} />
 
       <div className="rounded-lg border">
         <Table>
@@ -168,7 +176,7 @@ export default async function ErrosPage({
                   colSpan={5}
                   className="text-center text-muted-foreground"
                 >
-                  Nenhum erro registrado nesta página. 🎉
+                  Nenhum erro registrado no período. 🎉
                 </TableCell>
               </TableRow>
             )}
@@ -180,7 +188,11 @@ export default async function ErrosPage({
         basePath="/admin/erros"
         paginacao={paginacao}
         totalDeItens={total}
-        queryExtra={{ ordenar: ordenacao.coluna, direcao: ordenacao.direcao }}
+        queryExtra={{
+          periodo,
+          ordenar: ordenacao.coluna,
+          direcao: ordenacao.direcao,
+        }}
       />
     </main>
   );

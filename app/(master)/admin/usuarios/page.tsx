@@ -1,14 +1,15 @@
 // /admin/usuarios — tabela paginada de contas (somente MASTER).
-// Query string: ?pagina=&porPagina= (10/25/50/100) e ?ordenar=&direcao=
-// (ordenação SEMPRE no banco, coluna validada contra lista fechada).
-// A coluna "Acessos" conta ABERTURAS de módulo (não logins) — o olho abre o
-// detalhamento por ferramenta.
+// Query string: ?busca= (nome/e-mail), ?pagina=&porPagina= (10/25/50/100) e
+// ?ordenar=&direcao= — busca e ordenação SEMPRE no banco, coluna validada
+// contra lista fechada. A coluna "Acessos" conta ABERTURAS de módulo (não
+// logins) — o olho abre o detalhamento por ferramenta.
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { MasterToggle } from "@/components/admin/master-toggle";
 import { QueryPagination } from "@/components/admin/query-pagination";
+import { SearchFilter } from "@/components/admin/search-filter";
 import { SortableHeader } from "@/components/admin/sortable-header";
 import { UserAccessDetails } from "@/components/admin/user-access-details";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import {
   dataCurta,
+  parseBusca,
   parseOrdenacao,
   parsePaginacao,
   queryDaTabela,
@@ -62,14 +64,27 @@ export default async function UsuariosPage({
 
   const params = await searchParams;
   const paginacao = parsePaginacao(params);
+  const busca = parseBusca(params.busca);
   const ordenacao = parseOrdenacao<Coluna>(params, COLUNAS, {
     coluna: "cadastro",
     direcao: "desc",
   });
 
+  // Busca no banco, em nome OU e-mail, sem diferenciar maiúsculas/acentos do
+  // que o Postgres já normaliza (insensitive cobre o caso de caixa).
+  const where: Prisma.UserWhereInput = busca
+    ? {
+        OR: [
+          { name: { contains: busca, mode: "insensitive" } },
+          { email: { contains: busca, mode: "insensitive" } },
+        ],
+      }
+    : {};
+
   const [total, usuarios] = await Promise.all([
-    prisma.user.count(),
+    prisma.user.count({ where }),
     prisma.user.findMany({
+      where,
       include: { _count: { select: { accesses: true } } },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
@@ -85,7 +100,7 @@ export default async function UsuariosPage({
     _max: { createdAt: true },
   });
 
-  const query = queryDaTabela({ paginacao, ordenacao });
+  const query = queryDaTabela({ busca, paginacao, ordenacao });
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
@@ -100,10 +115,21 @@ export default async function UsuariosPage({
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Usuários</h1>
         <p className="text-sm text-muted-foreground">
-          {total} conta(s) cadastrada(s). &ldquo;Acessos&rdquo; conta aberturas
-          de módulo (uma por sessão do navegador), não logins.
+          {busca
+            ? `${total} conta(s) encontrada(s) para “${busca}”.`
+            : `${total} conta(s) cadastrada(s).`}{" "}
+          &ldquo;Acessos&rdquo; conta aberturas de módulo (uma por sessão do
+          navegador), não logins.
         </p>
       </header>
+
+      <SearchFilter
+        basePath="/admin/usuarios"
+        atual={busca}
+        query={query}
+        placeholder="Buscar por nome ou e-mail…"
+        rotulo="Buscar usuários por nome ou e-mail"
+      />
 
       <div className="rounded-lg border">
         <Table>
@@ -239,7 +265,9 @@ export default async function UsuariosPage({
                   colSpan={7}
                   className="text-center text-muted-foreground"
                 >
-                  Nenhum usuário nesta página.
+                  {busca
+                    ? `Nenhuma conta com “${busca}” no nome ou no e-mail.`
+                    : "Nenhum usuário nesta página."}
                 </TableCell>
               </TableRow>
             )}
@@ -251,7 +279,11 @@ export default async function UsuariosPage({
         basePath="/admin/usuarios"
         paginacao={paginacao}
         totalDeItens={total}
-        queryExtra={{ ordenar: ordenacao.coluna, direcao: ordenacao.direcao }}
+        queryExtra={{
+          ...(busca ? { busca } : {}),
+          ordenar: ordenacao.coluna,
+          direcao: ordenacao.direcao,
+        }}
       />
     </main>
   );

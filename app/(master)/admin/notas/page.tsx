@@ -160,7 +160,7 @@ export default async function AdminNotasPage({
         </p>
       </header>
 
-      <PeriodFilter basePath="/admin/notas" atual={periodo} />
+      <PeriodFilter basePath="/admin/notas" atual={periodo} query={query} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

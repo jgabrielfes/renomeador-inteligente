@@ -152,7 +152,7 @@ export default async function AdminSucessoristaPage({
         </p>
       </header>
 
-      <PeriodFilter basePath="/admin/sucessorista" atual={periodo} />
+      <PeriodFilter basePath="/admin/sucessorista" atual={periodo} query={query} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

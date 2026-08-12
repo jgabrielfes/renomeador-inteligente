@@ -10,10 +10,21 @@ import { PERIODOS, type Periodo } from "@/lib/admin";
 export function PeriodFilter({
   basePath,
   atual,
+  query,
 }: {
   basePath: string;
   atual: Periodo;
+  /** Demais filtros a preservar (busca, ordenação) ao trocar o período. */
+  query?: URLSearchParams;
 }) {
+  const href = (periodo: string) => {
+    const proxima = new URLSearchParams(query);
+    proxima.set("periodo", periodo);
+    // Recorte novo, lista nova: volta ao começo.
+    if (proxima.has("pagina")) proxima.set("pagina", "1");
+    return `${basePath}?${proxima}`;
+  };
+
   return (
     <Tabs value={atual}>
       <TabsList aria-label="Período">
@@ -22,7 +33,7 @@ export function PeriodFilter({
             key={p.valor}
             value={p.valor}
             nativeButton={false}
-            render={<Link href={`${basePath}?periodo=${p.valor}`} />}
+            render={<Link href={href(p.valor)} />}
           >
             {p.rotulo}
           </TabsTrigger>
