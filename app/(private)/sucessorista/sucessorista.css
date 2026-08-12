@@ -101,6 +101,48 @@
   margin-top: 2px;
 }
 
+/* Alternador de perfil (Advogado × Escrevente) — muda as minutas geradas. */
+.sucessorista .lombada .perfil {
+  display: flex;
+  gap: 4px;
+  margin: 6px 16px 14px 0;
+}
+
+.sucessorista .lombada .perfil button {
+  appearance: none;
+  flex: 1;
+  border: 1px solid rgba(246, 244, 238, 0.25);
+  background: transparent;
+  color: #b9c1bc;
+  font: 600 10.5px/1.2 var(--texto);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 7px 6px;
+  border-radius: 6px;
+}
+
+.sucessorista .lombada .perfil button.ativo {
+  background: var(--bronze);
+  border-color: var(--bronze);
+  color: var(--papel-alto);
+}
+
+/* Indicador do rascunho local — o caso não se perde ao fechar o navegador. */
+.sucessorista .lombada .rascunho-info {
+  margin: 10px 16px 0 0;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--verde-registro);
+  filter: brightness(1.6);
+}
+
+.sucessorista .lombada .rascunho-info small {
+  display: block;
+  color: #7c8580;
+  filter: none;
+  margin-top: 2px;
+}
+
 .sucessorista .aba {
   appearance: none;
   border: 0;

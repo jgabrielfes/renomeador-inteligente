@@ -305,10 +305,12 @@ function sanitizarQualificacao(q: unknown): QualificacaoExtraida | null {
   return Object.values(saida).some((v) => v !== null) ? saida : null;
 }
 
-/* ---------- redação de honorários (proposta/contrato) ---------- */
+/* ---------- redação de peças (honorários e petição judicial) ---------- */
+
+export type TipoPecaRedigida = "PROPOSTA" | "CONTRATO" | "PETICAO_JUDICIAL";
 
 export interface EntradaRedacaoHonorarios {
-  tipo: "PROPOSTA" | "CONTRATO";
+  tipo: TipoPecaRedigida;
   /** Resumo do caso + valores montado no cliente (a IA não recebe documentos). */
   contexto: string;
   /** Texto do modelo do próprio escritório, quando anexado — a IA o segue. */
@@ -342,7 +344,9 @@ function promptHonorarios(e: EntradaRedacaoHonorarios): string {
   const doc =
     e.tipo === "CONTRATO"
       ? "um CONTRATO de prestação de serviços advocatícios e honorários (cláusulas numeradas: objeto, obrigações do contratado, obrigações dos contratantes, honorários e forma de pagamento com base no art. 22 da Lei 8.906/1994, despesas e custas por conta dos contratantes, rescisão com honorários proporcionais, foro)"
-      : "uma PROPOSTA de honorários advocatícios (seções: objeto, escopo dos serviços, honorários propostos com a justificativa de complexidade, o que não está incluído, condições de pagamento, validade de 30 dias e aceite)";
+      : e.tipo === "PETICAO_JUDICIAL"
+        ? "uma PETIÇÃO INICIAL de abertura de inventário JUDICIAL, completa e robusta (seções numeradas: dos fatos — óbito, último domicílio e competência do art. 48 do CPC, estado civil/regime e herdeiros, saisine do art. 1.784 do CC; do cabimento da via judicial e do procedimento dos arts. 610 e seguintes do CPC, com o prazo do art. 611; da nomeação do inventariante na ordem do art. 617 e compromisso do art. 620; do acervo como primeiras declarações, bem a bem, com valores; do esboço de partilha com meação, frações e fundamentos legais de cada quinhão; do ITCMD com a base e o valor apurados; dos pedidos — abertura, nomeação, citações do art. 626 incluindo Fazenda Estadual e Ministério Público quando cabível, avaliação, homologação do cálculo e da partilha com formal e alvarás, provas; e o valor da causa pelo monte-mor)"
+        : "uma PROPOSTA de honorários advocatícios (seções: objeto, escopo dos serviços, honorários propostos com a justificativa de complexidade, o que não está incluído, condições de pagamento, validade de 30 dias e aceite)";
   return `Você é advogado(a) redator(a) experiente em direito sucessório no Brasil. Redija o CORPO de ${doc} para o inventário descrito no contexto abaixo, em português do Brasil, texto objetivo e eficiente de escritório de primeira linha.
 
 ${e.modeloEscritorio ? `MODELO DO ESCRITÓRIO (siga FIELMENTE a estrutura, a ordem das cláusulas/seções e o estilo deste modelo, adaptando o conteúdo ao caso do contexto; não copie dados de outras partes que porventura constem do modelo):\n---\n${e.modeloEscritorio}\n---\n\n` : ""}CONTEXTO DO CASO (única fonte de dados):

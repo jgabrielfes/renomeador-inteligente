@@ -60,6 +60,14 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
 import { HonorariosView } from './honorarios-view';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
+import { carregarRascunho, salvarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
+import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
+import type {
+  DadosEscritura,
+  ModalidadeEscritura,
+  PagamentoDiferenciado,
+} from '@/lib/partilha/escritura';
+import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
 
 /* ---------- helpers ---------- */
@@ -137,6 +145,10 @@ const abaValida = (v: string | null): Aba =>
  *  navegador. Arquivos (anexos do processo) não são serializáveis — só eles
  *  precisam ser anexados de novo após recarregar. */
 const CHAVE_CASO = 'sucessorista-caso';
+
+/** Perfil de uso do módulo — muda as minutas da montagem do processo. */
+export type Perfil = 'ADVOGADO' | 'ESCREVENTE';
+const CHAVE_PERFIL = 'sucessorista-perfil';
 
 interface CasoSalvo {
   v: 1;
@@ -294,6 +306,10 @@ export default function SucessoristaClient() {
   const [condicoesHonorarios, setCondicoesHonorarios] =
     useState<CondicoesHonorarios>(CONDICOES_INICIAIS);
 
+  /* --- perfil de uso + rascunho local persistente --- */
+  const [perfil, setPerfil] = useState<Perfil>('ADVOGADO');
+  const [rascunhoSalvoEm, setRascunhoSalvoEm] = useState<string | null>(null);
+
   /* --- persistência no sessionStorage: F5 não apaga a folha --- */
 
   // Restaura UMA vez, antes de qualquer gravação — o efeito de salvar espera
@@ -301,83 +317,114 @@ export default function SucessoristaClient() {
   // diferido (setTimeout 0): evita setState síncrono em efeito (regra do
   // lint) e garante que a flag só liga DEPOIS de o snapshot ser aplicado.
   const restauradoRef = useRef(false);
+
+  /** Aplica um snapshot (rascunho do IndexedDB, sessionStorage legado ou
+   *  Arquivo do caso importado) na folha inteira — campo a campo, tolerante
+   *  a versões anteriores do formato. */
+  const aplicarSnapshot = (salvo: CasoSalvo) => {
+    if (salvo?.v !== 1) return;
+    // Snapshot de versão anterior pode não ter inventarianteId.
+    if (salvo.familia?.falecido)
+      setFamilia({ ...salvo.familia, inventarianteId: salvo.familia.inventarianteId ?? null });
+    if (Array.isArray(salvo.bens)) setBens(salvo.bens);
+    if (typeof salvo.dividasEspolio === 'string') setDividasEspolio(salvo.dividasEspolio);
+    if (salvo.statusAcervo && typeof salvo.statusAcervo === 'object') {
+      setChecklistAcervo((prev) =>
+        prev.map((item) =>
+          salvo.statusAcervo[item.fonte.id]
+            ? { ...item, status: salvo.statusAcervo[item.fonte.id] }
+            : item
+        )
+      );
+    }
+    if (salvo.sociedades && typeof salvo.sociedades === 'object') setSociedades(salvo.sociedades);
+    if (salvo.fiscal) setFiscal(salvo.fiscal);
+    if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
+    if (salvo.atribuicoesPct && typeof salvo.atribuicoesPct === 'object') {
+      setMatriz(salvo.atribuicoesPct);
+    } else if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object') {
+      // Migra o formato antigo (bem inteiro para uma pessoa) → 100%.
+      const migrada: Record<string, Record<string, string>> = {};
+      for (const [bemId, destino] of Object.entries(salvo.atribuicoes)) {
+        if (destino) migrada[bemId] = { [destino]: '100' };
+      }
+      setMatriz(migrada);
+    }
+    if (salvo.titulo === 'GRATUITO' || salvo.titulo === 'ONEROSO') setTitulo(salvo.titulo);
+    if (salvo.honorarios && typeof salvo.honorarios === 'object')
+      setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
+    if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
+    if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
+  };
+
+  const montarSnapshot = (): CasoSalvo => {
+    const statusAcervo: Record<string, StatusItemAcervo> = {};
+    for (const item of checklistAcervo) statusAcervo[item.fonte.id] = item.status;
+    return {
+      v: 1,
+      familia,
+      bens,
+      dividasEspolio,
+      statusAcervo,
+      sociedades,
+      fiscal,
+      passo,
+      atribuicoesPct: matriz,
+      titulo,
+      honorarios: condicoesHonorarios,
+      casoId,
+      convites,
+    };
+  };
+
   useEffect(() => {
     const t = setTimeout(() => {
-      try {
-        const bruto = sessionStorage.getItem(CHAVE_CASO);
-        if (bruto) {
-          const salvo = JSON.parse(bruto) as CasoSalvo;
-          if (salvo?.v === 1) {
-            // Snapshot de versão anterior pode não ter inventarianteId.
-            if (salvo.familia?.falecido)
-              setFamilia({ ...salvo.familia, inventarianteId: salvo.familia.inventarianteId ?? null });
-            if (Array.isArray(salvo.bens)) setBens(salvo.bens);
-            if (typeof salvo.dividasEspolio === 'string') setDividasEspolio(salvo.dividasEspolio);
-            if (salvo.statusAcervo && typeof salvo.statusAcervo === 'object') {
-              setChecklistAcervo((prev) =>
-                prev.map((item) =>
-                  salvo.statusAcervo[item.fonte.id]
-                    ? { ...item, status: salvo.statusAcervo[item.fonte.id] }
-                    : item
-                )
-              );
-            }
-            if (salvo.sociedades && typeof salvo.sociedades === 'object')
-              setSociedades(salvo.sociedades);
-            if (salvo.fiscal) setFiscal(salvo.fiscal);
-            if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
-            if (salvo.atribuicoesPct && typeof salvo.atribuicoesPct === 'object') {
-              setMatriz(salvo.atribuicoesPct);
-            } else if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object') {
-              // Migra o formato antigo (bem inteiro para uma pessoa) → 100%.
-              const migrada: Record<string, Record<string, string>> = {};
-              for (const [bemId, destino] of Object.entries(salvo.atribuicoes)) {
-                if (destino) migrada[bemId] = { [destino]: '100' };
-              }
-              setMatriz(migrada);
-            }
-            if (salvo.titulo === 'GRATUITO' || salvo.titulo === 'ONEROSO') setTitulo(salvo.titulo);
-            if (salvo.honorarios && typeof salvo.honorarios === 'object')
-              setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
-            if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
-            if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
+      void (async () => {
+        try {
+          // Rascunho local (IndexedDB): sobrevive ao F5 E ao fechar o
+          // navegador. Sem rascunho, migra o snapshot da era sessionStorage.
+          const rascunho = await carregarRascunho();
+          if (rascunho) {
+            aplicarSnapshot(rascunho.dados as CasoSalvo);
+            setRascunhoSalvoEm(rascunho.salvoEm);
+          } else {
+            const bruto = sessionStorage.getItem(CHAVE_CASO);
+            if (bruto) aplicarSnapshot(JSON.parse(bruto) as CasoSalvo);
           }
+          const p = localStorage.getItem(CHAVE_PERFIL);
+          if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
+        } catch {
+          // snapshot corrompido: recomeça em branco
         }
-      } catch {
-        // snapshot corrompido: recomeça em branco
-      }
-      restauradoRef.current = true;
+        restauradoRef.current = true;
+      })();
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
-  // Grava o snapshot a cada mudança. Arquivos (File) ficam de fora — não são
-  // serializáveis; os anexos precisam ser reanexados após recarregar.
+  // Grava o rascunho a cada mudança (com respiro de 600ms — digitação não
+  // martela o IndexedDB). Arquivos (File) ficam de fora — não são
+  // serializáveis; os anexos precisam ser reanexados após reabrir.
+  useEffect(() => {
+    if (!restauradoRef.current) return;
+    const t = setTimeout(() => {
+      void salvarRascunho(montarSnapshot()).then((salvoEm) => {
+        if (salvoEm) setRascunhoSalvoEm(salvoEm);
+      });
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites]);
+
+  // Perfil (Advogado × Escrevente) vale para o navegador, não para o caso.
   useEffect(() => {
     if (!restauradoRef.current) return;
     try {
-      const statusAcervo: Record<string, StatusItemAcervo> = {};
-      for (const item of checklistAcervo) statusAcervo[item.fonte.id] = item.status;
-      const salvo: CasoSalvo = {
-        v: 1,
-        familia,
-        bens,
-        dividasEspolio,
-        statusAcervo,
-        sociedades,
-        fiscal,
-        passo,
-        atribuicoesPct: matriz,
-        titulo,
-        honorarios: condicoesHonorarios,
-        casoId,
-        convites,
-      };
-      sessionStorage.setItem(CHAVE_CASO, JSON.stringify(salvo));
+      localStorage.setItem(CHAVE_PERFIL, perfil);
     } catch {
-      // sem espaço ou modo restrito: a persistência é conforto, não requisito
+      // modo restrito: o perfil volta ao padrão na próxima visita
     }
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites]);
+  }, [perfil]);
 
   /* --- sociedades lidas → bem de quotas no acervo ---
      Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
@@ -773,6 +820,162 @@ export default function SucessoristaClient() {
     );
   };
 
+  /* --- Arquivo do caso (.json): salva na pasta do processo, reabre depois --- */
+
+  const exportarCaso = () => {
+    const arquivo = {
+      app: 'sucessorista',
+      exportadoEm: new Date().toISOString(),
+      ...montarSnapshot(),
+    };
+    baixarBlob(
+      new Blob([JSON.stringify(arquivo, null, 2)], { type: 'application/json' }),
+      `Caso${falecido.nome ? ` - ${falecido.nome}` : ''}.sucessorista.json`,
+    );
+    toast.success('Arquivo do caso exportado', {
+      description:
+        'Guarde o .json na pasta do processo, junto dos documentos. Os anexos não vão no arquivo — ficam na própria pasta.',
+    });
+  };
+
+  const importarCaso = async (file: File) => {
+    try {
+      const dados = JSON.parse(await file.text()) as CasoSalvo & { app?: string };
+      if (dados?.v !== 1) throw new Error('Formato não reconhecido.');
+      aplicarSnapshot(dados);
+      toast.success('Arquivo do caso importado — confira a folha', {
+        description: 'Reanexe os documentos da pasta do processo no item 0 ou no item V.',
+      });
+    } catch (e) {
+      toast.error('Não foi possível importar o arquivo do caso.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
+
+  const novoCaso = async () => {
+    await limparRascunho();
+    try {
+      sessionStorage.removeItem(CHAVE_CASO);
+    } catch {
+      // modo restrito: o reload abaixo resolve do mesmo jeito
+    }
+    // Recomeçar do zero exige RELOAD de verdade (navegação client-side
+    // preservaria os estados preenchidos) — exceção consciente à regra.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.href = '/sucessorista';
+  };
+
+  /** Contexto textual do caso para a redação por IA (nunca os documentos). */
+  const contextoDoCaso = (): string => {
+    const linhas: string[] = [];
+    linhas.push(
+      `Inventário de ${falecido.nome || '(nome não informado)'}${falecido.dataObito ? `, óbito em ${falecido.dataObito}` : ''}${falecido.ultimoDomicilio ? `, último domicílio ${falecido.ultimoDomicilio}` : ''}.`,
+    );
+    linhas.push(
+      temSobrevivente
+        ? `Cônjuge/companheiro(a) sobrevivente: ${nomeSobrev || '(nome não informado)'} (${vinculo === 'CASAMENTO' ? 'casamento' : 'união estável'}).`
+        : 'Sem cônjuge/companheiro(a) sobrevivente.',
+    );
+    linhas.push(
+      `Herdeiros (${herdeiros.length}): ${herdeiros.map((h) => `${h.nome}${h.status !== 'ATIVO' ? ` [${h.status}]` : ''}${h.menorOuIncapaz ? ' [menor/incapaz]' : ''}`).join('; ') || '(nenhum lançado)'}.`,
+    );
+    linhas.push(
+      `Acervo (${bens.length} bem/ns): ${bens.map((b, i) => `${i + 1}. ${b.descricao} — ${brl(b.valor)} (${b.natureza})`).join('; ') || '(nenhum lançado)'}.`,
+    );
+    if (resultado && resultado.bloqueios.length === 0) {
+      linhas.push(
+        `Monte-mor ${brl(resultado.acervo.massaPartilhavel)}${resultado.meacao ? `; meação ${brl(resultado.meacao.valor)}` : ''}; herança ${brl(resultado.heranca.total)}. Quinhões: ${resultado.quinhoes.map((q) => `${q.nome} ${q.fracaoHeranca} = ${brl(q.valor)}`).join('; ')}.`,
+      );
+    }
+    if (provisao) {
+      linhas.push(
+        `ITCMD: base ${brl(provisao.baseAtualizada.toFixed(2))}, imposto ${brl(provisao.imposto.toFixed(2))}, provisão ${brl(provisao.total.toFixed(2))}.`,
+      );
+    }
+    return linhas.join('\n').slice(0, 18_000);
+  };
+
+  /** Minuta de petição INICIAL de inventário judicial (IA + fallback local). */
+  const gerarPeticaoJudicial = async () => {
+    let secoes: SecaoRedigida[] | null = null;
+    try {
+      const r = await fetch('/api/sucessorista', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tipo: 'PETICAO_JUDICIAL', contexto: contextoDoCaso(), modeloEscritorio: null }),
+      });
+      const corpo = (await r.json().catch(() => null)) as { secoes?: SecaoRedigida[]; error?: string } | null;
+      if (r.ok && corpo?.secoes?.length) secoes = corpo.secoes;
+      else throw new Error(corpo?.error ?? `HTTP ${r.status}`);
+    } catch (e) {
+      toast.warning('Redação por IA indisponível — a minuta saiu com a redação padrão local.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+    const { montarPeticaoJudicialDocx } = await import('@/lib/partilha/peticao-judicial');
+    const blob = await montarPeticaoJudicialDocx({
+      falecido,
+      temSobrevivente,
+      nomeSobrev,
+      vinculo,
+      regime,
+      herdeiros,
+      qualificacoes: familia.qualificacoes,
+      inventarianteId: familia.inventarianteId ?? null,
+      bens,
+      dividas: dividasEspolio.trim() ? paraDecimal(dividasEspolio) : '',
+      resultado,
+      provisao,
+      secoes,
+    });
+    baixarBlob(blob, `Peticao inicial - Inventario judicial${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
+  };
+
+  /** Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo. */
+  const gerarEscritura = async (modalidade: ModalidadeEscritura, partesRemotas: string) => {
+    // Partilha diferenciada da matriz vira os PAGAMENTOS da escritura.
+    let diferenciada: DadosEscritura['diferenciada'] = null;
+    if (atribuicao && atribuicao.bloqueios.length === 0 && atribuicao.posicoes.length > 0) {
+      const pagamentos: PagamentoDiferenciado[] = participantes
+        .map((pt) => {
+          const pos = atribuicao.posicoes.find((x) => x.titularId === pt.id);
+          const itens = bens
+            .map((b, i) => ({ numero: i + 1, descricao: descricaoCurta(b.descricao), pct: pctNum((matriz[b.id] ?? {})[pt.id]) }))
+            .filter((it) => it.pct > 0);
+          return { nome: pt.nome, itens, valorRecebido: pos?.valorAtribuido ?? '0.00' };
+        })
+        .filter((pg) => pg.itens.length > 0);
+      diferenciada = {
+        pagamentos,
+        tornas: atribuicao.transferencias.map((t) => ({
+          de: t.cedenteNome,
+          para: t.cessionarioNome,
+          valor: t.valor,
+          titulo: t.titulo,
+        })),
+      };
+    }
+    const { montarEscrituraDocx } = await import('@/lib/partilha/escritura');
+    const blob = await montarEscrituraDocx({
+      modalidade,
+      partesRemotas,
+      falecido,
+      temSobrevivente,
+      nomeSobrev,
+      vinculo,
+      regime,
+      herdeiros,
+      qualificacoes: familia.qualificacoes,
+      inventarianteId: familia.inventarianteId ?? null,
+      bens,
+      resultado,
+      provisao,
+      diferenciada,
+    });
+    baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
+  };
+
   const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
     const atual = familia.qualificacoes[herdeiroId] ?? QUALIFICACAO_VAZIA;
     const mesclada: Qualificacao = { ...atual };
@@ -798,6 +1001,24 @@ export default function SucessoristaClient() {
           O Sucessorista
           <small>Folha de trabalho do inventário</small>
         </div>
+        <div className="perfil" role="radiogroup" aria-label="Perfil de uso">
+          {(
+            [
+              ['ADVOGADO', 'Advogado(a)'],
+              ['ESCREVENTE', 'Escrevente Notarial'],
+            ] as const
+          ).map(([id, rotulo]) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={perfil === id}
+              className={perfil === id ? 'ativo' : ''}
+              onClick={() => setPerfil(id)}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
         {(
           [
             ['caso', '0', 'O caso'],
@@ -808,7 +1029,10 @@ export default function SucessoristaClient() {
             ['documentos', 'V', 'Documentos'],
             ['honorarios', 'VI', 'Honorários'],
           ] as const
-        ).map(([id, ind, rotulo]) => (
+        )
+          // Honorários advocatícios não fazem parte do balcão do escrevente.
+          .filter(([id]) => perfil === 'ADVOGADO' || id !== 'honorarios')
+          .map(([id, ind, rotulo]) => (
           <button
             key={id}
             className="aba"
@@ -819,6 +1043,19 @@ export default function SucessoristaClient() {
             {rotulo}
           </button>
         ))}
+        {rascunhoSalvoEm && (
+          <div className="rascunho-info" title="Rascunho local (IndexedDB) — nada sai desta máquina">
+            ● Rascunho salvo neste navegador
+            <small>
+              {new Date(rascunhoSalvoEm).toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </small>
+          </div>
+        )}
         <div className="selo">
           Cálculo de apoio com fundamento legal.
           <br />
@@ -833,6 +1070,10 @@ export default function SucessoristaClient() {
             reclassificarArquivos={reclassificarArquivos}
             onInicioRapido={inicioRapido}
             irParaFamilia={() => irPara('familia')}
+            rascunhoSalvoEm={rascunhoSalvoEm}
+            onExportarCaso={exportarCaso}
+            onImportarCaso={importarCaso}
+            onNovoCaso={novoCaso}
           />
         )}
 
@@ -1109,7 +1350,10 @@ export default function SucessoristaClient() {
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
+              perfil={perfil}
               onGerarPeticao={gerarPeticao}
+              onGerarPeticaoJudicial={gerarPeticaoJudicial}
+              onGerarEscritura={gerarEscritura}
             />
             <CofreView
               herdeiros={herdeiros}

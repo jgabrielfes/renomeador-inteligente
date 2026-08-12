@@ -41,7 +41,7 @@ export const LACUNA = '______________';
 export const brl = (v: string | number) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const ROTULO_REGIME: Record<Regime, string> = {
+export const ROTULO_REGIME: Record<Regime, string> = {
   COMUNHAO_PARCIAL: 'comunhão parcial de bens',
   COMUNHAO_UNIVERSAL: 'comunhão universal de bens',
   SEPARACAO_CONVENCIONAL: 'separação convencional de bens',

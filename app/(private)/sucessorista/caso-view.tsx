@@ -18,6 +18,15 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { CurrencyInput } from '@/components/currency-input';
 import { DateInput } from '@/components/date-input';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
@@ -109,6 +118,10 @@ export function CasoView({
   reclassificarArquivos,
   onInicioRapido,
   irParaFamilia,
+  rascunhoSalvoEm,
+  onExportarCaso,
+  onImportarCaso,
+  onNovoCaso,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -116,9 +129,18 @@ export function CasoView({
   reclassificarArquivos: (itens: ArquivoClassificado[]) => void;
   onInicioRapido: (dataObito: string, valorEstimado: string) => void;
   irParaFamilia: () => void;
+  /** Último salvamento do rascunho local (IndexedDB) — null sem rascunho. */
+  rascunhoSalvoEm: string | null;
+  onExportarCaso: () => void;
+  onImportarCaso: (file: File) => Promise<void>;
+  onNovoCaso: () => Promise<void>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
+  const inputCasoRef = useRef<HTMLInputElement>(null);
+  const [importando, setImportando] = useState(false);
+  const [confirmandoNovo, setConfirmandoNovo] = useState(false);
+  const [apagando, setApagando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [lendo, setLendo] = useState(false);
   const [progresso, setProgresso] = useState('');
@@ -390,8 +412,22 @@ export function CasoView({
         Solte aqui a pasta do inventário. O cofre lê certidão de óbito, certidão de
         casamento, RG, CPF e matrículas — e devolve a folha preenchida para você{' '}
         <strong>conferir</strong>, não digitar. Cada arquivo já cai classificado nos
-        documentos do processo (item IV).
+        documentos do processo (item V).
       </p>
+
+      {/* Visível logo no início: o caso não se perde. */}
+      <div className="nota registro" style={{ marginBottom: 14 }}>
+        <span className="eyebrow">Rascunho local — nada sai desta máquina</span>
+        <p>
+          A folha é salva automaticamente <strong>neste navegador</strong> (IndexedDB):
+          sobrevive ao F5 e a fechar o navegador
+          {rascunhoSalvoEm
+            ? ` — último salvamento ${new Date(rascunhoSalvoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+            : ''}
+          . Para guardar na pasta do processo (e reabrir meses depois, inclusive em outro
+          computador ou com um colega), use o <strong>Arquivo do caso</strong> abaixo.
+        </p>
+      </div>
 
       <div
         role="button"
@@ -528,6 +564,67 @@ export function CasoView({
           </p>
         </div>
       )}
+
+      <h2>Arquivo do caso (.json)</h2>
+      <p className="subtitulo" style={{ marginBottom: 12 }}>
+        Exporte o caso inteiro num arquivo e salve na pasta do processo, junto dos
+        documentos. Reabra meses depois — ou passe a um colega — importando o arquivo. Os
+        anexos não vão no .json: eles já são a própria pasta do processo (basta arrastá-los
+        de novo aqui).
+      </p>
+      <div className="escolha">
+        <Button variant="outline" onClick={onExportarCaso}>
+          Exportar arquivo do caso
+        </Button>
+        <Button variant="outline" onClick={() => inputCasoRef.current?.click()} loading={importando}>
+          Importar arquivo do caso
+        </Button>
+        <Dialog open={confirmandoNovo} onOpenChange={setConfirmandoNovo}>
+          <DialogTrigger
+            render={<Button variant="ghost" className="text-destructive" />}
+            nativeButton={false}
+          >
+            Começar caso novo
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Começar um caso novo?</DialogTitle>
+              <DialogDescription>
+                A folha atual e o rascunho salvo neste navegador serão apagados. Exporte o
+                arquivo do caso antes, se quiser guardá-lo.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmandoNovo(false)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                loading={apagando}
+                onClick={async () => {
+                  setApagando(true);
+                  await onNovoCaso();
+                }}
+              >
+                Apagar e começar do zero
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <input
+        ref={inputCasoRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (!f) return;
+          setImportando(true);
+          void onImportarCaso(f).finally(() => setImportando(false));
+        }}
+      />
 
       <h2>Sem a pasta em mãos?</h2>
       <p className="subtitulo" style={{ marginBottom: 14 }}>

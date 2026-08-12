@@ -45,7 +45,10 @@ export async function POST(request: Request) {
     } catch {
       return Response.json({ error: "JSON inválido." }, { status: 400 });
     }
-    const tipo = corpo.tipo === "CONTRATO" ? "CONTRATO" : corpo.tipo === "PROPOSTA" ? "PROPOSTA" : null;
+    const tipo =
+      corpo.tipo === "CONTRATO" || corpo.tipo === "PROPOSTA" || corpo.tipo === "PETICAO_JUDICIAL"
+        ? corpo.tipo
+        : null;
     const contexto = typeof corpo.contexto === "string" ? corpo.contexto.trim().slice(0, 20_000) : "";
     const modelo =
       typeof corpo.modeloEscritorio === "string" && corpo.modeloEscritorio.trim()
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
         : null;
     if (!tipo || !contexto) {
       return Response.json(
-        { error: "Informe tipo (PROPOSTA|CONTRATO) e contexto." },
+        { error: "Informe tipo (PROPOSTA|CONTRATO|PETICAO_JUDICIAL) e contexto." },
         { status: 400 }
       );
     }
