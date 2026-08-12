@@ -43,6 +43,11 @@ export type TipoBem = 'IMOVEL' | 'VEICULO' | 'FINANCEIRO' | 'QUOTAS' | 'OUTRO';
 
 /** Dados da matrícula e das certidões de valor venal — alimentam a escritura. */
 export interface DetalhesImovel {
+  /**
+   * Descrição do imóvel COMO CONSTA NA MATRÍCULA (com as averbações que
+   * alterem a especialidade objetiva) — abre o bem na escritura.
+   */
+  descricaoMatricula?: string;
   /** Registro/averbação da aquisição pelo falecido (ex.: "R.4"). */
   aquisicao?: string;
   matricula?: string;

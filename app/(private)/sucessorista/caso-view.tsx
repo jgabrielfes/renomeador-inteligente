@@ -57,7 +57,7 @@ export interface ArquivoClassificado {
 
 /** Leitura vazia — usada para anexar arquivos sem mexer nos campos da folha. */
 const CASO_VAZIO: CasoExtraido = {
-  falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null, qualificacao: null },
+  falecido: { nome: null, cpf: null, dataObito: null, dataCasamento: null, ultimoDomicilio: null, localFalecimento: null, certidaoObito: null, certidaoCasamento: null, qualificacao: null },
   sobrevivente: { existe: null, nome: null, vinculo: null, regime: null, qualificacao: null },
   herdeiros: [],
   bens: [],

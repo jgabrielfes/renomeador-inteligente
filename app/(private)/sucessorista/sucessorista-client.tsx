@@ -642,6 +642,12 @@ export default function SucessoristaClient() {
         fal.dataCasamento = lido.falecido.dataCasamento;
       if (!fal.ultimoDomicilio && lido.falecido.ultimoDomicilio)
         fal.ultimoDomicilio = lido.falecido.ultimoDomicilio;
+      if (!fal.localFalecimento && lido.falecido.localFalecimento)
+        fal.localFalecimento = lido.falecido.localFalecimento;
+      if (!fal.certidaoObito && lido.falecido.certidaoObito)
+        fal.certidaoObito = lido.falecido.certidaoObito;
+      if (!fal.certidaoCasamento && lido.falecido.certidaoCasamento)
+        fal.certidaoCasamento = lido.falecido.certidaoCasamento;
 
       // Higiene da lista LIDA: cada pessoa uma única vez (une "Renata" com
       // "Renata Pummer Carvalho Lavruhin" e variações de acento, ficando o

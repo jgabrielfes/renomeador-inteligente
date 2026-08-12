@@ -154,6 +154,30 @@ export function FamiliaView({
             placeholder="Guarulhos/SP"
           />
         </label>
+        <label className="campo">
+          Local do falecimento
+          <Input
+            value={falecido.localFalecimento ?? ''}
+            onChange={(e) => setFalecido({ localFalecimento: e.target.value })}
+            placeholder="Hospital Stella Maris, Guarulhos/SP"
+          />
+        </label>
+        <label className="campo">
+          Certidão de óbito (matrícula/ORCPN)
+          <Input
+            value={falecido.certidaoObito ?? ''}
+            onChange={(e) => setFalecido({ certidaoObito: e.target.value })}
+            placeholder="matrícula nº …, ORCPN do 1º Subdistrito — Guarulhos/SP"
+          />
+        </label>
+        <label className="campo">
+          Certidão de casamento (matrícula/ORCPN)
+          <Input
+            value={falecido.certidaoCasamento ?? ''}
+            onChange={(e) => setFalecido({ certidaoCasamento: e.target.value })}
+            placeholder="matrícula nº …, ORCPN do 1º Subdistrito — Guarulhos/SP"
+          />
+        </label>
       </div>
 
       {/* Ficha completa do "de cujus" (RG, nascimento, filiação, endereço…):

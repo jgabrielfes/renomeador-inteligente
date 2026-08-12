@@ -19,6 +19,8 @@ export interface Paragrafo {
   sublinhado?: boolean;
   /** Tamanho da fonte em half-points (22 = 11pt); default do documento. */
   tamanho?: number;
+  /** Retângulo em volta do parágrafo (títulos de cláusula dos modelos). */
+  moldura?: boolean;
 }
 
 /** Tabela simples com bordas (formato dos modelos notariais). */
@@ -66,8 +68,12 @@ function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
     negrito ? '<w:b/>' : ''
   }${par.sublinhado ? '<w:u w:val="single"/>' : ''}<w:sz w:val="${sz}"/></w:rPr>`;
-  // Ordem dos filhos de pPr conforme o esquema (spacing antes de jc, rPr por último).
-  const pPr = `<w:pPr><w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
+  // Retângulo do título (mesmas bordas do modelo notarial).
+  const pBdr = par.moldura
+    ? '<w:pBdr><w:top w:val="single" w:sz="4" w:space="1" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="1" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="4" w:color="auto"/></w:pBdr>'
+    : '';
+  // Ordem dos filhos de pPr conforme o esquema (pBdr antes de spacing, spacing antes de jc, rPr por último).
+  const pPr = `<w:pPr>${pBdr}<w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
     par.titulo ? '240' : par.discreto ? '40' : '160'
   }"/><w:jc w:val="${jc}"/>${negrito ? `<w:rPr><w:b/></w:rPr>` : ''}</w:pPr>`;
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(par.texto)}</w:t></w:r></w:p>`;

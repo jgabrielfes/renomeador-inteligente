@@ -40,6 +40,12 @@ export interface DadosFalecido {
   /** Preenchida quando havia casamento/união com pacto datado. */
   dataCasamento: string;
   ultimoDomicilio: string;
+  /** Onde ocorreu o falecimento (hospital, cidade/UF) — vai para a escritura. */
+  localFalecimento?: string;
+  /** Certidão de óbito: "matrícula nº …, expedida pelo ORCPN …". */
+  certidaoObito?: string;
+  /** Certidão de casamento do falecido: "matrícula nº …, ORCPN …". */
+  certidaoCasamento?: string;
 }
 
 /** Qualificação de uma parte (colunas da planilha do escritório). */
