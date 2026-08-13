@@ -322,6 +322,20 @@ export async function montarHonorariosDocx(d: DadosHonorariosDocx): Promise<Blob
 
 /* ---------- folha de apresentação ao cliente ---------- */
 
+/**
+ * Paleta da identidade do Sucessorista em hex OOXML (sem "#") — mesmos
+ * valores de app/(private)/sucessorista/sucessorista.css; mudou lá, muda aqui.
+ */
+const IDENTIDADE = {
+  papel: 'F6F4EE',
+  tinta: '1A2320',
+  tintaMedia: '4A544F',
+  bronze: '8A6D3B',
+  lacre: '9E2B25',
+  verde: '2E5E4E',
+  fioForte: 'B9B29C',
+} as const;
+
 export interface DadosApresentacao {
   escritorio: DadosEscritorio;
   falecido: DadosFalecido;
@@ -355,11 +369,13 @@ export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob
     texto: 'APRESENTAÇÃO DO CASO E PROPOSTA DE HONORÁRIOS',
     negrito: true,
     centrado: true,
+    tamanho: 28,
   });
   p.push({
     texto: `Inventário de ${nomeFalecido} · preparada em ${dataPorExtenso()} · válida por 30 dias`,
     centrado: true,
     discreto: true,
+    cor: IDENTIDADE.tintaMedia,
   });
 
   /* o caso em números — o painel do caso, em prosa para o cliente */
@@ -399,6 +415,8 @@ export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob
           ? `o prazo JÁ VENCEU há ${d.provisao.diasDeAtraso} dia(s): cada dia adiciona multa e juros, e agir agora estanca o crescimento`
           : `restam ${Math.max(0, 180 - d.provisao.diasDesdeObito)} dia(s); recolhendo em até 90 dias do óbito há DESCONTO de 5%`
       }.`,
+      // Lacre para a urgência real; o prazo em dia fica na cor do texto.
+      cor: d.provisao.diasDeAtraso > 0 ? IDENTIDADE.lacre : undefined,
     });
   } else {
     p.push({ texto: `Provisão do ITCMD: ${LACUNA} (depende da data do óbito e do acervo completo).` });
@@ -406,6 +424,7 @@ export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob
   if (d.valorIsento > 0) {
     p.push({
       texto: `Nossa análise já identificou ${brl(d.valorIsento.toFixed(2))} em bens possivelmente ISENTOS do imposto (art. 6º da Lei 10.705/2000) — economia direta para a família, a confirmar na declaração.`,
+      cor: IDENTIDADE.verde,
     });
   }
 
@@ -455,5 +474,19 @@ export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob
           alturaPx: d.escritorio.logoAlturaPx,
         }
       : null;
-  return montarDocx(p, { logo });
+  // Identidade do Sucessorista na folha: página "papel", texto "tinta" em
+  // serifa e títulos de seção em bronze com filete — o mesmo livro de notas
+  // da plataforma, agora impresso para o cliente.
+  const comIdentidade = p.map((par) =>
+    par.titulo ? { ...par, cor: par.cor ?? IDENTIDADE.bronze, filete: IDENTIDADE.fioForte } : par,
+  );
+  return montarDocx(comIdentidade, {
+    logo,
+    estilo: {
+      fonte: 'Georgia',
+      tamanho: 22,
+      cor: IDENTIDADE.tinta,
+      fundo: IDENTIDADE.papel,
+    },
+  });
 }

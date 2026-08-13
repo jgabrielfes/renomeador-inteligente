@@ -104,6 +104,9 @@
 /* Alternador de perfil (Advogado × Escrevente) — muda as minutas geradas. */
 .sucessorista .lombada .perfil {
   display: flex;
+  /* Empilhado: "Escrevente Notarial" não cabe lado a lado em toda largura
+     de lombada (180–220px) e vazava da coluna — em coluna sempre cabe. */
+  flex-direction: column;
   gap: 4px;
   margin: 6px 16px 14px 0;
 }
@@ -111,6 +114,7 @@
 .sucessorista .lombada .perfil button {
   appearance: none;
   flex: 1;
+  min-width: 0;
   border: 1px solid rgba(246, 244, 238, 0.25);
   background: transparent;
   color: #b9c1bc;
@@ -709,6 +713,8 @@
   .sucessorista .processo { grid-template-columns: 1fr; }
   .sucessorista .lombada { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 14px 16px; gap: 2px; }
   .sucessorista .lombada .marca { width: 100%; margin-bottom: 8px; }
+  /* Na lombada horizontal, o alternador volta a ser lado a lado na linha toda. */
+  .sucessorista .lombada .perfil { flex-direction: row; flex: 1 1 100%; margin-right: 0; }
   .sucessorista .lombada .selo { display: none; }
   .sucessorista .aba { border-radius: 4px; padding: 8px 12px; }
   .sucessorista .folha { padding: 24px 18px 80px; }
