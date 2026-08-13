@@ -303,7 +303,7 @@ export default function SucessoristaClient() {
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
     const analise = analisarIsencoesPorBem(
-      bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+      bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao, codigoItcmd: b.codigoItcmd })),
       ufespObito.valor,
     );
     const recusadas = new Set(fiscal.isencoesRecusadas ?? []);

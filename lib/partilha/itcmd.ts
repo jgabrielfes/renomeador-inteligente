@@ -139,7 +139,7 @@ export interface AnaliseIsencaoBem {
  * ITCMD — não há pedido apartado.
  */
 export function analisarIsencoesPorBem(
-  bens: { tipo?: string; valor: number; descricao?: string }[],
+  bens: { tipo?: string; valor: number; descricao?: string; codigoItcmd?: string }[],
   ufespObito: number,
 ): AnaliseIsencaoBem[] {
   const teto = (u: number) => u * ufespObito;
@@ -147,10 +147,15 @@ export function analisarIsencoesPorBem(
   const totalFinanceiro = bens
     .filter((b) => b.tipo === 'FINANCEIRO' && b.valor > 0)
     .reduce((a, b) => a + b.valor, 0);
-  const ehVerbaAlimentar = (d: string) =>
-    /FGTS|PIS|PASEP|SALDO DE SALARIO|VERBA (TRABALHISTA|RESCISORIA)|RESCISO|PREVIDENC|APOSENTADORIA NAO RECEBIDA/i.test(
-      d.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
-    );
+  // C\u00f3digos da declara\u00e7\u00e3o do ITCMD-SP que s\u00e3o verbas do art. 6\u00ba, I, "e":
+  // 178 empregador \u00b7 179/180 previd\u00eancia \u00b7 181 alimentar judicial \u00b7 182 FGTS/PIS-PASEP.
+  const CODIGOS_VERBA = new Set(['178', '179', '180', '181', '182']);
+  const ehVerbaAlimentar = (b: { descricao?: string; codigoItcmd?: string }) =>
+    (b.codigoItcmd !== undefined && CODIGOS_VERBA.has(b.codigoItcmd)) ||
+    (b.descricao !== undefined &&
+      /FGTS|PIS|PASEP|SALDO DE SALARIO|VERBA (TRABALHISTA|RESCISORIA)|RESCISO|PREVIDENC|APOSENTADORIA NAO RECEBIDA|QUANTIA DEVIDA PELO EMPREGADOR|CARATER ALIMENTAR/i.test(
+        b.descricao.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      ));
 
   return bens.map((b, i) => {
     const base = {
@@ -207,7 +212,7 @@ export function analisarIsencoesPorBem(
         condicoes: [],
       };
     }
-    if (b.tipo === 'OUTRO' && b.descricao && ehVerbaAlimentar(b.descricao)) {
+    if (b.tipo === 'OUTRO' && ehVerbaAlimentar(b)) {
       return {
         ...base,
         verdito: 'ISENTO_POSSIVEL' as const,

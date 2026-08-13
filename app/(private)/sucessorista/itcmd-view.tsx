@@ -267,7 +267,7 @@ export function ItcmdView({
           {falecido.dataObito && bens.length > 0 ? (
             (() => {
               const analise = analisarIsencoesPorBem(
-                bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+                bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao, codigoItcmd: b.codigoItcmd })),
                 ufespDoAno(Number(falecido.dataObito.slice(0, 4))).valor,
               );
               const recusadas = new Set(fiscal.isencoesRecusadas ?? []);

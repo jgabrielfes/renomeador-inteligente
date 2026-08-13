@@ -216,6 +216,23 @@ aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
   );
   eq('veículo tributado', a5[0].verdito, 'TRIBUTADO');
   eq('FGTS isento e', [a5[1].verdito, a5[1].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
+  // Código da declaração do ITCMD-SP decide a alínea "e" mesmo com descrição
+  // neutra (178 = quantia devida pelo empregador); código fora do rol não.
+  const a6 = analisarIsencoesPorBem(
+    [
+      { tipo: 'OUTRO', valor: 90_000, descricao: 'Crédito a receber', codigoItcmd: '178' },
+      { tipo: 'OUTRO', valor: 90_000, descricao: 'Crédito a receber', codigoItcmd: '175' },
+    ],
+    ufesp,
+  );
+  eq('código 178: isento e', [a6[0].verdito, a6[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
+  eq('código 175 caro: tributado', a6[1].verdito, 'TRIBUTADO');
+  // Descrição com "caráter alimentar" também enquadra, sem código.
+  const a7 = analisarIsencoesPorBem(
+    [{ tipo: 'OUTRO', valor: 20_000, descricao: 'Verbas de caráter alimentar de decisão judicial' }],
+    ufesp,
+  );
+  eq('caráter alimentar por descrição: isento e', [a7[0].verdito, a7[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
 }
 
 
