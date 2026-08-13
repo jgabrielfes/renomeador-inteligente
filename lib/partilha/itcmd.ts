@@ -514,6 +514,7 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   // faixas sobre cada quinhão atualizado (LC 227/2026: progride pelo quinhão).
   let imposto: number;
   let parcelaImposto: ParcelaItcmd;
+  const parcelasExtras: ParcelaItcmd[] = [];
   if (progressivoVale) {
     const fator = baseCalculo > 0 ? baseAtualizada / baseCalculo : 0;
     imposto = centavos(
@@ -535,16 +536,30 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
     );
   } else {
     imposto = centavos(baseAtualizada * ALIQUOTA_ITCMD_SP);
+    // Discriminação: o imposto sobre a base histórica (arts. 9º e 16) e a
+    // atualização monetária pela UFESP (art. 15) saem em linhas separadas —
+    // a soma das duas é o mesmo 4% sobre a base atualizada.
+    const impostoHistorico = centavos(baseCalculo * ALIQUOTA_ITCMD_SP);
     parcelaImposto = {
       id: 'imposto',
-      rotulo: 'ITCMD (4% sobre a base atualizada)',
-      valor: imposto,
-      fundamento: 'Lei 10.705/2000, arts. 15 e 16 (redação da Lei 10.992/2001)',
-      detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}) → ${fmt(baseAtualizada)} pela UFESP de ${anoRef} (${fmt(uR.valor)}).`,
+      rotulo: 'ITCMD (4% sobre a base na data do óbito)',
+      valor: impostoHistorico,
+      fundamento: 'Lei 10.705/2000, arts. 9º e 16 (redação da Lei 10.992/2001)',
+      detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}).`,
     };
+    const atualizacao = centavos(imposto - impostoHistorico);
+    if (atualizacao !== 0) {
+      parcelasExtras.push({
+        id: 'atualizacao',
+        rotulo: 'Atualização monetária da base (variação da UFESP)',
+        valor: atualizacao,
+        fundamento: 'Lei 10.705/2000, art. 15',
+        detalhe: `${baseEmUfesps.toFixed(2)} UFESPs: ${fmt(uO.valor)} (${anoObito}) → ${fmt(uR.valor)} (${anoRef}) atualiza a base para ${fmt(baseAtualizada)}; sobre a diferença incide o 4%.`,
+      });
+    }
   }
 
-  const parcelas: ParcelaItcmd[] = [parcelaImposto];
+  const parcelas: ParcelaItcmd[] = [parcelaImposto, ...parcelasExtras];
 
   const vencimento = somarDias(dataObito, 180);
   const diasDesdeObito = diffDias(dataObito, dataReferencia);

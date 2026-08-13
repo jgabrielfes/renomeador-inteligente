@@ -55,7 +55,7 @@ export function escaparXml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-interface EstiloDoc {
+export interface EstiloDoc {
   fonte: string;
   /** Tamanho padrão do corpo em half-points. */
   tamanho: number;
@@ -68,6 +68,45 @@ interface EstiloDoc {
 }
 
 const ESTILO_PADRAO: EstiloDoc = { fonte: 'Times New Roman', tamanho: 24 };
+
+/**
+ * Paleta da identidade do Sucessorista em hex OOXML (sem "#") — mesmos
+ * valores de app/(private)/sucessorista/sucessorista.css; mudou lá, muda aqui.
+ */
+export const IDENTIDADE_SUCESSORISTA = {
+  papel: 'F6F4EE',
+  tinta: '1A2320',
+  tintaMedia: '4A544F',
+  bronze: '8A6D3B',
+  lacre: '9E2B25',
+  verde: '2E5E4E',
+  fioForte: 'B9B29C',
+} as const;
+
+/**
+ * Estilo-base das minutas do módulo: página "papel", texto "tinta" em serifa.
+ * A EXCEÇÃO é a escritura, que segue a formatação do modelo do balcão
+ * (Tahoma, preto no branco) por exigência do tabelionato.
+ */
+export const ESTILO_SUCESSORISTA: Partial<EstiloDoc> = {
+  fonte: 'Georgia',
+  tamanho: 22,
+  cor: IDENTIDADE_SUCESSORISTA.tinta,
+  fundo: IDENTIDADE_SUCESSORISTA.papel,
+};
+
+/** Títulos de seção em bronze com filete; cores explícitas são preservadas. */
+export function vestirIdentidade(paragrafos: Paragrafo[]): Paragrafo[] {
+  return paragrafos.map((par) =>
+    par.titulo
+      ? {
+          ...par,
+          cor: par.cor ?? IDENTIDADE_SUCESSORISTA.bronze,
+          filete: par.filete ?? IDENTIDADE_SUCESSORISTA.fioForte,
+        }
+      : par,
+  );
+}
 
 function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const jc = par.centrado ? 'center' : par.titulo ? (estilo.tituloCentrado ? 'center' : 'left') : 'both';

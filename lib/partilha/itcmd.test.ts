@@ -42,6 +42,8 @@ eq('sem multa de abertura', emDia.parcelas.some((p) => p.id === 'multa-abertura'
 eq('sem mora', emDia.diasDeAtraso, 0);
 aprox('total = imposto − desconto', emDia.total, 38_000);
 eq('vencimento = óbito + 180 dias', emDia.vencimento, '2026-11-06');
+eq('mesmo ano: sem parcela de atualização', emDia.parcelas.some((p) => p.id === 'atualizacao'), false);
+aprox('parcela do imposto = 4% da base histórica', emDia.parcelas.find((p) => p.id === 'imposto')!.valor, 40_000);
 
 // Protocolo entre 60 e 180 dias: multa de 10%, sem desconto (após 90 dias).
 const tardio10 = provisionarItcmd({
@@ -66,6 +68,10 @@ aprox('10.000 UFESPs', atualizada.baseEmUfesps, 10_000);
 aprox('base atualizada para UFESP 2026', atualizada.baseAtualizada, 384_200);
 aprox('imposto sobre a base atualizada', atualizada.imposto, 15_368);
 eq('sem multa de abertura (45 dias)', atualizada.parcelas.some((p) => p.id === 'multa-abertura'), false);
+// Discriminação do art. 15: imposto histórico + atualização = 4% da base atualizada.
+aprox('parcela do imposto histórico', atualizada.parcelas.find((p) => p.id === 'imposto')!.valor, 14_144);
+aprox('parcela de atualização monetária', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.valor, 1_224);
+eq('atualização fundamentada no art. 15', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.fundamento.includes('art. 15'), true);
 
 // Mora: óbito em 2024-03-01 → vencimento 2024-08-28; referência 2026-08-11.
 eq('vencimento', atualizada.vencimento, '2024-08-28');

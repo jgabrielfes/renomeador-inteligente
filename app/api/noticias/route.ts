@@ -13,31 +13,54 @@ const CACHE_MS = 15 * 60 * 1000;
 export interface Noticia {
   titulo: string;
   url: string;
+  /** Introdução/resumo da matéria, quando a listagem traz um. */
+  intro?: string;
 }
 
 let cache: { noticias: Noticia[]; em: number } | null = null;
 
+function limparTexto(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function extrairNoticias(html: string): Noticia[] {
   const vistas = new Set<string>();
-  const noticias: Noticia[] = [];
   // Âncoras de matéria da coluna: /coluna/migalhas-notariais-e-registrais/<id>/<slug>
   const re =
     /<a[^>]+href="(?:https?:\/\/www\.migalhas\.com\.br)?(\/coluna\/migalhas-notariais-e-registrais\/\d+[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const brutos: { url: string; titulo: string; inicio: number; fim: number }[] = [];
   for (const m of html.matchAll(re)) {
     const url = `https://www.migalhas.com.br${m[1]}`;
-    const titulo = m[2]
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#0?39;/g, "'")
-      .replace(/\s+/g, " ")
-      .trim();
+    const titulo = limparTexto(m[2]);
     if (!titulo || titulo.length < 20 || vistas.has(url)) continue;
     vistas.add(url);
-    noticias.push({ titulo: titulo.slice(0, 180), url });
-    if (noticias.length >= 12) break;
+    const inicio = m.index ?? 0;
+    brutos.push({ url, titulo, inicio, fim: inicio + m[0].length });
+    if (brutos.length >= 12) break;
   }
-  return noticias;
+  return brutos.map((b, i) => {
+    // A introdução da matéria costuma vir num <p> logo após a âncora do
+    // título, antes da âncora seguinte — melhor esforço, tolerante a mudança
+    // de layout da fonte (sem <p> reconhecível, a manchete sai sem intro).
+    const limite = i + 1 < brutos.length ? brutos[i + 1].inicio : b.fim + 2500;
+    const trecho = html.slice(b.fim, Math.min(limite, b.fim + 2500));
+    let intro: string | undefined;
+    for (const pm of trecho.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) {
+      const texto = limparTexto(pm[1]);
+      if (texto.length >= 60 && texto !== b.titulo) {
+        intro = texto.length > 260 ? `${texto.slice(0, 257).trimEnd()}…` : texto;
+        break;
+      }
+    }
+    return { titulo: b.titulo.slice(0, 180), url: b.url, intro };
+  });
 }
 
 export async function GET() {

@@ -60,7 +60,10 @@ export function PainelCaso({
 
   const parcela = (id: string) =>
     provisao?.parcelas.filter((p) => p.id === id).reduce((s, p) => s + p.valor, 0) ?? 0;
-  const multas = parcela('multa-abertura') + parcela('multa-moratoria');
+  const impostoBase = parcela('imposto');
+  const atualizacao = parcela('atualizacao');
+  const multaAbertura = parcela('multa-abertura');
+  const multaMoratoria = parcela('multa-moratoria');
   const juros = parcela('juros');
   const desconto = parcela('desconto');
 
@@ -159,21 +162,39 @@ export function PainelCaso({
         <div className="v num">{provisao ? brl(provisao.total) : '—'}</div>
         {provisao ? (
           <div className="pilha num">
+            {/* Parcelas discriminadas conforme a Lei 10.705/2000 — cada
+                encargo só aparece quando incide no caso. */}
             <div>
-              <span className="rotulo">ITCMD</span>
-              <span>{brl(imposto)}</span>
+              <span className="rotulo">ITCMD — 4% (art. 16)</span>
+              <span>{brl(impostoBase)}</span>
             </div>
-            <div>
-              <span className="rotulo">Multas</span>
-              <span>{brl(multas)}</span>
-            </div>
-            <div>
-              <span className="rotulo">Juros</span>
-              <span>{brl(juros)}</span>
-            </div>
+            {atualizacao !== 0 && (
+              <div>
+                <span className="rotulo">Atualização monetária — UFESP (art. 15)</span>
+                <span>{brl(atualizacao)}</span>
+              </div>
+            )}
+            {multaAbertura > 0 && (
+              <div>
+                <span className="rotulo">Multa de abertura tardia (art. 21, I)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(multaAbertura)}</span>
+              </div>
+            )}
+            {multaMoratoria > 0 && (
+              <div>
+                <span className="rotulo">Multa moratória (art. 19)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(multaMoratoria)}</span>
+              </div>
+            )}
+            {juros > 0 && (
+              <div>
+                <span className="rotulo">Juros de mora — Selic (art. 20)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(juros)}</span>
+              </div>
+            )}
             {desconto < 0 && (
               <div>
-                <span className="rotulo">Desconto de 5% (até 90 dias)</span>
+                <span className="rotulo">Desconto de 5% até 90 dias (art. 17, §2º)</span>
                 <span style={{ color: 'var(--verde-registro)' }}>− {brl(-desconto)}</span>
               </div>
             )}

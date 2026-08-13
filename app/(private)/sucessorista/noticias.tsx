@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 interface Noticia {
   titulo: string;
   url: string;
+  intro?: string;
 }
 
 const FONTE = 'https://www.migalhas.com.br/coluna/migalhas-notariais-e-registrais';
@@ -35,7 +36,8 @@ export function NoticiasTicker() {
 
   useEffect(() => {
     if (noticias.length < 2) return;
-    const t = setInterval(() => setIndice((i) => (i + 1) % noticias.length), 8000);
+    // 10s por notícia: agora há título + introdução para ler.
+    const t = setInterval(() => setIndice((i) => (i + 1) % noticias.length), 10_000);
     return () => clearInterval(t);
   }, [noticias.length]);
 
@@ -44,9 +46,14 @@ export function NoticiasTicker() {
 
   return (
     <div className="noticias-ticker" role="complementary" aria-label="Notícias notariais e registrais">
-      <a className="rotulo" href={FONTE} target="_blank" rel="noopener noreferrer">
-        Migalhas Notariais e Registrais
-      </a>
+      <div className="cabeca">
+        <a className="rotulo" href={FONTE} target="_blank" rel="noopener noreferrer">
+          Migalhas Notariais e Registrais
+        </a>
+        <span className="num contagem">
+          {indice + 1}/{noticias.length}
+        </span>
+      </div>
       <a
         key={atual.url}
         className="manchete"
@@ -57,9 +64,7 @@ export function NoticiasTicker() {
       >
         {atual.titulo}
       </a>
-      <span className="num contagem">
-        {indice + 1}/{noticias.length}
-      </span>
+      {atual.intro && <p className="introducao">{atual.intro}</p>}
     </div>
   );
 }

@@ -9,7 +9,14 @@
  * digitadas, e tudo sai como MINUTA para revisão do advogado.
  */
 
-import { montarDocx, type LogoDocx, type Paragrafo } from './docx';
+import {
+  montarDocx,
+  vestirIdentidade,
+  ESTILO_SUCESSORISTA,
+  IDENTIDADE_SUCESSORISTA as IDENTIDADE,
+  type LogoDocx,
+  type Paragrafo,
+} from './docx';
 import { qualificar, dataPorExtenso, brl, LACUNA } from './peticao';
 import { formatarData, type Qualificacao, type DadosFalecido } from './familia';
 import type { Resultado } from './types';
@@ -317,24 +324,11 @@ export async function montarHonorariosDocx(d: DadosHonorariosDocx): Promise<Blob
           alturaPx: d.escritorio.logoAlturaPx,
         }
       : null;
-  return montarDocx(p, { logo });
+  // Proposta e contrato também vestem a identidade do Sucessorista.
+  return montarDocx(vestirIdentidade(p), { logo, estilo: ESTILO_SUCESSORISTA });
 }
 
 /* ---------- folha de apresentação ao cliente ---------- */
-
-/**
- * Paleta da identidade do Sucessorista em hex OOXML (sem "#") — mesmos
- * valores de app/(private)/sucessorista/sucessorista.css; mudou lá, muda aqui.
- */
-const IDENTIDADE = {
-  papel: 'F6F4EE',
-  tinta: '1A2320',
-  tintaMedia: '4A544F',
-  bronze: '8A6D3B',
-  lacre: '9E2B25',
-  verde: '2E5E4E',
-  fioForte: 'B9B29C',
-} as const;
 
 export interface DadosApresentacao {
   escritorio: DadosEscritorio;
@@ -477,16 +471,5 @@ export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob
   // Identidade do Sucessorista na folha: página "papel", texto "tinta" em
   // serifa e títulos de seção em bronze com filete — o mesmo livro de notas
   // da plataforma, agora impresso para o cliente.
-  const comIdentidade = p.map((par) =>
-    par.titulo ? { ...par, cor: par.cor ?? IDENTIDADE.bronze, filete: IDENTIDADE.fioForte } : par,
-  );
-  return montarDocx(comIdentidade, {
-    logo,
-    estilo: {
-      fonte: 'Georgia',
-      tamanho: 22,
-      cor: IDENTIDADE.tinta,
-      fundo: IDENTIDADE.papel,
-    },
-  });
+  return montarDocx(vestirIdentidade(p), { logo, estilo: ESTILO_SUCESSORISTA });
 }

@@ -13,7 +13,7 @@
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from './types';
 import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
-import { montarDocx, type Paragrafo } from './docx';
+import { montarDocx, vestirIdentidade, ESTILO_SUCESSORISTA, type Paragrafo } from './docx';
 
 export interface DadosPeticao {
   falecido: DadosFalecido;
@@ -292,5 +292,6 @@ export async function montarPeticaoDocx(
     ]);
     paragrafos.splice(fecho < 0 ? paragrafos.length : fecho, 0, ...inseridos);
   }
-  return montarDocx(paragrafos);
+  // Minuta ao Tabelionato com a identidade do Sucessorista (papel/tinta/bronze).
+  return montarDocx(vestirIdentidade(paragrafos), { estilo: ESTILO_SUCESSORISTA });
 }
