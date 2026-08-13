@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 
 import type { Bem, TipoBem } from '@/lib/partilha/types';
+import { TIPOS_BEM_ITCMD, tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
 import type { StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { montarChecklistAcervo } from '@/lib/partilha/acervo';
 import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
@@ -52,6 +53,44 @@ const ROTULO_TIPO_BEM: Record<TipoBem, string> = {
 
 const VALOR_PTBR = /^\d{1,3}(\.\d{3})*(,\d{1,2})?$|^\d+([.,]\d{1,2})?$/;
 
+/**
+ * Seletor de tipo do bem com a lista OFICIAL da declaração do ITCMD-SP
+ * (códigos 101–199) — janela rolável igual à do sistema da Sefaz. O código
+ * escolhido mapeia para o TipoBem interno (isenções, Detran, cláusulas).
+ */
+function SeletorTipoItcmd({
+  value,
+  onChange,
+  invalido,
+}: {
+  value: string;
+  onChange: (codigo: string) => void;
+  invalido?: boolean;
+}) {
+  return (
+    <Select value={value || null} onValueChange={(v) => v && onChange(String(v))}>
+      <SelectTrigger aria-label="Tipo do bem (lista do ITCMD-SP)" aria-invalid={invalido}>
+        <SelectValue placeholder="Selecione na lista do ITCMD-SP…" />
+      </SelectTrigger>
+      <SelectContent className="max-h-[min(60vh,420px)] w-max max-w-[min(92vw,540px)]">
+        {TIPOS_BEM_ITCMD.map((t) => (
+          <SelectItem key={t.codigo} value={t.codigo}>
+            <span className="num">{t.codigo}</span>
+            <span className="whitespace-normal">{t.rotulo}</span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Rótulo curto do tipo para as linhas da lista: o código + nome oficial. */
+function rotuloDoBem(bem: Bem): string {
+  const oficial = tipoBemItcmd(bem.codigoItcmd);
+  if (oficial) return `${oficial.codigo} · ${oficial.rotulo}`;
+  return ROTULO_TIPO_BEM[bem.tipo ?? 'OUTRO'];
+}
+
 const esquemaBem = z.object({
   descricao: z.string().trim().min(1, 'Descreva o bem — ex.: "Imóvel mat. 12.345 — Guarulhos/SP".'),
   valor: z
@@ -59,7 +98,7 @@ const esquemaBem = z.object({
     .trim()
     .min(1, 'Informe o valor na data do óbito.')
     .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
-  tipo: z.enum(['IMOVEL', 'VEICULO', 'FINANCEIRO', 'QUOTAS', 'OUTRO']),
+  codigo: z.string().min(1, 'Escolha o tipo na lista da declaração do ITCMD-SP.'),
   natureza: z.enum(['COMUM', 'PARTICULAR']),
 });
 
@@ -107,7 +146,7 @@ export function AcervoView({
     formState: { errors },
   } = useForm<NovoBem>({
     resolver: zodResolver(esquemaBem),
-    defaultValues: { descricao: '', valor: '', tipo: 'IMOVEL', natureza: 'COMUM' },
+    defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM' },
   });
 
   const feitos = checklist.filter(
@@ -122,10 +161,11 @@ export function AcervoView({
         descricao: dados.descricao,
         valor: paraDecimal(dados.valor),
         natureza: dados.natureza,
-        tipo: dados.tipo,
+        tipo: tipoBemItcmd(dados.codigo)?.tipo ?? 'OUTRO',
+        codigoItcmd: dados.codigo,
       },
     ]);
-    reset({ descricao: '', valor: '', tipo: dados.tipo, natureza: dados.natureza });
+    reset({ descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza });
   };
 
   return (
@@ -168,26 +208,20 @@ export function AcervoView({
             />
             <FieldError errors={[errors.valor]} />
           </Field>
-          <Field>
-            <FieldLabel>Tipo do bem</FieldLabel>
+          <Field data-invalid={Boolean(errors.codigo)}>
+            <FieldLabel>Tipo do bem (declaração do ITCMD-SP)</FieldLabel>
             <Controller
               control={control}
-              name="tipo"
+              name="codigo"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={(v) => v && field.onChange(String(v))}>
-                  <SelectTrigger aria-label="Tipo do bem">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="IMOVEL">Imóvel</SelectItem>
-                    <SelectItem value="VEICULO">Veículo</SelectItem>
-                    <SelectItem value="FINANCEIRO">Conta/aplicação</SelectItem>
-                    <SelectItem value="QUOTAS">Quotas/ações</SelectItem>
-                    <SelectItem value="OUTRO">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SeletorTipoItcmd
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalido={Boolean(errors.codigo)}
+                />
               )}
             />
+            <FieldError errors={[errors.codigo]} />
           </Field>
           <Field>
             <FieldLabel>Natureza</FieldLabel>
@@ -390,14 +424,14 @@ function LinhaBem({
   const [editando, setEditando] = useState(false);
   const [descricao, setDescricao] = useState(bem.descricao);
   const [valor, setValor] = useState('');
-  const [tipo, setTipo] = useState<TipoBem>(bem.tipo ?? 'OUTRO');
+  const [codigo, setCodigo] = useState(bem.codigoItcmd ?? '');
   const [natureza, setNatureza] = useState<Bem['natureza']>(bem.natureza);
   const [erro, setErro] = useState<string | null>(null);
 
   const abrir = () => {
     setDescricao(bem.descricao);
     setValor(paraMascara(bem.valor));
-    setTipo(bem.tipo ?? 'OUTRO');
+    setCodigo(bem.codigoItcmd ?? '');
     setNatureza(bem.natureza);
     setErro(null);
     setEditando(true);
@@ -412,7 +446,16 @@ function LinhaBem({
       setErro('Valor inválido — use o formato 900.000,00.');
       return;
     }
-    onSalvar({ ...bem, descricao: descricao.trim(), valor: paraDecimal(valor), tipo, natureza });
+    // Bem lido/antigo pode não ter código — sem escolha, o tipo interno fica como está.
+    const oficial = tipoBemItcmd(codigo);
+    onSalvar({
+      ...bem,
+      descricao: descricao.trim(),
+      valor: paraDecimal(valor),
+      tipo: oficial ? oficial.tipo : bem.tipo,
+      codigoItcmd: oficial ? codigo : bem.codigoItcmd,
+      natureza,
+    });
     setEditando(false);
   };
 
@@ -424,7 +467,7 @@ function LinhaBem({
           <strong>{bem.descricao}</strong>
           <span className="fracao num">
             {' '}
-            · {brl(bem.valor)} · {ROTULO_TIPO_BEM[bem.tipo ?? 'OUTRO']} ·{' '}
+            · {brl(bem.valor)} · {rotuloDoBem(bem)} ·{' '}
             {bem.natureza === 'COMUM' ? 'comum' : 'particular'}
           </span>
         </span>
@@ -485,19 +528,8 @@ function LinhaBem({
           <CurrencyInput value={valor} onChange={setValor} placeholder="900.000,00" />
         </label>
         <label className="campo">
-          Tipo do bem
-          <Select value={tipo} onValueChange={(v) => v && setTipo(v as TipoBem)}>
-            <SelectTrigger aria-label="Tipo do bem">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="IMOVEL">Imóvel</SelectItem>
-              <SelectItem value="VEICULO">Veículo</SelectItem>
-              <SelectItem value="FINANCEIRO">Conta/aplicação</SelectItem>
-              <SelectItem value="QUOTAS">Quotas/ações</SelectItem>
-              <SelectItem value="OUTRO">Outro</SelectItem>
-            </SelectContent>
-          </Select>
+          Tipo do bem (declaração do ITCMD-SP)
+          <SeletorTipoItcmd value={codigo} onChange={setCodigo} />
         </label>
         <label className="campo">
           Natureza

@@ -42,6 +42,8 @@ eq('sem multa de abertura', emDia.parcelas.some((p) => p.id === 'multa-abertura'
 eq('sem mora', emDia.diasDeAtraso, 0);
 aprox('total = imposto − desconto', emDia.total, 38_000);
 eq('vencimento = óbito + 180 dias', emDia.vencimento, '2026-11-06');
+eq('mesmo ano: sem parcela de atualização', emDia.parcelas.some((p) => p.id === 'atualizacao'), false);
+aprox('parcela do imposto = 4% da base histórica', emDia.parcelas.find((p) => p.id === 'imposto')!.valor, 40_000);
 
 // Protocolo entre 60 e 180 dias: multa de 10%, sem desconto (após 90 dias).
 const tardio10 = provisionarItcmd({
@@ -66,6 +68,10 @@ aprox('10.000 UFESPs', atualizada.baseEmUfesps, 10_000);
 aprox('base atualizada para UFESP 2026', atualizada.baseAtualizada, 384_200);
 aprox('imposto sobre a base atualizada', atualizada.imposto, 15_368);
 eq('sem multa de abertura (45 dias)', atualizada.parcelas.some((p) => p.id === 'multa-abertura'), false);
+// Discriminação do art. 15: imposto histórico + atualização = 4% da base atualizada.
+aprox('parcela do imposto histórico', atualizada.parcelas.find((p) => p.id === 'imposto')!.valor, 14_144);
+aprox('parcela de atualização monetária', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.valor, 1_224);
+eq('atualização fundamentada no art. 15', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.fundamento.includes('art. 15'), true);
 
 // Mora: óbito em 2024-03-01 → vencimento 2024-08-28; referência 2026-08-11.
 eq('vencimento', atualizada.vencimento, '2024-08-28');
@@ -216,6 +222,23 @@ aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
   );
   eq('veículo tributado', a5[0].verdito, 'TRIBUTADO');
   eq('FGTS isento e', [a5[1].verdito, a5[1].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
+  // Código da declaração do ITCMD-SP decide a alínea "e" mesmo com descrição
+  // neutra (178 = quantia devida pelo empregador); código fora do rol não.
+  const a6 = analisarIsencoesPorBem(
+    [
+      { tipo: 'OUTRO', valor: 90_000, descricao: 'Crédito a receber', codigoItcmd: '178' },
+      { tipo: 'OUTRO', valor: 90_000, descricao: 'Crédito a receber', codigoItcmd: '175' },
+    ],
+    ufesp,
+  );
+  eq('código 178: isento e', [a6[0].verdito, a6[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
+  eq('código 175 caro: tributado', a6[1].verdito, 'TRIBUTADO');
+  // Descrição com "caráter alimentar" também enquadra, sem código.
+  const a7 = analisarIsencoesPorBem(
+    [{ tipo: 'OUTRO', valor: 20_000, descricao: 'Verbas de caráter alimentar de decisão judicial' }],
+    ufesp,
+  );
+  eq('caráter alimentar por descrição: isento e', [a7[0].verdito, a7[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "e"']);
 }
 
 

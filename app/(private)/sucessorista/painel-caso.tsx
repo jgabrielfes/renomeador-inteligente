@@ -18,6 +18,8 @@ import {
   type ProvisaoItcmd,
   type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
+import { totalEstimado, type OportunidadeEconomia } from '@/lib/partilha/economia';
+import type { ProjecaoCustos } from '@/lib/partilha/custas';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -42,6 +44,8 @@ export function PainelCaso({
   provisao,
   isencoes,
   faixas,
+  economias = [],
+  custos = null,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -53,6 +57,8 @@ export function PainelCaso({
   provisao: ProvisaoItcmd | null;
   isencoes: ResultadoIsencoes | null;
   faixas: FaixaProgressiva[];
+  economias?: OportunidadeEconomia[];
+  custos?: ProjecaoCustos | null;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -60,7 +66,10 @@ export function PainelCaso({
 
   const parcela = (id: string) =>
     provisao?.parcelas.filter((p) => p.id === id).reduce((s, p) => s + p.valor, 0) ?? 0;
-  const multas = parcela('multa-abertura') + parcela('multa-moratoria');
+  const impostoBase = parcela('imposto');
+  const atualizacao = parcela('atualizacao');
+  const multaAbertura = parcela('multa-abertura');
+  const multaMoratoria = parcela('multa-moratoria');
   const juros = parcela('juros');
   const desconto = parcela('desconto');
 
@@ -155,33 +164,112 @@ export function PainelCaso({
       )}
 
       <div className="metrica">
-        <div className="k">Custo fiscal do inventário</div>
-        <div className="v num">{provisao ? brl(provisao.total) : '—'}</div>
+        <div className="k">Custo projetado do inventário</div>
+        <div className="v num">
+          {provisao ? brl(provisao.total + (custos?.total ?? 0)) : '—'}
+        </div>
         {provisao ? (
           <div className="pilha num">
+            {/* Parcelas discriminadas conforme a Lei 10.705/2000 — cada
+                encargo só aparece quando incide no caso. */}
             <div>
-              <span className="rotulo">ITCMD</span>
-              <span>{brl(imposto)}</span>
+              <span className="rotulo">ITCMD — 4% (art. 16)</span>
+              <span>{brl(impostoBase)}</span>
             </div>
-            <div>
-              <span className="rotulo">Multas</span>
-              <span>{brl(multas)}</span>
-            </div>
-            <div>
-              <span className="rotulo">Juros</span>
-              <span>{brl(juros)}</span>
-            </div>
+            {atualizacao !== 0 && (
+              <div>
+                <span className="rotulo">Atualização monetária — UFESP (art. 15)</span>
+                <span>{brl(atualizacao)}</span>
+              </div>
+            )}
+            {multaAbertura > 0 && (
+              <div>
+                <span className="rotulo">Multa de abertura tardia (art. 21, I)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(multaAbertura)}</span>
+              </div>
+            )}
+            {multaMoratoria > 0 && (
+              <div>
+                <span className="rotulo">Multa moratória (art. 19)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(multaMoratoria)}</span>
+              </div>
+            )}
+            {juros > 0 && (
+              <div>
+                <span className="rotulo">Juros de mora — Selic (art. 20)</span>
+                <span style={{ color: 'var(--lacre)' }}>{brl(juros)}</span>
+              </div>
+            )}
             {desconto < 0 && (
               <div>
-                <span className="rotulo">Desconto de 5% (até 90 dias)</span>
+                <span className="rotulo">Desconto de 5% até 90 dias (art. 17, §2º)</span>
                 <span style={{ color: 'var(--verde-registro)' }}>− {brl(-desconto)}</span>
               </div>
+            )}
+            {custos && (
+              <>
+                {custos.parcelas.some((p) => p.id === 'taxa-judiciaria') ? (
+                  <div>
+                    <span className="rotulo">Taxa judiciária (Lei 11.608/2003)</span>
+                    <span>
+                      {brl(custos.parcelas.find((p) => p.id === 'taxa-judiciaria')!.valor)}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="rotulo">Escritura e atos notariais (est.)</span>
+                    <span>
+                      {brl(
+                        custos.parcelas
+                          .filter((p) => p.id.startsWith('escritura'))
+                          .reduce((a, p) => a + p.valor, 0),
+                      )}
+                    </span>
+                  </div>
+                )}
+                {custos.parcelas.some((p) => p.id.startsWith('registro')) && (
+                  <div>
+                    <span className="rotulo">Registro de imóveis (est.)</span>
+                    <span>
+                      {brl(
+                        custos.parcelas
+                          .filter((p) => p.id.startsWith('registro'))
+                          .reduce((a, p) => a + p.valor, 0),
+                      )}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <span className="rotulo">Certidões (aprox.)</span>
+                  <span>
+                    {brl(
+                      custos.parcelas
+                        .filter((p) => p.id.startsWith('certid'))
+                        .reduce((a, p) => a + p.valor, 0),
+                    )}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         ) : (
           <p className="rodape">Informe a data do óbito e ao menos um bem com valor.</p>
         )}
       </div>
+
+      {economias.length > 0 && (
+        <div className="metrica">
+          <div className="k">Oportunidades de economia</div>
+          <div className="v sm num" style={{ color: 'var(--verde-registro)' }}>
+            {brl(totalEstimado(economias))}
+          </div>
+          <p className="rodape">
+            {economias.filter((o) => o.aplicada).length} garantida(s) ·{' '}
+            {economias.filter((o) => !o.aplicada).length} sugestão(ões) — detalhes no item
+            III (Partilha).
+          </p>
+        </div>
+      )}
 
       <div className="metrica">
         <div className="k">Acervo</div>

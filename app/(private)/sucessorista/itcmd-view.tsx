@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 
 import type { Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
+import type { ProjecaoCustos } from '@/lib/partilha/custas';
 import {
   formatarData,
   ROTULOS_PERGUNTAS_ITCMD,
@@ -82,6 +83,7 @@ export function ItcmdView({
   setFiscal,
   isencoes,
   provisao,
+  custos,
   hoje,
   irParaFamilia,
   irParaAcervo,
@@ -98,6 +100,7 @@ export function ItcmdView({
   setFiscal: (f: EstadoFiscal) => void;
   isencoes: ResultadoIsencoes | null;
   provisao: ProvisaoItcmd | null;
+  custos: ProjecaoCustos | null;
   hoje: string;
   irParaFamilia: () => void;
   irParaAcervo: () => void;
@@ -267,7 +270,7 @@ export function ItcmdView({
           {falecido.dataObito && bens.length > 0 ? (
             (() => {
               const analise = analisarIsencoesPorBem(
-                bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+                bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao, codigoItcmd: b.codigoItcmd })),
                 ufespDoAno(Number(falecido.dataObito.slice(0, 4))).valor,
               );
               const recusadas = new Set(fiscal.isencoesRecusadas ?? []);
@@ -461,6 +464,60 @@ export function ItcmdView({
               {a}
             </p>
           ))}
+
+          {/* ---------- planilha de custos além do imposto ---------- */}
+          {custos && (
+            <>
+              <h2>Projeção de custos do inventário (além do imposto)</h2>
+              <p className="subtitulo" style={{ marginBottom: 10 }}>
+                Emolumentos pelas tabelas paulistas (Lei 11.331/2002, atualizadas todo ano
+                pela Anoreg-SP), com estimativa CONSERVADORA: maior ISS municipal do estado
+                (5%) e arredondamento para cima — para não errar o orçamento para menos.
+                Atenção à forma da partilha: ato inter vivos embutido (doação, cessão,
+                usufruto/nua-propriedade) gera atos A MAIS no tabelionato e no registro.
+              </p>
+              <div className="espelho">
+                <div className="cabeca">
+                  <span>Parcela</span>
+                  <span>Fundamento</span>
+                  <span style={{ textAlign: 'right' }}>Valor</span>
+                </div>
+                {custos.parcelas.map((p) => (
+                  <div key={p.id}>
+                    <div className="lanc">
+                      <span className="nome">
+                        {p.rotulo}
+                        {p.aproximado ? ' *' : ''}
+                      </span>
+                      <span className="fracao">{p.fundamento.replace('Lei 11.331/2002, ', '')}</span>
+                      <span className="valor num" style={{ fontSize: 17 }}>{brl(p.valor)}</span>
+                    </div>
+                    {p.detalhe && <div className="fund">{p.detalhe}</div>}
+                  </div>
+                ))}
+                <div className="lanc">
+                  <span className="nome">Custos cartorários{custos.parcelas.some((p) => p.id === 'taxa-judiciaria') ? ' e judiciais' : ''}</span>
+                  <span />
+                  <span className="valor num" style={{ fontSize: 18 }}>{brl(custos.total)}</span>
+                </div>
+                <div className="lanc">
+                  <span className="nome">CUSTO TOTAL PROJETADO (imposto + cartório{custos.parcelas.some((p) => p.id === 'taxa-judiciaria') ? ' + justiça' : ''})</span>
+                  <span />
+                  <span className="valor num" style={{ fontSize: 22 }}>{brl(provisao.total + custos.total)}</span>
+                </div>
+              </div>
+              <p className="fund" style={{ marginTop: 6 }}>
+                * valor aproximado — conferir na tabela de emolumentos vigente
+                (anoregsp.org.br · registrodeimoveis.org.br · registrocivil.org.br) antes de
+                fechar o orçamento; certidões podem variar com averbações e taxas de emissão.
+              </p>
+              {custos.avisos.map((a, i) => (
+                <p key={i} className="fund" style={{ marginTop: 6 }}>
+                  {a}
+                </p>
+              ))}
+            </>
+          )}
 
           {/* ---------- cenário da reforma ---------- */}
           <h2>Cenário da reforma (EC 132/2023 · LC 227/2026)</h2>

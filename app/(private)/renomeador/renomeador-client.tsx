@@ -1,5 +1,7 @@
 "use client";
 
+import "./renomeador.css";
+
 import * as React from "react";
 import Link from "next/link";
 import JSZip from "jszip";
@@ -974,6 +976,9 @@ export default function Home({
   }
 
   return (
+    // O wrapper pinta a página inteira com o "papel" da identidade; o main
+    // continua sendo a coluna central de conteúdo.
+    <div className="renomeador-tema flex flex-1 flex-col">
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-10">
       <header className="space-y-2">
         <Link
@@ -1565,5 +1570,6 @@ export default function Home({
         }}
       />
     </main>
+    </div>
   );
 }

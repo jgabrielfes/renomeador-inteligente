@@ -12,7 +12,7 @@
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from './types';
 import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
-import { montarDocx, type Paragrafo } from './docx';
+import { montarDocx, vestirIdentidade, ESTILO_SUCESSORISTA, type Paragrafo } from './docx';
 import { qualificar, dataPorExtenso, brl, LACUNA, ROTULO_REGIME } from './peticao';
 import type { SecaoRedigida } from './honorarios-docx';
 
@@ -202,5 +202,6 @@ export async function montarPeticaoJudicialDocx(d: DadosPeticaoJudicial): Promis
   p.push({ texto: LACUNA, centrado: true });
   p.push({ texto: `Advogado(a) — OAB/${LACUNA}`, centrado: true });
 
-  return montarDocx(p);
+  // Petição inicial com a identidade do Sucessorista (papel/tinta/bronze).
+  return montarDocx(vestirIdentidade(p), { estilo: ESTILO_SUCESSORISTA });
 }

@@ -139,7 +139,7 @@ export interface AnaliseIsencaoBem {
  * ITCMD — não há pedido apartado.
  */
 export function analisarIsencoesPorBem(
-  bens: { tipo?: string; valor: number; descricao?: string }[],
+  bens: { tipo?: string; valor: number; descricao?: string; codigoItcmd?: string }[],
   ufespObito: number,
 ): AnaliseIsencaoBem[] {
   const teto = (u: number) => u * ufespObito;
@@ -147,10 +147,15 @@ export function analisarIsencoesPorBem(
   const totalFinanceiro = bens
     .filter((b) => b.tipo === 'FINANCEIRO' && b.valor > 0)
     .reduce((a, b) => a + b.valor, 0);
-  const ehVerbaAlimentar = (d: string) =>
-    /FGTS|PIS|PASEP|SALDO DE SALARIO|VERBA (TRABALHISTA|RESCISORIA)|RESCISO|PREVIDENC|APOSENTADORIA NAO RECEBIDA/i.test(
-      d.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
-    );
+  // C\u00f3digos da declara\u00e7\u00e3o do ITCMD-SP que s\u00e3o verbas do art. 6\u00ba, I, "e":
+  // 178 empregador \u00b7 179/180 previd\u00eancia \u00b7 181 alimentar judicial \u00b7 182 FGTS/PIS-PASEP.
+  const CODIGOS_VERBA = new Set(['178', '179', '180', '181', '182']);
+  const ehVerbaAlimentar = (b: { descricao?: string; codigoItcmd?: string }) =>
+    (b.codigoItcmd !== undefined && CODIGOS_VERBA.has(b.codigoItcmd)) ||
+    (b.descricao !== undefined &&
+      /FGTS|PIS|PASEP|SALDO DE SALARIO|VERBA (TRABALHISTA|RESCISORIA)|RESCISO|PREVIDENC|APOSENTADORIA NAO RECEBIDA|QUANTIA DEVIDA PELO EMPREGADOR|CARATER ALIMENTAR/i.test(
+        b.descricao.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      ));
 
   return bens.map((b, i) => {
     const base = {
@@ -207,7 +212,7 @@ export function analisarIsencoesPorBem(
         condicoes: [],
       };
     }
-    if (b.tipo === 'OUTRO' && b.descricao && ehVerbaAlimentar(b.descricao)) {
+    if (b.tipo === 'OUTRO' && ehVerbaAlimentar(b)) {
       return {
         ...base,
         verdito: 'ISENTO_POSSIVEL' as const,
@@ -509,6 +514,7 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   // faixas sobre cada quinhão atualizado (LC 227/2026: progride pelo quinhão).
   let imposto: number;
   let parcelaImposto: ParcelaItcmd;
+  const parcelasExtras: ParcelaItcmd[] = [];
   if (progressivoVale) {
     const fator = baseCalculo > 0 ? baseAtualizada / baseCalculo : 0;
     imposto = centavos(
@@ -530,16 +536,30 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
     );
   } else {
     imposto = centavos(baseAtualizada * ALIQUOTA_ITCMD_SP);
+    // Discriminação: o imposto sobre a base histórica (arts. 9º e 16) e a
+    // atualização monetária pela UFESP (art. 15) saem em linhas separadas —
+    // a soma das duas é o mesmo 4% sobre a base atualizada.
+    const impostoHistorico = centavos(baseCalculo * ALIQUOTA_ITCMD_SP);
     parcelaImposto = {
       id: 'imposto',
-      rotulo: 'ITCMD (4% sobre a base atualizada)',
-      valor: imposto,
-      fundamento: 'Lei 10.705/2000, arts. 15 e 16 (redação da Lei 10.992/2001)',
-      detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}) → ${fmt(baseAtualizada)} pela UFESP de ${anoRef} (${fmt(uR.valor)}).`,
+      rotulo: 'ITCMD (4% sobre a base na data do óbito)',
+      valor: impostoHistorico,
+      fundamento: 'Lei 10.705/2000, arts. 9º e 16 (redação da Lei 10.992/2001)',
+      detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}).`,
     };
+    const atualizacao = centavos(imposto - impostoHistorico);
+    if (atualizacao !== 0) {
+      parcelasExtras.push({
+        id: 'atualizacao',
+        rotulo: 'Atualização monetária da base (variação da UFESP)',
+        valor: atualizacao,
+        fundamento: 'Lei 10.705/2000, art. 15',
+        detalhe: `${baseEmUfesps.toFixed(2)} UFESPs: ${fmt(uO.valor)} (${anoObito}) → ${fmt(uR.valor)} (${anoRef}) atualiza a base para ${fmt(baseAtualizada)}; sobre a diferença incide o 4%.`,
+      });
+    }
   }
 
-  const parcelas: ParcelaItcmd[] = [parcelaImposto];
+  const parcelas: ParcelaItcmd[] = [parcelaImposto, ...parcelasExtras];
 
   const vencimento = somarDias(dataObito, 180);
   const diasDesdeObito = diffDias(dataObito, dataReferencia);

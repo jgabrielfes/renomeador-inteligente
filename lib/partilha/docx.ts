@@ -21,6 +21,10 @@ export interface Paragrafo {
   tamanho?: number;
   /** Retângulo em volta do parágrafo (títulos de cláusula dos modelos). */
   moldura?: boolean;
+  /** Cor do texto em hex RRGGBB sem "#" (default: cor do documento). */
+  cor?: string;
+  /** Filete inferior na cor dada (hex RRGGBB) — títulos de seção da identidade. */
+  filete?: string;
 }
 
 /** Tabela simples com bordas (formato dos modelos notariais). */
@@ -51,27 +55,76 @@ export function escaparXml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-interface EstiloDoc {
+export interface EstiloDoc {
   fonte: string;
   /** Tamanho padrão do corpo em half-points. */
   tamanho: number;
   /** Títulos de seção centralizados (modelos notariais) em vez de à esquerda. */
   tituloCentrado?: boolean;
+  /** Cor padrão do texto em hex RRGGBB (default: automática/preta). */
+  cor?: string;
+  /** Cor de fundo da PÁGINA em hex RRGGBB — identidade "papel" do Sucessorista. */
+  fundo?: string;
 }
 
 const ESTILO_PADRAO: EstiloDoc = { fonte: 'Times New Roman', tamanho: 24 };
+
+/**
+ * Paleta da identidade do Sucessorista em hex OOXML (sem "#") — mesmos
+ * valores de app/(private)/sucessorista/sucessorista.css; mudou lá, muda aqui.
+ */
+export const IDENTIDADE_SUCESSORISTA = {
+  papel: 'F6F4EE',
+  tinta: '1A2320',
+  tintaMedia: '4A544F',
+  bronze: '8A6D3B',
+  lacre: '9E2B25',
+  verde: '2E5E4E',
+  fioForte: 'B9B29C',
+} as const;
+
+/**
+ * Estilo-base das minutas do módulo: página "papel", texto "tinta" em serifa.
+ * A EXCEÇÃO é a escritura, que segue a formatação do modelo do balcão
+ * (Tahoma, preto no branco) por exigência do tabelionato.
+ */
+export const ESTILO_SUCESSORISTA: Partial<EstiloDoc> = {
+  fonte: 'Georgia',
+  tamanho: 22,
+  cor: IDENTIDADE_SUCESSORISTA.tinta,
+  fundo: IDENTIDADE_SUCESSORISTA.papel,
+};
+
+/** Títulos de seção em bronze com filete; cores explícitas são preservadas. */
+export function vestirIdentidade(paragrafos: Paragrafo[]): Paragrafo[] {
+  return paragrafos.map((par) =>
+    par.titulo
+      ? {
+          ...par,
+          cor: par.cor ?? IDENTIDADE_SUCESSORISTA.bronze,
+          filete: par.filete ?? IDENTIDADE_SUCESSORISTA.fioForte,
+        }
+      : par,
+  );
+}
 
 function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const jc = par.centrado ? 'center' : par.titulo ? (estilo.tituloCentrado ? 'center' : 'left') : 'both';
   const negrito = par.negrito || par.titulo;
   const sz = String(par.tamanho ?? (par.discreto ? 18 : estilo.tamanho));
+  const cor = par.cor ?? estilo.cor;
   const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
     negrito ? '<w:b/>' : ''
-  }${par.sublinhado ? '<w:u w:val="single"/>' : ''}<w:sz w:val="${sz}"/></w:rPr>`;
-  // Retângulo do título (mesmas bordas do modelo notarial).
+  }${cor ? `<w:color w:val="${cor}"/>` : ''}${
+    par.sublinhado ? '<w:u w:val="single"/>' : ''
+  }<w:sz w:val="${sz}"/></w:rPr>`;
+  // Retângulo do título (mesmas bordas do modelo notarial) ou filete inferior
+  // colorido (títulos de seção da identidade do Sucessorista).
   const pBdr = par.moldura
     ? '<w:pBdr><w:top w:val="single" w:sz="4" w:space="1" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="1" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="4" w:color="auto"/></w:pBdr>'
-    : '';
+    : par.filete
+      ? `<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="2" w:color="${par.filete}"/></w:pBdr>`
+      : '';
   // Ordem dos filhos de pPr conforme o esquema (pBdr antes de spacing, spacing antes de jc, rPr por último).
   const pPr = `<w:pPr>${pBdr}<w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
     par.titulo ? '240' : par.discreto ? '40' : '160'
@@ -95,7 +148,7 @@ function tabelaXml(t: TabelaDocx, estilo: EstiloDoc): string {
         .map((c, i) => {
           const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
             linha.negrito ? '<w:b/>' : ''
-          }<w:sz w:val="${sz}"/></w:rPr>`;
+          }${estilo.cor ? `<w:color w:val="${estilo.cor}"/>` : ''}<w:sz w:val="${sz}"/></w:rPr>`;
           const pPr = `<w:pPr><w:spacing w:before="20" w:after="20"/>${linha.negrito ? '<w:rPr><w:b/></w:rPr>' : ''}</w:pPr>`;
           return `<w:tc><w:tcPr><w:tcW w:w="${t.colunas[i] ?? 0}" w:type="dxa"/></w:tcPr><w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(c)}</w:t></w:r></w:p></w:tc>`;
         })
@@ -172,13 +225,13 @@ function logoXml(l: LogoPreparado): string {
 
 /* ---------- pacote ---------- */
 
-function contentTypes(logo: LogoPreparado | null): string {
+function contentTypes(logo: LogoPreparado | null, comSettings: boolean): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 ${logo ? `<Default Extension="${logo.extensao}" ContentType="${logo.contentType}"/>\n` : ''}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`;
+${comSettings ? '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>\n' : ''}</Types>`;
 }
 
 const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -187,23 +240,31 @@ const RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </Relationships>`;
 
 // Sem este arquivo (mesmo vazio) o LibreOffice recusa o pacote.
-function relsDocumento(logo: LogoPreparado | null): string {
+function relsDocumento(logo: LogoPreparado | null, comSettings: boolean): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${
     logo
       ? `<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.${logo.extensao}"/>`
       : ''
+  }${
+    comSettings
+      ? '<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+      : ''
   }</Relationships>`;
 }
+
+// Sem displayBackgroundShape o Word ignora o <w:background> (fundo da página).
+const SETTINGS_FUNDO = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:displayBackgroundShape/></w:settings>`;
 
 /** Gera o .docx (A4, Times 12, corpo justificado; logo opcional no topo). */
 export async function montarDocx(
   paragrafos: Paragrafo[],
-  opcoes?: { logo?: LogoDocx | null },
+  opcoes?: { logo?: LogoDocx | null; estilo?: Partial<EstiloDoc> },
 ): Promise<Blob> {
   return montarDocxRico(
     paragrafos.map((p) => ({ tipo: 'p' as const, ...p })),
-    { logo: opcoes?.logo ?? null },
+    { logo: opcoes?.logo ?? null, estilo: opcoes?.estilo },
   );
 }
 
@@ -225,15 +286,17 @@ export async function montarDocxRico(
       .join('');
   const documento = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1701" w:left="1701"/></w:sectPr></w:body>
+${estilo.fundo ? `<w:background w:color="${estilo.fundo}"/>\n` : ''}<w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1701" w:left="1701"/></w:sectPr></w:body>
 </w:document>`;
 
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', contentTypes(logo));
+  const comSettings = Boolean(estilo.fundo);
+  zip.file('[Content_Types].xml', contentTypes(logo, comSettings));
   zip.file('_rels/.rels', RELS);
-  zip.file('word/_rels/document.xml.rels', relsDocumento(logo));
+  zip.file('word/_rels/document.xml.rels', relsDocumento(logo, comSettings));
   zip.file('word/document.xml', documento);
+  if (comSettings) zip.file('word/settings.xml', SETTINGS_FUNDO);
   if (logo) zip.file(`word/media/logo.${logo.extensao}`, logo.bytes);
   const bytes = await zip.generateAsync({ type: 'uint8array' });
   return new Blob([bytes as BlobPart], {

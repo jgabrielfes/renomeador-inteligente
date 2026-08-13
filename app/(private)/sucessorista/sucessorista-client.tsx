@@ -42,6 +42,8 @@ import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/ace
 import type { Caso, Bem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
+import { mapearEconomias } from '@/lib/partilha/economia';
+import { projetarCustos } from '@/lib/partilha/custas';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -60,8 +62,10 @@ import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
+import { EconomiaView } from './economia-view';
 import { HonorariosView } from './honorarios-view';
 import { MinutasView, EscrituraView } from './minutas-view';
+import { NoticiasTicker } from './noticias';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, salvarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -302,7 +306,7 @@ export default function SucessoristaClient() {
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
     const analise = analisarIsencoesPorBem(
-      bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao })),
+      bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao, codigoItcmd: b.codigoItcmd })),
       ufespObito.valor,
     );
     const recusadas = new Set(fiscal.isencoesRecusadas ?? []);
@@ -690,6 +694,69 @@ export default function SucessoristaClient() {
   useEffect(() => {
     atribuicaoRef.current = atribuicao;
   }, [atribuicao]);
+
+  /**
+   * Projeção de custos além do imposto: escritura/atos notariais, registros
+   * por imóvel (com atos extras na partilha diferenciada), certidões e a
+   * taxa judiciária quando o rito provável é o judicial.
+   */
+  const custos = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return null;
+    const transferencias =
+      atribuicao && atribuicao.bloqueios.length === 0
+        ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
+        : [];
+    return projetarCustos({
+      monteMor: Number(resultado.acervo.massaPartilhavel),
+      imoveis: bens
+        .filter((b) => b.tipo === 'IMOVEL')
+        .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
+      rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
+      qtdHerdeiros: herdeiros.length,
+      temSobrevivente,
+      transferencias,
+      ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
+    });
+  }, [resultado, atribuicao, bens, herdeiros.length, temSobrevivente, provisao]);
+
+  /**
+   * Oportunidades de economia (motor puro): isenções e prazos deste
+   * inventário, tornas dentro da isenção de doação e o planejamento do
+   * usufruto no lugar do segundo inventário do(a) sobrevivente.
+   */
+  const economias = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return [];
+    const transferencias =
+      atribuicao && atribuicao.bloqueios.length === 0
+        ? atribuicao.transferencias.map((t) => ({
+            valor: Number(t.valor),
+            titulo: t.titulo,
+            tributo: t.tributo,
+            imposto: t.imposto === null ? null : Number(t.imposto),
+          }))
+        : [];
+    return mapearEconomias({
+      valorSobrevivente: direitoPorParticipante['__sobrevivente__'] ?? 0,
+      nomeSobrevivente: temSobrevivente ? nomeSobrev || null : null,
+      bens: bens.map((b) => ({ descricao: b.descricao, valor: Number(b.valor), tipo: b.tipo })),
+      imposto: provisao?.imposto ?? null,
+      diasDesdeObito: provisao?.diasDesdeObito ?? null,
+      protocolado: Boolean(fiscal.inventarioAberto),
+      valorIsento: isencoes?.valorIsento ?? 0,
+      ufespReferencia: provisao?.ufespReferencia ?? null,
+      transferencias,
+    });
+  }, [
+    resultado,
+    atribuicao,
+    direitoPorParticipante,
+    temSobrevivente,
+    nomeSobrev,
+    bens,
+    provisao,
+    fiscal.inventarioAberto,
+    isencoes,
+  ]);
 
   /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
   const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
@@ -1284,6 +1351,7 @@ export default function SucessoristaClient() {
       </nav>
 
       <main className="folha">
+        <NoticiasTicker />
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -1566,6 +1634,8 @@ export default function SucessoristaClient() {
                 </div>
               </section>
             )}
+
+            <EconomiaView economias={economias} />
           </>
         )}
 
@@ -1609,6 +1679,7 @@ export default function SucessoristaClient() {
             setFiscal={setFiscal}
             isencoes={isencoes}
             provisao={provisao}
+            custos={custos}
             hoje={hoje}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
@@ -1621,6 +1692,8 @@ export default function SucessoristaClient() {
             bens={bens}
             dividas={dividasEspolio}
             resultado={resultado}
+            provisao={provisao}
+            valorIsento={isencoes?.valorIsento ?? 0}
             temPartilhaDiferenciada={bens.some((b) =>
               Object.values(matriz[b.id] ?? {}).some((v) => pctNum(v) > 0),
             )}
@@ -1658,6 +1731,8 @@ export default function SucessoristaClient() {
         provisao={provisao}
         isencoes={isencoes}
         faixas={fiscal.faixas}
+        economias={economias}
+        custos={custos}
       />
     </div>
     </div>

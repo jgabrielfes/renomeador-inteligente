@@ -1,0 +1,45 @@
+/* Cores da plataforma "O Sucessorista" (papel/tinta/bronze) aplicadas ao
+   Renomeador, escopadas em .renomeador-tema para não vazar nos demais módulos.
+
+   Fonte da verdade da paleta: app/(private)/sucessorista/sucessorista.css —
+   os hex daqui devem acompanhar mudanças de lá. A interface continua sendo
+   os componentes shadcn (convenção do repositório); a identidade entra por
+   cima re-mapeando as variáveis de tema dentro do escopo. Identidade fixa
+   clara (color-scheme: light), como no Sucessorista. */
+
+.renomeador-tema {
+  /* --- paleta da identidade --- */
+  --papel: #f6f4ee;
+  --papel-alto: #fdfcf9;
+  --tinta: #1a2320;
+  --tinta-media: #4a544f;
+  --lacre: #9e2b25;
+  --bronze: #8a6d3b;
+  --verde-registro: #2e5e4e;
+  --fio: #ddd8ca;
+  --fio-forte: #b9b29c;
+
+  /* --- tema shadcn re-mapeado para a identidade (não remover) --- */
+  --background: var(--papel);
+  --foreground: var(--tinta);
+  --card: var(--papel-alto);
+  --card-foreground: var(--tinta);
+  --popover: var(--papel-alto);
+  --popover-foreground: var(--tinta);
+  --primary: var(--tinta);
+  --primary-foreground: var(--papel);
+  --secondary: #ece8dc;
+  --secondary-foreground: var(--tinta);
+  --muted: #ece8dc;
+  --muted-foreground: var(--tinta-media);
+  --accent: #efeadd;
+  --accent-foreground: var(--tinta);
+  --destructive: var(--lacre);
+  --border: var(--fio-forte);
+  --input: var(--fio-forte);
+  --ring: var(--bronze);
+
+  color-scheme: light;
+  background: var(--papel);
+  color: var(--tinta);
+}

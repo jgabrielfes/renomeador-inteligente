@@ -9,9 +9,18 @@
  * digitadas, e tudo sai como MINUTA para revisão do advogado.
  */
 
-import { montarDocx, type LogoDocx, type Paragrafo } from './docx';
+import {
+  montarDocx,
+  vestirIdentidade,
+  ESTILO_SUCESSORISTA,
+  IDENTIDADE_SUCESSORISTA as IDENTIDADE,
+  type LogoDocx,
+  type Paragrafo,
+} from './docx';
 import { qualificar, dataPorExtenso, brl, LACUNA } from './peticao';
-import type { Qualificacao, DadosFalecido } from './familia';
+import { formatarData, type Qualificacao, type DadosFalecido } from './familia';
+import type { Resultado } from './types';
+import type { ProvisaoItcmd } from './itcmd';
 import {
   ROTULO_NIVEL,
   type AvaliacaoComplexidade,
@@ -315,5 +324,152 @@ export async function montarHonorariosDocx(d: DadosHonorariosDocx): Promise<Blob
           alturaPx: d.escritorio.logoAlturaPx,
         }
       : null;
-  return montarDocx(p, { logo });
+  // Proposta e contrato também vestem a identidade do Sucessorista.
+  return montarDocx(vestirIdentidade(p), { logo, estilo: ESTILO_SUCESSORISTA });
+}
+
+/* ---------- folha de apresentação ao cliente ---------- */
+
+export interface DadosApresentacao {
+  escritorio: DadosEscritorio;
+  falecido: DadosFalecido;
+  temSobrevivente: boolean;
+  nomeSobrev: string;
+  herdeiros: { nome: string }[];
+  bens: { descricao: string; valor: string }[];
+  resultado: Resultado | null;
+  provisao: ProvisaoItcmd | null;
+  /** Isenções do art. 6º já identificadas pela leitura automática (R$). */
+  valorIsento: number;
+  avaliacao: AvaliacaoComplexidade;
+  condicoes: CondicoesHonorarios;
+  valorContratado: number | null;
+}
+
+/**
+ * FOLHA DE APRESENTAÇÃO AO CLIENTE — o material de fechamento: uma página
+ * (marca branca) com o resumo do caso, os números do painel (monte-mor,
+ * meação, quinhões, imposto e prazo), o que o escritório fará, por que o
+ * caso tem a complexidade avaliada e o investimento proposto. Linguagem
+ * para o CLIENTE ler — sem jargão, números sempre do motor (nunca da IA).
+ */
+export async function montarApresentacaoDocx(d: DadosApresentacao): Promise<Blob> {
+  const p: Paragrafo[] = [];
+  const nomeFalecido = d.falecido.nome?.trim() || LACUNA;
+  const r = d.resultado && d.resultado.bloqueios.length === 0 ? d.resultado : null;
+
+  cabecalhoEscritorio(d.escritorio, p);
+  p.push({
+    texto: 'APRESENTAÇÃO DO CASO E PROPOSTA DE HONORÁRIOS',
+    negrito: true,
+    centrado: true,
+    tamanho: 28,
+  });
+  p.push({
+    texto: `Inventário de ${nomeFalecido} · preparada em ${dataPorExtenso()} · válida por 30 dias`,
+    centrado: true,
+    discreto: true,
+    cor: IDENTIDADE.tintaMedia,
+  });
+
+  /* o caso em números — o painel do caso, em prosa para o cliente */
+  p.push({ texto: 'O CASO EM NÚMEROS', titulo: true });
+  p.push({
+    texto: `${nomeFalecido}${d.falecido.dataObito ? `, falecido(a) em ${formatarData(d.falecido.dataObito)}` : ''}, deixou ${
+      d.temSobrevivente ? `o(a) cônjuge/companheiro(a) ${d.nomeSobrev.trim() || LACUNA} e ` : ''
+    }${d.herdeiros.length} herdeiro(s): ${d.herdeiros.map((h) => h.nome).join(', ') || LACUNA}. O patrimônio levantado até aqui soma ${
+      d.bens.length
+    } bem(ns).`,
+  });
+  if (r) {
+    p.push({
+      texto: `Monte-mor (patrimônio total): ${brl(r.acervo.massaPartilhavel)}.${
+        r.meacao
+          ? ` Meação do(a) sobrevivente — que já é dele(a) por direito, não paga imposto: ${brl(r.meacao.valor)}.`
+          : ''
+      } Herança a transmitir: ${brl(r.heranca.total)}.`,
+    });
+    for (const q of r.quinhoes) {
+      p.push({
+        texto: `• ${q.nome}: ${brl(q.valor)} (${q.fracaoHeranca} da herança${q.fracaoBemComum ? ` — ${q.fracaoBemComum} de cada bem comum` : ''}).`,
+      });
+    }
+  } else {
+    p.push({ texto: `Espelho da partilha: ${LACUNA} (será apresentado na próxima reunião, após o levantamento completo).` });
+  }
+
+  /* o imposto e o prazo — urgência honesta, com o que já foi economizado */
+  p.push({ texto: 'O IMPOSTO (ITCMD) E O PRAZO', titulo: true });
+  if (d.provisao) {
+    p.push({
+      texto: `Provisão do imposto na data desta proposta: ${brl(d.provisao.total.toFixed(2))} (base atualizada de ${brl(
+        d.provisao.baseAtualizada.toFixed(2),
+      )}). Vencimento legal: ${formatarData(d.provisao.vencimento)} — ${
+        d.provisao.diasDeAtraso > 0
+          ? `o prazo JÁ VENCEU há ${d.provisao.diasDeAtraso} dia(s): cada dia adiciona multa e juros, e agir agora estanca o crescimento`
+          : `restam ${Math.max(0, 180 - d.provisao.diasDesdeObito)} dia(s); recolhendo em até 90 dias do óbito há DESCONTO de 5%`
+      }.`,
+      // Lacre para a urgência real; o prazo em dia fica na cor do texto.
+      cor: d.provisao.diasDeAtraso > 0 ? IDENTIDADE.lacre : undefined,
+    });
+  } else {
+    p.push({ texto: `Provisão do ITCMD: ${LACUNA} (depende da data do óbito e do acervo completo).` });
+  }
+  if (d.valorIsento > 0) {
+    p.push({
+      texto: `Nossa análise já identificou ${brl(d.valorIsento.toFixed(2))} em bens possivelmente ISENTOS do imposto (art. 6º da Lei 10.705/2000) — economia direta para a família, a confirmar na declaração.`,
+      cor: IDENTIDADE.verde,
+    });
+  }
+
+  /* escopo — o valor do serviço aos olhos do cliente */
+  p.push({ texto: 'O QUE FAREMOS POR VOCÊS', titulo: true });
+  p.push({
+    texto: 'Conduzimos o inventário de ponta a ponta: organização e conferência de todos os documentos; levantamento e avaliação do patrimônio; apuração, declaração e recolhimento do ITCMD com as isenções cabíveis; plano de partilha fundamentado e conforme o combinado na família; minuta e acompanhamento da escritura no tabelionato (ou do processo judicial, se necessário); e orientação nos registros finais (imóveis, veículos, bancos), até o patrimônio estar no nome de cada um.',
+  });
+
+  /* complexidade — justificativa transparente do preço */
+  p.push({ texto: 'POR QUE ESTE CASO EXIGE DEDICAÇÃO', titulo: true });
+  if (d.avaliacao.fatores.length === 0) {
+    p.push({ texto: 'Caso de rotina pelo que os documentos mostram até aqui — e o investimento reflete isso.' });
+  } else {
+    p.push({ texto: `Complexidade avaliada: ${ROTULO_NIVEL[d.avaliacao.nivel].toUpperCase()}. Pesam no caso:` });
+    for (const f of d.avaliacao.fatores) p.push({ texto: `• ${f.rotulo}.` });
+  }
+
+  /* investimento — números do motor, nunca da IA */
+  p.push({ texto: 'INVESTIMENTO', titulo: true });
+  p.push({
+    texto: `Honorários: ${
+      d.condicoes.forma === 'PERCENTUAL'
+        ? `${d.condicoes.percentual.trim() || LACUNA}% sobre o monte-mor${d.valorContratado !== null ? ` — hoje, ${brl(d.valorContratado)}` : ''}`
+        : d.valorContratado !== null
+          ? brl(d.valorContratado)
+          : `R$ ${LACUNA}`
+    }.${d.condicoes.condicoesPagamento.trim() ? ` Condições: ${d.condicoes.condicoesPagamento.trim()}.` : ''} Custas, emolumentos e o próprio ITCMD não integram os honorários — são repassados sem margem.`,
+  });
+
+  p.push({ texto: 'PRÓXIMOS PASSOS', titulo: true });
+  p.push({
+    texto: 'Com o aceite, assinamos o contrato de honorários e iniciamos imediatamente pela frente fiscal (o prazo do imposto corre). A família acompanha tudo: cada documento e cada número desta folha continua à disposição para conferência.',
+  });
+  p.push({ texto: `De acordo: ${LACUNA} — data: ${LACUNA}.` });
+  p.push({ texto: LACUNA, centrado: true });
+  p.push({
+    texto: `${d.escritorio.advogado.trim() || 'Advogado(a)'} — OAB ${d.escritorio.oab.trim() || LACUNA}`,
+    centrado: true,
+  });
+
+  const logo: LogoDocx | null =
+    d.escritorio.logoDataUrl && d.escritorio.logoLarguraPx && d.escritorio.logoAlturaPx
+      ? {
+          dataUrl: d.escritorio.logoDataUrl,
+          larguraPx: d.escritorio.logoLarguraPx,
+          alturaPx: d.escritorio.logoAlturaPx,
+        }
+      : null;
+  // Identidade do Sucessorista na folha: página "papel", texto "tinta" em
+  // serifa e títulos de seção em bronze com filete — o mesmo livro de notas
+  // da plataforma, agora impresso para o cliente.
+  return montarDocx(vestirIdentidade(p), { logo, estilo: ESTILO_SUCESSORISTA });
 }

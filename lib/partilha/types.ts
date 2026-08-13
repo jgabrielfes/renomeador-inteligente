@@ -79,6 +79,8 @@ export interface Bem {
   natureza: Natureza;
   /** Classe do bem — alimenta isenções do ITCMD e o checklist de documentos. */
   tipo?: TipoBem;
+  /** Código do tipo na declaração do ITCMD-SP (ex.: "101") — lista de `tipos-itcmd.ts`. */
+  codigoItcmd?: string;
   imovel?: DetalhesImovel;
   veiculo?: DetalhesVeiculo;
 }

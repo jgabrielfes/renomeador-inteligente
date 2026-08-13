@@ -20,12 +20,14 @@ export interface AiSettings {
   mode: AiMode;
 }
 
-const DEFAULT_SETTINGS: AiSettings = { mode: "arquivo" };
+// Padrão: "IA — somente texto" (só o texto do OCR local sai do navegador).
+// Escolha explícita salva no localStorage sempre prevalece.
+const DEFAULT_SETTINGS: AiSettings = { mode: "texto" };
 
 function loadAiSettings(): AiSettings {
   if (typeof localStorage === "undefined") return DEFAULT_SETTINGS;
   const mode = localStorage.getItem(MODE_KEY);
-  return { mode: mode === "texto" || mode === "local" ? mode : "arquivo" };
+  return { mode: mode === "arquivo" || mode === "local" ? mode : "texto" };
 }
 
 // Snapshot estável + listeners, no formato que useSyncExternalStore espera.
