@@ -18,6 +18,7 @@ import {
   type ProvisaoItcmd,
   type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
+import { totalEstimado, type OportunidadeEconomia } from '@/lib/partilha/economia';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -42,6 +43,7 @@ export function PainelCaso({
   provisao,
   isencoes,
   faixas,
+  economias = [],
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -53,6 +55,7 @@ export function PainelCaso({
   provisao: ProvisaoItcmd | null;
   isencoes: ResultadoIsencoes | null;
   faixas: FaixaProgressiva[];
+  economias?: OportunidadeEconomia[];
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -203,6 +206,20 @@ export function PainelCaso({
           <p className="rodape">Informe a data do óbito e ao menos um bem com valor.</p>
         )}
       </div>
+
+      {economias.length > 0 && (
+        <div className="metrica">
+          <div className="k">Oportunidades de economia</div>
+          <div className="v sm num" style={{ color: 'var(--verde-registro)' }}>
+            {brl(totalEstimado(economias))}
+          </div>
+          <p className="rodape">
+            {economias.filter((o) => o.aplicada).length} garantida(s) ·{' '}
+            {economias.filter((o) => !o.aplicada).length} sugestão(ões) — detalhes no item
+            III (Partilha).
+          </p>
+        </div>
+      )}
 
       <div className="metrica">
         <div className="k">Acervo</div>

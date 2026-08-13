@@ -42,6 +42,7 @@ import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/ace
 import type { Caso, Bem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
+import { mapearEconomias } from '@/lib/partilha/economia';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -60,6 +61,7 @@ import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
+import { EconomiaView } from './economia-view';
 import { HonorariosView } from './honorarios-view';
 import { MinutasView, EscrituraView } from './minutas-view';
 import { NoticiasTicker } from './noticias';
@@ -691,6 +693,45 @@ export default function SucessoristaClient() {
   useEffect(() => {
     atribuicaoRef.current = atribuicao;
   }, [atribuicao]);
+
+  /**
+   * Oportunidades de economia (motor puro): isenções e prazos deste
+   * inventário, tornas dentro da isenção de doação e o planejamento do
+   * usufruto no lugar do segundo inventário do(a) sobrevivente.
+   */
+  const economias = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return [];
+    const transferencias =
+      atribuicao && atribuicao.bloqueios.length === 0
+        ? atribuicao.transferencias.map((t) => ({
+            valor: Number(t.valor),
+            titulo: t.titulo,
+            tributo: t.tributo,
+            imposto: t.imposto === null ? null : Number(t.imposto),
+          }))
+        : [];
+    return mapearEconomias({
+      valorSobrevivente: direitoPorParticipante['__sobrevivente__'] ?? 0,
+      nomeSobrevivente: temSobrevivente ? nomeSobrev || null : null,
+      bens: bens.map((b) => ({ descricao: b.descricao, valor: Number(b.valor), tipo: b.tipo })),
+      imposto: provisao?.imposto ?? null,
+      diasDesdeObito: provisao?.diasDesdeObito ?? null,
+      protocolado: Boolean(fiscal.inventarioAberto),
+      valorIsento: isencoes?.valorIsento ?? 0,
+      ufespReferencia: provisao?.ufespReferencia ?? null,
+      transferencias,
+    });
+  }, [
+    resultado,
+    atribuicao,
+    direitoPorParticipante,
+    temSobrevivente,
+    nomeSobrev,
+    bens,
+    provisao,
+    fiscal.inventarioAberto,
+    isencoes,
+  ]);
 
   /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
   const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
@@ -1568,6 +1609,8 @@ export default function SucessoristaClient() {
                 </div>
               </section>
             )}
+
+            <EconomiaView economias={economias} />
           </>
         )}
 
@@ -1662,6 +1705,7 @@ export default function SucessoristaClient() {
         provisao={provisao}
         isencoes={isencoes}
         faixas={fiscal.faixas}
+        economias={economias}
       />
     </div>
     </div>
