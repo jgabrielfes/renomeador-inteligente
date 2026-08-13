@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   FileCheck2,
-  FileWarning,
   MousePointerClick,
   Scale,
   Users,
@@ -41,13 +40,6 @@ const LISTAGENS = [
     descricao: "Lotes de arquivos renomeados, por usuário ou deslogado.",
   },
   {
-    href: "/admin/notas",
-    icon: FileWarning,
-    titulo: "Resolvedor de notas",
-    descricao:
-      "Notas triadas, vias de resolução exigidas, precisão do classificador e minutas geradas.",
-  },
-  {
     href: "/admin/sucessorista",
     icon: Scale,
     titulo: "O Sucessorista",
@@ -72,8 +64,6 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   let usuarios: number | null = null;
   let arquivosRenomeados = 0;
   let erros = 0;
-  let exigencias = 0;
-  let notas = 0;
   let casos = 0;
   let minutas = 0;
   let acessos = 0;
@@ -82,7 +72,6 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       contagemUsuarios,
       somaRenomeados,
       contagemErros,
-      agregadoNotas,
       contagemCasos,
       contagemMinutas,
       contagemAcessos,
@@ -93,11 +82,6 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         where: { createdAt },
       }),
       prisma.errorEvent.count({ where: { createdAt } }),
-      prisma.notaEvent.aggregate({
-        _sum: { quantidade: true },
-        _count: { _all: true },
-        where: { createdAt },
-      }),
       // Uma linha de CALCULO por inventário: conta casos, não recálculos.
       prisma.sucessoristaEvent.count({
         where: { createdAt, acao: "CALCULO" },
@@ -110,8 +94,6 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
     usuarios = contagemUsuarios;
     arquivosRenomeados = somaRenomeados._sum.quantidade ?? 0;
     erros = contagemErros;
-    exigencias = agregadoNotas._sum.quantidade ?? 0;
-    notas = agregadoNotas._count._all;
     casos = contagemCasos;
     minutas = contagemMinutas;
     acessos = contagemAcessos;
@@ -198,20 +180,6 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
                   {arquivosRenomeados}
                 </CardTitle>
                 <CardDescription>Renomeador</CardDescription>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-1.5">
-                  <FileWarning className="size-4" />
-                  Exigências classificadas
-                </CardDescription>
-                <CardTitle className="text-4xl tabular-nums">
-                  {exigencias}
-                </CardTitle>
-                <CardDescription>
-                  em {notas} nota(s) devolutiva(s) triada(s)
-                </CardDescription>
               </CardHeader>
             </Card>
             <Card>

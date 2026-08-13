@@ -205,7 +205,7 @@ const PISO_POR_CHAMADA_MS = 20_000;
 // Chamada genérica com a cadeia de modelos: 429 (cota daquele modelo), 404
 // (modelo aposentado), 503 (sobrecarregado, após retentativa curta) e 504
 // (sem resposta dentro do teto) passam para o próximo; outros erros
-// interrompem na hora. Compartilhada entre renomeador, notas e sucessorista.
+// interrompem na hora. Compartilhada entre renomeador e sucessorista.
 export async function geminiJson(
   apiKey: string,
   parts: Array<Record<string, unknown>>,

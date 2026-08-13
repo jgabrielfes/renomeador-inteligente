@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileScan, FileWarning, Scale } from "lucide-react";
+import { ArrowRight, FileScan, Scale } from "lucide-react";
 
 import { UserMenu } from "@/components/user-menu";
 
@@ -18,13 +18,6 @@ const MODULOS = [
     titulo: "Renomeador Inteligente de Documentos",
     descricao:
       "Analisa imagens e PDFs (RG, CNH, certidões, matrículas, contratos…) e sugere nomes de arquivo com base no conteúdo. Otimiza fotos com aspecto de digitalização, separa PDFs com vários documentos e monta o processo em subpastas numeradas.",
-  },
-  {
-    href: "/notas",
-    icon: FileWarning,
-    titulo: "Resolvedor de Notas Devolutivas (em teste)",
-    descricao:
-      "Decompõe a nota de exigências do Registro de Imóveis em itens, classifica cada um na via de resolução (juntada, ata retificativa, rerratificação, requerimento…) e prepara a minuta da peça — sempre como rascunho para conferência.",
   },
   {
     href: "/sucessorista",
