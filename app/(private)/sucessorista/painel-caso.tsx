@@ -19,6 +19,7 @@ import {
   type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
 import { totalEstimado, type OportunidadeEconomia } from '@/lib/partilha/economia';
+import type { ProjecaoCustos } from '@/lib/partilha/custas';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -44,6 +45,7 @@ export function PainelCaso({
   isencoes,
   faixas,
   economias = [],
+  custos = null,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -56,6 +58,7 @@ export function PainelCaso({
   isencoes: ResultadoIsencoes | null;
   faixas: FaixaProgressiva[];
   economias?: OportunidadeEconomia[];
+  custos?: ProjecaoCustos | null;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -161,8 +164,10 @@ export function PainelCaso({
       )}
 
       <div className="metrica">
-        <div className="k">Custo fiscal do inventário</div>
-        <div className="v num">{provisao ? brl(provisao.total) : '—'}</div>
+        <div className="k">Custo projetado do inventário</div>
+        <div className="v num">
+          {provisao ? brl(provisao.total + (custos?.total ?? 0)) : '—'}
+        </div>
         {provisao ? (
           <div className="pilha num">
             {/* Parcelas discriminadas conforme a Lei 10.705/2000 — cada
@@ -200,6 +205,51 @@ export function PainelCaso({
                 <span className="rotulo">Desconto de 5% até 90 dias (art. 17, §2º)</span>
                 <span style={{ color: 'var(--verde-registro)' }}>− {brl(-desconto)}</span>
               </div>
+            )}
+            {custos && (
+              <>
+                {custos.parcelas.some((p) => p.id === 'taxa-judiciaria') ? (
+                  <div>
+                    <span className="rotulo">Taxa judiciária (Lei 11.608/2003)</span>
+                    <span>
+                      {brl(custos.parcelas.find((p) => p.id === 'taxa-judiciaria')!.valor)}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="rotulo">Escritura e atos notariais (est.)</span>
+                    <span>
+                      {brl(
+                        custos.parcelas
+                          .filter((p) => p.id.startsWith('escritura'))
+                          .reduce((a, p) => a + p.valor, 0),
+                      )}
+                    </span>
+                  </div>
+                )}
+                {custos.parcelas.some((p) => p.id.startsWith('registro')) && (
+                  <div>
+                    <span className="rotulo">Registro de imóveis (est.)</span>
+                    <span>
+                      {brl(
+                        custos.parcelas
+                          .filter((p) => p.id.startsWith('registro'))
+                          .reduce((a, p) => a + p.valor, 0),
+                      )}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <span className="rotulo">Certidões (aprox.)</span>
+                  <span>
+                    {brl(
+                      custos.parcelas
+                        .filter((p) => p.id.startsWith('certid'))
+                        .reduce((a, p) => a + p.valor, 0),
+                    )}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         ) : (

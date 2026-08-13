@@ -43,6 +43,7 @@ import type { Caso, Bem } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
+import { projetarCustos } from '@/lib/partilha/custas';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -693,6 +694,30 @@ export default function SucessoristaClient() {
   useEffect(() => {
     atribuicaoRef.current = atribuicao;
   }, [atribuicao]);
+
+  /**
+   * Projeção de custos além do imposto: escritura/atos notariais, registros
+   * por imóvel (com atos extras na partilha diferenciada), certidões e a
+   * taxa judiciária quando o rito provável é o judicial.
+   */
+  const custos = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return null;
+    const transferencias =
+      atribuicao && atribuicao.bloqueios.length === 0
+        ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
+        : [];
+    return projetarCustos({
+      monteMor: Number(resultado.acervo.massaPartilhavel),
+      imoveis: bens
+        .filter((b) => b.tipo === 'IMOVEL')
+        .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
+      rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
+      qtdHerdeiros: herdeiros.length,
+      temSobrevivente,
+      transferencias,
+      ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
+    });
+  }, [resultado, atribuicao, bens, herdeiros.length, temSobrevivente, provisao]);
 
   /**
    * Oportunidades de economia (motor puro): isenções e prazos deste
@@ -1654,6 +1679,7 @@ export default function SucessoristaClient() {
             setFiscal={setFiscal}
             isencoes={isencoes}
             provisao={provisao}
+            custos={custos}
             hoje={hoje}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
@@ -1706,6 +1732,7 @@ export default function SucessoristaClient() {
         isencoes={isencoes}
         faixas={fiscal.faixas}
         economias={economias}
+        custos={custos}
       />
     </div>
     </div>
