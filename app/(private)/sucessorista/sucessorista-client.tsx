@@ -62,6 +62,7 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
 import { HonorariosView } from './honorarios-view';
 import { MinutasView, EscrituraView } from './minutas-view';
+import { NoticiasTicker } from './noticias';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, salvarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -1284,6 +1285,7 @@ export default function SucessoristaClient() {
       </nav>
 
       <main className="folha">
+        <NoticiasTicker />
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -1621,6 +1623,8 @@ export default function SucessoristaClient() {
             bens={bens}
             dividas={dividasEspolio}
             resultado={resultado}
+            provisao={provisao}
+            valorIsento={isencoes?.valorIsento ?? 0}
             temPartilhaDiferenciada={bens.some((b) =>
               Object.values(matriz[b.id] ?? {}).some((v) => pctNum(v) > 0),
             )}

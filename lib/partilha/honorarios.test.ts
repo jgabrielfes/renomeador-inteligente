@@ -77,6 +77,31 @@ eq('monte 2M: 1 ponto', monteMedio.pontos, 1);
 const semMonte = avaliarComplexidade({ ...BASE, monteMor: null });
 eq('sem monte: 0 pontos', semMonte.pontos, 0);
 
+// Urgência fiscal: mora acumulada pesa mais que a janela do prazo.
+const mora = avaliarComplexidade({ ...BASE, dataObito: '2025-06-01', dataReferencia: '2026-08-13' });
+eq('óbito > 180 dias: 2 pontos', mora.pontos, 2);
+const janela = avaliarComplexidade({ ...BASE, dataObito: '2026-05-01', dataReferencia: '2026-08-13' });
+eq('óbito 60–180 dias: 1 ponto', janela.pontos, 1);
+const recente = avaliarComplexidade({ ...BASE, dataObito: '2026-08-01', dataReferencia: '2026-08-13' });
+eq('óbito recente: 0 pontos', recente.pontos, 0);
+
+// Cônjuges anuentes e diversidade de classes valorizam o trabalho.
+const anuentes = avaliarComplexidade({ ...BASE, temConjugesDeHerdeiros: true, qtdClassesDeBens: 4 });
+eq('cônjuges + 3 classes: 2 pontos', anuentes.pontos, 2);
+
+// Caso carregadíssimo alcança o nível MUITO ALTA (7%).
+const extremo = avaliarComplexidade({
+  ...BASE,
+  temPreMorto: true,
+  temQuotasSocietarias: true,
+  temPartilhaDiferenciada: true,
+  monteMor: 6_000_000,
+  dataObito: '2025-01-01',
+  dataReferencia: '2026-08-13',
+});
+eq('extremo: nível muito alto', extremo.nivel, 'MUITO_ALTA');
+eq('extremo: 7%', extremo.percentualSugerido, 7);
+
 console.log('\nSugestão de valor\n');
 
 // 3% de 500k = 15.000 — acima do piso.

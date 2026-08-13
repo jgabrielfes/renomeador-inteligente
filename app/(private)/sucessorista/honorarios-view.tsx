@@ -31,6 +31,7 @@ import {
   type CondicoesHonorarios,
 } from '@/lib/partilha/honorarios';
 import { ESCRITORIO_VAZIO, type DadosEscritorio, type SecaoRedigida } from '@/lib/partilha/honorarios-docx';
+import type { ProvisaoItcmd } from '@/lib/partilha/itcmd';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import type { EstadoFamilia } from './familia';
 import { Pilula } from './familia';
@@ -55,13 +56,15 @@ interface PerfilEscritorio {
   usarIa: boolean;
 }
 
-type TipoDoc = 'PROPOSTA' | 'CONTRATO';
+type TipoDoc = 'PROPOSTA' | 'CONTRATO' | 'APRESENTACAO';
 
 export function HonorariosView({
   familia,
   bens,
   dividas,
   resultado,
+  provisao,
+  valorIsento,
   temPartilhaDiferenciada,
   condicoes,
   setCondicoes,
@@ -71,6 +74,10 @@ export function HonorariosView({
   bens: Bem[];
   dividas: string;
   resultado: Resultado | null;
+  /** Provisão do ITCMD do item IV — entra na folha de apresentação. */
+  provisao: ProvisaoItcmd | null;
+  /** Isenções do art. 6º já identificadas (R$) — idem. */
+  valorIsento: number;
   temPartilhaDiferenciada: boolean;
   condicoes: CondicoesHonorarios;
   setCondicoes: (c: CondicoesHonorarios) => void;
@@ -148,8 +155,14 @@ export function HonorariosView({
         temDividas: Number(dividas.replace(/\./g, '').replace(',', '.')) > 0,
         temPartilhaDiferenciada,
         monteMor,
+        dataObito: falecido.dataObito || null,
+        dataReferencia: new Date().toISOString().slice(0, 10),
+        temConjugesDeHerdeiros: herdeiros.some((h) =>
+          Boolean(familia.qualificacoes[h.id]?.conjugeNome?.trim()),
+        ),
+        qtdClassesDeBens: new Set(bens.map((b) => b.tipo ?? 'OUTRO')).size,
       }),
-    [herdeiros, temSobrevivente, bens, dividas, temPartilhaDiferenciada, monteMor],
+    [herdeiros, temSobrevivente, bens, dividas, temPartilhaDiferenciada, monteMor, falecido.dataObito, familia.qualificacoes],
   );
 
   const sugestao = useMemo(() => sugerirHonorarios(avaliacao, monteMor), [avaliacao, monteMor]);
@@ -273,7 +286,7 @@ export function HonorariosView({
     return linhas.join('\n');
   };
 
-  const gerar = async (tipo: TipoDoc) => {
+  const gerar = async (tipo: 'PROPOSTA' | 'CONTRATO') => {
     setGerando(tipo);
     try {
       let secoes: SecaoRedigida[] | null = null;
@@ -328,6 +341,41 @@ export function HonorariosView({
       });
     } catch (e) {
       toast.error('Falha ao gerar o documento.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setGerando(null);
+    }
+  };
+
+  /**
+   * Folha de apresentação ao cliente — material de fechamento com o resumo
+   * do caso e os números do painel; determinística (sem IA), marca branca.
+   */
+  const gerarApresentacao = async () => {
+    setGerando('APRESENTACAO');
+    try {
+      const { montarApresentacaoDocx } = await import('@/lib/partilha/honorarios-docx');
+      const blob = await montarApresentacaoDocx({
+        escritorio,
+        falecido,
+        temSobrevivente,
+        nomeSobrev,
+        herdeiros: herdeiros.map((h) => ({ nome: h.nome })),
+        bens: bens.map((b) => ({ descricao: b.descricao, valor: b.valor })),
+        resultado,
+        provisao,
+        valorIsento,
+        avaliacao,
+        condicoes,
+        valorContratado: valorAtual,
+      });
+      baixarBlob(
+        blob,
+        `Apresentacao ao cliente${falecido.nome ? ` - Inventario de ${falecido.nome}` : ''}.docx`,
+      );
+    } catch (e) {
+      toast.error('Falha ao gerar a folha de apresentação.', {
         description: e instanceof Error ? e.message : undefined,
       });
     } finally {
@@ -569,7 +617,19 @@ export function HonorariosView({
         />
       </label>
       <div className="escolha">
-        <Button loading={gerando === 'PROPOSTA'} disabled={gerando !== null} onClick={() => gerar('PROPOSTA')}>
+        <Button
+          loading={gerando === 'APRESENTACAO'}
+          disabled={gerando !== null}
+          onClick={gerarApresentacao}
+        >
+          Folha de apresentação ao cliente (DOCX)
+        </Button>
+        <Button
+          variant="outline"
+          loading={gerando === 'PROPOSTA'}
+          disabled={gerando !== null}
+          onClick={() => gerar('PROPOSTA')}
+        >
           Baixar proposta de honorários (DOCX)
         </Button>
         <Button

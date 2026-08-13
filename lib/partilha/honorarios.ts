@@ -23,6 +23,14 @@ export interface EntradaComplexidade {
   temPartilhaDiferenciada: boolean;
   /** Monte-mor (massa partilhável) em reais, ou null sem espelho calculado. */
   monteMor: number | null;
+  /** Data do óbito (ISO) — mede a urgência fiscal do caso. */
+  dataObito?: string | null;
+  /** Data de referência (ISO, "hoje") para a urgência — injetada pela UI. */
+  dataReferencia?: string | null;
+  /** Herdeiro(s) casado(s) com cônjuge a anuir na escritura. */
+  temConjugesDeHerdeiros?: boolean;
+  /** Quantidade de CLASSES de bens (imóvel, veículo, financeiro, quotas…). */
+  qtdClassesDeBens?: number;
 }
 
 export interface FatorComplexidade {
@@ -30,7 +38,7 @@ export interface FatorComplexidade {
   pontos: number;
 }
 
-export type NivelComplexidade = 'BAIXA' | 'MEDIA' | 'ALTA';
+export type NivelComplexidade = 'BAIXA' | 'MEDIA' | 'ALTA' | 'MUITO_ALTA';
 
 export interface AvaliacaoComplexidade {
   fatores: FatorComplexidade[];
@@ -46,6 +54,7 @@ export const ROTULO_NIVEL: Record<NivelComplexidade, string> = {
   BAIXA: 'baixa',
   MEDIA: 'média',
   ALTA: 'alta',
+  MUITO_ALTA: 'muito alta',
 };
 
 /** Percentual de partida por nível — ajuste livre na tela. */
@@ -53,6 +62,7 @@ const PERCENTUAL_POR_NIVEL: Record<NivelComplexidade, number> = {
   BAIXA: 3,
   MEDIA: 4,
   ALTA: 6,
+  MUITO_ALTA: 7,
 };
 
 /** Piso sugerido quando o percentual sobre o monte fica abaixo dele. */
@@ -79,6 +89,34 @@ export function avaliarComplexidade(e: EntradaComplexidade): AvaliacaoComplexida
   add(e.qtdBens > 5 && e.qtdBens <= 10, 'Acervo numeroso (mais de 5 bens)', 1);
   add(e.temDividas, 'Dívidas do espólio a abater e comprovar', 1);
   add(e.temPartilhaDiferenciada, 'Partilha diferenciada — atribuições fora da proporção e apuração de tornas', 2);
+  add(
+    e.temConjugesDeHerdeiros === true,
+    'Cônjuges de herdeiros a anuir na escritura — mais partes a qualificar e reunir',
+    1,
+  );
+  add(
+    (e.qtdClassesDeBens ?? 0) >= 3,
+    'Acervo em três ou mais classes de bens — transferências em múltiplos órgãos (RI, Detran, bancos, Junta)',
+    1,
+  );
+  // Urgência fiscal: quanto mais o caso demorou, mais mora e regularização
+  // acumuladas há para administrar (arts. 17, 19 a 21 da Lei 10.705/2000).
+  if (e.dataObito && e.dataReferencia) {
+    const dias = Math.floor(
+      (new Date(`${e.dataReferencia}T00:00`).getTime() - new Date(`${e.dataObito}T00:00`).getTime()) /
+        86_400_000,
+    );
+    add(
+      dias > 180,
+      'Óbito há mais de 180 dias — mora do ITCMD e multa de abertura acumuladas, regularização urgente',
+      2,
+    );
+    add(
+      dias > 60 && dias <= 180,
+      'Óbito há mais de 60 dias — janela do prazo fiscal exige condução célere',
+      1,
+    );
+  }
   if (e.monteMor !== null) {
     add(e.monteMor > 5_000_000, 'Monte-mor acima de R$ 5 milhões — responsabilidade patrimonial elevada', 2);
     add(
@@ -89,7 +127,8 @@ export function avaliarComplexidade(e: EntradaComplexidade): AvaliacaoComplexida
   }
 
   const pontos = fatores.reduce((acc, f) => acc + f.pontos, 0);
-  const nivel: NivelComplexidade = pontos >= 6 ? 'ALTA' : pontos >= 3 ? 'MEDIA' : 'BAIXA';
+  const nivel: NivelComplexidade =
+    pontos >= 9 ? 'MUITO_ALTA' : pontos >= 6 ? 'ALTA' : pontos >= 3 ? 'MEDIA' : 'BAIXA';
 
   return {
     fatores,
