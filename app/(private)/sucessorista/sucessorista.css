@@ -66,7 +66,7 @@
 
 .sucessorista .processo {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 340px;
+  grid-template-columns: 220px minmax(0, 1fr) 380px;
   min-height: 100vh;
 }
 
@@ -267,10 +267,21 @@
 .sucessorista .pilha > div {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 10px;
 }
 
-.sucessorista .pilha .rotulo { color: var(--tinta-media); }
+/* Como uma tabela: o VALOR nunca quebra linha; o rótulo encolhe e corta
+   com reticências. */
+.sucessorista .pilha > div > span:last-child { white-space: nowrap; flex-shrink: 0; }
+
+.sucessorista .pilha .rotulo {
+  color: var(--tinta-media);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .sucessorista .alerta-painel {
   font-size: 12px;
@@ -726,7 +737,7 @@
    as três colunas só encolhem. Ele só desce abaixo da folha em telas
    estreitas de verdade (≤1024px). */
 @media (max-width: 1280px) {
-  .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr) 280px; }
+  .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr) 320px; }
   .sucessorista .folha { padding: 32px 26px 80px; }
 }
 

@@ -63,6 +63,7 @@ import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
 import { EconomiaView } from './economia-view';
+import { CustosView } from './custos-view';
 import { HonorariosView } from './honorarios-view';
 import { MinutasView, EscrituraView } from './minutas-view';
 import { NoticiasTicker } from './noticias';
@@ -147,6 +148,7 @@ type Aba =
   | 'partilha'
   | 'documentos'
   | 'itcmd'
+  | 'custos'
   | 'honorarios'
   | 'minutas'
   | 'escritura';
@@ -158,6 +160,7 @@ const ABAS: readonly Aba[] = [
   'partilha',
   'documentos',
   'itcmd',
+  'custos',
   'honorarios',
   'minutas',
   'escritura',
@@ -702,12 +705,21 @@ export default function SucessoristaClient() {
    */
   const custos = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0) return null;
-    const transferencias =
-      atribuicao && atribuicao.bloqueios.length === 0
-        ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
-        : [];
+    const atribuicaoOk = atribuicao && atribuicao.bloqueios.length === 0;
+    const transferencias = atribuicaoOk
+      ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
+      : [];
+    // Pagamentos da partilha (Nota Explicativa 3.1.1): na diferenciada valem
+    // os valores ATRIBUÍDOS; senão, meação + quinhão de cada herdeiro.
+    const pagamentos = atribuicaoOk
+      ? atribuicao.posicoes.map((p) => Number(p.valorAtribuido))
+      : [
+          ...(resultado.meacao ? [Number(resultado.meacao.valor)] : []),
+          ...resultado.quinhoes.map((q) => Number(q.valor)),
+        ];
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
+      pagamentos,
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
         .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
@@ -1309,15 +1321,16 @@ export default function SucessoristaClient() {
             ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
             ['itcmd', 'IV', 'ITCMD'],
-            ['documentos', 'V', 'Documentos'],
+            ['custos', 'V', 'Custos'],
+            ['documentos', 'VI', 'Documentos'],
             // Abas finais por perfil: honorários e minutas são do advogado;
-            // a escritura é o item VI do balcão do escrevente.
+            // a escritura é o item VII do balcão do escrevente.
             ...(perfil === 'ADVOGADO'
               ? ([
-                  ['honorarios', 'VI', 'Honorários'],
-                  ['minutas', 'VII', 'Minutas'],
+                  ['honorarios', 'VII', 'Honorários'],
+                  ['minutas', 'VIII', 'Minutas'],
                 ] as const)
-              : ([['escritura', 'VI', 'Escritura']] as const)),
+              : ([['escritura', 'VII', 'Escritura']] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
@@ -1679,10 +1692,18 @@ export default function SucessoristaClient() {
             setFiscal={setFiscal}
             isencoes={isencoes}
             provisao={provisao}
-            custos={custos}
             hoje={hoje}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
+          />
+        )}
+
+        {abaProc === 'custos' && (
+          <CustosView
+            custos={custos}
+            provisao={provisao}
+            irParaAcervo={() => irPara('acervo')}
+            irParaItcmd={() => irPara('itcmd')}
           />
         )}
 
