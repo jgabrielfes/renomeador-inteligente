@@ -432,6 +432,87 @@
 
 /* Ticker de notícias (Migalhas Notariais e Registrais) — barra fina no topo
    da folha; a manchete troca sozinha e o clique abre em nova aba. */
+/* ---------- painel "Meus casos" (tela inicial do módulo) ---------- */
+
+.sucessorista .casos { padding-top: 12px; }
+
+.sucessorista .casos-topo {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.sucessorista .casos h1 { margin-bottom: 4px; }
+
+.sucessorista .casos-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.sucessorista .caso-cartao {
+  border: 1px solid var(--fio-forte);
+  border-left: 3px solid var(--bronze);
+  border-radius: 8px;
+  background: var(--papel-alto);
+  display: flex;
+  flex-direction: column;
+}
+
+.sucessorista .caso-cartao .abrir {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 14px 16px 8px;
+  color: var(--tinta);
+}
+
+.sucessorista .caso-cartao h3 {
+  font-family: var(--display);
+  font-size: 17px;
+  margin: 0 0 2px;
+}
+
+.sucessorista .caso-cartao .autor { font-size: 12.5px; color: var(--tinta-media); margin: 0 0 6px; }
+.sucessorista .caso-cartao .prazo { font-size: 12.5px; font-weight: 600; margin: 0 0 4px; }
+.sucessorista .caso-cartao .prazo.ok { color: var(--verde-registro); }
+.sucessorista .caso-cartao .prazo.meio { color: var(--bronze); }
+.sucessorista .caso-cartao .prazo.tarde { color: var(--lacre); }
+.sucessorista .caso-cartao .linha { font-size: 12px; margin: 0 0 2px; }
+
+.sucessorista .caso-cartao .acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--fio);
+  margin-top: auto;
+}
+
+/* Indicador de salvamento com problema (erro/somente leitura) em lacre. */
+.sucessorista .lombada .rascunho-info.problema { color: #e8b0a8; filter: none; }
+.sucessorista .lombada .rascunho-info .religar {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* "← Meus casos" na lombada é botão, com a cara do link de voltar. */
+.sucessorista .lombada button.voltar {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0;
+}
+
 /* Oportunidades de economia (aba Partilha). */
 .sucessorista .economias { margin-top: 32px; }
 .sucessorista .economias .oportunidade { margin-top: 10px; }
