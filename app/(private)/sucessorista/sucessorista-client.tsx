@@ -63,11 +63,43 @@ import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
 import { EconomiaView } from './economia-view';
+import { CustosView } from './custos-view';
+import { CasosView, type EstadoPainel } from './casos-view';
+import {
+  montarArquivoCaso,
+  type ArquivoCaso,
+  type CabecalhoCaso,
+  type CaseStore,
+  type ConflitoSalvamento,
+  type ResumoCaso,
+} from '@/lib/partilha/caso-store';
+import { casarManifesto, resumoDoDiff, type EntradaManifesto, type InfoArquivoDisco } from '@/lib/partilha/manifesto';
+import { sha256DeBlob } from '@/lib/partilha/sha256';
+import { PortableCaseStore } from '@/lib/partilha/store-portatil';
+import {
+  FolderCaseStore,
+  cacheDeResumos,
+  dispositivoSalvo,
+  escolherRaiz,
+  estadoDaRaiz,
+  pastaDisponivel,
+  pedirPermissao,
+  salvarDispositivo,
+} from '@/lib/partilha/store-pasta';
+import { idbGet, idbPut, STORES } from '@/lib/partilha/idb';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { HonorariosView } from './honorarios-view';
 import { MinutasView, EscrituraView } from './minutas-view';
 import { NoticiasTicker } from './noticias';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
-import { carregarRascunho, salvarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
+import { carregarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
 import type {
   DadosEscritura,
@@ -147,6 +179,7 @@ type Aba =
   | 'partilha'
   | 'documentos'
   | 'itcmd'
+  | 'custos'
   | 'honorarios'
   | 'minutas'
   | 'escritura';
@@ -158,6 +191,7 @@ const ABAS: readonly Aba[] = [
   'partilha',
   'documentos',
   'itcmd',
+  'custos',
   'honorarios',
   'minutas',
   'escritura',
@@ -354,6 +388,30 @@ export default function SucessoristaClient() {
   const [perfil, setPerfil] = useState<Perfil>('ADVOGADO');
   const [rascunhoSalvoEm, setRascunhoSalvoEm] = useState<string | null>(null);
 
+  /* --- persistência local: CaseStore (pasta do processo ou portátil) --- */
+  const [estadoPainel, setEstadoPainel] = useState<EstadoPainel>('carregando');
+  const [store, setStore] = useState<CaseStore | null>(null);
+  const [resumos, setResumos] = useState<ResumoCaso[] | null>(null);
+  const [dispositivo, setDispositivo] = useState('');
+  const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
+  const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
+  const [salvamento, setSalvamento] = useState<{
+    estado: 'ocioso' | 'salvando' | 'salvo' | 'erro' | 'somente-leitura';
+    quando?: string;
+    erro?: string;
+  }>({ estado: 'ocioso' });
+  const [conflito, setConflito] = useState<ConflitoSalvamento | null>(null);
+  const storeRef = useRef<CaseStore | null>(null);
+  const casoAbertoRef = useRef<{ cabecalho: CabecalhoCaso } | null>(null);
+  const baseAtualizadoEmRef = useRef<string | null>(null);
+  const manifestoRef = useRef<EntradaManifesto[]>([]);
+  useEffect(() => {
+    storeRef.current = store;
+  }, [store]);
+  useEffect(() => {
+    casoAbertoRef.current = casoAberto;
+  }, [casoAberto]);
+
   /* --- telemetria (privacidade: nada de nome, CPF ou valor absoluto) --- */
 
   // A apuração da partilha diferenciada é calculada mais abaixo; o ref evita
@@ -489,40 +547,239 @@ export default function SucessoristaClient() {
     const t = setTimeout(() => {
       void (async () => {
         try {
-          // Rascunho local (IndexedDB): sobrevive ao F5 E ao fechar o
-          // navegador. Sem rascunho, migra o snapshot da era sessionStorage.
-          const rascunho = await carregarRascunho();
-          if (rascunho) {
-            aplicarSnapshot(rascunho.dados as CasoSalvo);
-            setRascunhoSalvoEm(rascunho.salvoEm);
-          } else {
-            const bruto = sessionStorage.getItem(CHAVE_CASO);
-            if (bruto) aplicarSnapshot(JSON.parse(bruto) as CasoSalvo);
-          }
           const p = localStorage.getItem(CHAVE_PERFIL);
           if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
         } catch {
-          // snapshot corrompido: recomeça em branco
+          // modo restrito
         }
         restauradoRef.current = true;
+
+        /* painel "Meus casos": decide o modo de persistência e pinta do
+           cache antes da varredura (nunca tela vazia esperando I/O). */
+        const nomeDisp = (await dispositivoSalvo()) ?? '';
+        setDispositivo(nomeDisp);
+        const rascunho = await carregarRascunho();
+        const migrado = await idbGet<boolean>(STORES.config, 'rascunho-migrado');
+        setTemRascunhoLegado(Boolean(rascunho) && !migrado);
+        if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
+
+        if (pastaDisponivel()) {
+          const { estado, raiz } = await estadoDaRaiz();
+          if (estado === 'granted' && raiz) {
+            const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+            setStore(s);
+            setEstadoPainel('pasta');
+            setResumos(await cacheDeResumos());
+            void s.listarCasos().then(setResumos);
+          } else if ((estado === 'prompt' || estado === 'denied') && raiz) {
+            setEstadoPainel('pasta-bloqueada');
+            setResumos(await cacheDeResumos());
+          } else {
+            setEstadoPainel('sem-raiz');
+            setResumos([]);
+          }
+        } else {
+          const s = new PortableCaseStore(nomeDisp || 'Este navegador');
+          setStore(s);
+          setEstadoPainel('portatil');
+          void s.listarCasos().then(setResumos);
+        }
       })();
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
-  // Grava o rascunho a cada mudança (com respiro de 600ms — digitação não
-  // martela o IndexedDB). Arquivos (File) ficam de fora — não são
-  // serializáveis; os anexos precisam ser reanexados após reabrir.
-  useEffect(() => {
-    if (!restauradoRef.current) return;
-    const t = setTimeout(() => {
-      void salvarRascunho(montarSnapshot()).then((salvoEm) => {
-        if (salvoEm) setRascunhoSalvoEm(salvoEm);
-      });
-    }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites]);
+
+  /* --- ações do painel "Meus casos" --- */
+
+  const ativarPasta = async (raiz: FileSystemDirectoryHandle, nomeDisp: string) => {
+    const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+    setStore(s);
+    setEstadoPainel('pasta');
+    setResumos(await cacheDeResumos());
+    setResumos(await s.listarCasos());
+  };
+
+  const escolherPastaRaiz = async (nomeDisp: string) => {
+    try {
+      setDispositivo(nomeDisp);
+      await salvarDispositivo(nomeDisp);
+      const raiz = await escolherRaiz();
+      if (raiz) await ativarPasta(raiz, nomeDisp);
+    } catch {
+      toast.error('Não consegui acessar a pasta escolhida.');
+    }
+  };
+
+  const desbloquearPasta = async () => {
+    const { raiz } = await estadoDaRaiz();
+    if (!raiz) {
+      setEstadoPainel('sem-raiz');
+      return;
+    }
+    try {
+      if (await pedirPermissao(raiz)) await ativarPasta(raiz, dispositivo);
+      else toast.error('Permissão negada — escolha a pasta de novo se preferir.');
+    } catch {
+      setEstadoPainel('sem-raiz');
+      toast.error('Não encontrei a pasta dos casos. Ela foi movida ou renomeada?');
+    }
+  };
+
+  /** Religa os documentos ao abrir (modo pasta): manifesto + anexos de volta. */
+  const religarDocumentos = async (s: CaseStore, caso: ArquivoCaso) => {
+    try {
+      const diff = await s.varrerDocumentos(caso);
+      manifestoRef.current = diff.manifesto;
+      if (caso.manifesto.length > 0 || diff.resumo.novos > 0) toast.info(resumoDoDiff(diff));
+      // Reanexa os arquivos religados nas caixas de documentos do processo.
+      const mapa: AnexosProcesso = {};
+      for (const item of diff.itens) {
+        if (!item.arquivo?.file) continue;
+        const entrada = diff.manifesto.find((m) => m.caminhoRelativo === item.caminhoRelativo);
+        const docId = entrada?.classificacao;
+        if (!docId) continue;
+        (mapa[docId] ??= []).push(item.arquivo.file);
+      }
+      if (Object.keys(mapa).length > 0) {
+        setAnexosProcesso((prev) => {
+          const proximos = { ...prev };
+          for (const [id, files] of Object.entries(mapa)) {
+            const atuais = proximos[id] ?? [];
+            const novos = files.filter((f) => !atuais.some((a) => a.name === f.name));
+            if (novos.length > 0) proximos[id] = [...atuais, ...novos];
+          }
+          return proximos;
+        });
+      }
+    } catch {
+      // religamento é conforto: a folha abre mesmo sem ele
+    }
+  };
+
+  const abrirCasoDoPainel = async (caseId: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    const caso = await s.abrirCaso(caseId);
+    if (!caso) {
+      toast.error('Não consegui abrir o caso — a pasta foi movida?');
+      return;
+    }
+    if (caso.dados) aplicarSnapshot(caso.dados as CasoSalvo);
+    manifestoRef.current = caso.manifesto;
+    baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
+    setCasoAberto({ cabecalho: caso.cabecalho });
+    setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
+    void religarDocumentos(s, caso);
+  };
+
+  const criarCasoDoPainel = async (tituloNovo: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    try {
+      // O painel só aparece com a folha pristina — o snapshot atual É o vazio.
+      const caso = await s.criarCaso(tituloNovo, montarSnapshot());
+      manifestoRef.current = [];
+      baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
+      setCasoAberto({ cabecalho: caso.cabecalho });
+      setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
+      irPara('caso');
+    } catch {
+      toast.error('Não consegui criar a pasta do caso.');
+    }
+  };
+
+  const duplicarCasoDoPainel = async (caseId: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    const original = await s.abrirCaso(caseId);
+    if (!original) return;
+    await s.criarCaso(`${original.cabecalho.titulo} (cópia)`, original.dados);
+    setResumos(await s.listarCasos());
+    toast.success('Caso duplicado.');
+  };
+
+  const exportarCasoDoPainel = async (caseId: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    const caso = await s.abrirCaso(caseId);
+    if (!caso) return;
+    const blob = new Blob([JSON.stringify(caso, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${caso.cabecalho.titulo || 'caso'}.sucessorista.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const arquivarCasoDoPainel = async (caseId: string) => {
+    const s = storeRef.current;
+    if (!(s instanceof FolderCaseStore)) return;
+    const ok = await s.arquivarCaso(caseId);
+    if (ok) {
+      toast.success('Caso arquivado em _Arquivados/.');
+      setResumos(await s.listarCasos());
+    } else {
+      toast.error('Não consegui arquivar — nada foi movido.');
+    }
+  };
+
+  const restaurarBackupDoPainel = async (caseId: string) => {
+    const s = storeRef.current;
+    if (!(s instanceof FolderCaseStore)) return;
+    const backups = await s.listarBackups(caseId);
+    if (backups.length === 0) {
+      toast.info('Este caso ainda não tem backups.');
+      return;
+    }
+    const caso = await s.restaurarBackup(caseId, backups[0].nome);
+    if (caso) {
+      toast.success(`Versão anterior restaurada (${backups[0].quando}).`);
+      setResumos(await s.listarCasos());
+    } else {
+      toast.error('Não consegui restaurar o backup.');
+    }
+  };
+
+  const importarCasoDoPainel = async (file: File) => {
+    const s = storeRef.current;
+    if (!(s instanceof PortableCaseStore)) return;
+    const caso = await s.importarArquivo(file);
+    if (caso) {
+      setResumos(await s.listarCasos());
+      toast.success('Caso importado — os documentos religam quando você arrastar a pasta.');
+    } else {
+      toast.error('Este arquivo não é um caso válido.');
+    }
+  };
+
+  const migrarRascunhoLegado = async () => {
+    const s = storeRef.current;
+    if (!s) return;
+    const rascunho = await carregarRascunho();
+    if (!rascunho) return;
+    const dados = rascunho.dados as CasoSalvo;
+    const tituloRasc = dados?.familia?.falecido?.nome || 'Rascunho migrado';
+    try {
+      await s.criarCaso(tituloRasc, dados);
+      await idbPut(STORES.config, 'rascunho-migrado', true);
+      setTemRascunhoLegado(false);
+      setResumos(await s.listarCasos());
+      toast.success('Rascunho guardado como caso — o original permanece no navegador.');
+    } catch {
+      toast.error('Não consegui guardar o rascunho como caso.');
+    }
+  };
+
+  const voltarAoPainel = () => {
+    // Flush + recarga: o painel volta com a folha pristina (o estado do
+    // wizard é extenso demais para reset campo a campo com segurança).
+    void salvarAgoraRef.current().finally(() => {
+      // Recarga proposital: zera a folha para o painel abrir pristino.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = '/sucessorista';
+    });
+  };
 
   // Perfil (Advogado × Escrevente) vale para o navegador, não para o caso.
   useEffect(() => {
@@ -702,12 +959,21 @@ export default function SucessoristaClient() {
    */
   const custos = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0) return null;
-    const transferencias =
-      atribuicao && atribuicao.bloqueios.length === 0
-        ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
-        : [];
+    const atribuicaoOk = atribuicao && atribuicao.bloqueios.length === 0;
+    const transferencias = atribuicaoOk
+      ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
+      : [];
+    // Pagamentos da partilha (Nota Explicativa 3.1.1): na diferenciada valem
+    // os valores ATRIBUÍDOS; senão, meação + quinhão de cada herdeiro.
+    const pagamentos = atribuicaoOk
+      ? atribuicao.posicoes.map((p) => Number(p.valorAtribuido))
+      : [
+          ...(resultado.meacao ? [Number(resultado.meacao.valor)] : []),
+          ...resultado.quinhoes.map((q) => Number(q.valor)),
+        ];
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
+      pagamentos,
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
         .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
@@ -718,6 +984,181 @@ export default function SucessoristaClient() {
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
     });
   }, [resultado, atribuicao, bens, herdeiros.length, temSobrevivente, provisao]);
+
+  /**
+   * Monta o caso.json atual: cabeçalho vivo (autor, óbito, nº de documentos
+   * e custo projetado saem da própria folha), dados = snapshot do wizard e
+   * manifesto com a classificação sincronizada dos anexos.
+   */
+  const montarArquivoCasoAtual = async (): Promise<ArquivoCaso | null> => {
+    const aberto = casoAbertoRef.current;
+    if (!aberto) return null;
+    const manifesto = manifestoRef.current.map((m) => {
+      if (m.classificacao) return m;
+      const docId = Object.keys(anexosProcesso).find((id) =>
+        (anexosProcesso[id] ?? []).some((f) => f.name === m.nome),
+      );
+      return docId ? { ...m, classificacao: docId } : m;
+    });
+    manifestoRef.current = manifesto;
+    const custoTotal =
+      provisao && custos ? provisao.total + custos.total : provisao ? provisao.total : null;
+    return montarArquivoCaso({
+      cabecalho: {
+        ...aberto.cabecalho,
+        autorDaHeranca: falecido.nome || aberto.cabecalho.autorDaHeranca,
+        dataObito: falecido.dataObito || aberto.cabecalho.dataObito,
+        qtdDocumentos: manifesto.filter((m) => !m.faltando).length,
+        custoProjetado: custoTotal,
+      },
+      dados: montarSnapshot(),
+      manifesto,
+    });
+  };
+
+  /** Salva o caso aberto no store ativo, com a guarda de conflito. */
+  const salvarAgora = async (forcar = false): Promise<void> => {
+    const s = storeRef.current;
+    if (!s || !casoAbertoRef.current) return;
+    const arquivo = await montarArquivoCasoAtual();
+    if (!arquivo) return;
+    setSalvamento((v) => (v.estado === 'somente-leitura' ? v : { ...v, estado: 'salvando' }));
+    const r = await s.salvarCaso(arquivo, {
+      baseAtualizadoEm: baseAtualizadoEmRef.current,
+      forcar,
+    });
+    if (r.ok && r.salvoEm) {
+      baseAtualizadoEmRef.current = r.salvoEm;
+      setConflito(null);
+      setSalvamento({ estado: 'salvo', quando: r.salvoEm });
+      setRascunhoSalvoEm(r.salvoEm);
+    } else if (r.conflito) {
+      setConflito(r.conflito);
+      setSalvamento({ estado: 'erro', erro: 'conflito' });
+    } else {
+      setSalvamento({
+        estado: r.erro?.includes('Permissão') ? 'somente-leitura' : 'erro',
+        erro: r.erro,
+      });
+    }
+  };
+  const salvarAgoraRef = useRef(salvarAgora);
+  useEffect(() => {
+    salvarAgoraRef.current = salvarAgora;
+  });
+
+  // Salvamento automático: 1s após a última alteração da folha.
+  useEffect(() => {
+    if (!restauradoRef.current || !casoAberto) return;
+    const t = setTimeout(() => {
+      void salvarAgoraRef.current();
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+
+  // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
+  useEffect(() => {
+    const flush = () => void salvarAgoraRef.current();
+    const aoEsconder = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', aoEsconder);
+    window.addEventListener('blur', flush);
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', aoEsconder);
+      window.removeEventListener('blur', flush);
+      window.removeEventListener('beforeunload', flush);
+    };
+  }, []);
+
+  /**
+   * Ações dos cards de economia: quando o advogado ACEITA a sugestão, o
+   * sistema redesenha a partilha diferenciada na hora (a matriz é
+   * preenchida/limpada e a folha recalcula tudo — sempre para conferência).
+   */
+
+  /** Linha da matriz com 2 casas, ajustada no maior valor para fechar 100. */
+  const fecharLinha = (pcts: Record<string, number>): Record<string, string> => {
+    const ids = Object.keys(pcts).filter((id) => pcts[id] > 0);
+    if (ids.length === 0) return {};
+    const arred = ids.map((id) => ({ id, pct: Math.round(pcts[id] * 100) / 100 }));
+    const soma = arred.reduce((a, x) => a + x.pct, 0);
+    let maior = 0;
+    for (let i = 1; i < arred.length; i++) if (arred[i].pct > arred[maior].pct) maior = i;
+    arred[maior].pct = Math.round((arred[maior].pct + (100 - soma)) * 100) / 100;
+    return Object.fromEntries(
+      arred.filter((x) => x.pct > 0).map((x) => [x.id, x.pct.toFixed(2).replace('.', ',')]),
+    );
+  };
+
+  /**
+   * Sugestão do usufruto aceita: imóveis vão aos HERDEIROS (na proporção dos
+   * quinhões entre si — a nua-propriedade deles) e o(a) sobrevivente é
+   * compensado(a) com os demais bens até a meação/quinhão, minimizando a
+   * torna. A reserva do usufruto vitalício entra como cláusula na minuta.
+   */
+  const redesenharComUsufruto = () => {
+    if (!resultado || resultado.bloqueios.length > 0) return;
+    const herdeirosPart = participantes.filter((p) => p.id !== '__sobrevivente__');
+    const dirHerdeiros = herdeirosPart.map((p) => direitoPorParticipante[p.id] ?? 0);
+    const somaHerd = dirHerdeiros.reduce((a, v) => a + v, 0);
+    if (somaHerd <= 0) return;
+    const linhaHerdeiros = fecharLinha(
+      Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
+    );
+    const nova: Record<string, Record<string, string>> = {};
+    for (const b of bens) if (b.tipo === 'IMOVEL') nova[b.id] = { ...linhaHerdeiros };
+    // Compensação do(a) sobrevivente com os bens não-imóveis, do maior para
+    // o menor — o que não fechar vira torna, apontada pelo próprio espelho.
+    let alvoSobrev = direitoPorParticipante['__sobrevivente__'] ?? 0;
+    const naoImoveis = bens
+      .filter((b) => b.tipo !== 'IMOVEL')
+      .sort((a, b) => Number(b.valor) - Number(a.valor));
+    for (const b of naoImoveis) {
+      const v = Number(b.valor);
+      if (v <= 0) continue;
+      if (alvoSobrev <= 0) {
+        nova[b.id] = { ...linhaHerdeiros };
+        continue;
+      }
+      const pctSobrev = Math.min(100, (alvoSobrev / v) * 100);
+      alvoSobrev = Math.max(0, alvoSobrev - v);
+      const resto = 100 - pctSobrev;
+      nova[b.id] = fecharLinha({
+        __sobrevivente__: pctSobrev,
+        ...Object.fromEntries(
+          herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * resto]),
+        ),
+      });
+    }
+    setMatriz(nova);
+    setPasso(2);
+    toast.success('Partilha redesenhada com a nua-propriedade nos herdeiros', {
+      description:
+        'Imóveis atribuídos aos herdeiros e sobrevivente compensado(a) com os demais bens. Inclua a RESERVA DE USUFRUTO VITALÍCIO na minuta (campo de instruções à IA ou cláusula própria) e confira o espelho antes de gerar documentos.',
+    });
+  };
+
+  /** Sugestão aceita: partilha na proporção exata do direito — sem torna. */
+  const redesenharSemTorna = () => {
+    setMatriz({});
+    setPasso(2);
+    toast.success('Partilha redesenhada na proporção do direito', {
+      description:
+        'Todas as linhas voltaram ao espelho legal: sem diferença de quinhão, sem torna e sem imposto de cessão.',
+    });
+  };
+
+  /** Sugestão aceita: a diferença passa a ser cedida de graça (doação). */
+  const converterParaGratuita = () => {
+    setTitulo('GRATUITO');
+    setPasso(2);
+    toast.success('Diferença convertida em cessão gratuita', {
+      description:
+        'O acerto deixou de ser reposição onerosa (ITBI) e passou a doação — dentro de 2.500 UFESPs por donatário/ano, isenta (art. 6º, II, "a"). Só vale se a parte cedente realmente dispensar a compensação.',
+    });
+  };
 
   /**
    * Oportunidades de economia (motor puro): isenções e prazos deste
@@ -760,6 +1201,32 @@ export default function SucessoristaClient() {
 
   /* --- etapa 0: mesclagem da leitura na folha (campo vazio primeiro) --- */
   const aplicarLeitura = (lido: CasoExtraido, arquivos: ArquivoClassificado[]) => {
+    // Manifesto: casa os arquivos arrastados com o que o caso conhece —
+    // religamento por hash no modo portátil (no modo pasta, a varredura da
+    // própria pasta já religa ao abrir).
+    if (casoAbertoRef.current && arquivos.length > 0) {
+      const infos: InfoArquivoDisco[] = arquivos.map(({ file }) => ({
+        caminhoRelativo:
+          (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+        nome: file.name,
+        tamanho: file.size,
+        lastModified: file.lastModified,
+        mime: file.type || undefined,
+        file,
+      }));
+      void casarManifesto(infos, manifestoRef.current, async (a) =>
+        a.file ? sha256DeBlob(a.file) : '',
+      ).then((diff) => {
+        manifestoRef.current = diff.manifesto.map((m) => {
+          if (m.classificacao) return m;
+          const a = arquivos.find((x) => x.file.name === m.nome && x.documentoId);
+          return a?.documentoId ? { ...m, classificacao: a.documentoId } : m;
+        });
+        if (diff.resumo.religados + diff.resumo.movidos + diff.resumo.faltando > 0) {
+          toast.info(resumoDoDiff(diff));
+        }
+      });
+    }
     if (arquivos.length > 0) {
       setAnexosProcesso((prev) => {
         const proximos = { ...prev };
@@ -1277,9 +1744,31 @@ export default function SucessoristaClient() {
 
   return (
     <div className="sucessorista">
+    {/* Sem caso aberto, a tela inicial é o painel "Meus casos". */}
+    {casoAberto === null ? (
+      <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <Link href="/" className="voltar" style={{ fontSize: 13 }}>← Módulos</Link>
+        <CasosView
+          estado={estadoPainel}
+          resumos={resumos}
+          dispositivo={dispositivo}
+          temRascunhoLegado={temRascunhoLegado}
+          onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
+          onDesbloquear={() => void desbloquearPasta()}
+          onAbrir={(id) => void abrirCasoDoPainel(id)}
+          onCriar={(t) => void criarCasoDoPainel(t)}
+          onDuplicar={(id) => void duplicarCasoDoPainel(id)}
+          onExportar={(id) => void exportarCasoDoPainel(id)}
+          onArquivar={(id) => void arquivarCasoDoPainel(id)}
+          onRestaurarBackup={(id) => void restaurarBackupDoPainel(id)}
+          onImportar={(f) => void importarCasoDoPainel(f)}
+          onMigrarRascunho={() => void migrarRascunhoLegado()}
+        />
+      </div>
+    ) : (
     <div className="processo">
       <nav className="lombada" aria-label="Abas do processo">
-        <Link href="/" className="voltar">← Módulos</Link>
+        <button className="voltar" onClick={voltarAoPainel}>← Meus casos</button>
         <div className="marca">
           O Sucessorista
           <small>Folha de trabalho do inventário</small>
@@ -1309,15 +1798,16 @@ export default function SucessoristaClient() {
             ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
             ['itcmd', 'IV', 'ITCMD'],
-            ['documentos', 'V', 'Documentos'],
+            ['custos', 'V', 'Custos'],
+            ['documentos', 'VI', 'Documentos'],
             // Abas finais por perfil: honorários e minutas são do advogado;
-            // a escritura é o item VI do balcão do escrevente.
+            // a escritura é o item VII do balcão do escrevente.
             ...(perfil === 'ADVOGADO'
               ? ([
-                  ['honorarios', 'VI', 'Honorários'],
-                  ['minutas', 'VII', 'Minutas'],
+                  ['honorarios', 'VII', 'Honorários'],
+                  ['minutas', 'VIII', 'Minutas'],
                 ] as const)
-              : ([['escritura', 'VI', 'Escritura']] as const)),
+              : ([['escritura', 'VII', 'Escritura']] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
@@ -1330,19 +1820,37 @@ export default function SucessoristaClient() {
             {rotulo}
           </button>
         ))}
-        {rascunhoSalvoEm && (
-          <div className="rascunho-info" title="Rascunho local (IndexedDB) — nada sai desta máquina">
-            ● Rascunho salvo neste navegador
-            <small>
-              {new Date(rascunhoSalvoEm).toLocaleString('pt-BR', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </small>
-          </div>
-        )}
+        {/* Indicador de salvamento — o caso grava sozinho, nada sai da máquina. */}
+        <div
+          className={`rascunho-info${salvamento.estado === 'erro' || salvamento.estado === 'somente-leitura' ? ' problema' : ''}`}
+          title={
+            store?.modo === 'pasta'
+              ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+              : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+          }
+        >
+          {salvamento.estado === 'salvando' && '● salvando…'}
+          {salvamento.estado === 'salvo' && (
+            <>
+              ● salvo às{' '}
+              {salvamento.quando
+                ? new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : ''}
+            </>
+          )}
+          {salvamento.estado === 'erro' && (
+            <button className="religar" onClick={() => void salvarAgoraRef.current()}>
+              ● erro ao salvar — tentar de novo
+            </button>
+          )}
+          {salvamento.estado === 'somente-leitura' && (
+            <button className="religar" onClick={() => void desbloquearPasta()}>
+              ● somente leitura — reconectar pasta
+            </button>
+          )}
+          {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
+          <small>{store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
+        </div>
         <div className="selo">
           Cálculo de apoio com fundamento legal.
           <br />
@@ -1635,7 +2143,23 @@ export default function SucessoristaClient() {
               </section>
             )}
 
-            <EconomiaView economias={economias} />
+            <EconomiaView
+              economias={economias}
+              acoes={{
+                'usufruto-nua-propriedade': {
+                  rotulo: 'Aceitar: redesenhar com a nua-propriedade nos herdeiros',
+                  executar: redesenharComUsufruto,
+                },
+                'torna-acima-da-isencao': {
+                  rotulo: 'Aceitar: redesenhar sem torna (proporção do direito)',
+                  executar: redesenharSemTorna,
+                },
+                'torna-onerosa-vs-doacao': {
+                  rotulo: 'Aceitar: tratar a diferença como cessão gratuita',
+                  executar: converterParaGratuita,
+                },
+              }}
+            />
           </>
         )}
 
@@ -1679,10 +2203,18 @@ export default function SucessoristaClient() {
             setFiscal={setFiscal}
             isencoes={isencoes}
             provisao={provisao}
-            custos={custos}
             hoje={hoje}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
+          />
+        )}
+
+        {abaProc === 'custos' && (
+          <CustosView
+            custos={custos}
+            provisao={provisao}
+            irParaAcervo={() => irPara('acervo')}
+            irParaItcmd={() => irPara('itcmd')}
           />
         )}
 
@@ -1735,6 +2267,56 @@ export default function SucessoristaClient() {
         custos={custos}
       />
     </div>
+    )}
+
+    {/* guarda de conflito: outro computador salvou este caso depois de você abrir */}
+    <Dialog open={conflito !== null} onOpenChange={() => undefined}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Este caso foi alterado em outro lugar</DialogTitle>
+          <DialogDescription>
+            {conflito
+              ? `Salvo por ${conflito.atualizadoPor} em ${new Date(conflito.atualizadoEm).toLocaleString('pt-BR')} — depois de você abrir. Nenhuma versão será perdida: escolha o que fazer.`
+              : ''}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter style={{ flexWrap: 'wrap', gap: 8 }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (!conflito) return;
+              const disco = conflito.arquivoNoDisco;
+              if (disco.dados) aplicarSnapshot(disco.dados as CasoSalvo);
+              manifestoRef.current = disco.manifesto;
+              baseAtualizadoEmRef.current = disco.cabecalho.atualizadoEm;
+              setCasoAberto({ cabecalho: disco.cabecalho });
+              setConflito(null);
+              setSalvamento({ estado: 'salvo', quando: disco.cabecalho.atualizadoEm });
+              toast.info('Recarregado do disco — as SUAS alterações não salvas foram descartadas.');
+            }}
+          >
+            Recarregar do disco
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void (async () => {
+                const s = storeRef.current;
+                const arquivo = await montarArquivoCasoAtual();
+                if (s instanceof FolderCaseStore && arquivo && (await s.salvarComoConflito(arquivo))) {
+                  toast.success('Sua versão foi salva como caso.conflito.<data>.json na pasta.');
+                } else {
+                  toast.error('Não consegui salvar a cópia.');
+                }
+              })();
+            }}
+          >
+            Salvar como cópia
+          </Button>
+          <Button onClick={() => void salvarAgoraRef.current(true)}>Manter a minha versão</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }
