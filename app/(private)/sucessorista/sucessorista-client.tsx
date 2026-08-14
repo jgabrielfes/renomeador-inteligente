@@ -44,6 +44,7 @@ import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFale
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { projetarCustos } from '@/lib/partilha/custas';
+import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -963,17 +964,16 @@ export default function SucessoristaClient() {
     const transferencias = atribuicaoOk
       ? atribuicao.transferencias.map((t) => ({ valor: Number(t.valor), tributo: t.tributo }))
       : [];
-    // Pagamentos da partilha (Nota Explicativa 3.1.1): na diferenciada valem
-    // os valores ATRIBUÍDOS; senão, meação + quinhão de cada herdeiro.
-    const pagamentos = atribuicaoOk
-      ? atribuicao.posicoes.map((p) => Number(p.valorAtribuido))
-      : [
-          ...(resultado.meacao ? [Number(resultado.meacao.valor)] : []),
-          ...resultado.quinhoes.map((q) => Number(q.valor)),
-        ];
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
-      pagamentos,
+      // Legítima: a escritura é UM ato pela herança transmitida (sem a meação).
+      baseEscritura: Number(resultado.heranca.total),
+      qtdRenunciantes: herdeiros.filter((h) => h.status === 'RENUNCIANTE').length,
+      sucessoes: (fiscal.sucessoes ?? []).map((su) => ({
+        nome: su.nome,
+        base: Number(su.base) || 0,
+        qtdImoveis: su.qtdImoveis,
+      })),
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
         .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
@@ -983,7 +983,25 @@ export default function SucessoristaClient() {
       transferencias,
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
     });
-  }, [resultado, atribuicao, bens, herdeiros.length, temSobrevivente, provisao]);
+  }, [resultado, atribuicao, bens, herdeiros, temSobrevivente, provisao, fiscal.sucessoes]);
+
+  /**
+   * ITCMD das sucessões CUMULADAS: cada uma tem o PRÓPRIO fato gerador —
+   * UFESP do ano do óbito respectivo, prazos e encargos independentes.
+   */
+  const provisoesSucessoes = useMemo(() => {
+    return (fiscal.sucessoes ?? [])
+      .filter((su) => su.dataObito && Number(su.base) > 0)
+      .map((su) => ({
+        sucessao: su,
+        provisao: provisionarItcmd({
+          dataObito: su.dataObito,
+          dataReferencia: hoje,
+          baseCalculo: Number(su.base),
+        }),
+      }));
+  }, [fiscal.sucessoes, hoje]);
+  const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
    * Monta o caso.json atual: cabeçalho vivo (autor, óbito, nº de documentos
@@ -1367,30 +1385,59 @@ export default function SucessoristaClient() {
     });
 
     if (lido.bens.length > 0) {
+      // UM imóvel pode vir em mais de uma inscrição municipal (Guarulhos:
+      // 084.33.20.0048.01.000 e ...02.000): funde em um bem só, com os
+      // valores SOMADOS — um ato de registro, não dois.
+      const bensLidos = fundirImoveisPorInscricao(lido.bens);
+      const soDigitos = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
+      // Preenche só o que está vazio — detalhe já digitado/lido nunca é
+      // sobrescrito, mas leitura NOVA completa as lacunas que faltavam.
+      const preencherDetalhes = (
+        atual: object | undefined,
+        lidoDet: object | null | undefined,
+      ): Record<string, unknown> | undefined => {
+        if (!lidoDet) return atual as Record<string, unknown> | undefined;
+        const doLido = Object.fromEntries(
+          Object.entries(lidoDet).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+        );
+        const doAtual = Object.fromEntries(
+          Object.entries(atual ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+        );
+        const junto = { ...doLido, ...doAtual };
+        return Object.keys(junto).length > 0 ? junto : (atual as Record<string, unknown> | undefined);
+      };
       setBens((prev) => {
         // Bem já lançado ganha os DETALHES lidos (matrícula, valores venais,
-        // CRLV) que ainda não tinha; bem novo entra com tudo.
+        // CRLV): casa por descrição igual OU pela MATRÍCULA (a matrícula lida
+        // aparecendo na descrição/detalhe do bem já lançado).
+        const casados = new Set<(typeof bensLidos)[number]>();
         const atualizados = prev.map((bem) => {
-          const lidoB = lido.bens.find(
-            (x) => x.descricao.trim().toLowerCase() === bem.descricao.trim().toLowerCase(),
-          );
+          const lidoB = bensLidos.find((x) => {
+            if (casados.has(x)) return false;
+            if (x.descricao.trim().toLowerCase() === bem.descricao.trim().toLowerCase()) return true;
+            const matLida = soDigitos(x.imovel?.matricula as string | undefined);
+            if (matLida.length >= 3) {
+              if (soDigitos(bem.imovel?.matricula) === matLida) return true;
+              if (soDigitos(bem.descricao).includes(matLida)) return true;
+            }
+            return false;
+          });
           if (!lidoB) return bem;
-          const proximo = { ...bem };
-          if (!proximo.imovel && lidoB.imovel) {
-            proximo.imovel = Object.fromEntries(
-              Object.entries(lidoB.imovel).filter(([, v]) => v !== null),
-            );
-          }
-          if (!proximo.veiculo && lidoB.veiculo) {
-            proximo.veiculo = Object.fromEntries(
-              Object.entries(lidoB.veiculo).filter(([, v]) => v !== null),
-            );
-          }
-          return proximo;
+          casados.add(lidoB);
+          return {
+            ...bem,
+            imovel: preencherDetalhes(bem.imovel, lidoB.imovel) as typeof bem.imovel,
+            veiculo: preencherDetalhes(bem.veiculo, lidoB.veiculo) as typeof bem.veiculo,
+          };
         });
-        const descricoes = new Set(atualizados.map((b) => b.descricao.trim().toLowerCase()));
-        const novos = lido.bens
-          .filter((b) => !descricoes.has(b.descricao.trim().toLowerCase()))
+        const novos = bensLidos
+          .filter((b) => !casados.has(b))
+          .filter(
+            (b) =>
+              !atualizados.some(
+                (x) => x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase(),
+              ),
+          )
           .map((b) => ({
             id: uid('b'),
             descricao: b.descricao,
@@ -2213,6 +2260,9 @@ export default function SucessoristaClient() {
           <CustosView
             custos={custos}
             provisao={provisao}
+            sucessoes={fiscal.sucessoes ?? []}
+            setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
+            provisoesSucessoes={provisoesSucessoes}
             irParaAcervo={() => irPara('acervo')}
             irParaItcmd={() => irPara('itcmd')}
           />
@@ -2265,6 +2315,7 @@ export default function SucessoristaClient() {
         faixas={fiscal.faixas}
         economias={economias}
         custos={custos}
+        impostoSucessoes={impostoSucessoes}
       />
     </div>
     )}

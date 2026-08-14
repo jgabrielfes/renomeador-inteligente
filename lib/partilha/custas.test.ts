@@ -9,6 +9,7 @@ import {
   emolumentoEscritura,
   emolumentoRegistro,
   CERTIDAO_RI_2026,
+  ESCRITURA_SEM_VALOR_2026,
   taxaJudiciaria,
   projetarCustos,
   type EntradaCustos,
@@ -47,11 +48,12 @@ eq('1,2M → 300 UFESPs', taxaJudiciaria(1_200_000, U), { valor: 11_526, ufesps:
 eq('4M → 1.000 UFESPs', taxaJudiciaria(4_000_000, U), { valor: 38_420, ufesps: 1_000 });
 eq('8M → 3.000 UFESPs (teto)', taxaJudiciaria(8_000_000, U), { valor: 115_260, ufesps: 3_000 });
 
-/* partilha: cálculo POR PAGAMENTO (Nota 3.1.1) */
+/* escritura: UM ato pela LEGÍTIMA (herança sem a meação) */
 const BASE: EntradaCustos = {
   monteMor: 900_000,
-  // meação de 450k + 3 quinhões de 150k
-  pagamentos: [450_000, 150_000, 150_000, 150_000],
+  baseEscritura: 450_000, // legítima: monte − meação
+  qtdRenunciantes: 0,
+  sucessoes: [],
   imoveis: [{ descricao: 'Casa em Guarulhos', valor: 900_000 }],
   rito: 'EXTRAJUDICIAL',
   qtdHerdeiros: 3,
@@ -61,15 +63,29 @@ const BASE: EntradaCustos = {
 };
 const partilha = projetarCustos(BASE);
 const escritura = partilha.parcelas.find((p) => p.id === 'escritura')!;
-// 450k → 5.519,90 · 150k → 2.728,61 (×3) = 13.705,73
-eq('escritura por pagamento: soma das faixas', escritura.valor, 13_705.73);
-eq('escritura por pagamento: 4 pagamentos', escritura.quantidade, 4);
-eq('escritura por pagamento: cita a Nota 3.1.1', escritura.fundamento.includes('3.1.1'), true);
-eq('escritura por pagamento: valor de tabela (sem asterisco)', escritura.aproximado, false);
+// 450k (legítima) → faixa 384.200,01–768.400 = R$ 5.519,90 — ATO ÚNICO
+eq('escritura: ato único pela legítima', escritura.valor, 5_519.9);
+eq('escritura: quantidade 1', escritura.quantidade, 1);
+eq('escritura: valor de tabela (sem asterisco)', escritura.aproximado, false);
+eq('escritura: detalhe cita a meação descontada', escritura.detalhe!.includes('descontada a meação'), true);
 
-/* adjudicação: pagamento único = ato único pelo monte-mor */
-const adjudicacao = projetarCustos({ ...BASE, pagamentos: [900_000], temSobrevivente: false, qtdHerdeiros: 1 });
-eq('adjudicação: faixa única do monte', adjudicacao.parcelas.find((p) => p.id === 'escritura')!.valor, 6_129.04);
+/* renúncia: um ato SEM valor declarado por renunciante */
+const comRenuncia = projetarCustos({ ...BASE, qtdRenunciantes: 2 });
+const renuncias = comRenuncia.parcelas.find((p) => p.id === 'renuncias')!;
+eq('renúncia: 2 atos sem valor declarado', renuncias.valor, 2 * ESCRITURA_SEM_VALOR_2026);
+eq('renúncia: item 6.2 da tabela', renuncias.fundamento.includes('6.2'), true);
+
+/* sucessões cumuladas: escritura + registros próprios por sucessão */
+const cumulado = projetarCustos({
+  ...BASE,
+  sucessoes: [{ nome: 'Maria', base: 200_000, qtdImoveis: 1 }],
+});
+const idsCum = cumulado.parcelas.map((p) => p.id);
+eq('sucessão cumulada: escritura própria', idsCum.includes('escritura-sucessao-0'), true);
+eq('sucessão cumulada: registro próprio', idsCum.includes('registro-sucessao-0'), true);
+// 200k → faixa 192.100,01–230.520 = R$ 3.458,80
+eq('sucessão cumulada: faixa da base', cumulado.parcelas.find((p) => p.id === 'escritura-sucessao-0')!.valor, 3_458.8);
+eq('sucessão cumulada: aviso do art. 672', cumulado.avisos.some((a) => a.includes('672')), true);
 
 /* parcelas esperadas e certidões */
 const ids = partilha.parcelas.map((p) => p.id);
@@ -93,9 +109,10 @@ const diferenciada = projetarCustos({
   transferencias: [{ valor: 120_000, tributo: 'ITCMD_DOACAO' }],
 });
 const idsDif = diferenciada.parcelas.map((p) => p.id);
-eq('ato inter vivos vira escritura a mais', idsDif.includes('escritura-intervivos-0'), true);
+eq('torna vira ato próprio pela base da torna', idsDif.includes('escritura-torna-0'), true);
 // 120 mil cai na faixa 115.260,01–153.680 → R$ 2.728,61
-eq('ato extra pela faixa do excedente', diferenciada.parcelas.find((p) => p.id === 'escritura-intervivos-0')!.valor, 2_728.61);
+eq('ato da torna pela faixa do valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.valor, 2_728.61);
+eq('torna: fundamento base = valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.fundamento.includes('valor da torna'), true);
 eq('registro adicional por imóvel', idsDif.includes('registro-atos-extras'), true);
 eq('aviso cita o usufruto acessório (1/4 sobre 1/3)', diferenciada.avisos.some((a) => a.includes('1/3')), true);
 

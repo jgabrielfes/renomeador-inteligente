@@ -178,7 +178,6 @@ export function FamiliaView({
           qualifica o(a) falecido(a) na escritura e nas petições. A leitura da
           certidão de óbito preenche o que constar. */}
       <QualificacaoEditor
-        titulo="Qualificação do(a) autor(a) da herança (para a escritura)"
         valor={estado.qualificacoes['__falecido__'] ?? QUALIFICACAO_VAZIA}
         onChange={(q) =>
           onChange({ ...estado, qualificacoes: { ...estado.qualificacoes, ['__falecido__']: q } })
@@ -623,7 +622,8 @@ export function QualificacaoEditor({
   onChange,
   comConjuge = true,
 }: {
-  titulo: string;
+  /** Omitido = campos direto, sem divisão própria (ficha do falecido). */
+  titulo?: string;
   valor: Qualificacao;
   onChange: (q: Qualificacao) => void;
   /** false para o(a) sobrevivente: cônjuge do cônjuge não existe. */
@@ -632,7 +632,7 @@ export function QualificacaoEditor({
   const grupos = comConjuge ? [...GRUPOS_QUALIFICACAO, GRUPO_CONJUGE] : GRUPOS_QUALIFICACAO;
   return (
     <div style={{ marginTop: 14 }}>
-      <span className="eyebrow">{titulo}</span>
+      {titulo && <span className="eyebrow">{titulo}</span>}
       {grupos.map((grupo) => (
         <div key={grupo.rotulo} style={{ marginTop: 12 }}>
           <p className="q-grupo">{grupo.rotulo}</p>
