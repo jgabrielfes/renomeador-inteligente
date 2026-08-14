@@ -123,7 +123,6 @@ export function FamiliaView({
           <Input
             value={falecido.nome}
             onChange={(e) => setFalecido({ nome: e.target.value })}
-            placeholder="Antonio"
           />
         </label>
         <label className="campo">
@@ -132,7 +131,6 @@ export function FamiliaView({
             value={falecido.cpf}
             onChange={(e) => setFalecido({ cpf: mascararCpf(e.target.value) })}
             inputMode="numeric"
-            placeholder="123.456.789-00"
           />
         </label>
         <label className="campo">
@@ -151,7 +149,6 @@ export function FamiliaView({
           <Input
             value={falecido.ultimoDomicilio}
             onChange={(e) => setFalecido({ ultimoDomicilio: e.target.value })}
-            placeholder="Guarulhos/SP"
           />
         </label>
         <label className="campo">
@@ -159,7 +156,6 @@ export function FamiliaView({
           <Input
             value={falecido.localFalecimento ?? ''}
             onChange={(e) => setFalecido({ localFalecimento: e.target.value })}
-            placeholder="Hospital Stella Maris, Guarulhos/SP"
           />
         </label>
         <label className="campo">
@@ -167,7 +163,6 @@ export function FamiliaView({
           <Input
             value={falecido.certidaoObito ?? ''}
             onChange={(e) => setFalecido({ certidaoObito: e.target.value })}
-            placeholder="matrícula nº …, ORCPN do 1º Subdistrito — Guarulhos/SP"
           />
         </label>
         <label className="campo">
@@ -175,7 +170,6 @@ export function FamiliaView({
           <Input
             value={falecido.certidaoCasamento ?? ''}
             onChange={(e) => setFalecido({ certidaoCasamento: e.target.value })}
-            placeholder="matrícula nº …, ORCPN do 1º Subdistrito — Guarulhos/SP"
           />
         </label>
       </div>
@@ -229,8 +223,7 @@ export function FamiliaView({
               <Input
                 value={nomeSobrev}
                 onChange={(e) => set({ nomeSobrev: e.target.value })}
-                placeholder="Maria"
-              />
+                  />
             </label>
             <label className="campo">
               Data do casamento / início da união
@@ -376,8 +369,7 @@ function EditorHerdeiros({
             <FieldLabel htmlFor="herdeiro-nome">Nome</FieldLabel>
             <Input
               id="herdeiro-nome"
-              placeholder="Ana"
-              aria-invalid={Boolean(errors.nome)}
+                aria-invalid={Boolean(errors.nome)}
               {...register('nome')}
             />
             <FieldError errors={[errors.nome]} />
@@ -506,8 +498,7 @@ function EditorHerdeiros({
                   Nome completo (como consta no documento)
                   <Input
                     value={h.nome}
-                    placeholder="Renata Pummer Carvalho"
-                    onChange={(e) => patchHerdeiro(h.id, { nome: e.target.value })}
+                            onChange={(e) => patchHerdeiro(h.id, { nome: e.target.value })}
                   />
                 </label>
               </div>
@@ -566,7 +557,6 @@ function EditorHerdeiros({
 interface CampoQualificacao {
   campo: keyof Qualificacao;
   rotulo: string;
-  placeholder?: string;
 }
 
 /** Agrupada na ordem em que a qualificação é lida numa escritura. */
@@ -574,7 +564,7 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   {
     rotulo: 'Identificação',
     campos: [
-      { campo: 'cpf', rotulo: 'CPF', placeholder: '123.456.789-00' },
+      { campo: 'cpf', rotulo: 'CPF' },
       { campo: 'rg', rotulo: 'RG' },
       { campo: 'dataNascimento', rotulo: 'Data de nascimento' },
       { campo: 'filiacao', rotulo: 'Filiação' },
@@ -583,10 +573,10 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   {
     rotulo: 'Dados pessoais',
     campos: [
-      { campo: 'nacionalidade', rotulo: 'Nacionalidade', placeholder: 'brasileiro(a)' },
+      { campo: 'nacionalidade', rotulo: 'Nacionalidade' },
       { campo: 'estadoCivil', rotulo: 'Estado civil' },
       { campo: 'profissao', rotulo: 'Profissão' },
-      { campo: 'email', rotulo: 'E-mail', placeholder: 'parte@exemplo.com' },
+      { campo: 'email', rotulo: 'E-mail' },
     ],
   },
   {
@@ -597,7 +587,7 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
       { campo: 'bairro', rotulo: 'Bairro' },
       { campo: 'cidade', rotulo: 'Cidade' },
       { campo: 'uf', rotulo: 'Estado (UF)' },
-      { campo: 'cep', rotulo: 'CEP', placeholder: '00000-000' },
+      { campo: 'cep', rotulo: 'CEP' },
     ],
   },
 ];
@@ -607,15 +597,15 @@ const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
   rotulo: 'Cônjuge do herdeiro (se casado) e casamento',
   campos: [
     { campo: 'conjugeNome', rotulo: 'Nome completo' },
-    { campo: 'conjugeNacionalidade', rotulo: 'Nacionalidade', placeholder: 'brasileiro(a)' },
-    { campo: 'conjugeCpf', rotulo: 'CPF', placeholder: '123.456.789-00' },
+    { campo: 'conjugeNacionalidade', rotulo: 'Nacionalidade' },
+    { campo: 'conjugeCpf', rotulo: 'CPF' },
     { campo: 'conjugeRg', rotulo: 'RG' },
     { campo: 'conjugeDataNascimento', rotulo: 'Data de nascimento' },
     { campo: 'conjugeFiliacao', rotulo: 'Filiação' },
     { campo: 'conjugeProfissao', rotulo: 'Profissão' },
     { campo: 'conjugeEmail', rotulo: 'E-mail' },
     { campo: 'casamentoData', rotulo: 'Data do casamento' },
-    { campo: 'casamentoRegime', rotulo: 'Regime de bens', placeholder: 'comunhão parcial de bens' },
+    { campo: 'casamentoRegime', rotulo: 'Regime de bens' },
     { campo: 'casamentoCertidao', rotulo: 'Certidão de casamento (matrícula/ORCPN)' },
   ],
 };
@@ -647,7 +637,7 @@ export function QualificacaoEditor({
         <div key={grupo.rotulo} style={{ marginTop: 12 }}>
           <p className="q-grupo">{grupo.rotulo}</p>
           <div className="grade q-grid">
-            {grupo.campos.map(({ campo, rotulo, placeholder }) => (
+            {grupo.campos.map(({ campo, rotulo }) => (
               <label className="campo" key={campo}>
                 {rotulo}
                 {CAMPOS_DE_DATA.has(campo) ? (
@@ -658,7 +648,6 @@ export function QualificacaoEditor({
                 ) : (
                   <Input
                     value={valor[campo]}
-                    placeholder={placeholder}
                     inputMode={campo === 'cpf' || campo === 'conjugeCpf' ? 'numeric' : undefined}
                     onChange={(e) =>
                       onChange({

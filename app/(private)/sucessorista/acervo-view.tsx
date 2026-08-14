@@ -184,7 +184,6 @@ export function AcervoView({
             <FieldLabel htmlFor="bem-descricao">Descrição</FieldLabel>
             <Input
               id="bem-descricao"
-              placeholder="Imóvel mat. 12.345 — Guarulhos/SP"
               aria-invalid={Boolean(errors.descricao)}
               {...register('descricao')}
             />
@@ -198,7 +197,6 @@ export function AcervoView({
               render={({ field }) => (
                 <CurrencyInput
                   id="bem-valor"
-                  placeholder="900.000,00"
                   aria-invalid={Boolean(errors.valor)}
                   value={field.value}
                   onChange={field.onChange}
@@ -331,7 +329,7 @@ export function AcervoView({
       <div className="grade c2">
         <label className="campo">
           Dívidas e despesas do espólio (R$)
-          <CurrencyInput value={dividas} onChange={setDividas} placeholder="0,00" />
+          <CurrencyInput value={dividas} onChange={setDividas} />
         </label>
       </div>
       <p className="fund" style={{ marginTop: 6 }}>
@@ -525,7 +523,7 @@ function LinhaBem({
         </label>
         <label className="campo">
           Valor (R$)
-          <CurrencyInput value={valor} onChange={setValor} placeholder="900.000,00" />
+          <CurrencyInput value={valor} onChange={setValor} />
         </label>
         <label className="campo">
           Tipo do bem (declaração do ITCMD-SP)

@@ -21,11 +21,9 @@ import { Pilula } from './familia';
 function CampoInstrucoes({
   valor,
   onChange,
-  exemplo,
 }: {
   valor: string;
   onChange: (v: string) => void;
-  exemplo: string;
 }) {
   return (
     <label className="campo" style={{ maxWidth: 640, margin: '14px 0' }}>
@@ -35,7 +33,6 @@ function CampoInstrucoes({
       <Textarea
         value={valor}
         rows={3}
-        placeholder={exemplo}
         onChange={(e) => onChange(e.target.value)}
       />
     </label>
@@ -77,7 +74,6 @@ export function MinutasView({
       <CampoInstrucoes
         valor={instrucoes}
         onChange={setInstrucoes}
-        exemplo="ex.: incluir cláusula de cessão de direitos hereditários da herdeira Renata ao irmão; pedir prioridade de tramitação (idoso)…"
       />
 
       <div className="check">
@@ -172,7 +168,6 @@ export function EscrituraView({
           Quem participa por videoconferência
           <Input
             value={partesRemotas}
-            placeholder="ex.: a herdeira Renata Pummer Carvalho Lavruhin"
             onChange={(e) => setPartesRemotas(e.target.value)}
           />
         </label>
@@ -181,7 +176,6 @@ export function EscrituraView({
       <CampoInstrucoes
         valor={instrucoes}
         onChange={setInstrucoes}
-        exemplo="ex.: incluir cláusula de reserva de usufruto do imóvel 1 em favor da viúva; consignar alvará para venda do veículo…"
       />
 
       <div className="escolha">

@@ -401,7 +401,7 @@ export function HonorariosView({
       <div className="grade c2">
         <label className="campo">
           Nome do escritório
-          <Input value={escritorio.escritorio} onChange={(e) => setE({ escritorio: e.target.value })} placeholder="Silva & Associados Advocacia" />
+          <Input value={escritorio.escritorio} onChange={(e) => setE({ escritorio: e.target.value })} />
         </label>
         <label className="campo">
           Advogado(a) responsável
@@ -409,7 +409,7 @@ export function HonorariosView({
         </label>
         <label className="campo">
           OAB (nº/UF)
-          <Input value={escritorio.oab} onChange={(e) => setE({ oab: e.target.value })} placeholder="123.456/SP" />
+          <Input value={escritorio.oab} onChange={(e) => setE({ oab: e.target.value })} />
         </label>
         <label className="campo">
           CPF/CNPJ
@@ -421,7 +421,7 @@ export function HonorariosView({
         </label>
         <label className="campo">
           Cidade/UF
-          <Input value={escritorio.cidadeUf} onChange={(e) => setE({ cidadeUf: e.target.value })} placeholder="Guarulhos/SP" />
+          <Input value={escritorio.cidadeUf} onChange={(e) => setE({ cidadeUf: e.target.value })} />
         </label>
         <label className="campo">
           E-mail
@@ -547,7 +547,6 @@ export function HonorariosView({
           Condições de pagamento
           <Input
             value={condicoes.condicoesPagamento}
-            placeholder="50% na contratação e o saldo em 3 parcelas mensais"
             onChange={(e) => setCondicoes({ ...condicoes, condicoesPagamento: e.target.value })}
           />
         </label>
@@ -612,7 +611,6 @@ export function HonorariosView({
         <Textarea
           value={instrucoes}
           rows={3}
-          placeholder="ex.: prever honorários de êxito de 10% sobre valores recuperados de terceiros; parcelamento em 6 vezes com correção pelo IPCA…"
           onChange={(e) => setInstrucoes(e.target.value)}
         />
       </label>
