@@ -42,6 +42,13 @@ eq('venais do óbito somados', fundidos[0].imovel?.valorVenalObito, '74944.29');
 eq('inscrições listadas', fundidos[0].imovel?.inscricaoCadastral, '084.33.20.0048.01.000 e 084.33.20.0048.02.000');
 eq('descrição do principal mantida', fundidos[0].descricao, 'R. Itapetininga, 173');
 
+// Frações ideais das inscrições se SOMAM na fusão (devem fechar 100%).
+const comFracao = fundirImoveisPorInscricao([
+  { descricao: 'Casa', valor: '50.00', tipo: 'IMOVEL', imovel: { inscricaoCadastral: '084.33.20.0048.01.000', fracaoIdeal: '60.00', matricula: null } },
+  { descricao: 'Casa (02)', valor: '40.00', tipo: 'IMOVEL', imovel: { inscricaoCadastral: '084.33.20.0048.02.000', fracaoIdeal: '40.00', matricula: null } },
+]);
+eq('frações ideais somadas', comFracao[0].imovel?.fracaoIdeal, '100.00');
+
 // Matrícula igual também funde (mesmo sem inscrição).
 const porMatricula = fundirImoveisPorInscricao([
   { descricao: 'Apto 12', valor: '300000.00', tipo: 'IMOVEL', imovel: { matricula: '12.345', inscricaoCadastral: null } },

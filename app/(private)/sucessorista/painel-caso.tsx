@@ -47,6 +47,7 @@ export function PainelCaso({
   economias = [],
   custos = null,
   impostoSucessoes = 0,
+  alertasLeitura = [],
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -62,6 +63,8 @@ export function PainelCaso({
   custos?: ProjecaoCustos | null;
   /** ITCMD das sucessões cumuladas (fatos geradores próprios). */
   impostoSucessoes?: number;
+  /** Alertas da leitura (herdeiros declarados sem lançamento, frações ideais). */
+  alertasLeitura?: string[];
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -114,6 +117,7 @@ export function PainelCaso({
     travas.push('União estável — comprovar o vínculo e o regime aplicável');
   if (!bens.some((b) => Number(b.valor) > 0)) travas.push('Acervo ainda sem valores');
   for (const b of resultado?.bloqueios ?? []) travas.push(b);
+  for (const a of alertasLeitura) travas.push(a);
 
   const custo10 = imposto * 0.1;
   const custo20 = imposto * 0.2;

@@ -14,6 +14,8 @@ interface DetalhesFundiveis {
   inscricaoCadastral?: string | null;
   valorVenalObito?: string | null;
   valorVenalAtual?: string | null;
+  /** Fração ideal (%) da inscrição — na fusão as frações se SOMAM. */
+  fracaoIdeal?: string | null;
 }
 
 export interface BemFundivel {
@@ -76,6 +78,7 @@ export function fundirImoveisPorInscricao<T extends BemFundivel>(bens: T[]): T[]
     }
     im.valorVenalObito = somar(im.valorVenalObito as string | null, bem.imovel?.valorVenalObito);
     im.valorVenalAtual = somar(im.valorVenalAtual as string | null, bem.imovel?.valorVenalAtual);
+    im.fracaoIdeal = somar(im.fracaoIdeal as string | null, bem.imovel?.fracaoIdeal);
     /* demais campos: preenche o que o principal ainda não tem */
     for (const [k, v] of Object.entries((bem.imovel ?? {}) as Record<string, unknown>)) {
       if (v !== null && v !== undefined && v !== '' && (im[k] === null || im[k] === undefined || im[k] === '')) {

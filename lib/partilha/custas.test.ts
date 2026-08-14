@@ -8,6 +8,7 @@
 import {
   emolumentoEscritura,
   emolumentoRegistro,
+  comIss,
   CERTIDAO_RI_2026,
   ESCRITURA_SEM_VALOR_2026,
   taxaJudiciaria,
@@ -38,7 +39,7 @@ eq('registro: mínimo da tabela', emolumentoRegistro(1_000), 265.0);
 eq('registro: faixa de 900 mil', emolumentoRegistro(900_000), 3_962.79);
 eq('registro: faixa de 2 milhões', emolumentoRegistro(2_000_000), 5_471.41);
 eq('registro: acima da última faixa', emolumentoRegistro(2_000_000_000), 67_136.84);
-eq('certidão de matrícula 2026', CERTIDAO_RI_2026, 77.89);
+eq('certidão de matrícula 2026', CERTIDAO_RI_2026.total, 77.89);
 
 /* taxa judiciária: faixas fixas da Lei 17.785/2023 (UFESP 38,42) */
 const U = 38.42;
@@ -72,8 +73,19 @@ eq('escritura: detalhe cita a meação descontada', escritura.detalhe!.includes(
 /* renúncia: um ato SEM valor declarado por renunciante */
 const comRenuncia = projetarCustos({ ...BASE, qtdRenunciantes: 2 });
 const renuncias = comRenuncia.parcelas.find((p) => p.id === 'renuncias')!;
-eq('renúncia: 2 atos sem valor declarado', renuncias.valor, 2 * ESCRITURA_SEM_VALOR_2026);
+eq('renúncia: 2 atos sem valor declarado', renuncias.valor, 2 * ESCRITURA_SEM_VALOR_2026.total);
 eq('renúncia: item 6.2 da tabela', renuncias.fundamento.includes('6.2'), true);
+
+/* ISS editável: tabela publicada com 5%; alíquota menor desconta a
+   diferença sobre a parcela do Tabelião/Oficial */
+eq('ISS 5% = valor publicado', emolumentoEscritura(500_000, 5), 5_519.9);
+// 500k: base do Tabelião 3.231,80 → ISS 2% = 5.519,90 − 3.231,80×3% = 5.422,95
+eq('ISS 2% desconta sobre a parcela do tabelião', emolumentoEscritura(500_000, 2), 5_422.95);
+eq('registro com ISS 2%', emolumentoRegistro(900_000, 2), 3_892.78);
+eq('comIss na certidão do RI', comIss(CERTIDAO_RI_2026, 2), 76.51);
+const issBaixo = projetarCustos({ ...BASE, issPct: 2 });
+eq('projeção usa o ISS informado', issBaixo.parcelas.find((p) => p.id === 'escritura')!.valor, emolumentoEscritura(450_000, 2));
+eq('detalhe cita o ISS informado', issBaixo.parcelas.find((p) => p.id === 'escritura')!.detalhe!.includes('ISS de 2%'), true);
 
 /* sucessões cumuladas: escritura + registros próprios por sucessão */
 const cumulado = projetarCustos({
@@ -98,6 +110,11 @@ eq('extrajudicial: parcelas esperadas', ids, [
 ]);
 eq('registro pela faixa oficial', partilha.parcelas.find((p) => p.id === 'registro-0')!.valor, 3_962.79);
 eq('certidão de matrícula exata', partilha.parcelas.find((p) => p.id === 'certidoes-matricula')!.valor, 77.89);
+eq('escritura: ato único mesmo com vários bens e herdeiros', projetarCustos({ ...BASE, qtdHerdeiros: 8, imoveis: [
+  { descricao: 'Casa', valor: 400_000 },
+  { descricao: 'Sítio', valor: 300_000 },
+  { descricao: 'Terreno', valor: 200_000 },
+] }).parcelas.filter((p) => p.id === 'escritura').length, 1);
 // certidões RC: óbito + casamento + 3 herdeiros = 5
 eq('5 certidões de registro civil', partilha.parcelas.find((p) => p.id === 'certidoes-registro-civil')!.quantidade, 5);
 eq('total = soma das parcelas', partilha.total, Math.round(partilha.parcelas.reduce((a, p) => a + p.valor, 0) * 100) / 100);

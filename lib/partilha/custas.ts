@@ -80,6 +80,8 @@ export interface EntradaCustos {
   transferencias: { valor: number; tributo: 'ITCMD_DOACAO' | 'ITBI' }[];
   /** UFESP vigente (converte as faixas da taxa judiciária). */
   ufesp: number;
+  /** Alíquota do ISS municipal (%) — tabela publicada com 5%; ajuste livre. */
+  issPct?: number;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -88,96 +90,113 @@ const fmt = (v: number) =>
 
 /* --------------- tabelas oficiais 2026 (ISS 5%) — DADO ANUAL --------------- */
 
-type Faixa = { ate: number | null; total: number };
+type Faixa = { ate: number | null; total: number; base: number };
 
-/** Tabelionato de Notas, item 1 — escritura com valor declarado (TOTAL ao usuário). */
+/**
+ * Tabelionato de Notas, item 1 — escritura com valor declarado. `total` é o
+ * valor ao usuário COM ISS DE 5%; `base` é a parcela do Tabelião (sobre a
+ * qual o ISS municipal incide) — permite recalcular para qualquer alíquota:
+ * total(iss) = total5% + base × (iss − 5)/100.
+ */
 export const TABELA_NOTAS_2026: Faixa[] = [
-  { ate: 1_524, total: 362.98 },
-  { ate: 5_761, total: 542.43 },
-  { ate: 9_603, total: 846.96 },
-  { ate: 19_210, total: 1_209.95 },
-  { ate: 38_420, total: 1_635.48 },
-  { ate: 76_840, total: 1_940.1 },
-  { ate: 115_260, total: 2_303.08 },
-  { ate: 153_680, total: 2_728.61 },
-  { ate: 192_100, total: 3_091.68 },
-  { ate: 230_520, total: 3_458.8 },
-  { ate: 268_940, total: 3_880.19 },
-  { ate: 307_360, total: 4_247.39 },
-  { ate: 330_146, total: 4_672.93 },
-  { ate: 384_200, total: 4_973.32 },
-  { ate: 768_400, total: 5_519.9 },
-  { ate: 1_152_600, total: 6_129.04 },
-  { ate: 1_536_800, total: 6_796.6 },
-  { ate: 2_345_066, total: 7_510.07 },
-  { ate: 3_908_444, total: 10_430.69 },
-  { ate: 5_862_665, total: 13_559.85 },
-  { ate: 7_816_887, total: 16_689.08 },
-  { ate: 9_771_109, total: 19_818.25 },
-  { ate: 11_725_331, total: 22_947.4 },
-  { ate: 13_679_552, total: 26_076.63 },
-  { ate: 15_633_774, total: 29_205.8 },
-  { ate: 17_587_996, total: 32_335.0 },
-  { ate: 19_542_217, total: 35_464.28 },
-  { ate: 23_450_661, total: 41_722.67 },
-  { ate: 27_359_105, total: 47_981.02 },
-  { ate: 31_267_548, total: 54_239.42 },
-  { ate: 35_175_992, total: 60_497.77 },
-  { ate: null, total: 66_756.25 },
+  { ate: 1_524, total: 362.98, base: 212.51 },
+  { ate: 5_761, total: 542.43, base: 317.59 },
+  { ate: 9_603, total: 846.96, base: 495.89 },
+  { ate: 19_210, total: 1209.95, base: 708.41 },
+  { ate: 38_420, total: 1635.48, base: 957.54 },
+  { ate: 76_840, total: 1940.10, base: 1135.90 },
+  { ate: 115_260, total: 2303.08, base: 1348.42 },
+  { ate: 153_680, total: 2728.61, base: 1597.56 },
+  { ate: 192_100, total: 3091.68, base: 1810.12 },
+  { ate: 230_520, total: 3458.80, base: 2025.08 },
+  { ate: 268_940, total: 3880.19, base: 2271.77 },
+  { ate: 307_360, total: 4247.39, base: 2486.77 },
+  { ate: 330_146, total: 4672.93, base: 2735.91 },
+  { ate: 384_200, total: 4973.32, base: 2911.79 },
+  { ate: 768_400, total: 5519.90, base: 3231.80 },
+  { ate: 1_152_600, total: 6129.04, base: 3588.44 },
+  { ate: 1_536_800, total: 6796.60, base: 3979.28 },
+  { ate: 2_345_066, total: 7510.07, base: 4397.00 },
+  { ate: 3_908_444, total: 10430.69, base: 6106.97 },
+  { ate: 5_862_665, total: 13559.85, base: 7939.03 },
+  { ate: 7_816_887, total: 16689.08, base: 9771.13 },
+  { ate: 9_771_109, total: 19818.25, base: 11603.20 },
+  { ate: 11_725_331, total: 22947.40, base: 13435.25 },
+  { ate: 13_679_552, total: 26076.63, base: 15267.37 },
+  { ate: 15_633_774, total: 29205.80, base: 17099.42 },
+  { ate: 17_587_996, total: 32335.00, base: 18931.51 },
+  { ate: 19_542_217, total: 35464.28, base: 20763.64 },
+  { ate: 23_450_661, total: 41722.67, base: 24427.80 },
+  { ate: 27_359_105, total: 47981.02, base: 28091.94 },
+  { ate: 31_267_548, total: 54239.42, base: 31756.12 },
+  { ate: 35_175_992, total: 60497.77, base: 35420.24 },
+  { ate: null, total: 66756.25, base: 39084.46 },
 ];
 
-/** Registro de Imóveis, item 1 — registro com valor declarado (TOTAL ao usuário). */
+/** Registro de Imóveis, item 1 — `base` é a parcela do Oficial. */
 export const TABELA_REGISTRO_2026: Faixa[] = [
-  { ate: 2_306, total: 265.0 },
-  { ate: 5_761, total: 425.24 },
-  { ate: 9_603, total: 762.88 },
-  { ate: 19_210, total: 1_131.9 },
-  { ate: 38_420, total: 1_376.12 },
-  { ate: 115_260, total: 1_534.65 },
-  { ate: 192_100, total: 1_958.77 },
-  { ate: 230_520, total: 2_382.02 },
-  { ate: 268_940, total: 2_593.23 },
-  { ate: 307_360, total: 2_805.64 },
-  { ate: 345_780, total: 2_957.7 },
-  { ate: 384_200, total: 3_034.79 },
-  { ate: 768_400, total: 3_383.82 },
-  { ate: 1_152_600, total: 3_962.79 },
-  { ate: 1_536_800, total: 4_562.13 },
-  { ate: 1_921_000, total: 5_161.52 },
-  { ate: 2_305_200, total: 5_471.41 },
-  { ate: 3_842_000, total: 7_020.8 },
-  { ate: 5_763_000, total: 9_809.68 },
-  { ate: 7_684_000, total: 12_908.44 },
-  { ate: 9_605_000, total: 16_007.2 },
-  { ate: 11_526_000, total: 19_105.97 },
-  { ate: 13_447_000, total: 22_204.73 },
-  { ate: 15_368_000, total: 25_303.49 },
-  { ate: 17_289_000, total: 28_402.25 },
-  { ate: 19_210_000, total: 31_501.02 },
-  { ate: 23_052_000, total: 36_149.17 },
-  { ate: 26_894_000, total: 42_346.7 },
-  { ate: 30_736_000, total: 48_544.24 },
-  { ate: 34_578_000, total: 54_741.78 },
-  { ate: 38_420_000, total: 60_939.31 },
-  { ate: null, total: 67_136.84 },
+  { ate: 2_306, total: 265.00, base: 156.07 },
+  { ate: 5_761, total: 425.24, base: 250.43 },
+  { ate: 9_603, total: 762.88, base: 449.28 },
+  { ate: 19_210, total: 1131.90, base: 666.61 },
+  { ate: 38_420, total: 1376.12, base: 810.44 },
+  { ate: 115_260, total: 1534.65, base: 903.80 },
+  { ate: 192_100, total: 1958.77, base: 1153.58 },
+  { ate: 230_520, total: 2382.02, base: 1402.84 },
+  { ate: 268_940, total: 2593.23, base: 1527.22 },
+  { ate: 307_360, total: 2805.64, base: 1652.32 },
+  { ate: 345_780, total: 2957.70, base: 1741.87 },
+  { ate: 384_200, total: 3034.79, base: 1787.28 },
+  { ate: 768_400, total: 3383.82, base: 1992.82 },
+  { ate: 1_152_600, total: 3962.79, base: 2333.80 },
+  { ate: 1_536_800, total: 4562.13, base: 2686.76 },
+  { ate: 1_921_000, total: 5161.52, base: 3039.77 },
+  { ate: 2_305_200, total: 5471.41, base: 3222.27 },
+  { ate: 3_842_000, total: 7020.80, base: 4134.74 },
+  { ate: 5_763_000, total: 9809.68, base: 5777.19 },
+  { ate: 7_684_000, total: 12908.44, base: 7602.14 },
+  { ate: 9_605_000, total: 16007.20, base: 9427.09 },
+  { ate: 11_526_000, total: 19105.97, base: 11252.04 },
+  { ate: 13_447_000, total: 22204.73, base: 13076.99 },
+  { ate: 15_368_000, total: 25303.49, base: 14901.94 },
+  { ate: 17_289_000, total: 28402.25, base: 16726.89 },
+  { ate: 19_210_000, total: 31501.02, base: 18551.84 },
+  { ate: 23_052_000, total: 36149.17, base: 21289.27 },
+  { ate: 26_894_000, total: 42346.70, base: 24939.17 },
+  { ate: 30_736_000, total: 48544.24, base: 28589.07 },
+  { ate: 34_578_000, total: 54741.78, base: 32238.97 },
+  { ate: 38_420_000, total: 60939.31, base: 35888.87 },
+  { ate: null, total: 67136.84, base: 39538.77 },
 ];
 
-/** Certidão do Registro de Imóveis (Tabela de Registro, item 11) — balcão. */
-export const CERTIDAO_RI_2026 = 77.89;
+/** Certidão do RI (Tabela de Registro, item 11) — total 5% e parcela do Oficial. */
+export const CERTIDAO_RI_2026 = { total: 77.89, base: 45.88 };
 
-/** Escritura SEM valor declarado (Tabela de Notas, item 6.2, ISS 5%) — renúncia. */
-export const ESCRITURA_SEM_VALOR_2026 = 625.78;
+/** Escritura SEM valor declarado (Tabela de Notas, item 6.2) — renúncia. */
+export const ESCRITURA_SEM_VALOR_2026 = { total: 625.78, base: 366.39 };
 
-function faixa(valor: number, tabela: Faixa[]): number {
-  if (valor <= 0) return 0;
-  for (const f of tabela) {
-    if (f.ate === null || valor <= f.ate) return f.total;
-  }
-  return tabela[tabela.length - 1].total;
+/** Ajusta o total (publicado com ISS 5%) para a alíquota municipal informada. */
+export function comIss(f: { total: number; base: number }, issPct: number): number {
+  return r2(f.total + (f.base * (issPct - 5)) / 100);
 }
 
-export const emolumentoEscritura = (valor: number) => faixa(valor, TABELA_NOTAS_2026);
-export const emolumentoRegistro = (valor: number) => faixa(valor, TABELA_REGISTRO_2026);
+function faixa(valor: number, tabela: Faixa[]): Faixa | null {
+  if (valor <= 0) return null;
+  for (const f of tabela) {
+    if (f.ate === null || valor <= f.ate) return f;
+  }
+  return tabela[tabela.length - 1];
+}
+
+export function emolumentoEscritura(valor: number, issPct = 5): number {
+  const f = faixa(valor, TABELA_NOTAS_2026);
+  return f ? comIss(f, issPct) : 0;
+}
+
+export function emolumentoRegistro(valor: number, issPct = 5): number {
+  const f = faixa(valor, TABELA_REGISTRO_2026);
+  return f ? comIss(f, issPct) : 0;
+}
 
 /* ---------------- certidões (aproximadas por natureza) ---------------- */
 
@@ -212,6 +231,7 @@ export function taxaJudiciaria(monteMor: number, ufesp: number): { valor: number
 /* ---------------- projeção ---------------- */
 
 export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
+  const iss = e.issPct ?? 5;
   const parcelas: ParcelaCusto[] = [];
   const avisos: string[] = [];
   const imoveis = e.imoveis.filter((i) => i.valor > 0);
@@ -224,10 +244,10 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       parcelas.push({
         id: 'escritura',
         rotulo: 'Escritura de inventário e partilha (ato único pela legítima)',
-        valor: emolumentoEscritura(e.baseEscritura),
+        valor: emolumentoEscritura(e.baseEscritura, iss),
         quantidade: 1,
         fundamento: 'Tabela de Notas 2026, item 1 (Lei 11.331/2002)',
-        detalhe: `Faixa pela herança transmitida de ${fmt(e.baseEscritura)} (monte-mor descontada a meação), com ISS de 5% — o maior do estado.`,
+        detalhe: `Faixa pela herança transmitida de ${fmt(e.baseEscritura)} (monte-mor descontada a meação) — UM ato pelo TOTAL, qualquer que seja a quantidade de bens, herdeiros ou pagamentos. ISS de ${iss}%.`,
         aproximado: false,
       });
     }
@@ -237,10 +257,10 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       parcelas.push({
         id: 'renuncias',
         rotulo: `Escritura de renúncia — ato sem valor declarado (${e.qtdRenunciantes}×)`,
-        valor: r2(e.qtdRenunciantes * ESCRITURA_SEM_VALOR_2026),
+        valor: r2(e.qtdRenunciantes * comIss(ESCRITURA_SEM_VALOR_2026, iss)),
         quantidade: e.qtdRenunciantes,
         fundamento: 'Tabela de Notas 2026, item 6.2 (escritura sem valor declarado)',
-        detalhe: `${fmt(ESCRITURA_SEM_VALOR_2026)} por renúncia, com ISS de 5%.`,
+        detalhe: `${fmt(comIss(ESCRITURA_SEM_VALOR_2026, iss))} por renúncia, com ISS de ${iss}%.`,
         aproximado: false,
       });
     }
@@ -255,7 +275,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
           t.tributo === 'ITCMD_DOACAO'
             ? 'Ato da torna/cessão gratuita — escritura com valor declarado pela torna'
             : 'Ato da torna onerosa — escritura com valor declarado pela torna',
-        valor: emolumentoEscritura(t.valor),
+        valor: emolumentoEscritura(t.valor, iss),
         quantidade: 1,
         fundamento: 'Tabela de Notas 2026, item 1 — base = valor da torna',
         detalhe: `Diferença de quinhão de ${fmt(t.valor)} enquadrada na própria faixa; o imposto inter vivos (${t.tributo === 'ITCMD_DOACAO' ? 'ITCMD de doação' : 'ITBI'}) é apurado na aba Partilha.`,
@@ -274,7 +294,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       parcelas.push({
         id: `escritura-sucessao-${i}`,
         rotulo: `Escritura da sucessão cumulada de ${su.nome || `sucessão ${i + 2}`}`,
-        valor: emolumentoEscritura(su.base),
+        valor: emolumentoEscritura(su.base, iss),
         quantidade: 1,
         fundamento: 'Tabela de Notas 2026, item 1 — ato próprio por sucessão (CPC, art. 672)',
         detalhe: `Faixa pela base transmitida de ${fmt(su.base)} nesta sucessão.`,
@@ -305,7 +325,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
     parcelas.push({
       id: `registro-${i}`,
       rotulo: `Registro da partilha — ${im.descricao || `imóvel ${i + 1}`}`,
-      valor: emolumentoRegistro(im.valor),
+      valor: emolumentoRegistro(im.valor, iss),
       quantidade: 1,
       fundamento: 'Tabela de Registro 2026, item 1 (Lei 11.331/2002)',
       detalhe: `Faixa pelo valor de ${fmt(im.valor)}.`,
@@ -314,7 +334,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
   }
   /* partilha diferenciada: pode haver MAIS um ato de registro no mesmo imóvel */
   if (imoveis.length > 0 && e.transferencias.length > 0) {
-    const extra = r2(imoveis.reduce((a, im) => a + emolumentoRegistro(im.valor), 0));
+    const extra = r2(imoveis.reduce((a, im) => a + emolumentoRegistro(im.valor, iss), 0));
     parcelas.push({
       id: 'registro-atos-extras',
       rotulo: 'Atos de registro adicionais da partilha diferenciada',
@@ -334,7 +354,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
     parcelas.push({
       id: `registro-sucessao-${i}`,
       rotulo: `Registros da sucessão cumulada de ${su.nome || `sucessão ${i + 2}`} (${su.qtdImoveis}×)`,
-      valor: r2(su.qtdImoveis * emolumentoRegistro(porImovel)),
+      valor: r2(su.qtdImoveis * emolumentoRegistro(porImovel, iss)),
       quantidade: su.qtdImoveis,
       fundamento: 'Tabela de Registro 2026, item 1 — um ato por imóvel por sucessão',
       detalhe: `Cada transmissão registra na matrícula; faixa estimada pelo valor médio de ${fmt(porImovel)} por imóvel.`,
@@ -362,7 +382,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
     parcelas.push({
       id: 'certidoes-matricula',
       rotulo: `Certidões de matrícula atualizada (${imoveis.length}× imóvel(is))`,
-      valor: r2(imoveis.length * CERTIDAO_RI_2026),
+      valor: r2(imoveis.length * comIss(CERTIDAO_RI_2026, iss)),
       quantidade: imoveis.length,
       fundamento: 'Tabela de Registro 2026, item 11 (certidão)',
       detalhe: 'Valor de balcão por certidão; a visualização eletrônica sai por menos.',
@@ -380,7 +400,7 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
   });
 
   avisos.push(
-    'Faixas oficiais de 2026 com ISS de 5% (o maior do estado — municípios menores podem sair um pouco abaixo). Tabelas mudam todo ano: confira a vigente (anoregsp.org.br) antes de fechar o orçamento com a família.',
+    `Faixas oficiais de 2026 com ISS de ${iss}%${iss === 5 ? ' (o maior do estado — ajuste a alíquota do município da serventia acima)' : ''}. Tabelas mudam todo ano: confira a vigente (anoregsp.org.br) antes de fechar o orçamento com a família.`,
   );
 
   return {

@@ -44,6 +44,8 @@ export function CustosView({
   sucessoes,
   setSucessoes,
   provisoesSucessoes,
+  issPct,
+  setIssPct,
   irParaAcervo,
   irParaItcmd,
 }: {
@@ -52,6 +54,9 @@ export function CustosView({
   sucessoes: SucessaoCumulada[];
   setSucessoes: (s: SucessaoCumulada[]) => void;
   provisoesSucessoes: { sucessao: SucessaoCumulada; provisao: ProvisaoItcmd }[];
+  /** Alíquota do ISS do município da serventia (%). */
+  issPct: string;
+  setIssPct: (v: string) => void;
   irParaAcervo: () => void;
   irParaItcmd: () => void;
 }) {
@@ -88,8 +93,9 @@ export function CustosView({
       <h1>Custos do inventário</h1>
       <p className="subtitulo">
         A planilha completa além do imposto (tabelas paulistas de 2026, Lei 11.331/2002,
-        sempre com ISS de 5% — o maior do estado): a escritura é UM ato pela LEGÍTIMA
-        (herança descontada a meação); renúncia entra como ato sem valor declarado por
+        com o ISS ajustável abaixo — o padrão é 5%, o maior do estado): a escritura é UM
+        ato pela LEGÍTIMA (herança descontada a meação), qualquer que seja a quantidade
+        de bens, herdeiros ou pagamentos; renúncia entra como ato sem valor declarado por
         renunciante; torna/cessão de direitos hereditários é ato próprio pela base do
         valor da torna, além do imposto inter vivos, se o caso.
       </p>
@@ -99,6 +105,20 @@ export function CustosView({
           Lance a família e os bens (itens I e II) para o cálculo dos custos aparecer.
         </p>
       )}
+
+      <div className="grade c2" style={{ marginBottom: 14, maxWidth: 420 }}>
+        <label className="campo">
+          <span>
+            ISS do município da serventia (%){' '}
+            <span className="dica">— a tabela oficial é publicada com 5%, o maior do estado</span>
+          </span>
+          <Input
+            inputMode="decimal"
+            value={issPct}
+            onChange={(e) => setIssPct(e.target.value.replace(/[^\d.,]/g, '').slice(0, 5))}
+          />
+        </label>
+      </div>
 
       {custos && (
         <>
