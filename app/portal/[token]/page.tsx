@@ -177,7 +177,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             <input
               type="text"
               inputMode="numeric"
-              placeholder="123.456.789-00"
+             
               aria-invalid={!!errors.cpf}
               {...register('cpf', {
                 // Máscara progressiva no padrão 123.456.789-00 — o valor é
@@ -208,7 +208,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             </select>
           </Campo>
           <Campo rotulo="E-mail" erro={errors.email?.message}>
-            <input type="text" inputMode="email" placeholder="voce@exemplo.com" aria-invalid={!!errors.email} {...register('email')} />
+            <input type="text" inputMode="email" aria-invalid={!!errors.email} {...register('email')} />
           </Campo>
           <Campo rotulo="Endereço (rua e número)" erro={errors.endereco?.message}>
             <input type="text" aria-invalid={!!errors.endereco} {...register('endereco')} />
@@ -223,10 +223,10 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             <input type="text" aria-invalid={!!errors.cidade} {...register('cidade')} />
           </Campo>
           <Campo rotulo="Estado (UF)" erro={errors.uf?.message}>
-            <input type="text" placeholder="SP" maxLength={2} aria-invalid={!!errors.uf} {...register('uf')} />
+            <input type="text" maxLength={2} aria-invalid={!!errors.uf} {...register('uf')} />
           </Campo>
           <Campo rotulo="CEP" erro={errors.cep?.message}>
-            <input type="text" inputMode="numeric" placeholder="00000-000" aria-invalid={!!errors.cep} {...register('cep')} />
+            <input type="text" inputMode="numeric" aria-invalid={!!errors.cep} {...register('cep')} />
           </Campo>
         </div>
         <div style={{ marginTop: 14 }}>

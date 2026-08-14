@@ -716,7 +716,6 @@ export function CasoView({
               render={({ field }) => (
                 <CurrencyInput
                   id="inicio-valor"
-                  placeholder="900.000,00"
                   aria-invalid={Boolean(errors.valorEstimado)}
                   value={field.value}
                   onChange={field.onChange}
