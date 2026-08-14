@@ -46,6 +46,7 @@ export function PainelCaso({
   faixas,
   economias = [],
   custos = null,
+  impostoSucessoes = 0,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -59,6 +60,8 @@ export function PainelCaso({
   faixas: FaixaProgressiva[];
   economias?: OportunidadeEconomia[];
   custos?: ProjecaoCustos | null;
+  /** ITCMD das sucessões cumuladas (fatos geradores próprios). */
+  impostoSucessoes?: number;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -166,7 +169,7 @@ export function PainelCaso({
       <div className="metrica">
         <div className="k">Custo projetado do inventário</div>
         <div className="v num">
-          {provisao ? brl(provisao.total + (custos?.total ?? 0)) : '—'}
+          {provisao ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes) : '—'}
         </div>
         {provisao ? (
           <div className="pilha num">
@@ -237,6 +240,12 @@ export function PainelCaso({
                           .reduce((a, p) => a + p.valor, 0),
                       )}
                     </span>
+                  </div>
+                )}
+                {impostoSucessoes > 0 && (
+                  <div>
+                    <span className="rotulo">ITCMD — sucessões cumuladas</span>
+                    <span>{brl(impostoSucessoes)}</span>
                   </div>
                 )}
                 <div>

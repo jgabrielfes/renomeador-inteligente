@@ -7,14 +7,14 @@
  * estimativa nunca errar para menos. A CONTAGEM DE ATOS segue as Notas
  * Explicativas das tabelas:
  *
- *  - ESCRITURA de inventário e partilha (Tabela de Notas, item 1): havendo
- *    partilha, o cálculo é POR PAGAMENTO — meação e cada quinhão enquadrados
- *    na própria faixa (Nota Explicativa 3.1.1); adjudicação a herdeiro único
- *    é um ato só pelo monte-mor. Ato inter vivos embutido (doação do
- *    excedente, cessão de direitos) é NEGÓCIO JURÍDICO PRÓPRIO, cobrado à
- *    parte pela faixa do valor cedido (Nota 3.2). Reserva de usufruto é ato
- *    acessório: 1/4 dos emolumentos sobre a terça parte do valor do bem
- *    (Notas 1.3, 3.3 e 3.5).
+ *  - ESCRITURA de inventário e partilha (Tabela de Notas, item 1): na
+ *    partilha igualitária é UM ato pela LEGÍTIMA (herança transmitida =
+ *    monte-mor descontada a meação) — não se multiplica ato por pagamento.
+ *    RENÚNCIA: um ato SEM valor declarado por renunciante (item 6.2 da
+ *    tabela). TORNA/cessão de direitos hereditários: um ato COM valor
+ *    declarado pela base do valor da torna, além do imposto inter vivos.
+ *    Reserva de usufruto é ato acessório: 1/4 dos emolumentos sobre a terça
+ *    parte do valor do bem (Notas 1.3, 3.3 e 3.5).
  *  - REGISTRO DE IMÓVEIS (Tabela de Registro, item 1): um registro POR
  *    IMÓVEL pela faixa do valor; partilha diferenciada pode gerar ato de
  *    registro ADICIONAL na mesma matrícula (doação/cessão; usufruto tem base
@@ -49,15 +49,27 @@ export interface ProjecaoCustos {
   avisos: string[];
 }
 
+export interface SucessaoCustos {
+  nome: string;
+  /** Base transmitida na sucessão cumulada, em R$. */
+  base: number;
+  /** Imóveis envolvidos nesta sucessão (atos de registro próprios). */
+  qtdImoveis: number;
+}
+
 export interface EntradaCustos {
-  /** Monte-mor (base da adjudicação e da taxa judiciária), em R$. */
+  /** Monte-mor (base da taxa judiciária, incluída a meação), em R$. */
   monteMor: number;
   /**
-   * Pagamentos da partilha em R$ (meação + cada quinhão, ou os valores
-   * atribuídos na partilha diferenciada). Com 2+ pagamentos a escritura é
-   * calculada POR PAGAMENTO (Nota Explicativa 3.1.1); vazio ou 1 = ato único.
+   * Base da escritura de inventário: a LEGÍTIMA (herança transmitida =
+   * monte-mor DESCONTADA a meação). Partilha igualitária é UM ato só por
+   * esta base — não se cobra ato por quantidade de pagamentos.
    */
-  pagamentos: number[];
+  baseEscritura: number;
+  /** Herdeiros renunciantes: um ato SEM valor declarado por renúncia. */
+  qtdRenunciantes: number;
+  /** Sucessões CUMULADAS no mesmo inventário (além da principal). */
+  sucessoes: SucessaoCustos[];
   /** Imóveis do acervo (valor na data do óbito), para os registros. */
   imoveis: { descricao: string; valor: number }[];
   rito: 'EXTRAJUDICIAL' | 'JUDICIAL';
@@ -153,6 +165,9 @@ export const TABELA_REGISTRO_2026: Faixa[] = [
 /** Certidão do Registro de Imóveis (Tabela de Registro, item 11) — balcão. */
 export const CERTIDAO_RI_2026 = 77.89;
 
+/** Escritura SEM valor declarado (Tabela de Notas, item 6.2, ISS 5%) — renúncia. */
+export const ESCRITURA_SEM_VALOR_2026 = 625.78;
+
 function faixa(valor: number, tabela: Faixa[]): number {
   if (valor <= 0) return 0;
   for (const f of tabela) {
@@ -200,55 +215,71 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
   const parcelas: ParcelaCusto[] = [];
   const avisos: string[] = [];
   const imoveis = e.imoveis.filter((i) => i.valor > 0);
-  const pagamentos = e.pagamentos.filter((p) => p > 0);
 
   if (e.rito === 'EXTRAJUDICIAL') {
-    /* escritura de inventário e partilha — POR PAGAMENTO (Nota 3.1.1) */
-    if (pagamentos.length >= 2) {
-      const valor = r2(pagamentos.reduce((a, p) => a + emolumentoEscritura(p), 0));
+    /* escritura de inventário e partilha: UM ato pela LEGÍTIMA (herança
+       transmitida, descontada a meação) — partilha igualitária não multiplica
+       atos por pagamento. */
+    if (e.baseEscritura > 0) {
       parcelas.push({
         id: 'escritura',
-        rotulo: `Escritura de inventário e partilha — cálculo por pagamento (${pagamentos.length} pagamentos)`,
-        valor,
-        quantidade: pagamentos.length,
-        fundamento: 'Tabela de Notas 2026, item 1; Nota Explicativa 3.1.1 (partilha por pagamento)',
-        detalhe: `Meação e cada quinhão enquadrados na própria faixa: ${pagamentos
-          .map((p) => `${fmt(p)} → ${fmt(emolumentoEscritura(p))}`)
-          .join(' · ')}. Tabela com ISS de 5% (o maior do estado).`,
-        aproximado: false,
-      });
-    } else if (e.monteMor > 0) {
-      parcelas.push({
-        id: 'escritura',
-        rotulo: 'Escritura de inventário e adjudicação (ato único pelo monte-mor)',
-        valor: emolumentoEscritura(e.monteMor),
+        rotulo: 'Escritura de inventário e partilha (ato único pela legítima)',
+        valor: emolumentoEscritura(e.baseEscritura),
         quantidade: 1,
         fundamento: 'Tabela de Notas 2026, item 1 (Lei 11.331/2002)',
-        detalhe: `Faixa pelo monte-mor de ${fmt(e.monteMor)}, com ISS de 5% (o maior do estado).`,
+        detalhe: `Faixa pela herança transmitida de ${fmt(e.baseEscritura)} (monte-mor descontada a meação), com ISS de 5% — o maior do estado.`,
         aproximado: false,
       });
     }
 
-    /* atos inter vivos embutidos = negócio jurídico próprio (Nota 3.2) */
+    /* renúncia: um ato SEM valor declarado por herdeiro renunciante */
+    if (e.qtdRenunciantes > 0) {
+      parcelas.push({
+        id: 'renuncias',
+        rotulo: `Escritura de renúncia — ato sem valor declarado (${e.qtdRenunciantes}×)`,
+        valor: r2(e.qtdRenunciantes * ESCRITURA_SEM_VALOR_2026),
+        quantidade: e.qtdRenunciantes,
+        fundamento: 'Tabela de Notas 2026, item 6.2 (escritura sem valor declarado)',
+        detalhe: `${fmt(ESCRITURA_SEM_VALOR_2026)} por renúncia, com ISS de 5%.`,
+        aproximado: false,
+      });
+    }
+
+    /* torna / cessão de direitos hereditários: um ato COM valor declarado
+       pela base do valor da torna, além do imposto inter vivos, se o caso */
     for (const [i, t] of e.transferencias.entries()) {
       if (t.valor <= 0) continue;
       parcelas.push({
-        id: `escritura-intervivos-${i}`,
+        id: `escritura-torna-${i}`,
         rotulo:
           t.tributo === 'ITCMD_DOACAO'
-            ? 'Ato notarial da cessão gratuita/doação do excedente'
-            : 'Ato notarial da cessão onerosa (reposição em dinheiro)',
+            ? 'Ato da torna/cessão gratuita — escritura com valor declarado pela torna'
+            : 'Ato da torna onerosa — escritura com valor declarado pela torna',
         valor: emolumentoEscritura(t.valor),
         quantidade: 1,
-        fundamento: 'Tabela de Notas 2026, item 1; Nota Explicativa 3.2 (negócios distintos)',
-        detalhe: `Excedente de ${fmt(t.valor)} transmitido inter vivos na partilha diferenciada — ato próprio pela faixa desse valor.`,
+        fundamento: 'Tabela de Notas 2026, item 1 — base = valor da torna',
+        detalhe: `Diferença de quinhão de ${fmt(t.valor)} enquadrada na própria faixa; o imposto inter vivos (${t.tributo === 'ITCMD_DOACAO' ? 'ITCMD de doação' : 'ITBI'}) é apurado na aba Partilha.`,
         aproximado: true,
       });
     }
     if (e.transferencias.length > 0) {
       avisos.push(
-        'Partilha diferenciada com ato inter vivos embutido: a contagem de atos varia entre serventias (Notas Explicativas 3.1–3.3 e enunciados do CNB/SP) — confirme o orçamento com o tabelionato. Reserva de usufruto entra como ato ACESSÓRIO: 1/4 dos emolumentos sobre 1/3 do valor do bem (Notas 1.3, 3.3 e 3.5).',
+        'Partilha diferenciada: a contagem fina de atos varia entre serventias (Notas Explicativas 3.1–3.3 e enunciados do CNB/SP) — confirme o orçamento com o tabelionato. Reserva de usufruto entra como ato ACESSÓRIO: 1/4 dos emolumentos sobre 1/3 do valor do bem (Notas 1.3, 3.3 e 3.5).',
       );
+    }
+
+    /* sucessões cumuladas: cada uma tem escritura própria pela sua base */
+    for (const [i, su] of e.sucessoes.entries()) {
+      if (su.base <= 0) continue;
+      parcelas.push({
+        id: `escritura-sucessao-${i}`,
+        rotulo: `Escritura da sucessão cumulada de ${su.nome || `sucessão ${i + 2}`}`,
+        valor: emolumentoEscritura(su.base),
+        quantidade: 1,
+        fundamento: 'Tabela de Notas 2026, item 1 — ato próprio por sucessão (CPC, art. 672)',
+        detalhe: `Faixa pela base transmitida de ${fmt(su.base)} nesta sucessão.`,
+        aproximado: true,
+      });
     }
   } else {
     /* taxa judiciária por faixa fixa (exata em lei) */
@@ -294,6 +325,26 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
         'Doação/cessão do excedente e nua-propriedade são atos próprios na matrícula (usufruto: base de 1/3 do valor do imóvel — Nota 1.5). Provisionado um ato adicional por imóvel, pela faixa do valor (conservador).',
       aproximado: true,
     });
+  }
+
+  /* sucessões cumuladas: atos de registro próprios nos imóveis envolvidos */
+  for (const [i, su] of e.sucessoes.entries()) {
+    if (su.base <= 0 || su.qtdImoveis <= 0) continue;
+    const porImovel = su.base / su.qtdImoveis;
+    parcelas.push({
+      id: `registro-sucessao-${i}`,
+      rotulo: `Registros da sucessão cumulada de ${su.nome || `sucessão ${i + 2}`} (${su.qtdImoveis}×)`,
+      valor: r2(su.qtdImoveis * emolumentoRegistro(porImovel)),
+      quantidade: su.qtdImoveis,
+      fundamento: 'Tabela de Registro 2026, item 1 — um ato por imóvel por sucessão',
+      detalhe: `Cada transmissão registra na matrícula; faixa estimada pelo valor médio de ${fmt(porImovel)} por imóvel.`,
+      aproximado: true,
+    });
+  }
+  if (e.sucessoes.length > 0) {
+    avisos.push(
+      'Sucessões cumuladas (CPC, art. 672): cada fato gerador tem ITCMD, prazos e atos próprios — o imposto de cada sucessão aparece discriminado com a data do óbito respectiva.',
+    );
   }
 
   /* certidões */

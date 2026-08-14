@@ -59,6 +59,22 @@ export interface EstadoFiscal {
   faixas: FaixaProgressiva[];
   inventarioAberto: boolean;
   dataProtocolo: string;
+  /**
+   * Sucessões CUMULADAS no mesmo inventário (art. 672 do CPC): cada uma tem
+   * fato gerador, base e atos próprios — impacta ITCMD, escritura e registro.
+   */
+  sucessoes?: SucessaoCumulada[];
+}
+
+export interface SucessaoCumulada {
+  id: string;
+  nome: string;
+  /** Data do óbito desta sucessão — fato gerador do ITCMD dela. */
+  dataObito: string;
+  /** Base transmitida nesta sucessão (R$, decimal "12345.67"). */
+  base: string;
+  /** Imóveis envolvidos nesta sucessão (atos de registro próprios). */
+  qtdImoveis: number;
 }
 
 export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
@@ -67,6 +83,7 @@ export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
   faixas: FAIXAS_PL7_2024.map((f) => ({ ...f })),
   inventarioAberto: false,
   dataProtocolo: '',
+  sucessoes: [],
 };
 
 export function ItcmdView({
