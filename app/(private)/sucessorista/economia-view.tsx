@@ -6,12 +6,26 @@
  * advogado(a) responsável é obrigatória.
  */
 
+import { Button } from '@/components/ui/button';
 import { totalEstimado, type OportunidadeEconomia } from '@/lib/partilha/economia';
 
 const brl = (v: number) =>
   `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function EconomiaView({ economias }: { economias: OportunidadeEconomia[] }) {
+/** Ação de aceite: redesenha a partilha automaticamente pela sugestão. */
+export interface AcaoEconomia {
+  rotulo: string;
+  executar: () => void;
+}
+
+export function EconomiaView({
+  economias,
+  acoes = {},
+}: {
+  economias: OportunidadeEconomia[];
+  /** Por id da oportunidade — cards sem ação ficam só informativos. */
+  acoes?: Record<string, AcaoEconomia | undefined>;
+}) {
   if (economias.length === 0) return null;
   const total = totalEstimado(economias);
   const garantidas = economias.filter((o) => o.aplicada).length;
@@ -44,6 +58,16 @@ export function EconomiaView({ economias }: { economias: OportunidadeEconomia[] 
             </ul>
           )}
           <p className="fund">{o.fundamento}</p>
+          {acoes[o.id] && (
+            <div className="escolha" style={{ marginTop: 10 }}>
+              <Button size="sm" onClick={acoes[o.id]!.executar}>
+                {acoes[o.id]!.rotulo}
+              </Button>
+              <span className="fund" style={{ alignSelf: 'center' }}>
+                Redesenha a partilha na hora — confira o espelho antes de gerar documentos.
+              </span>
+            </div>
+          )}
         </div>
       ))}
     </div>

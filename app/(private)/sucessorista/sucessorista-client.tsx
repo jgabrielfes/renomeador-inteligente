@@ -732,6 +732,94 @@ export default function SucessoristaClient() {
   }, [resultado, atribuicao, bens, herdeiros.length, temSobrevivente, provisao]);
 
   /**
+   * Ações dos cards de economia: quando o advogado ACEITA a sugestão, o
+   * sistema redesenha a partilha diferenciada na hora (a matriz é
+   * preenchida/limpada e a folha recalcula tudo — sempre para conferência).
+   */
+
+  /** Linha da matriz com 2 casas, ajustada no maior valor para fechar 100. */
+  const fecharLinha = (pcts: Record<string, number>): Record<string, string> => {
+    const ids = Object.keys(pcts).filter((id) => pcts[id] > 0);
+    if (ids.length === 0) return {};
+    const arred = ids.map((id) => ({ id, pct: Math.round(pcts[id] * 100) / 100 }));
+    const soma = arred.reduce((a, x) => a + x.pct, 0);
+    let maior = 0;
+    for (let i = 1; i < arred.length; i++) if (arred[i].pct > arred[maior].pct) maior = i;
+    arred[maior].pct = Math.round((arred[maior].pct + (100 - soma)) * 100) / 100;
+    return Object.fromEntries(
+      arred.filter((x) => x.pct > 0).map((x) => [x.id, x.pct.toFixed(2).replace('.', ',')]),
+    );
+  };
+
+  /**
+   * Sugestão do usufruto aceita: imóveis vão aos HERDEIROS (na proporção dos
+   * quinhões entre si — a nua-propriedade deles) e o(a) sobrevivente é
+   * compensado(a) com os demais bens até a meação/quinhão, minimizando a
+   * torna. A reserva do usufruto vitalício entra como cláusula na minuta.
+   */
+  const redesenharComUsufruto = () => {
+    if (!resultado || resultado.bloqueios.length > 0) return;
+    const herdeirosPart = participantes.filter((p) => p.id !== '__sobrevivente__');
+    const dirHerdeiros = herdeirosPart.map((p) => direitoPorParticipante[p.id] ?? 0);
+    const somaHerd = dirHerdeiros.reduce((a, v) => a + v, 0);
+    if (somaHerd <= 0) return;
+    const linhaHerdeiros = fecharLinha(
+      Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
+    );
+    const nova: Record<string, Record<string, string>> = {};
+    for (const b of bens) if (b.tipo === 'IMOVEL') nova[b.id] = { ...linhaHerdeiros };
+    // Compensação do(a) sobrevivente com os bens não-imóveis, do maior para
+    // o menor — o que não fechar vira torna, apontada pelo próprio espelho.
+    let alvoSobrev = direitoPorParticipante['__sobrevivente__'] ?? 0;
+    const naoImoveis = bens
+      .filter((b) => b.tipo !== 'IMOVEL')
+      .sort((a, b) => Number(b.valor) - Number(a.valor));
+    for (const b of naoImoveis) {
+      const v = Number(b.valor);
+      if (v <= 0) continue;
+      if (alvoSobrev <= 0) {
+        nova[b.id] = { ...linhaHerdeiros };
+        continue;
+      }
+      const pctSobrev = Math.min(100, (alvoSobrev / v) * 100);
+      alvoSobrev = Math.max(0, alvoSobrev - v);
+      const resto = 100 - pctSobrev;
+      nova[b.id] = fecharLinha({
+        __sobrevivente__: pctSobrev,
+        ...Object.fromEntries(
+          herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * resto]),
+        ),
+      });
+    }
+    setMatriz(nova);
+    setPasso(2);
+    toast.success('Partilha redesenhada com a nua-propriedade nos herdeiros', {
+      description:
+        'Imóveis atribuídos aos herdeiros e sobrevivente compensado(a) com os demais bens. Inclua a RESERVA DE USUFRUTO VITALÍCIO na minuta (campo de instruções à IA ou cláusula própria) e confira o espelho antes de gerar documentos.',
+    });
+  };
+
+  /** Sugestão aceita: partilha na proporção exata do direito — sem torna. */
+  const redesenharSemTorna = () => {
+    setMatriz({});
+    setPasso(2);
+    toast.success('Partilha redesenhada na proporção do direito', {
+      description:
+        'Todas as linhas voltaram ao espelho legal: sem diferença de quinhão, sem torna e sem imposto de cessão.',
+    });
+  };
+
+  /** Sugestão aceita: a diferença passa a ser cedida de graça (doação). */
+  const converterParaGratuita = () => {
+    setTitulo('GRATUITO');
+    setPasso(2);
+    toast.success('Diferença convertida em cessão gratuita', {
+      description:
+        'O acerto deixou de ser reposição onerosa (ITBI) e passou a doação — dentro de 2.500 UFESPs por donatário/ano, isenta (art. 6º, II, "a"). Só vale se a parte cedente realmente dispensar a compensação.',
+    });
+  };
+
+  /**
    * Oportunidades de economia (motor puro): isenções e prazos deste
    * inventário, tornas dentro da isenção de doação e o planejamento do
    * usufruto no lugar do segundo inventário do(a) sobrevivente.
@@ -1648,7 +1736,23 @@ export default function SucessoristaClient() {
               </section>
             )}
 
-            <EconomiaView economias={economias} />
+            <EconomiaView
+              economias={economias}
+              acoes={{
+                'usufruto-nua-propriedade': {
+                  rotulo: 'Aceitar: redesenhar com a nua-propriedade nos herdeiros',
+                  executar: redesenharComUsufruto,
+                },
+                'torna-acima-da-isencao': {
+                  rotulo: 'Aceitar: redesenhar sem torna (proporção do direito)',
+                  executar: redesenharSemTorna,
+                },
+                'torna-onerosa-vs-doacao': {
+                  rotulo: 'Aceitar: tratar a diferença como cessão gratuita',
+                  executar: converterParaGratuita,
+                },
+              }}
+            />
           </>
         )}
 
