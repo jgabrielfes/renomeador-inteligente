@@ -261,6 +261,7 @@ export default function SucessoristaClient() {
     qualificacoes: {},
     perguntas: {},
     inventarianteId: null,
+    herdeirosDeclarados: [],
   });
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = familia;
 
@@ -978,12 +979,15 @@ export default function SucessoristaClient() {
         .filter((b) => b.tipo === 'IMOVEL')
         .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
       rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
-      qtdHerdeiros: herdeiros.length,
+      // Certidões do registro civil: provisiona pelo MAIOR entre os herdeiros
+      // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
+      qtdHerdeiros: Math.max(herdeiros.length, (familia.herdeirosDeclarados ?? []).length),
       temSobrevivente,
       transferencias,
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
+      issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, temSobrevivente, provisao, fiscal.sucessoes]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, fiscal.issPct]);
 
   /**
    * ITCMD das sucessões CUMULADAS: cada uma tem o PRÓPRIO fato gerador —
@@ -1002,6 +1006,46 @@ export default function SucessoristaClient() {
       }));
   }, [fiscal.sucessoes, hoje]);
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
+
+  /**
+   * Alertas da leitura: herdeiro DECLARADO na certidão de óbito sem
+   * lançamento/qualificação, e frações ideais dos venais que não fecham
+   * 100% (exceto unidade autônoma/apartamento, onde a fração é do terreno).
+   */
+  const alertasLeitura = useMemo(() => {
+    const lista: string[] = [];
+    for (const nome of familia.herdeirosDeclarados ?? []) {
+      const h = herdeiros.find((x) => mesmaPessoa(nome, x.nome));
+      if (!h) {
+        lista.push(
+          `Certidão de óbito declara o(a) herdeiro(a) ${nome} — ainda não lançado(a) no item I (documentação faltando?)`,
+        );
+      } else {
+        const q = familia.qualificacoes[h.id];
+        if (!q?.cpf || !q?.endereco) {
+          lista.push(
+            `Herdeiro(a) ${h.nome} consta na certidão de óbito, mas a qualificação está incompleta (CPF/endereço)`,
+          );
+        }
+      }
+    }
+    for (const [i, b] of bens.entries()) {
+      if (b.tipo !== 'IMOVEL') continue;
+      const fr = Number(String(b.imovel?.fracaoIdeal ?? '').replace(',', '.'));
+      if (!Number.isFinite(fr) || fr <= 0) continue;
+      const texto = `${b.descricao} ${b.imovel?.descricaoMatricula ?? ''}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+      const unidadeAutonoma = /APARTAMENTO|UNIDADE AUTONOMA|VAGA DE GARAGEM|BOX|SALA COMERCIAL|CONJUNTO COMERCIAL/.test(texto);
+      if (Math.abs(fr - 100) > 0.05 && !unidadeAutonoma) {
+        lista.push(
+          `Bem ${i + 1}: as frações ideais das certidões de valor venal somam ${fr.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% — deveriam fechar 100% (falta certidão de alguma inscrição?)`,
+        );
+      }
+    }
+    return lista;
+  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens]);
 
   /**
    * Monta o caso.json atual: cabeçalho vivo (autor, óbito, nº de documentos
@@ -1381,6 +1425,15 @@ export default function SucessoristaClient() {
         qualificacoes,
         perguntas,
         inventarianteId,
+        // Declarados na certidão de óbito: guardados para o alerta de
+        // documentação/qualificação faltante e para a provisão de certidões.
+        herdeirosDeclarados: (() => {
+          const atuais = prev.herdeirosDeclarados ?? [];
+          const novosDecl = lido.herdeirosNoObito
+            .map((n) => nomeProprio(n))
+            .filter((n) => n && !atuais.some((x) => mesmaPessoa(x, n)));
+          return [...atuais, ...novosDecl];
+        })(),
       };
     });
 
@@ -2262,6 +2315,8 @@ export default function SucessoristaClient() {
             provisao={provisao}
             sucessoes={fiscal.sucessoes ?? []}
             setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
+            issPct={fiscal.issPct ?? '5'}
+            setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
             irParaAcervo={() => irPara('acervo')}
             irParaItcmd={() => irPara('itcmd')}
@@ -2316,6 +2371,7 @@ export default function SucessoristaClient() {
         economias={economias}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
+        alertasLeitura={alertasLeitura}
       />
     </div>
     )}

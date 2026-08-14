@@ -55,6 +55,8 @@ export interface DetalhesImovel {
   registroImoveis?: string;
   municipio?: string;
   inscricaoCadastral?: string;
+  /** Fração ideal (%) somada das inscrições — 100 = imóvel integral. */
+  fracaoIdeal?: string;
   /** Valores venais decimais + exercícios (óbito × corrente). */
   valorVenalObito?: string;
   exercicioObito?: string;

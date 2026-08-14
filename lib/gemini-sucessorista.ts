@@ -67,6 +67,8 @@ export interface ImovelExtraido {
   registroImoveis: string | null;
   municipio: string | null;
   inscricaoCadastral: string | null;
+  /** Fração ideal (%) atribuída à inscrição na certidão de valor venal. */
+  fracaoIdeal: string | null;
   valorVenalObito: string | null;
   exercicioObito: string | null;
   valorVenalAtual: string | null;
@@ -132,6 +134,8 @@ export interface CasoExtraido {
    * herdeiro pré-morto ou segunda sucessão — a folha alerta e marca.
    */
   outrosFalecidos: Array<{ nome: string; dataObito: string | null }>;
+  /** Filhos/herdeiros DECLARADOS na certidão de óbito ("deixa filhos…"). */
+  herdeirosNoObito: string[];
   /** Um por arquivo enviado, alinhado por índice (1-based). */
   arquivos: Array<{
     indice: number;
@@ -175,6 +179,7 @@ const QUALI_PROPS = {
 } as const;
 
 const IMOVEL_PROPS = {
+  fracaoIdeal: texto,
   descricaoMatricula: texto,
   aquisicao: texto,
   matricula: texto,
@@ -287,6 +292,7 @@ const RESPONSE_SCHEMA = {
         required: ["empresa", "socios"],
       },
     },
+    herdeirosNoObito: { type: "array", items: { type: "string" } },
     outrosFalecidos: {
       type: "array",
       items: {
@@ -311,7 +317,7 @@ const RESPONSE_SCHEMA = {
       },
     },
   },
-  required: ["falecido", "sobrevivente", "herdeiros", "bens", "sociedades", "outrosFalecidos", "arquivos"],
+  required: ["falecido", "sobrevivente", "herdeiros", "bens", "sociedades", "outrosFalecidos", "herdeirosNoObito", "arquivos"],
 } as const;
 
 function prompt(total: number): string {
@@ -322,8 +328,8 @@ Extraia APENAS o que constar dos documentos, para preencher a folha de trabalho 
 
 1. falecido — REGRA CRÍTICA: identifique primeiro a CERTIDÃO DE ÓBITO entre os documentos; o(a) falecido(a) é EXCLUSIVAMENTE a pessoa declarada morta nela (nome, CPF no formato 000.000.000-00, dataObito em YYYY-MM-DD, ultimoDomicilio como "Cidade/UF"). Preencha também falecido.qualificacao com o que os documentos trouxerem do(a) PRÓPRIO(A) falecido(a): nacionalidade, RG, data de nascimento, filiação (a certidão de óbito costuma trazer), profissão, endereço completo — a escritura qualifica o "de cujus" com esses dados. Preencha também: localFalecimento (hospital/cidade onde ocorreu o óbito), certidaoObito (ex.: "matrícula nº 1234…, expedida pelo ORCPN do 1º Subdistrito — Cidade/UF") e certidaoCasamento (mesmo formato, da certidão de casamento do falecido). NUNCA aponte como falecido: o(a) declarante da certidão de óbito, o(a) titular de CNH/RG/CPF/comprovantes (na pasta de um inventário esses documentos são normalmente do CÔNJUGE SOBREVIVENTE ou de herdeiros), nem uma das partes da certidão de casamento isoladamente. Documento mais legível NÃO significa pessoa falecida. Sem certidão de óbito legível no lote, deixe falecido.nome = null — não deduza pelo nome dos arquivos nem por quem aparece mais. dataCasamento (YYYY-MM-DD) sai da certidão de casamento. HAVENDO MAIS DE UMA certidão de óbito no lote: o(a) autor(a) da herança é quem o conjunto aponta (a certidão mais recente ou a coerente com casamento/herdeiros); as DEMAIS pessoas falecidas entram em outrosFalecidos (nome + dataObito) — típico de herdeiro pré-morto ou de dupla sucessão (os dois pais).
 2. sobrevivente — existe = true se os documentos indicarem cônjuge ou companheiro(a) vivo(a) na data do óbito (false apenas com indicação clara em contrário, ex.: certidão de óbito dizendo viúvo/divorciado sem união posterior). O(a) sobrevivente é o cônjuge da certidão de casamento que NÃO é o(a) falecido(a) — tipicamente o(a) declarante do óbito e o(a) titular dos documentos pessoais da pasta. vinculo e regime saem da certidão de casamento ou escritura de união estável (regime: atenção à data do casamento — antes de 1977 o regime legal era a comunhão universal). Quando houver planilha/minuta de qualificação (a coluna "VIÚVO(A)"/"CÔNJUGE SUPÉRSTITE"), preencha sobrevivente.qualificacao com TODOS os campos que constarem.
-3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). REGRAS DE UNICIDADE (críticas): cada pessoa aparece UMA ÚNICA VEZ, sempre com o nome MAIS COMPLETO que os documentos trouxerem — "Renata" e "Renata Pummer Carvalho Lavruhin" são a MESMA pessoa (una os registros; diferenças de acento como "Márcio"/"Marcio" também são a mesma pessoa); NUNCA inclua na lista o(a) falecido(a) nem o(a) cônjuge/companheiro(a) sobrevivente (o viúvo NÃO é herdeiro aqui — ele já está no item 2); NUNCA inclua o cônjuge de herdeiro como herdeiro (ele entra na qualificacao do herdeiro, campos conjuge*). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. PLANILHAS DE QUALIFICAÇÃO do escritório costumam ter uma COLUNA por pessoa (AUTOR(A) DA HERANÇA, VIÚVO(A), Herdeiro 1, 2, 3…) e uma LINHA por campo (NOME, RG, CPF, DATA DE NASCIMENTO, FILIAÇÃO, ESTADO CIVIL, PROFISSÃO, E-MAIL, ENDEREÇO, COMPLEMENTO, BAIRRO, CIDADE, ESTADO/UF, CEP e o bloco CÔNJUGE do herdeiro casado) — extraia TUDO o que constar para a qualificacao de cada pessoa (dataNascimento em YYYY-MM-DD; CPF como 000.000.000-00; uf com 2 letras; campo ausente = null; sem qualquer dado, qualificacao = null). Deixe em branco (null) apenas o que realmente não estiver nos documentos.
-4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR). Para IMÓVEL, extraia da MATRÍCULA e das CERTIDÕES DE VALOR VENAL o bloco imovel: descricaoMatricula = a DESCRIÇÃO COMPLETA do imóvel tal como consta na matrícula (tipo, endereço, área, confrontações), já incorporando as averbações que alterem a especialidade objetiva (área construída, numeração, retificações) — transcreva fielmente; aquisicao = o registro/averbação pelo qual o(a) falecido(a) adquiriu (ex.: "R.4"), matricula, registroImoveis (ex.: "1º Registro de Imóveis de Guarulhos/SP"), municipio, inscricaoCadastral (nº do contribuinte/inscrição municipal), valorVenalObito + exercicioObito (certidão do exercício do óbito) e valorVenalAtual + exercicioAtual (certidão do exercício corrente) — valores em reais com ponto decimal. Para VEÍCULO, extraia do CRLV (ou da própria descrição, quando constar) o bloco veiculo: marcaModelo, anoFabricacao, anoModelo, renavam, placa, chassi. ATENÇÃO: alguns municípios lançam UM MESMO imóvel em MAIS DE UMA inscrição municipal (ex.: 084.33.20.0048.01.000 e 084.33.20.0048.02.000 — a base é igual, muda só a sub-inscrição): lance UM bem só, SOMANDO os valores venais das inscrições e listando todas em inscricaoCadastral. NÃO lance participação societária (quotas/ações) em bens — ela entra em "sociedades" e o sistema calcula o valor.
+3. herdeiros — SOMENTE pessoas que os documentos apontem como filhos(as) do falecido (certidão de óbito costuma listar; certidões de nascimento provam). Preencha TAMBÉM herdeirosNoObito: os filhos/herdeiros DECLARADOS na própria certidão de óbito (campo \"deixa filhos\"), exatamente como constarem — mesmo os que não tiverem nenhum outro documento no lote (é o que permite alertar documentação faltante). REGRAS DE UNICIDADE (críticas): cada pessoa aparece UMA ÚNICA VEZ, sempre com o nome MAIS COMPLETO que os documentos trouxerem — "Renata" e "Renata Pummer Carvalho Lavruhin" são a MESMA pessoa (una os registros; diferenças de acento como "Márcio"/"Marcio" também são a mesma pessoa); NUNCA inclua na lista o(a) falecido(a) nem o(a) cônjuge/companheiro(a) sobrevivente (o viúvo NÃO é herdeiro aqui — ele já está no item 2); NUNCA inclua o cônjuge de herdeiro como herdeiro (ele entra na qualificacao do herdeiro, campos conjuge*). filhoDoSobrevivente = true quando a filiação indicar que também é filho(a) do(a) sobrevivente; null em dúvida. PLANILHAS DE QUALIFICAÇÃO do escritório costumam ter uma COLUNA por pessoa (AUTOR(A) DA HERANÇA, VIÚVO(A), Herdeiro 1, 2, 3…) e uma LINHA por campo (NOME, RG, CPF, DATA DE NASCIMENTO, FILIAÇÃO, ESTADO CIVIL, PROFISSÃO, E-MAIL, ENDEREÇO, COMPLEMENTO, BAIRRO, CIDADE, ESTADO/UF, CEP e o bloco CÔNJUGE do herdeiro casado) — extraia TUDO o que constar para a qualificacao de cada pessoa (dataNascimento em YYYY-MM-DD; CPF como 000.000.000-00; uf com 2 letras; campo ausente = null; sem qualquer dado, qualificacao = null). Deixe em branco (null) apenas o que realmente não estiver nos documentos.
+4. bens — um por bem identificado (matrícula de imóvel, CRLV, extrato). descricao curta e útil (ex.: "Apartamento — matrícula 12.345 do 1º RI de Guarulhos/SP"); valor numérico em reais com ponto decimal (ex.: "620000.00") apenas se o documento trouxer valor; natureza COMUM/PARTICULAR só quando a origem do bem deixar claro (herança/doação/aquisição anterior ao casamento = PARTICULAR). Para IMÓVEL, extraia da MATRÍCULA e das CERTIDÕES DE VALOR VENAL o bloco imovel: descricaoMatricula = a DESCRIÇÃO COMPLETA do imóvel tal como consta na matrícula (tipo, endereço, área, confrontações), já incorporando as averbações que alterem a especialidade objetiva (área construída, numeração, retificações) — transcreva fielmente; aquisicao = o registro/averbação pelo qual o(a) falecido(a) adquiriu (ex.: "R.4"), matricula, registroImoveis (ex.: "1º Registro de Imóveis de Guarulhos/SP"), municipio, inscricaoCadastral (nº do contribuinte/inscrição municipal), valorVenalObito + exercicioObito (certidão do exercício do óbito) e valorVenalAtual + exercicioAtual (certidão do exercício corrente) — valores em reais com ponto decimal; fracaoIdeal = a FRAÇÃO IDEAL (%) que a certidão de valor venal atribuir à inscrição, como número decimal em texto (ex.: \"50.00\" para 50%; \"100.00\" quando integral). Para VEÍCULO, extraia do CRLV (ou da própria descrição, quando constar) o bloco veiculo: marcaModelo, anoFabricacao, anoModelo, renavam, placa, chassi. ATENÇÃO: alguns municípios lançam UM MESMO imóvel em MAIS DE UMA inscrição municipal (ex.: 084.33.20.0048.01.000 e 084.33.20.0048.02.000 — a base é igual, muda só a sub-inscrição): lance UM bem só, SOMANDO os valores venais das inscrições e listando todas em inscricaoCadastral. NÃO lance participação societária (quotas/ações) em bens — ela entra em "sociedades" e o sistema calcula o valor.
 5. sociedades — uma por pessoa jurídica documentada. Do CONTRATO SOCIAL (ou última alteração/consolidação): empresa (razão social), cnpj, capitalSocial em reais com ponto decimal, e socios = TODOS os sócios do quadro societário com o percentual de cada um no capital (0 a 100; calcule pela proporção das quotas se o documento só trouxer quantidades — ex.: 50.000 de 100.000 quotas = 50). Do BALANÇO PATRIMONIAL: patrimonioLiquido em reais com ponto decimal (o total do grupo "Patrimônio Líquido"). Emita a sociedade mesmo que só um dos dois documentos esteja no lote — campos ausentes ficam null. NÃO calcule o valor das quotas.
 6. arquivos — para CADA documento (indice 1 a ${total}): tipoDetectado (rótulo curto, ex.: "Certidão de Óbito") e documentoId = o id do catálogo abaixo em que o arquivo deve ser arquivado (null se nenhum servir). Documentos pessoais (RG/CNH/CPF/comprovante de endereço) classificam-se pelo DONO: do(a) falecido(a) → docs-falecido; do cônjuge/companheiro(a) sobrevivente → docs-sobrevivente; de herdeiro ou cônjuge de herdeiro → docs-herdeiros.
 
@@ -398,6 +404,7 @@ function sanitizarImovel(q: unknown): ImovelExtraido | null {
     registroImoveis: limpar(o.registroImoveis, 120),
     municipio: limpar(o.municipio, 60),
     inscricaoCadastral: limpar(o.inscricaoCadastral, 120),
+    fracaoIdeal: limpar(o.fracaoIdeal, 20),
     valorVenalObito: valorDecimal(o.valorVenalObito),
     exercicioObito: limpar(o.exercicioObito, 4),
     valorVenalAtual: valorDecimal(o.valorVenalAtual),
@@ -552,6 +559,10 @@ export async function extrairCasoDoCofre(
   const bens = Array.isArray(bruto.bens) ? bruto.bens : [];
   const sociedades = Array.isArray(bruto.sociedades) ? bruto.sociedades : [];
   const outrosFalecidos = Array.isArray(bruto.outrosFalecidos) ? bruto.outrosFalecidos : [];
+  const herdeirosNoObito = (Array.isArray(bruto.herdeirosNoObito) ? bruto.herdeirosNoObito : [])
+    .filter((n: unknown): n is string => typeof n === 'string' && n.trim().length > 1)
+    .map((n: string) => n.trim().slice(0, 120))
+    .slice(0, 30);
   const arquivosSaida = Array.isArray(bruto.arquivos) ? bruto.arquivos : [];
 
   return {
@@ -637,6 +648,7 @@ export async function extrairCasoDoCofre(
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
       .slice(0, 10),
+    herdeirosNoObito,
     outrosFalecidos: outrosFalecidos
       .map((item) => {
         const nome = limpar((item as Record<string, unknown>)?.nome);

@@ -59,6 +59,8 @@ export interface EstadoFiscal {
   faixas: FaixaProgressiva[];
   inventarioAberto: boolean;
   dataProtocolo: string;
+  /** Alíquota do ISS do município da serventia (%) — tabela publicada com 5%. */
+  issPct?: string;
   /**
    * Sucessões CUMULADAS no mesmo inventário (art. 672 do CPC): cada uma tem
    * fato gerador, base e atos próprios — impacta ITCMD, escritura e registro.
@@ -83,6 +85,7 @@ export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
   faixas: FAIXAS_PL7_2024.map((f) => ({ ...f })),
   inventarioAberto: false,
   dataProtocolo: '',
+  issPct: '5',
   sucessoes: [],
 };
 

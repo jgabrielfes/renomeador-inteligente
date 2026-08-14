@@ -65,6 +65,8 @@ export interface EstadoFamilia {
   perguntas: Record<string, PerguntasItcmd>;
   /** Inventariante indicado: '__sobrevivente__', id de herdeiro ou null. */
   inventarianteId: string | null;
+  /** Filhos/herdeiros DECLARADOS na certidão de óbito (para alertar falta). */
+  herdeirosDeclarados?: string[];
 }
 
 /** Pílula de escolha (Sim/Não, vínculo, regime) sobre o Button do shadcn. */
