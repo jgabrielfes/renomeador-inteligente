@@ -225,6 +225,8 @@ export function CasoView({
   const inputCasoRef = useRef<HTMLInputElement>(null);
   const [importando, setImportando] = useState(false);
   const [renomeadorAberto, setRenomeadorAberto] = useState(false);
+  // Getter da fila do Renomeador embutido — colhido ao fechar o overlay.
+  const coletaRenomeadorRef = useRef<(() => File[]) | null>(null);
   const [confirmandoNovo, setConfirmandoNovo] = useState(false);
   const [apagando, setApagando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
@@ -871,13 +873,49 @@ export function CasoView({
           ZIP), vestidas na identidade do Sucessorista (.renomeador-tema usa a
           mesma paleta) e com a sugestão de nomes CALIBRADA para inventário/
           família/sucessões — somada às Regras do escritório da conta. */}
-      <Dialog open={renomeadorAberto} onOpenChange={setRenomeadorAberto}>
+      <Dialog
+        open={renomeadorAberto}
+        onOpenChange={(aberto) => {
+          setRenomeadorAberto(aberto);
+          if (aberto) return;
+          // Fechou o overlay: a fila do Renomeador (arquivos JÁ com os nomes
+          // propostos) cai automaticamente no caso — mesmo pipeline do
+          // arraste: anexo imediato classificado pelo nome + leitura por IA
+          // em segundo plano preenchendo a folha.
+          const arquivos = coletaRenomeadorRef.current?.() ?? [];
+          coletaRenomeadorRef.current = null;
+          if (arquivos.length === 0) return;
+          // Já há leitura rodando: anexa classificado pelo nome (sem disparar
+          // uma segunda fila de IA por cima) — nada se perde.
+          if (lendo) {
+            aplicarLeitura(
+              CASO_VAZIO,
+              preparar(arquivos).map((file) => ({
+                file,
+                documentoId: classificarNoCatalogo('', file.name),
+                tipoDetectado: null,
+              })),
+            );
+            toast.info(`${arquivos.length} arquivo(s) do Renomeador anexados ao caso`, {
+              description:
+                'Classificados pelos nomes renomeados; a leitura em andamento não foi interrompida.',
+            });
+            return;
+          }
+          toast.info(`${arquivos.length} arquivo(s) do Renomeador entrando no caso`, {
+            description:
+              'Anexados com os nomes renomeados; a leitura preenche a folha em segundo plano.',
+          });
+          void lerArquivos(preparar(arquivos));
+        }}
+      >
         <DialogContent className="renomeador-tema flex max-h-[94vh] flex-col gap-0 p-0 sm:max-w-[min(96vw,1120px)]">
           <DialogHeader className="sr-only">
             <DialogTitle>Renomeador Inteligente de Documentos</DialogTitle>
             <DialogDescription>
               A ferramenta completa do renomeador, calibrada para documentos de
-              inventário, família e sucessões.
+              inventário, família e sucessões. Ao fechar, os arquivos da fila
+              entram no caso com os nomes renomeados.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1">
@@ -886,6 +924,9 @@ export function CasoView({
                 initialLessons={licoesRenomeador}
                 embutido
                 regrasExtras={REGRAS_RENOMEADOR_SUCESSOES}
+                registrarColeta={(obter) => {
+                  coletaRenomeadorRef.current = obter;
+                }}
               />
             )}
           </ScrollArea>
