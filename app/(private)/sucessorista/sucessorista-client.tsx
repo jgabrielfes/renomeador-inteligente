@@ -243,7 +243,13 @@ interface CasoSalvo {
   convites: Record<string, ConviteHerdeiro>;
 }
 
-export default function SucessoristaClient() {
+export default function SucessoristaClient({
+  licoesRenomeador = null,
+}: {
+  /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
+   *  completa e ela abre com as lições do escritório já carregadas. */
+  licoesRenomeador?: import('@/lib/lessons').LessonsState | null;
+}) {
   // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
   // compartilhável. A troca usa history.replaceState — atualização rasa, sem
   // round-trip ao servidor nem barra de progresso a cada clique de aba.
@@ -2071,6 +2077,7 @@ export default function SucessoristaClient() {
             perfil={perfil}
             tema={tema}
             setTema={setTema}
+            licoesRenomeador={licoesRenomeador}
           />
         )}
 
