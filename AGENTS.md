@@ -37,7 +37,10 @@ Módulo novo segue o padrão: página em `app/(grupo)/<modulo>/page.tsx`, lógic
 
 ## Branches e deploy
 
-`main` tem **deploy automático na Vercel a cada commit**. O dia a dia acontece na `develop` (direto ou via PR); só mescle para `main` o que estiver pronto para produção. Agentes: nunca commitar direto na `main`.
+O dia a dia acontece na `develop` (direto ou via PR); só mescle para `main` o que estiver pronto para produção. Agentes: nunca commitar direto na `main`.
+
+- **Preview**: toda branch que não é a `main` publica preview automaticamente na Vercel, como antes.
+- **Produção**: a `main` NÃO tem auto-deploy (`vercel.json` → `git.deploymentEnabled.main = false`). Quem publica é a GitHub Action `.github/workflows/deploy-producao.yml`, que roda a CLI da Vercel com o `VERCEL_TOKEN` do dono da conta. Motivo: no plano Hobby a Vercel BLOQUEIA o deploy de produção quando o autor do commit não é o dono da conta — com a action, o deploy é atribuído ao dono e sai normalmente, venha o merge de quem vier. Se o auto-deploy da `main` for reativado no painel, haverá deploy duplicado (um deles bloqueado).
 
 ## Autenticação e papéis
 

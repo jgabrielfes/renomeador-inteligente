@@ -1,0 +1,75 @@
+# Deploy de PRODUÇÃO da plataforma.
+#
+# Por que existe: no plano Hobby da Vercel, o deploy de produção fica
+# "Blocked" quando o autor do commit no Git não é o dono da conta — foi o que
+# passou a acontecer com as contribuições de outras pessoas na `main`.
+# Aqui o deploy é criado pela CLI oficial da Vercel autenticada com o TOKEN DO
+# DONO da conta, então a Vercel o atribui a ele e não bloqueia, seja de quem
+# for o commit que entrou na `main`.
+#
+# O auto-deploy da `main` fica DESLIGADO em `vercel.json`
+# (git.deploymentEnabled.main = false) para não haver deploy duplicado; as
+# demais branches seguem publicando preview automaticamente, como antes.
+#
+# Segredos necessários em Settings → Secrets and variables → Actions:
+#   VERCEL_TOKEN       — Vercel → Account Settings → Tokens (escopo da conta)
+#   VERCEL_ORG_ID      — `.vercel/project.json` após `vercel link`, ou o painel
+#   VERCEL_PROJECT_ID  — idem
+
+name: Deploy de produção
+
+on:
+  push:
+    branches: [main]
+  # Permite republicar a produção pelo botão "Run workflow", sem commit novo.
+  workflow_dispatch: {}
+
+# Um deploy de produção por vez; não cancela o que já está no ar publicando.
+concurrency:
+  group: deploy-producao
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publicar na Vercel
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar a CLI da Vercel
+        run: npm install --global vercel@latest
+
+      - name: Puxar as variáveis de ambiente de produção
+        # Traz as envs do projeto (GEMINI_API_KEY, DATABASE_URL, AUTH_*…) —
+        # elas continuam vivendo só na Vercel, nunca no repositório.
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Compilar
+        # O build roda AQUI: se quebrar, nada vai para produção.
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Publicar
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Produção publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
