@@ -55,6 +55,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const [erro, setErro] = useState<string | null>(null);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
   /** Arquivos anexados nesta visita, por documento — permitem a lupa local. */
   const [arquivos, setArquivos] = useState<Record<string, File>>({});
   const [preview, setPreview] = useState<File | null>(null);
@@ -293,6 +294,51 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           </div>
         ))}
       </div>
+
+      {/* ---------- 3. salvar: a confirmação que o herdeiro entende ---------- */}
+      <h2>3. Salvar</h2>
+      <p className="fund" style={{ marginBottom: 8 }}>
+        Cada dado e documento acima já entra na folha do inventário assim que você envia.
+        O botão abaixo fecha a visita: registra que você terminou e confirma que está tudo
+        salvo com {advogado}.
+      </p>
+      {convite.envioConfirmadoEm && (
+        <div className="nota registro">
+          <span className="eyebrow">Salvo na folha do inventário</span>
+          <p>
+            Suas informações e a lista de documentos foram recebidas por {advogado} —
+            confirmação registrada em{' '}
+            {new Date(convite.envioConfirmadoEm).toLocaleString('pt-BR')}. Precisando
+            corrigir algo, envie de novo e clique em Salvar outra vez.
+          </p>
+        </div>
+      )}
+      <button
+        className="acao"
+        type="button"
+        disabled={salvando}
+        onClick={() => {
+          void (async () => {
+            setSalvando(true);
+            try {
+              const r = await fetch(`/api/portal/${token}`, {
+                method: 'PATCH',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ confirmarEnvio: true }),
+              });
+              if (r.ok) setConvite(await r.json());
+            } finally {
+              setSalvando(false);
+            }
+          })();
+        }}
+      >
+        {salvando
+          ? 'Salvando…'
+          : convite.envioConfirmadoEm
+            ? 'Salvar de novo'
+            : 'Salvar — confirmar meu envio'}
+      </button>
 
       <p className="fund" style={{ marginTop: 24 }}>
         Dúvidas sobre algum documento? Fale direto com {advogado}.

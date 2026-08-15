@@ -77,6 +77,9 @@ export interface SucessaoCumulada {
   base: string;
   /** Imóveis envolvidos nesta sucessão (atos de registro próprios). */
   qtdImoveis: number;
+  /** true = partilha desta sucessão com os MESMOS herdeiros do inventário
+   *  principal — o item III mostra uma partilha própria para ela. */
+  mesmosHerdeiros?: boolean;
 }
 
 export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {

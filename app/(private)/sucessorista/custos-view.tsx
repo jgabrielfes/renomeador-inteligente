@@ -10,14 +10,7 @@
  * projeção. O total fecha com a provisão do ITCMD do item IV.
  */
 
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-
 import { Button } from '@/components/ui/button';
-import { CurrencyInput } from '@/components/currency-input';
-import { DateInput } from '@/components/date-input';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 import type { ProvisaoItcmd } from '@/lib/partilha/itcmd';
@@ -27,66 +20,28 @@ import type { SucessaoCumulada } from './itcmd-view';
 const brl = (v: number) =>
   `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const uid = () => `su-${crypto.randomUUID().slice(0, 8)}`;
-
-const esquemaSucessao = z.object({
-  nome: z.string().trim().min(1, 'Informe o nome do(a) autor(a) desta sucessão.'),
-  dataObito: z.string().min(1, 'Informe a data do óbito — é o fato gerador desta sucessão.'),
-  base: z.string().trim().min(1, 'Informe a base transmitida nesta sucessão.'),
-  qtdImoveis: z.string().regex(/^\d*$/, 'Use apenas números.'),
-});
-
-type NovaSucessao = z.infer<typeof esquemaSucessao>;
-
 export function CustosView({
   custos,
   provisao,
-  sucessoes,
-  setSucessoes,
   provisoesSucessoes,
   issPct,
   setIssPct,
+  irParaFamilia,
   irParaAcervo,
   irParaItcmd,
 }: {
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
-  sucessoes: SucessaoCumulada[];
-  setSucessoes: (s: SucessaoCumulada[]) => void;
   provisoesSucessoes: { sucessao: SucessaoCumulada; provisao: ProvisaoItcmd }[];
   /** Alíquota do ISS do município da serventia (%). */
   issPct: string;
   setIssPct: (v: string) => void;
+  irParaFamilia: () => void;
   irParaAcervo: () => void;
   irParaItcmd: () => void;
 }) {
   const temTaxaJudicial = custos?.parcelas.some((p) => p.id === 'taxa-judiciaria') ?? false;
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
-  const {
-    register,
-    handleSubmit,
-    control,
-    reset,
-    formState: { errors },
-  } = useForm<NovaSucessao>({
-    resolver: zodResolver(esquemaSucessao),
-    defaultValues: { nome: '', dataObito: '', base: '', qtdImoveis: '' },
-  });
-
-  const lancarSucessao = (dados: NovaSucessao) => {
-    const decimal = Number(dados.base.replace(/\./g, '').replace(',', '.'));
-    setSucessoes([
-      ...sucessoes,
-      {
-        id: uid(),
-        nome: dados.nome,
-        dataObito: dados.dataObito,
-        base: (Number.isFinite(decimal) ? decimal : 0).toFixed(2),
-        qtdImoveis: Number(dados.qtdImoveis) || 0,
-      },
-    ]);
-    reset();
-  };
 
   return (
     <section>
@@ -186,86 +141,18 @@ export function CustosView({
         </>
       )}
 
-      {/* ---------- sucessões cumuladas (CPC, art. 672) ---------- */}
-      <h2>Sucessões cumuladas no mesmo inventário</h2>
-      <p className="subtitulo" style={{ marginBottom: 10 }}>
-        Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…): cada sucessão
-        tem o PRÓPRIO fato gerador — o ITCMD é calculado pela UFESP e pelos prazos da data
-        do óbito respectiva, e a escritura e os registros ganham atos próprios.
-      </p>
-
-      {sucessoes.map((su) => (
-        <div key={su.id} className="linha-item">
-          <span>
-            <strong>{su.nome}</strong>
-            <span className="fracao num">
-              {' '}
-              · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · base{' '}
-              {brl(Number(su.base))} · {su.qtdImoveis} imóvel(is)
-            </span>
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive"
-            onClick={() => setSucessoes(sucessoes.filter((x) => x.id !== su.id))}
-          >
-            remover
-          </Button>
-        </div>
-      ))}
-
-      <form noValidate onSubmit={handleSubmit(lancarSucessao)}>
-        <div className="grade c2" style={{ marginTop: 10 }}>
-          <Field data-invalid={Boolean(errors.nome)}>
-            <FieldLabel htmlFor="sucessao-nome">Autor(a) da sucessão cumulada</FieldLabel>
-            <Input id="sucessao-nome" aria-invalid={Boolean(errors.nome)} {...register('nome')} />
-            <FieldError errors={[errors.nome]} />
-          </Field>
-          <Field data-invalid={Boolean(errors.dataObito)}>
-            <FieldLabel>Data do óbito (fato gerador)</FieldLabel>
-            <Controller
-              control={control}
-              name="dataObito"
-              render={({ field }) => <DateInput value={field.value} onChange={field.onChange} />}
-            />
-            <FieldError errors={[errors.dataObito]} />
-          </Field>
-          <Field data-invalid={Boolean(errors.base)}>
-            <FieldLabel htmlFor="sucessao-base">Base transmitida (R$)</FieldLabel>
-            <Controller
-              control={control}
-              name="base"
-              render={({ field }) => (
-                <CurrencyInput
-                  id="sucessao-base"
-                  aria-invalid={Boolean(errors.base)}
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                />
-              )}
-            />
-            <FieldError errors={[errors.base]} />
-          </Field>
-          <Field data-invalid={Boolean(errors.qtdImoveis)}>
-            <FieldLabel htmlFor="sucessao-imoveis">Imóveis envolvidos (nº)</FieldLabel>
-            <Input
-              id="sucessao-imoveis"
-              inputMode="numeric"
-              aria-invalid={Boolean(errors.qtdImoveis)}
-              {...register('qtdImoveis')}
-            />
-            <FieldError errors={[errors.qtdImoveis]} />
-          </Field>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <Button type="submit" variant="outline">
-            Adicionar sucessão
-          </Button>
-        </div>
-      </form>
+      {/* O LANÇAMENTO das sucessões cumuladas fica no item I (A família) —
+          aqui a planilha só reflete o impacto delas nos custos. */}
+      {provisoesSucessoes.length === 0 && (
+        <p className="fund" style={{ marginTop: 18 }}>
+          Inventário com duas ou mais sucessões (cônjuge pré-morto, herdeiro falecido
+          depois…)? Lance as sucessões cumuladas no item I —{' '}
+          <Button variant="ghost" size="sm" onClick={irParaFamilia}>
+            ir para A família
+          </Button>{' '}
+          — e cada uma entra aqui com o próprio fato gerador, escritura e registros.
+        </p>
+      )}
 
       <div className="rodape-acoes">
         <Button variant="outline" onClick={irParaAcervo}>

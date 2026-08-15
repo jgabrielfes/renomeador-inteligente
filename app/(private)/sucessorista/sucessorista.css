@@ -191,8 +191,10 @@
 }
 
 .sucessorista .folha {
-  padding: 44px 48px 96px;
-  max-width: 900px;
+  /* Mais respiro (pedido do escritório): a folha cresceu de 900 para 1080px
+     e os espaçamentos internos aumentaram — mesma identidade, menos aperto. */
+  padding: 48px 56px 104px;
+  max-width: 1080px;
   min-width: 0;
 }
 
@@ -283,6 +285,12 @@
   white-space: nowrap;
 }
 
+/* Encargos acessórios (atualização, multas, juros, desconto) recuados à
+   direita como itens secundários — os principais (ITCMD, escritura, registros
+   e certidões) seguem alinhados à esquerda. */
+.sucessorista .pilha > div.sub { padding-left: 16px; font-size: 11.5px; }
+.sucessorista .pilha > div.sub .rotulo { font-style: italic; }
+
 .sucessorista .alerta-painel {
   font-size: 12px;
   padding: 7px 10px;
@@ -327,10 +335,24 @@
 
 /* ---------- formulário (rótulo em pilha sobre componentes shadcn) ---------- */
 
-.sucessorista .grade { display: grid; gap: 14px; }
+.sucessorista .grade { display: grid; gap: 16px 18px; }
 .sucessorista .grade.c2 { grid-template-columns: 1fr 1fr; }
 .sucessorista .grade.c3 { grid-template-columns: 2fr 1fr 1fr; }
-.sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
+/* Ficha de qualificação compacta: 4 campos por linha (a folha alargou). */
+.sucessorista .grade.q-grid { grid-template-columns: repeat(4, 1fr); gap: 10px 14px; }
+
+/* Cartão: blocos da folha com ar de card (fundo alto + filete), sem mudar
+   cores nem identidade — só dá respiro e separa visualmente as seções. */
+.sucessorista .cartao {
+  background: var(--papel-alto);
+  border: 1px solid var(--fio);
+  border-radius: 10px;
+  padding: 20px 22px 22px;
+  margin: 14px 0 22px;
+}
+
+.sucessorista .cartao > .eyebrow:first-child { display: block; margin-bottom: 4px; }
+.sucessorista .cartao h2:first-child { margin-top: 0; }
 
 /* Número de ordem do bem na listagem do acervo (mesma sequência na partilha). */
 .sucessorista .numero-bem {
@@ -385,18 +407,23 @@
    container do Table do shadcn já é ScrollArea horizontal — colunas a mais
    (muitos herdeiros) rolam com a barra estilizada. */
 .sucessorista .matriz-partilha {
-  margin-top: 10px;
-  font-size: 13px;
+  /* Quadro maior (pedido do escritório): fonte, células e campos cresceram —
+     com a folha de 1080px o scroll horizontal só aparece com MUITAS partes. */
+  margin-top: 12px;
+  font-size: 14px;
 }
 
+.sucessorista .matriz-partilha th,
+.sucessorista .matriz-partilha td { padding: 10px 10px; }
+
 .sucessorista .matriz-partilha .col-bem {
-  min-width: 220px;
-  max-width: 300px;
+  min-width: 260px;
+  max-width: 340px;
   white-space: normal;
 }
 
 .sucessorista .matriz-partilha .col-total {
-  min-width: 72px;
+  min-width: 80px;
   text-align: right;
   font-weight: 600;
 }
@@ -412,17 +439,18 @@
 
 .sucessorista .matriz-partilha .pct-campo > span {
   position: absolute;
-  right: 9px;
-  font-size: 12px;
+  right: 10px;
+  font-size: 13px;
   color: var(--tinta-media);
   pointer-events: none;
 }
 
 .sucessorista .matriz-partilha input.pct {
-  width: 86px;
-  height: 30px;
+  width: 104px;
+  height: 36px;
+  font-size: 14px;
   text-align: right;
-  padding-right: 24px;
+  padding-right: 26px;
 }
 
 .sucessorista .matriz-partilha tfoot td {
@@ -525,15 +553,16 @@
 }
 .sucessorista .economias .oportunidade .condicoes li { margin-top: 2px; }
 
-/* Painel de notícias: notícia em destaque com título + introdução. */
+/* Painel de notícias: notícia em destaque com título + introdução —
+   radar maior (pedido do escritório): manchete e introdução cresceram. */
 .sucessorista .noticias-ticker {
-  margin: -12px 0 22px;
-  padding: 10px 14px 12px;
+  margin: -12px 0 26px;
+  padding: 14px 18px 16px;
   border: 1px solid var(--fio);
   border-left: 3px solid var(--bronze);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--papel-alto);
-  font-size: 12.5px;
+  font-size: 13px;
   overflow: hidden;
 }
 
@@ -558,8 +587,8 @@
   display: block;
   font-family: var(--display);
   font-weight: 600;
-  font-size: 14.5px;
-  line-height: 1.35;
+  font-size: 17px;
+  line-height: 1.3;
   color: var(--tinta);
   text-decoration: none;
   animation: manchete-entra 0.45s ease-out;
@@ -568,12 +597,12 @@
 .sucessorista .noticias-ticker .manchete:hover { text-decoration: underline; }
 
 .sucessorista .noticias-ticker .introducao {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--tinta-media);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   animation: manchete-entra 0.45s ease-out;
@@ -812,6 +841,25 @@
   margin-top: 4px;
 }
 
+/* Envio vindo do cofre do herdeiro — o arquivo está com ele; aqui entra o
+   registro (nome proposto, tipo e status) no card correlato do catálogo. */
+.sucessorista .anexo-linha.cofre { color: var(--verde-registro); }
+
+/* Botão de ação do PORTAL DO HERDEIRO (página pública sem shadcn montado):
+   tinta sobre papel, mesmo desenho dos botões do módulo. */
+.sucessorista button.acao {
+  appearance: none;
+  border: 1px solid var(--tinta);
+  background: var(--tinta);
+  color: var(--papel);
+  font: 600 14px/1 var(--texto);
+  padding: 11px 20px;
+  border-radius: 6px;
+}
+
+.sucessorista button.acao:hover { background: #2c3833; }
+.sucessorista button.acao:disabled { opacity: 0.6; cursor: default; }
+
 /* ---------- responsivo ---------- */
 
 /* Tela comum em 100% de zoom (1280/1366): o painel CONTINUA à direita —
@@ -820,6 +868,8 @@
 @media (max-width: 1280px) {
   .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr) 320px; }
   .sucessorista .folha { padding: 32px 26px 80px; }
+  /* Em folha estreita, a ficha compacta volta a 3 campos por linha. */
+  .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 @media (max-width: 1024px) {

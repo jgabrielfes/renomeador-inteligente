@@ -57,6 +57,10 @@ export interface EntradaEconomia {
   valorIsento: number;
   /** UFESP de referência (mede a isenção de doação do art. 6º, II, "a"). */
   ufespReferencia: number | null;
+  /** Herdeiros que recebem (donatários da torna da reserva de usufruto). */
+  qtdHerdeiros: number;
+  /** Rito provável extrajudicial? (null = indefinido; habilita teses próprias). */
+  extrajudicial?: boolean | null;
   /** Acertos da partilha diferenciada (tornas), quando montada. */
   transferencias: TransferenciaEconomia[];
 }
@@ -157,29 +161,79 @@ export function mapearEconomias(e: EntradaEconomia): OportunidadeEconomia[] {
         condicoes: [],
       });
     }
+
+    // Passado o prazo, a economia muda de natureza: vira TESE DE DEFESA — o
+    // TJSP tem precedentes afastando a multa de abertura no EXTRAJUDICIAL
+    // (o art. 21, I fala em inventário "não requerido no prazo", redação
+    // pensada para o processo judicial) ou contando o prazo de outro marco.
+    if (dias > 180 && e.extrajudicial !== false) {
+      lista.push({
+        id: 'defesa-multa-abertura',
+        titulo: 'Multa de abertura tardia: tese de defesa no inventário extrajudicial',
+        explicacao: `A multa de 20% por abertura tardia (${fmt(r2(e.imposto * 0.2))}) foi redigida para o inventário JUDICIAL "não requerido no prazo" — no EXTRAJUDICIAL o TJSP tem precedentes afastando-a ou deslocando o termo inicial (nomeação do inventariante/lavratura). Vale avaliar a impugnação administrativa ou judicial da multa antes de recolher.`,
+        fundamento: 'Lei 10.705/2000, art. 21, I; precedentes do TJSP sobre a via extrajudicial',
+        economiaEstimada: r2(e.imposto * 0.2),
+        horizonte: 'IMEDIATA',
+        aplicada: false,
+        condicoes: [
+          'Tese não pacificada: pesar o custo e o tempo da discussão contra o valor da multa — a decisão é do(a) advogado(a).',
+          'A guia pode ser recolhida com ressalva para não travar a lavratura, discutindo a multa em restituição.',
+        ],
+      });
+    }
   }
 
-  /* --- planejamento na partilha: o segundo inventário --- */
+  /* --- planejamento na partilha: o segundo inventário ---
+     A sugestão do usufruto NÃO é automática: atribuir os imóveis aos
+     herdeiros gera uma TORNA do(a) sobrevivente (a parte do direito dele(a)
+     que não se compensa com os demais bens) — e torna cedida de graça é
+     DOAÇÃO, com ITCMD inter vivos AGORA sobre o que passar da isenção de
+     2.500 UFESPs por donatário/ano. A economia só é real quando essa torna
+     cabe na isenção (ou quando nem há torna); havendo excesso, o card muda
+     de tom: aponta o imposto antecipado e sugere limitar/escalonar. */
 
   if (e.valorSobrevivente > 0 && imoveis.length > 0) {
     const baseFutura = Math.min(e.valorSobrevivente, valorImoveis);
     const nome = e.nomeSobrevivente?.trim() || 'o(a) sobrevivente';
-    lista.push({
-      id: 'usufruto-nua-propriedade',
-      titulo: 'Nua-propriedade aos herdeiros com usufruto vitalício do(a) sobrevivente',
-      explicacao: `Em vez de imóvel em nome de ${nome} (que voltaria a inventário no futuro), a partilha pode atribuir a NUA-PROPRIEDADE aos herdeiros com reserva de USUFRUTO VITALÍCIO a ${nome} — quem segue morando e administrando o bem. No falecimento do(a) usufrutuário(a) o usufruto apenas se EXTINGUE e a propriedade se consolida: a extinção de usufruto não é fato gerador do ITCMD em SP, e o bem não integra o segundo inventário. Economia futura estimada de ${fmt(r2(baseFutura * ALIQUOTA))} só de imposto, além de escritura, registro e honorários de um novo inventário sobre esses bens. Caso clássico: viúva com o usufruto do único imóvel.`,
-      fundamento:
-        'Lei 10.705/2000, arts. 2º e 3º (extinção de usufruto não listada como fato gerador); coeficientes do RITCMD-SP (usufruto 1/3, nua-propriedade 2/3)',
-      economiaEstimada: r2(baseFutura * ALIQUOTA),
-      horizonte: 'FUTURA',
-      aplicada: false,
-      condicoes: [
-        'Reserva do usufruto na própria escritura do inventário, de preferência dentro da meação/quinhão de cada parte (sem gerar excesso).',
-        'Se a montagem gerar diferença de quinhão, o excesso é cessão: gratuita = doação (isenta até 2.500 UFESPs por donatário/ano — art. 6º, II, "a"); onerosa sobre imóvel = ITBI.',
-        `${nome} deixa de poder vender o bem sozinho(a) (fica só com o usufruto) — alinhar a decisão com a família.`,
-        'Averbações e valores dos coeficientes: conferir a redação vigente do RITCMD antes da lavratura.',
-      ],
-    });
+    const valorNaoImoveis = e.bens
+      .filter((b) => b.tipo !== 'IMOVEL' && b.valor > 0)
+      .reduce((a, b) => a + b.valor, 0);
+    // Torna da reserva: o que o(a) sobrevivente deixa de receber em imóveis
+    // e NÃO consegue compensar com os demais bens — vira cessão gratuita.
+    const tornaReserva = r2(Math.min(baseFutura, Math.max(0, e.valorSobrevivente - valorNaoImoveis)));
+    const tetoIsencao = e.ufespReferencia ? r2(2500 * e.ufespReferencia * Math.max(1, e.qtdHerdeiros)) : null;
+    const excesso = tetoIsencao === null ? 0 : r2(Math.max(0, tornaReserva - tetoIsencao));
+    const itcmdInterVivos = r2(excesso * ALIQUOTA);
+    const economiaFutura = r2(baseFutura * ALIQUOTA);
+    const economiaLiquida = r2(economiaFutura - itcmdInterVivos);
+
+    const situacaoTorna =
+      tornaReserva <= 0
+        ? `Nesta montagem a compensação fecha com os demais bens — ${nome} não cede nada de graça, e não há ITCMD inter vivos.`
+        : excesso <= 0
+          ? `A torna da reserva (${fmt(tornaReserva)}) CABE na isenção de doação de 2.500 UFESPs por donatário/ano${tetoIsencao ? ` (${fmt(tetoIsencao)} no total para ${Math.max(1, e.qtdHerdeiros)} herdeiro(s))` : ''} — sem ITCMD inter vivos: a economia é real.`
+          : `ATENÇÃO: a torna da reserva (${fmt(tornaReserva)}) PASSA da isenção de doação — ${fmt(excesso)} de excesso pagariam ${fmt(itcmdInterVivos)} de ITCMD inter vivos JÁ NA LAVRATURA, antecipando imposto para economizar depois. A conta líquida cai para ${fmt(economiaLiquida)}; o desenho melhora limitando a reserva à parte isenta ou escalonando cessões por exercício.`;
+
+    if (economiaLiquida > 0) {
+      lista.push({
+        id: 'usufruto-nua-propriedade',
+        titulo: 'Nua-propriedade aos herdeiros com usufruto vitalício do(a) sobrevivente',
+        explicacao: `Em vez de imóvel em nome de ${nome} (que voltaria a inventário no futuro), a partilha pode atribuir a NUA-PROPRIEDADE aos herdeiros com reserva de USUFRUTO VITALÍCIO a ${nome} — quem segue morando e administrando o bem. No falecimento do(a) usufrutuário(a) o usufruto apenas se EXTINGUE e a propriedade se consolida: a extinção de usufruto não é fato gerador do ITCMD em SP, e o bem não integra o segundo inventário — economia futura estimada de ${fmt(economiaFutura)} só de imposto, além de escritura, registro e honorários de um novo inventário sobre esses bens. ${situacaoTorna}`,
+        fundamento:
+          'Lei 10.705/2000, arts. 2º e 3º (extinção de usufruto não listada como fato gerador) e art. 6º, II, "a" (isenção da doação); coeficientes do RITCMD-SP (usufruto 1/3, nua-propriedade 2/3)',
+        economiaEstimada: economiaLiquida,
+        horizonte: 'FUTURA',
+        aplicada: false,
+        condicoes: [
+          'Reserva do usufruto na própria escritura do inventário, de preferência dentro da meação/quinhão de cada parte (sem gerar excesso).',
+          excesso > 0
+            ? `Excesso sobre a isenção: limitar a reserva à parte isenta, escalonar cessões por ano civil ou aceitar os ${fmt(itcmdInterVivos)} de ITCMD de doação — somar outras doações do mesmo doador no exercício.`
+            : 'Somar outras doações do MESMO doador ao MESMO donatário no ano civil — o teto da isenção é anual, por par.',
+          `${nome} deixa de poder vender o bem sozinho(a) (fica só com o usufruto) — alinhar a decisão com a família.`,
+          'Averbações e valores dos coeficientes: conferir a redação vigente do RITCMD antes da lavratura.',
+        ],
+      });
+    }
   }
 
   /* --- tornas que ainda custam imposto: dá para melhorar --- */
@@ -223,6 +277,46 @@ export function mapearEconomias(e: EntradaEconomia): OportunidadeEconomia[] {
       aplicada: false,
       condicoes: [
         'Só vale se a parte cedente realmente abrir mão da compensação — doação simulada de reposição onerosa é fraude fiscal.',
+      ],
+    });
+  }
+
+  /* --- planejamentos gerais (legislação federal e processo) --- */
+
+  // IR na transmissão: a DIRPF do espólio escolhe, bem a bem, transmitir
+  // pelo valor da última declaração (nada de ganho de capital agora) ou pelo
+  // valor de mercado (15% sobre a diferença já, "reprecificando" o custo de
+  // aquisição dos herdeiros para a venda futura).
+  if (e.bens.some((b) => b.valor > 0)) {
+    lista.push({
+      id: 'valor-transmissao-ir',
+      titulo: 'Imposto de Renda: escolher o valor da transmissão (declaração × mercado)',
+      explicacao:
+        'Na declaração final do espólio, cada bem pode ser transmitido pelo VALOR DA ÚLTIMA DECLARAÇÃO do(a) falecido(a) — nenhum ganho de capital agora, o IR fica adiado para quando o herdeiro vender — ou pelo VALOR DE MERCADO, pagando 15% sobre a diferença já e elevando o custo de aquisição dos herdeiros (vantajoso quando a venda é próxima, ou quando o herdeiro poderá usar isenções na revenda, como a do único imóvel de até R$ 440 mil). A escolha é bem a bem e não muda o ITCMD.',
+      fundamento: 'Lei 9.532/1997, art. 23; Lei 9.250/1995, art. 23 (isenção do único imóvel)',
+      economiaEstimada: null,
+      horizonte: 'FUTURA',
+      aplicada: false,
+      condicoes: [
+        'Comparar os planos da família para cada bem (vender logo × manter) antes de entregar a DIRPF final do espólio.',
+      ],
+    });
+  }
+
+  // Sobrepartilha (CPC, art. 669): bem de liquidação difícil ou litigioso não
+  // precisa travar o inventário inteiro além dos prazos fiscais.
+  if (e.bens.some((b) => b.tipo === 'QUOTAS') && e.imposto !== null && e.imposto > 0) {
+    lista.push({
+      id: 'sobrepartilha-bens-morosos',
+      titulo: 'Quotas e bens de liquidação difícil podem ficar para sobrepartilha',
+      explicacao:
+        'Quotas societárias, bens litigiosos e os de liquidação difícil ou morosa podem ficar para SOBREPARTILHA: a família partilha e recolhe desde já o que está líquido, sem deixar a apuração demorada de um bem levar o inventário inteiro para além dos prazos fiscais (multa de até 20% e juros sobre TODO o imposto).',
+      fundamento: 'CPC, arts. 669 e 670',
+      economiaEstimada: null,
+      horizonte: 'IMEDIATA',
+      aplicada: false,
+      condicoes: [
+        'A sobrepartilha é procedimento posterior — pesar o custo do segundo ato contra os encargos de mora evitados agora.',
       ],
     });
   }

@@ -12,6 +12,7 @@ import {
   type ArquivoCofre,
   type EntradaRedacaoHonorarios,
 } from "@/lib/gemini-sucessorista";
+import { analisarMatriculas } from "@/lib/gemini-matricula";
 import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 
@@ -129,6 +130,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Campo "tipo" do multipart: MATRICULA = Analisador de Matrícula (item
+    // IX) — relatório de situação dominial; sem o campo, leitura do cofre.
+    if (form.get("tipo") === "MATRICULA") {
+      const matriculas = await analisarMatriculas(apiKey, arquivos);
+      return Response.json({ matriculas });
+    }
     const caso = await extrairCasoDoCofre(apiKey, arquivos);
     return Response.json({ caso });
   } catch (err) {

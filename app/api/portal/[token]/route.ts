@@ -31,11 +31,26 @@ export async function PATCH(req: Request, ctx: Ctx) {
     tipoDetectado?: string;
     observacaoAdvogado?: string;
     qualificacao?: Record<string, unknown>;
+    confirmarEnvio?: boolean;
   };
   try {
     body = await req.json();
   } catch {
     return Response.json({ erro: 'JSON inválido' }, { status: 400 });
+  }
+
+  // Botão "Salvar" do herdeiro: registra a confirmação de que o envio chegou
+  // à folha — devolve o convite com o carimbo para a página confirmar.
+  if (body?.confirmarEnvio === true) {
+    const atualizado = await store.confirmarEnvio(token);
+    if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarPortal({
+      casoId: atualizado.casoId,
+      etapa: 'CONFIRMACAO',
+      quantidade: atualizado.documentos.filter((d) => d.status !== 'PENDENTE').length,
+      comUsuario: false,
+    });
+    return Response.json(atualizado);
   }
 
   // Formulário do herdeiro: só os campos conhecidos entram, sempre como texto.

@@ -39,7 +39,7 @@ import {
   type TituloCessao,
 } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
-import type { Caso, Bem } from '@/lib/partilha/types';
+import type { Caso, Bem, Herdeiro } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
@@ -62,7 +62,7 @@ import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
 import { DocumentosView, type AnexosProcesso } from './documentos';
-import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal } from './itcmd-view';
+import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumulada } from './itcmd-view';
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
 import { CasosView, type EstadoPainel } from './casos-view';
@@ -97,6 +97,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { HonorariosView } from './honorarios-view';
+import { MatriculaView } from './matricula-view';
 import { MinutasView, EscrituraView } from './minutas-view';
 import { NoticiasTicker } from './noticias';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
@@ -183,7 +184,8 @@ type Aba =
   | 'custos'
   | 'honorarios'
   | 'minutas'
-  | 'escritura';
+  | 'escritura'
+  | 'matricula';
 
 const ABAS: readonly Aba[] = [
   'caso',
@@ -196,6 +198,7 @@ const ABAS: readonly Aba[] = [
   'honorarios',
   'minutas',
   'escritura',
+  'matricula',
 ];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
@@ -1247,6 +1250,9 @@ export default function SucessoristaClient() {
       protocolado: Boolean(fiscal.inventarioAberto),
       valorIsento: isencoes?.valorIsento ?? 0,
       ufespReferencia: provisao?.ufespReferencia ?? null,
+      // Donatários da torna da reserva: os herdeiros que efetivamente herdam.
+      qtdHerdeiros: herdeiros.filter((h) => h.status !== 'RENUNCIANTE').length,
+      extrajudicial: resultado.elegivelExtrajudicial,
       transferencias,
     });
   }, [
@@ -1256,6 +1262,7 @@ export default function SucessoristaClient() {
     temSobrevivente,
     nomeSobrev,
     bens,
+    herdeiros,
     provisao,
     fiscal.inventarioAberto,
     isencoes,
@@ -1901,13 +1908,18 @@ export default function SucessoristaClient() {
             ['custos', 'V', 'Custos'],
             ['documentos', 'VI', 'Documentos'],
             // Abas finais por perfil: honorários e minutas são do advogado;
-            // a escritura é o item VII do balcão do escrevente.
+            // a escritura é o item VII do balcão do escrevente. O Analisador
+            // de Matrícula fecha a lombada nos dois perfis.
             ...(perfil === 'ADVOGADO'
               ? ([
                   ['honorarios', 'VII', 'Honorários'],
                   ['minutas', 'VIII', 'Minutas'],
+                  ['matricula', 'IX', 'Análise de Matrícula'],
                 ] as const)
-              : ([['escritura', 'VII', 'Escritura']] as const)),
+              : ([
+                  ['escritura', 'VII', 'Escritura'],
+                  ['matricula', 'VIII', 'Análise de Matrícula'],
+                ] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
@@ -1980,6 +1992,8 @@ export default function SucessoristaClient() {
             estado={familia}
             onChange={setFamilia}
             avancar={() => irPara('acervo')}
+            sucessoes={fiscal.sucessoes ?? []}
+            setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
           />
         )}
 
@@ -2243,6 +2257,11 @@ export default function SucessoristaClient() {
               </section>
             )}
 
+            {/* Uma partilha POR SUCESSÃO cumulada (art. 672 do CPC): cada uma
+                com o próprio fato gerador e o próprio espelho — os herdeiros
+                são os mesmos quando a sucessão está marcada assim no item I. */}
+            <PartilhasSucessoes sucessoes={fiscal.sucessoes ?? []} herdeiros={herdeiros} />
+
             <EconomiaView
               economias={economias}
               acoes={{
@@ -2275,6 +2294,7 @@ export default function SucessoristaClient() {
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
+              convites={convites}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
             <CofreView
@@ -2313,11 +2333,10 @@ export default function SucessoristaClient() {
           <CustosView
             custos={custos}
             provisao={provisao}
-            sucessoes={fiscal.sucessoes ?? []}
-            setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
             issPct={fiscal.issPct ?? '5'}
             setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
+            irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
             irParaItcmd={() => irPara('itcmd')}
           />
@@ -2354,6 +2373,14 @@ export default function SucessoristaClient() {
 
         {abaProc === 'escritura' && perfil === 'ESCREVENTE' && (
           <EscrituraView onGerarEscritura={gerarEscritura} />
+        )}
+
+        {abaProc === 'matricula' && (
+          <MatriculaView
+            anexos={anexosProcesso}
+            onAnalisado={(qtd) => registrarDoc('ANALISE_MATRICULA', { comIa: true, itens: qtd })}
+            onRelatorioPdf={() => registrarDoc('ANALISE_MATRICULA_PDF')}
+          />
         )}
       </main>
 
@@ -2424,6 +2451,127 @@ export default function SucessoristaClient() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </div>
+  );
+}
+
+/* ================= partilhas das sucessões cumuladas ================= */
+
+/**
+ * Item 1 estendido: o inventário com duas ou mais sucessões mostra UMA
+ * partilha por sucessão. A sucessão marcada com "mesmos herdeiros" (item I)
+ * roda o MESMO motor de partilha sobre a base transmitida dela, com a data
+ * do óbito própria — quinhões, frações e fundamentos legais independentes.
+ */
+function PartilhasSucessoes({
+  sucessoes,
+  herdeiros,
+}: {
+  sucessoes: SucessaoCumulada[];
+  herdeiros: Herdeiro[];
+}) {
+  const elegiveis = sucessoes.filter((su) => su.dataObito && Number(su.base) > 0);
+  if (elegiveis.length === 0) return null;
+  return (
+    <div style={{ marginTop: 32 }}>
+      <h2>Partilhas das sucessões cumuladas</h2>
+      <p className="subtitulo" style={{ marginBottom: 10 }}>
+        Inventário conjunto: cada sucessão tem partilha própria, calculada sobre a base
+        transmitida nela — {elegiveis.length + 1} partilha(s) no total, contando a do(a)
+        autor(a) da herança acima.
+      </p>
+      {elegiveis.map((su, i) => (
+        <PartilhaDeSucessao key={su.id} sucessao={su} indice={i + 2} herdeiros={herdeiros} />
+      ))}
+    </div>
+  );
+}
+
+function PartilhaDeSucessao({
+  sucessao,
+  indice,
+  herdeiros,
+}: {
+  sucessao: SucessaoCumulada;
+  indice: number;
+  herdeiros: Herdeiro[];
+}) {
+  // Caso sintético: só a base transmitida, sem meação (o que o sobrevivente
+  // pré-morto deixou É a base) — o motor aplica as mesmas regras de vocação.
+  const resultado = useMemo(() => {
+    if (!sucessao.mesmosHerdeiros || herdeiros.length === 0) return null;
+    try {
+      return partilhar({
+        falecido: { dataObito: sucessao.dataObito },
+        sobrevivente: null,
+        herdeiros,
+        bens: [
+          {
+            id: `su-base-${sucessao.id}`,
+            descricao: `Base transmitida na sucessão de ${sucessao.nome}`,
+            valor: Number(sucessao.base).toFixed(2),
+            natureza: 'PARTICULAR',
+          },
+        ],
+      });
+    } catch {
+      return null;
+    }
+  }, [sucessao, herdeiros]);
+
+  if (!sucessao.mesmosHerdeiros) {
+    return (
+      <div className="nota">
+        <span className="eyebrow">{indice}ª sucessão — {sucessao.nome}</span>
+        <p>
+          Esta sucessão não está marcada com &quot;mesmos herdeiros&quot;. Marque a opção no
+          item I (A família) para a partilha dela aparecer aqui — ou trate-a em um caso
+          próprio quando os herdeiros forem outros.
+        </p>
+      </div>
+    );
+  }
+
+  if (!resultado || resultado.bloqueios.length > 0) {
+    return (
+      <div className="nota exigencia">
+        <span className="eyebrow">{indice}ª sucessão — {sucessao.nome}</span>
+        <p>
+          Não foi possível calcular esta partilha
+          {herdeiros.length === 0 ? ' — lance os herdeiros no item I' : ''}.
+          {resultado?.bloqueios.map((b) => ` ${b}`) ?? ''}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cartao">
+      <span className="eyebrow">
+        {indice}ª sucessão — {sucessao.nome} · óbito em{' '}
+        {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(sucessao.base)}
+      </span>
+      <div className="espelho">
+        <div className="cabeca">
+          <span>Herdeiro</span>
+          <span>Fração</span>
+          <span style={{ textAlign: 'right' }}>Quinhão</span>
+        </div>
+        {resultado.quinhoes.map((q) => (
+          <div key={q.herdeiroId}>
+            <div className="lanc">
+              <span className="nome">{q.nome}</span>
+              <span className="fracao num">{q.fracaoHeranca}</span>
+              <span className="valor num">{brl(q.valor)}</span>
+            </div>
+            <div className="fund">{q.fundamento}</div>
+          </div>
+        ))}
+      </div>
+      <p className="fund" style={{ marginTop: 8 }}>
+        ITCMD, escritura e registros desta sucessão já somam no painel e no item V
+        (Custos), pelo fato gerador próprio dela.
+      </p>
     </div>
   );
 }
