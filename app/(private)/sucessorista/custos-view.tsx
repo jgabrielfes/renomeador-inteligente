@@ -32,7 +32,7 @@ export function CustosView({
 }: {
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
-  provisoesSucessoes: { sucessao: SucessaoCumulada; provisao: ProvisaoItcmd }[];
+  provisoesSucessoes: { sucessao: SucessaoCumulada; base: number; provisao: ProvisaoItcmd }[];
   /** Alíquota do ISS do município da serventia (%). */
   issPct: string;
   setIssPct: (v: string) => void;
@@ -96,7 +96,7 @@ export function CustosView({
                 {p.detalhe && <div className="fund">{p.detalhe}</div>}
               </div>
             ))}
-            {provisoesSucessoes.map(({ sucessao, provisao: pv }) => (
+            {provisoesSucessoes.map(({ sucessao, base, provisao: pv }) => (
               <div key={sucessao.id}>
                 <div className="lanc">
                   <span className="nome">ITCMD — sucessão cumulada de {sucessao.nome}</span>
@@ -104,7 +104,8 @@ export function CustosView({
                   <span className="valor num" style={{ fontSize: 17 }}>{brl(pv.total)}</span>
                 </div>
                 <div className="fund">
-                  Base de {brl(Number(sucessao.base))} atualizada para {brl(pv.baseAtualizada)};{' '}
+                  Base de {brl(base)} (acervo por sucessão ou lançamento do item I) atualizada
+                  para {brl(pv.baseAtualizada)};{' '}
                   {pv.diasDeAtraso > 0
                     ? `${pv.diasDeAtraso} dia(s) após o vencimento desta sucessão (encargos incluídos).`
                     : 'dentro do prazo desta sucessão.'}

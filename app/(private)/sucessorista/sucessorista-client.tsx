@@ -66,6 +66,7 @@ import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumul
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
 import { CasosView, type EstadoPainel } from './casos-view';
+import { FontesView } from './fontes-view';
 import {
   montarArquivoCaso,
   type ArquivoCaso,
@@ -185,7 +186,8 @@ type Aba =
   | 'honorarios'
   | 'minutas'
   | 'escritura'
-  | 'matricula';
+  | 'matricula'
+  | 'fontes';
 
 const ABAS: readonly Aba[] = [
   'caso',
@@ -199,6 +201,7 @@ const ABAS: readonly Aba[] = [
   'minutas',
   'escritura',
   'matricula',
+  'fontes',
 ];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
@@ -310,7 +313,9 @@ export default function SucessoristaClient() {
         ? { vinculo, regime, nome: nomeSobrev || 'Cônjuge/companheiro(a)' }
         : null,
       herdeiros,
-      bens,
+      // Bem EXCLUSIVO de uma sucessão cumulada não integra o rol do
+      // inventário principal (ex.: particular adquirido pelo viúvo depois).
+      bens: bens.filter((b) => !b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
       dividas,
     };
   }, [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens, dividasEspolio]);
@@ -348,9 +353,31 @@ export default function SucessoristaClient() {
    */
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
+    // Ficha do item I: as respostas "possui outro imóvel?" dos herdeiros
+    // decidem automaticamente o requisito da alínea "a" do art. 6º, I.
+    let respostasOutroImovel = 0;
+    let algumComOutroImovel = false;
+    for (const h of herdeiros) {
+      const p = familia.perguntas[h.id];
+      if (p?.possuiOutroImovel === true) {
+        respostasOutroImovel += 1;
+        algumComOutroImovel = true;
+      } else if (p?.possuiOutroImovel === false) {
+        respostasOutroImovel += 1;
+      }
+    }
     const analise = analisarIsencoesPorBem(
       bens.map((b) => ({ tipo: b.tipo, valor: Number(b.valor), descricao: b.descricao, codigoItcmd: b.codigoItcmd })),
       ufespObito.valor,
+      {
+        herdeiros: herdeiros.length,
+        respostasOutroImovel,
+        algumComOutroImovel,
+        nenhumComOutroImovel:
+          herdeiros.length > 0 &&
+          respostasOutroImovel === herdeiros.length &&
+          !algumComOutroImovel,
+      },
     );
     const recusadas = new Set(fiscal.isencoesRecusadas ?? []);
     let valorIsento = 0;
@@ -367,7 +394,7 @@ export default function SucessoristaClient() {
       detalhes.push(`Bem ${a.indice} isento (${a.hipotese}) — ${brl(a.valor.toFixed(2))} abatido da base.`);
     });
     return { valorIsento, detalhes, avisos };
-  }, [resultado, ufespObito, bens, fiscal.isencoesRecusadas]);
+  }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas]);
 
   const provisao = useMemo(() => {
     if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;
@@ -975,6 +1002,34 @@ export default function SucessoristaClient() {
   }, [atribuicao]);
 
   /**
+   * Base de CADA sucessão cumulada: quando o acervo tem colunas por sucessão
+   * (avaliação no fato gerador respectivo × fração do de cujus, e bens
+   * exclusivos), a base é calculada dali — (valor × fração) somados sobre os
+   * bens que integram a sucessão. Sem coluna preenchida, vale a base manual
+   * lançada no item I.
+   */
+  const basesSucessoes = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    for (const su of fiscal.sucessoes ?? []) {
+      let temColuna = false;
+      let soma = 0;
+      for (const b of bens) {
+        if (b.sucessaoExclusiva && b.sucessaoExclusiva !== su.id) continue;
+        const av = b.sucessoes?.[su.id];
+        if (av?.valor || av?.fracaoPct || b.sucessaoExclusiva === su.id) temColuna = true;
+        const valor = Number(av?.valor ?? b.valor) || 0;
+        const frac =
+          av?.fracaoPct !== undefined && String(av.fracaoPct).trim() !== ''
+            ? (Number(String(av.fracaoPct).replace(',', '.')) || 0) / 100
+            : 1;
+        soma += valor * frac;
+      }
+      mapa[su.id] = temColuna ? Math.round(soma * 100) / 100 : Number(su.base) || 0;
+    }
+    return mapa;
+  }, [fiscal.sucessoes, bens]);
+
+  /**
    * Projeção de custos além do imposto: escritura/atos notariais, registros
    * por imóvel (com atos extras na partilha diferenciada), certidões e a
    * taxa judiciária quando o rito provável é o judicial.
@@ -999,7 +1054,7 @@ export default function SucessoristaClient() {
       qtdRenunciantes: herdeiros.filter((h) => h.status === 'RENUNCIANTE').length,
       sucessoes: (fiscal.sucessoes ?? []).map((su) => ({
         nome: su.nome,
-        base: Number(su.base) || 0,
+        base: basesSucessoes[su.id] ?? 0,
         qtdImoveis: su.qtdImoveis,
       })),
       imoveis: bens
@@ -1014,7 +1069,8 @@ export default function SucessoristaClient() {
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, fiscal.issPct]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct]);
+
 
   /**
    * ITCMD das sucessões CUMULADAS: cada uma tem o PRÓPRIO fato gerador —
@@ -1022,16 +1078,18 @@ export default function SucessoristaClient() {
    */
   const provisoesSucessoes = useMemo(() => {
     return (fiscal.sucessoes ?? [])
-      .filter((su) => su.dataObito && Number(su.base) > 0)
-      .map((su) => ({
+      .map((su) => ({ su, base: basesSucessoes[su.id] ?? 0 }))
+      .filter(({ su, base }) => su.dataObito && base > 0)
+      .map(({ su, base }) => ({
         sucessao: su,
+        base,
         provisao: provisionarItcmd({
           dataObito: su.dataObito,
           dataReferencia: hoje,
-          baseCalculo: Number(su.base),
+          baseCalculo: base,
         }),
       }));
-  }, [fiscal.sucessoes, hoje]);
+  }, [fiscal.sucessoes, basesSucessoes, hoje]);
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
@@ -1939,10 +1997,12 @@ export default function SucessoristaClient() {
                   ['honorarios', 'VII', 'Honorários'],
                   ['minutas', 'VIII', 'Minutas'],
                   ['matricula', 'IX', 'Análise de Matrícula'],
+                  ['fontes', 'X', 'Fontes de Pesquisa'],
                 ] as const)
               : ([
                   ['escritura', 'VII', 'Escritura'],
                   ['matricula', 'VIII', 'Análise de Matrícula'],
+                  ['fontes', 'IX', 'Fontes de Pesquisa'],
                 ] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -1995,7 +2055,8 @@ export default function SucessoristaClient() {
       </nav>
 
       <main className="folha">
-        <NoticiasTicker />
+        {/* O radar do Migalhas mora só na página inicial do caso (aba 0). */}
+        {abaProc === 'caso' && <NoticiasTicker />}
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -2030,8 +2091,7 @@ export default function SucessoristaClient() {
             dividas={dividasEspolio}
             setDividas={setDividasEspolio}
             sociedades={resumoSociedades}
-            checklist={checklistAcervo}
-            setChecklist={setChecklistAcervo}
+            sucessoes={fiscal.sucessoes ?? []}
             voltar={() => irPara('familia')}
             avancar={() => {
               irPara('partilha');
@@ -2286,7 +2346,7 @@ export default function SucessoristaClient() {
             {/* Uma partilha POR SUCESSÃO cumulada (art. 672 do CPC): cada uma
                 com o próprio fato gerador e o próprio espelho — os herdeiros
                 são os mesmos quando a sucessão está marcada assim no item I. */}
-            <PartilhasSucessoes sucessoes={fiscal.sucessoes ?? []} herdeiros={herdeiros} />
+            <PartilhasSucessoes sucessoes={fiscal.sucessoes ?? []} herdeiros={herdeiros} bases={basesSucessoes} />
 
             <EconomiaView
               economias={economias}
@@ -2408,6 +2468,14 @@ export default function SucessoristaClient() {
             onRelatorioPdf={() => registrarDoc('ANALISE_MATRICULA_PDF')}
           />
         )}
+
+        {abaProc === 'fontes' && (
+          <FontesView
+            checklist={checklistAcervo}
+            setChecklist={setChecklistAcervo}
+            irParaAcervo={() => irPara('acervo')}
+          />
+        )}
       </main>
 
       <PainelCaso
@@ -2492,11 +2560,14 @@ export default function SucessoristaClient() {
 function PartilhasSucessoes({
   sucessoes,
   herdeiros,
+  bases,
 }: {
   sucessoes: SucessaoCumulada[];
   herdeiros: Herdeiro[];
+  /** Base de cada sucessão (calculada pelo acervo ou manual) — por id. */
+  bases: Record<string, number>;
 }) {
-  const elegiveis = sucessoes.filter((su) => su.dataObito && Number(su.base) > 0);
+  const elegiveis = sucessoes.filter((su) => su.dataObito && (bases[su.id] ?? 0) > 0);
   if (elegiveis.length === 0) return null;
   return (
     <div style={{ marginTop: 32 }}>
@@ -2507,7 +2578,13 @@ function PartilhasSucessoes({
         autor(a) da herança acima.
       </p>
       {elegiveis.map((su, i) => (
-        <PartilhaDeSucessao key={su.id} sucessao={su} indice={i + 2} herdeiros={herdeiros} />
+        <PartilhaDeSucessao
+          key={su.id}
+          sucessao={su}
+          indice={i + 2}
+          herdeiros={herdeiros}
+          base={bases[su.id] ?? 0}
+        />
       ))}
     </div>
   );
@@ -2517,10 +2594,12 @@ function PartilhaDeSucessao({
   sucessao,
   indice,
   herdeiros,
+  base,
 }: {
   sucessao: SucessaoCumulada;
   indice: number;
   herdeiros: Herdeiro[];
+  base: number;
 }) {
   // Caso sintético: só a base transmitida, sem meação (o que o sobrevivente
   // pré-morto deixou É a base) — o motor aplica as mesmas regras de vocação.
@@ -2535,7 +2614,7 @@ function PartilhaDeSucessao({
           {
             id: `su-base-${sucessao.id}`,
             descricao: `Base transmitida na sucessão de ${sucessao.nome}`,
-            valor: Number(sucessao.base).toFixed(2),
+            valor: base.toFixed(2),
             natureza: 'PARTICULAR',
           },
         ],
@@ -2543,7 +2622,7 @@ function PartilhaDeSucessao({
     } catch {
       return null;
     }
-  }, [sucessao, herdeiros]);
+  }, [sucessao, herdeiros, base]);
 
   if (!sucessao.mesmosHerdeiros) {
     return (
@@ -2575,7 +2654,7 @@ function PartilhaDeSucessao({
     <div className="cartao">
       <span className="eyebrow">
         {indice}ª sucessão — {sucessao.nome} · óbito em{' '}
-        {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(sucessao.base)}
+        {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(base.toFixed(2))}
       </span>
       <div className="espelho">
         <div className="cabeca">

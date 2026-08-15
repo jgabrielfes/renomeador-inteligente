@@ -35,6 +35,7 @@ import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib
 import { filesFromDataTransfer } from '@/lib/fs';
 import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
+import { comprimirImagem } from '@/lib/envio-imagens';
 import { registrarLeituraDoCofre } from './actions';
 
 // Fora do componente: `performance.now` é impura e o lint do React proíbe
@@ -75,35 +76,6 @@ const CASO_VAZIO: CasoExtraido = {
 
 const EXT_IMAGEM = /\.(jpe?g|png|webp|bmp)$/i;
 
-/**
- * Comprime foto/scan AQUI no navegador antes do envio (JPEG, lado maior
- * 1800px): documento continua legível para a leitura, mas o upload cai de
- * megabytes para centenas de KB — é o que mais acelera pastas de fotos, e
- * torna legível a foto que estourava o limite de 4 MB. Qualquer falha (ou
- * resultado maior que o original) devolve o arquivo intacto.
- */
-async function comprimirImagem(file: File): Promise<File> {
-  if (file.size <= 350 * 1024 && !/\.bmp$/i.test(file.name)) return file;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const LADO_MAX = 1800;
-    const escala = Math.min(1, LADO_MAX / Math.max(bitmap.width, bitmap.height));
-    const largura = Math.max(1, Math.round(bitmap.width * escala));
-    const altura = Math.max(1, Math.round(bitmap.height * escala));
-    const canvas = document.createElement('canvas');
-    canvas.width = largura;
-    canvas.height = altura;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, largura, altura);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.72));
-    if (!blob || blob.size >= file.size) return file;
-    return new File([blob], `${file.name.replace(/\.\w+$/, '')}.jpg`, { type: 'image/jpeg' });
-  } catch {
-    return file;
-  }
-}
 
 /**
  * Novidades da plataforma — o card do dashboard. Lista curta mantida no
@@ -586,20 +558,6 @@ export function CasoView({
               cai classificado nos documentos do processo.
             </p>
 
-      {/* Visível logo no início: o caso não se perde. */}
-      <div className="nota registro" style={{ marginBottom: 14 }}>
-        <span className="eyebrow">Rascunho local — nada sai desta máquina</span>
-        <p>
-          A folha é salva automaticamente <strong>neste navegador</strong> (IndexedDB):
-          sobrevive ao F5 e a fechar o navegador
-          {rascunhoSalvoEm
-            ? ` — último salvamento ${new Date(rascunhoSalvoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-            : ''}
-          . Para guardar na pasta do processo (e reabrir meses depois, inclusive em outro
-          computador ou com um colega), use o <strong>Arquivo do caso</strong> abaixo.
-        </p>
-      </div>
-
       <div
         role="button"
         tabIndex={0}
@@ -862,6 +820,18 @@ export function CasoView({
           </div>
         </div>
       </div>
+
+      {/* Rodapé discreto (pedido do escritório): o aviso do rascunho local
+          saiu do card do cofre e vive aqui, em fonte menor. */}
+      <p className="rodape-rascunho">
+        Rascunho local — nada sai desta máquina: a folha é salva automaticamente neste
+        navegador (IndexedDB) e sobrevive ao F5 e a fechar o navegador
+        {rascunhoSalvoEm
+          ? ` — último salvamento ${new Date(rascunhoSalvoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+          : ''}
+        . Para guardar na pasta do processo (e reabrir meses depois, inclusive em outro
+        computador ou com um colega), use o Arquivo do caso acima.
+      </p>
     </section>
   );
 }

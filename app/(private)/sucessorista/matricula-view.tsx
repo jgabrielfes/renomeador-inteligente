@@ -23,11 +23,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { AnaliseMatricula } from '@/lib/gemini-matricula';
+import { comprimirImagem, pdfParaImagens } from '@/lib/envio-imagens';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import type { AnexosProcesso } from './documentos';
 
 const MAX_ARQUIVOS = 10;
-const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 4.2 * 1024 * 1024;
+/** PDF até este tamanho segue inteiro; acima, vira uma imagem por página. */
+const MAX_PDF_DIRETO = 3.6 * 1024 * 1024;
+const EXT_IMAGEM = /\.(jpe?g|png|webp|bmp)$/i;
 
 const simNao = (v: boolean | null) => (v === null ? '—' : v ? 'sim' : 'não');
 
@@ -59,16 +63,48 @@ export function MatriculaView({
       setErro(`Máximo de ${MAX_ARQUIVOS} arquivos por análise — envie em lotes menores.`);
       return;
     }
-    if (arquivos.reduce((a, f) => a + f.size, 0) > MAX_TOTAL_BYTES) {
-      setErro('Lote grande demais (limite de ~4 MB) — envie menos arquivos por vez.');
-      return;
-    }
     setAnalisando(true);
     setErro(null);
     try {
+      // Matrícula GRANDE não é mais barreira: foto/scan é comprimida aqui no
+      // navegador e PDF acima do teto vira uma imagem JPEG por página — o
+      // conteúdo continua saindo só pela rota interna.
+      const preparados: File[] = [];
+      const avisosPreparo: string[] = [];
+      for (const f of arquivos) {
+        if (EXT_IMAGEM.test(f.name)) {
+          preparados.push(await comprimirImagem(f));
+          continue;
+        }
+        if (/\.pdf$/i.test(f.name) && f.size > MAX_PDF_DIRETO) {
+          try {
+            const r = await pdfParaImagens(f);
+            if (r.paginas.length === 0) throw new Error('sem páginas');
+            preparados.push(...r.paginas);
+            if (r.totalPaginas > r.paginas.length) {
+              avisosPreparo.push(
+                `${f.name}: convertidas as ${r.paginas.length} primeiras páginas de ${r.totalPaginas} — divida o PDF se o essencial ficou de fora.`,
+              );
+            }
+            continue;
+          } catch {
+            preparados.push(f); // conversão falhou: tenta o PDF inteiro mesmo
+          }
+          continue;
+        }
+        preparados.push(f);
+      }
+      if (preparados.reduce((a, f) => a + f.size, 0) > MAX_TOTAL_BYTES) {
+        setErro(
+          'Mesmo depois da conversão o lote passou de ~4 MB — analise menos matrículas por vez.',
+        );
+        return;
+      }
+      if (avisosPreparo.length > 0) setErro(avisosPreparo.join(' '));
+
       const form = new FormData();
       form.set('tipo', 'MATRICULA');
-      for (const f of arquivos) form.append('item', f);
+      for (const f of preparados) form.append('item', f);
       const r = await fetch('/api/sucessorista', { method: 'POST', body: form });
       const corpo = (await r.json().catch(() => null)) as {
         matriculas?: AnaliseMatricula[];
@@ -136,8 +172,10 @@ export function MatriculaView({
       >
         <b>Arraste as certidões de matrícula aqui</b>
         <span className="dica">
-          PDF ou foto nítida do inteiro teor — até {MAX_ARQUIVOS} arquivos (~4 MB) por
-          análise. Uma matrícula em várias páginas/arquivos é agrupada sozinha.
+          PDF ou foto nítida do inteiro teor — até {MAX_ARQUIVOS} arquivos por análise.
+          Matrícula pesada não é problema: PDF grande vira uma imagem por página e fotos
+          são comprimidas aqui no navegador antes do envio. Uma matrícula em várias
+          páginas/arquivos é agrupada sozinha.
         </span>
         <div className="arrasto-acoes">
           <Button type="button" variant="outline" size="sm" loading={analisando}>

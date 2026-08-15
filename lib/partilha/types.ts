@@ -74,6 +74,18 @@ export interface DetalhesVeiculo {
   chassi?: string;
 }
 
+/**
+ * Inventário CONJUNTO (sucessões cumuladas): avaliação do bem em UMA sucessão
+ * específica — o mesmo bem tem valor diferente em cada fato gerador (ano do
+ * óbito respectivo) e uma fração própria transitando naquela sucessão.
+ */
+export interface AvaliacaoBemSucessao {
+  /** Valor do bem na data do óbito DESTA sucessão (decimal "12345.67"). */
+  valor?: string;
+  /** Fração do bem que transita nesta sucessão, em % (texto, ex.: "50"). */
+  fracaoPct?: string;
+}
+
 export interface Bem {
   id: string;
   descricao: string;
@@ -85,6 +97,14 @@ export interface Bem {
   codigoItcmd?: string;
   imovel?: DetalhesImovel;
   veiculo?: DetalhesVeiculo;
+  /** Avaliação por sucessão cumulada (chave = id da sucessão do estado fiscal). */
+  sucessoes?: Record<string, AvaliacaoBemSucessao>;
+  /**
+   * Bem EXCLUSIVO de uma sucessão: 'PRINCIPAL' (só o inventário do autor
+   * principal) ou o id de uma sucessão cumulada (ex.: bem particular que o
+   * viúvo adquiriu depois do primeiro óbito). Ausente = integra todas.
+   */
+  sucessaoExclusiva?: string;
 }
 
 export interface Divida {
