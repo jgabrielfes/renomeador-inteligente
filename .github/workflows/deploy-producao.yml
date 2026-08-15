@@ -17,9 +17,9 @@
 #   VERCEL_ORG_ID      — campo `orgId`
 #   VERCEL_PROJECT_ID  — campo `projectId`
 #
-# O vínculo é escrito à mão em `.vercel/project.json` (em vez de depender das
-# variáveis de ambiente): é o formato que a CLI espera e tira do caminho
-# qualquer dúvida sobre como o valor foi lido.
+# O token precisa ter escopo de CONTA ("Full Account"): com escopo de projeto
+# a CLI não passa do primeiro comando, porque ela lê recursos de usuário e de
+# time para resolver o projeto.
 
 name: Deploy de produção
 
@@ -41,6 +41,8 @@ jobs:
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -53,39 +55,24 @@ jobs:
       - name: Instalar a CLI da Vercel
         run: npm install --global vercel@latest
 
-      - name: Conferir a conta do token
-        # Diagnóstico: mostra no log a conta a que o token pertence. Se aqui
-        # aparecer uma conta diferente da dona do projeto, o erro seguinte
-        # será "Could not retrieve Project Settings" — é escopo do token.
-        run: vercel whoami --token="$VERCEL_TOKEN"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
       - name: Vincular o projeto
-        # `tr -d` remove espaço/quebra de linha que passam despercebidos ao
-        # colar o valor no secret e quebram a busca pelo projeto.
+        # O vínculo é escrito à mão (em vez de depender das variáveis de
+        # ambiente): é o formato que a CLI espera, e o `tr -d` remove espaço
+        # ou aspas que passam despercebidos ao colar o valor no secret.
         run: |
           mkdir -p .vercel
-          org=$(printf '%s' "$VERCEL_ORG_ID" | tr -d '[:space:]"')
-          proj=$(printf '%s' "$VERCEL_PROJECT_ID" | tr -d '[:space:]"')
+          org=$(printf '%s' "${{ secrets.VERCEL_ORG_ID }}" | tr -d '[:space:]"')
+          proj=$(printf '%s' "${{ secrets.VERCEL_PROJECT_ID }}" | tr -d '[:space:]"')
           printf '{"orgId":"%s","projectId":"%s"}' "$org" "$proj" > .vercel/project.json
-          echo "orgId com ${#org} caracteres, projectId com ${#proj}"
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Puxar as variáveis de ambiente de produção
         # Traz as envs do projeto (GEMINI_API_KEY, DATABASE_URL, AUTH_*…) —
         # elas continuam vivendo só na Vercel, nunca no repositório.
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Compilar
         # O build roda AQUI: se quebrar, nada vai para produção.
         run: vercel build --prod --token="$VERCEL_TOKEN"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Publicar
         id: deploy
@@ -94,5 +81,3 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "### Produção publicada" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
