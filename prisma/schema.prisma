@@ -16,10 +16,22 @@ enum Role {
   MASTER
 }
 
+// Os DOIS sites publicados a partir deste repositório (variável de ambiente
+// APP — ver lib/app.ts). O banco é compartilhado, mas cada linha sabe de qual
+// plataforma veio: conta, telemetria e erros nunca se misturam entre os dois.
+enum Plataforma {
+  RENOMEADOR
+  SUCESSORISTA
+}
+
 model User {
   id           String    @id @default(cuid())
   name         String
-  email        String    @unique
+  // A conta é POR PLATAFORMA: o mesmo e-mail pode existir nos dois sites como
+  // duas contas independentes (senha, papel e dados próprios). Quem se
+  // cadastra num deles não entra no outro sem criar conta lá.
+  email        String
+  app          Plataforma
   // Sem confirmação de e-mail por enquanto: null = "e-mail não confirmado"
   // (a UI marca). Quando a confirmação existir, recebe a data.
   // Login com Google já nasce confirmado (o Google atesta o e-mail).
@@ -37,6 +49,7 @@ model User {
   notaEvents   NotaEvent[]
   sucessoristaEvents SucessoristaEvent[]
 
+  @@unique([email, app])
   @@map("users")
 }
 
@@ -86,6 +99,9 @@ model ErrorEvent {
   origem    String
   mensagem  String
   status    Int?
+  // Plataforma onde o erro aconteceu (null = registro anterior à separação
+  // dos dois sites, quando a plataforma era uma só).
+  app       Plataforma?
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
@@ -109,6 +125,11 @@ model RenameEvent {
   id         String        @id @default(cuid())
   quantidade Int
   metodo     MetodoAnalise @default(LOCAL)
+  // Onde o lote foi analisado. O Renomeador é embutido no cofre do
+  // Sucessorista, então um lote pode nascer em qualquer um dos dois sites — o
+  // evento conta para o painel da plataforma em que a pessoa estava.
+  // null = registro anterior à separação.
+  app        Plataforma?
   // Duração total do processamento daquele método na rodada, em ms.
   duracaoMs  Int?
   // Array<{ tipo: string; baixado?: boolean; otimizado?: boolean }>

@@ -1,11 +1,14 @@
 import type { MetadataRoute } from "next";
 
+import { IDENTIDADE } from "@/lib/app";
+
+// Um PWA por site: quem instala o Renomeador e quem instala o Sucessorista
+// recebe nome, descrição e atalho próprios (lib/app.ts).
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Renomeador Inteligente de Documentos",
-    short_name: "Renomeador",
-    description:
-      "Analisa imagens e PDFs no seu navegador e sugere nomes de arquivo com base no conteúdo do documento. Nada é enviado para servidores.",
+    name: IDENTIDADE.nome,
+    short_name: IDENTIDADE.nomeCurto,
+    description: IDENTIDADE.descricao,
     id: "/",
     start_url: "/",
     scope: "/",

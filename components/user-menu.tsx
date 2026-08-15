@@ -1,7 +1,11 @@
-// Faixa de sessão (server component). A plataforma funciona sem login, então
-// há dois estados: deslogado (Entrar / Criar conta) e logado (nome, papel e
-// sair — com confirmação, em components/logout-button.tsx). Usuários MASTER
-// veem também o atalho para /admin (a página revalida o papel no servidor).
+// Faixa de sessão (server component). Vive DENTRO do módulo — a raiz de cada
+// site é a própria ferramenta, e é daqui que se chega à administração e ao
+// sair (com confirmação, em components/logout-button.tsx). Usuários MASTER
+// veem o atalho para /admin (a página revalida o papel no servidor).
+//
+// O estado deslogado continua aqui por segurança: se algum dia o menu for
+// montado numa tela pública, ele não quebra — mas hoje a ferramenta exige
+// sessão, então na prática só o segundo estado aparece.
 
 import Link from "next/link";
 import { LogIn, ShieldCheck, UserPlus } from "lucide-react";

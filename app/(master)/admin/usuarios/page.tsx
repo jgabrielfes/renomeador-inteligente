@@ -3,6 +3,8 @@
 // ?ordenar=&direcao= — busca e ordenação SEMPRE no banco, coluna validada
 // contra lista fechada. A coluna "Acessos" conta ABERTURAS de módulo (não
 // logins) — o olho abre o detalhamento por ferramenta.
+//
+// Recorte por PLATAFORMA: cada site lista só as contas dele (lib/app.ts).
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -29,8 +31,9 @@ import {
   parsePaginacao,
   queryDaTabela,
 } from "@/lib/admin";
+import { APP, IDENTIDADE } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
-import { MODULOS, ROTULO_MODULO } from "@/lib/modulos";
+import { ROTULO_MODULO } from "@/lib/modulos";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -74,25 +77,33 @@ export default async function UsuariosPage({
   // Busca em nome OU e-mail, indiferente a caixa E a acento — a comparação
   // sem acento é do Postgres (unaccent), então o filtro vem como lista de ids
   // e a ordenação/paginação seguem sendo as do Prisma.
+  //
+  // SEMPRE recortado pela plataforma deste deploy: o banco é o mesmo para os
+  // dois sites, mas o /admin de um NUNCA lista (nem promove a master) contas
+  // do outro.
   const where: Prisma.UserWhereInput = busca
-    ? { id: { in: await idsDaBuscaDeUsuarios(prisma, busca) } }
-    : {};
+    ? { app: APP, id: { in: await idsDaBuscaDeUsuarios(prisma, busca, APP) } }
+    : { app: APP };
 
   const [total, usuarios] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
-      include: { _count: { select: { accesses: true } } },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
       take: paginacao.porPagina,
     }),
   ]);
 
-  // Acessos por módulo só das contas desta página (uma consulta agregada).
+  // Acessos das contas desta página, só ao módulo DESTE site (uma consulta
+  // agregada). O filtro por módulo importa pelo histórico: contas anteriores à
+  // separação carregam acessos das duas ferramentas.
   const porModulo = await prisma.moduleAccess.groupBy({
     by: ["userId", "modulo"],
-    where: { userId: { in: usuarios.map((u) => u.id) } },
+    where: {
+      userId: { in: usuarios.map((u) => u.id) },
+      modulo: IDENTIDADE.modulo,
+    },
     _count: { _all: true },
     _max: { createdAt: true },
   });
@@ -186,19 +197,20 @@ export default async function UsuariosPage({
           </TableHeader>
           <TableBody>
             {usuarios.map((u) => {
-              const modulos = MODULOS.map((modulo) => {
-                const linha = porModulo.find(
-                  (p) => p.userId === u.id && p.modulo === modulo
-                );
-                return {
-                  modulo,
-                  rotulo: ROTULO_MODULO[modulo],
-                  quantidade: linha?._count._all ?? 0,
+              // Um módulo por site: o detalhamento traz só a ferramenta deste
+              // deploy (o outro site tem o próprio /admin).
+              const linha = porModulo.find((p) => p.userId === u.id);
+              const acessos = linha?._count._all ?? 0;
+              const modulos = [
+                {
+                  modulo: IDENTIDADE.modulo,
+                  rotulo: ROTULO_MODULO[IDENTIDADE.modulo],
+                  quantidade: acessos,
                   ultimo: linha?._max.createdAt
                     ? dataCurta.format(linha._max.createdAt)
                     : null,
-                };
-              });
+                },
+              ];
               return (
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.name}</TableCell>
@@ -230,12 +242,12 @@ export default async function UsuariosPage({
                   <TableCell className="text-right">
                     <span className="inline-flex items-center gap-1">
                       <span className="font-medium tabular-nums">
-                        {u._count.accesses}
+                        {acessos}
                       </span>
                       <UserAccessDetails
                         nome={u.name}
                         email={u.email}
-                        total={u._count.accesses}
+                        total={acessos}
                         modulos={modulos}
                       />
                     </span>

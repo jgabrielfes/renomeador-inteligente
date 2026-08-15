@@ -98,16 +98,23 @@ export function parseBusca(bruto: unknown): string {
  * Os ids voltam para um `findMany` normal — assim a ordenação, a paginação e
  * o `_count` continuam sendo os do Prisma, e o SQL cru fica restrito ao
  * filtro (com o termo SEMPRE parametrizado, nunca interpolado).
+ *
+ * O recorte por plataforma entra AQUI também: o banco é compartilhado pelos
+ * dois sites, e a busca do /admin de um deles não pode alcançar contas do
+ * outro (o filtro do `findMany` sozinho bastaria, mas deixar o SQL cru amplo
+ * é convite a erro na próxima mudança).
  */
 export async function idsDaBuscaDeUsuarios(
   prisma: { $queryRaw: <T>(...args: [TemplateStringsArray, ...unknown[]]) => Promise<T> },
-  busca: string
+  busca: string,
+  app: string
 ): Promise<string[]> {
   const termo = `%${busca}%`;
   const linhas = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM users
-    WHERE unaccent(name) ILIKE unaccent(${termo})
-       OR unaccent(email) ILIKE unaccent(${termo})
+    WHERE app = ${app}::"Plataforma"
+      AND (unaccent(name) ILIKE unaccent(${termo})
+           OR unaccent(email) ILIKE unaccent(${termo}))
     LIMIT 1000`;
   return linhas.map((l) => l.id);
 }

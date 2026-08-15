@@ -13,6 +13,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PORTES } from "@/lib/porte";
 import type { AcaoSucessorista } from "@/lib/generated/prisma/enums";
+import { EH_SUCESSORISTA } from "@/lib/app";
 
 const PERFIS = ["ADVOGADO", "ESCREVENTE"];
 const TIPOS_BEM = ["IMOVEL", "VEICULO", "FINANCEIRO", "QUOTAS", "OUTRO"];
@@ -84,6 +85,10 @@ export async function registrarLeituraDoCofre(dados: {
   herdeirosLidos: number;
   bensLidos: number;
 }): Promise<void> {
+  // Telemetria do Sucessorista: no deploy do Renomeador estas actions
+  // não valem (server action é endpoint público — o gate é no servidor).
+  if (!EH_SUCESSORISTA) return;
+
   try {
     const userId = await usuarioLogado();
     if (!userId) return;
@@ -148,6 +153,10 @@ export async function registrarCaso(dados: {
   /** Cenário da reforma aplicado (óbito posterior à vigência informada). */
   progressivo: boolean;
 }): Promise<void> {
+  // Telemetria do Sucessorista: no deploy do Renomeador estas actions
+  // não valem (server action é endpoint público — o gate é no servidor).
+  if (!EH_SUCESSORISTA) return;
+
   try {
     const userId = await usuarioLogado();
     const casoId = casoIdLimpo(dados.casoId);
@@ -216,6 +225,10 @@ export async function registrarDocumentoGerado(dados: {
   itens?: number;
   duracaoMs?: number;
 }): Promise<void> {
+  // Telemetria do Sucessorista: no deploy do Renomeador estas actions
+  // não valem (server action é endpoint público — o gate é no servidor).
+  if (!EH_SUCESSORISTA) return;
+
   try {
     const userId = await usuarioLogado();
     const documento = tag(dados.documento, DOCUMENTOS);
@@ -256,6 +269,10 @@ export async function registrarPortal(dados: {
   /** Preenchido só quando há sessão (o convite; a resposta não tem). */
   comUsuario?: boolean;
 }): Promise<void> {
+  // Telemetria do Sucessorista: no deploy do Renomeador estas actions
+  // não valem (server action é endpoint público — o gate é no servidor).
+  if (!EH_SUCESSORISTA) return;
+
   try {
     const etapa = tag(dados.etapa, ["CONVITE", "QUALIFICACAO", "DOCUMENTO", "CONFIRMACAO"]);
     if (!etapa) return;

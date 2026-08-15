@@ -15,7 +15,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
 
@@ -245,10 +244,14 @@ interface CasoSalvo {
 
 export default function SucessoristaClient({
   licoesRenomeador = null,
+  menu,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
   licoesRenomeador?: import('@/lib/lessons').LessonsState | null;
+  /** Faixa de sessão (nome, papel, Administração, Sair). Vem pronta de um
+   *  server component — este arquivo é client e não pode chamar auth(). */
+  menu?: React.ReactNode;
 }) {
   // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
   // compartilhável. A troca usa history.replaceState — atualização rasa, sem
@@ -1939,10 +1942,12 @@ export default function SucessoristaClient({
 
   return (
     <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
-    {/* Sem caso aberto, a tela inicial é o painel "Meus casos". */}
+    {/* Sem caso aberto, a tela inicial é o painel "Meus casos". Não há link
+        "← Módulos": este site É o Sucessorista e `/` já é esta tela — no
+        lugar dele, a faixa de sessão. */}
     {casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <Link href="/" className="voltar" style={{ fontSize: 13 }}>← Módulos</Link>
+        {menu}
         <CasosView
           estado={estadoPainel}
           resumos={resumos}
@@ -2053,6 +2058,9 @@ export default function SucessoristaClient({
           {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
           <small>{store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
         </div>
+        {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
+            se chega à Administração e ao Sair. */}
+        {menu && <div className="sessao">{menu}</div>}
         <div className="selo">
           Cálculo de apoio com fundamento legal.
           <br />

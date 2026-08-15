@@ -3,6 +3,7 @@ import { partilhar, VERSAO_MOTOR } from '@/lib/partilha/engine';
 import { apurarAtribuicao } from '@/lib/partilha/atribuicao';
 import type { EntradaAtribuicao } from '@/lib/partilha/atribuicao';
 import type { Caso } from '@/lib/partilha/types';
+import { foraDaPlataforma } from '@/lib/app';
 
 type Payload = Caso & { atribuicao?: EntradaAtribuicao };
 
@@ -12,6 +13,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
   const session = await auth();
   if (!session) {
@@ -54,5 +59,9 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   return Response.json({ servico: 'motor-de-partilha', versao: VERSAO_MOTOR });
 }

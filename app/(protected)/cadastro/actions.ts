@@ -3,10 +3,14 @@
 // Criação de conta pela plataforma. Sem confirmação de e-mail por enquanto —
 // a conta nasce com emailVerified = null e a UI marca "e-mail não confirmado".
 // A validação repete o schema do cliente: nunca confiar só no formulário.
+//
+// A conta nasce na plataforma DESTE deploy (lib/app.ts): o mesmo e-mail pode
+// ter conta no Renomeador e no Sucessorista, e são contas independentes.
 
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
+import { APP } from "@/lib/app";
 import { prisma } from "@/lib/prisma";
 
 const registerSchema = z.object({
@@ -24,7 +28,9 @@ export async function registerUser(input: unknown): Promise<RegisterResult> {
   }
 
   const email = parsed.data.email.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({
+    where: { email_app: { email, app: APP } },
+  });
   if (existing) {
     return { ok: false, error: "Já existe uma conta com este e-mail." };
   }
@@ -33,6 +39,7 @@ export async function registerUser(input: unknown): Promise<RegisterResult> {
     data: {
       name: parsed.data.name,
       email,
+      app: APP,
       passwordHash: await hash(parsed.data.password, 12),
       role: "USER",
     },

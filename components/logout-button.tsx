@@ -51,7 +51,7 @@ export function LogoutButton() {
         <DialogHeader>
           <DialogTitle>Sair da conta?</DialogTitle>
           <DialogDescription>
-            Você continua podendo usar as ferramentas deslogado.
+            A ferramenta exige login — você voltará para a tela de entrada.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

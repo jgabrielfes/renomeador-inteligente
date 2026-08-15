@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { InstallPrompt } from "@/components/install-prompt";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { Toaster } from "@/components/ui/sonner";
+import { IDENTIDADE } from "@/lib/app";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,13 +19,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Título e descrição vêm da plataforma DESTE deploy (lib/app.ts): o mesmo
+// repositório publica dois sites, e cada um se apresenta com o próprio nome.
 export const metadata: Metadata = {
-  title: "Renomeador Inteligente de Documentos",
-  description:
-    "Analisa imagens e PDFs no seu navegador e sugere nomes de arquivo com base no conteúdo do documento. Nada é enviado para servidores.",
+  title: IDENTIDADE.nome,
+  description: IDENTIDADE.descricao,
   appleWebApp: {
     capable: true,
-    title: "Renomeador",
+    title: IDENTIDADE.nomeCurto,
     statusBarStyle: "default",
   },
 };

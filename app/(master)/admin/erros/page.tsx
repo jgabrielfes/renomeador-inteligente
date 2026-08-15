@@ -29,6 +29,7 @@ import {
   parsePeriodo,
   queryDaTabela,
 } from "@/lib/admin";
+import { APP } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -67,9 +68,10 @@ export default async function ErrosPage({
   const query = queryDaTabela({ periodo, paginacao, ordenacao });
 
   const [total, erros] = await Promise.all([
-    prisma.errorEvent.count({ where: { createdAt } }),
+    prisma.errorEvent.count({ where: { createdAt, app: APP } }),
     prisma.errorEvent.findMany({
-      where: { createdAt },
+      // Falhas deste site apenas — o outro tem o próprio painel.
+      where: { createdAt, app: APP },
       include: { user: { select: { name: true, email: true } } },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,

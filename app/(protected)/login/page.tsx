@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { GoogleAuthButton } from "@/components/google-auth-button";
 import { LoginForm } from "@/components/login-form";
@@ -10,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { IDENTIDADE } from "@/lib/app";
 import { googleHabilitado } from "@/lib/auth";
 
 export default async function LoginPage({
@@ -24,18 +24,13 @@ export default async function LoginPage({
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-4 px-4 py-10">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Voltar para as ferramentas
-      </Link>
+      {/* Sem link "voltar": `/` É a ferramenta e exige sessão — mandaria de
+          volta para cá. */}
       <Card>
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Ferramentas</CardTitle>
+          <CardTitle className="text-2xl">{IDENTIDADE.nome}</CardTitle>
           <CardDescription>
-            Entre com sua conta para acessar a plataforma.
+            Entre com sua conta para acessar a ferramenta.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

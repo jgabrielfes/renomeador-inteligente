@@ -5,6 +5,7 @@ import {
   DOCUMENTOS_PADRAO_HERDEIRO,
   type ConviteHerdeiro,
 } from '@/lib/portal/store';
+import { foraDaPlataforma } from '@/lib/app';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,10 @@ interface Body {
 }
 
 export async function POST(req: Request) {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   // Só o profissional logado emite convites; o herdeiro entra pelo token.
   const session = await auth();
   if (!session) {

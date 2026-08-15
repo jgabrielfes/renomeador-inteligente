@@ -6,6 +6,7 @@
 // editorial, sem martelar o site de origem.
 
 import { auth } from "@/lib/auth";
+import { foraDaPlataforma } from '@/lib/app';
 
 const FONTE = "https://www.migalhas.com.br/coluna/migalhas-notariais-e-registrais";
 const CACHE_MS = 15 * 60 * 1000;
@@ -77,6 +78,10 @@ function extrairNoticias(html: string): Noticia[] {
 }
 
 export async function GET() {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   const session = await auth();
   if (!session) {
     return Response.json({ error: "Não autenticado." }, { status: 401 });

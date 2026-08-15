@@ -7,12 +7,20 @@
 //   (sessionExpires) — sem o "permanecer", expira em 8 horas e o jwt callback
 //   invalida a sessão devolvendo null.
 // - emailVerified (booleano) marca na UI as contas com e-mail não confirmado.
+//
+// CONTA É POR PLATAFORMA (lib/app.ts): o banco é o mesmo para os dois sites,
+// mas toda consulta de usuário é chaveada por (e-mail, app). Quem tem conta no
+// Renomeador não entra no Sucessorista com ela — precisa criar conta lá. Os
+// cookies já são separados por domínio; ainda assim o jwt callback confere a
+// plataforma do usuário a cada requisição (defesa em profundidade: token de um
+// site não vale no outro nem se for copiado à mão).
 
 import { compare } from "bcryptjs";
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
+import { APP } from "@/lib/app";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/generated/prisma/enums";
 
@@ -48,7 +56,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({
+          where: { email_app: { email, app: APP } },
+        });
         if (!user) return null;
         // Conta criada via Google não tem senha: só entra pelo OAuth.
         if (!user.passwordHash) return null;
@@ -77,12 +87,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const verificado =
         (profile as { email_verified?: boolean } | null)?.email_verified;
       if (!email || verificado !== true) return false;
+      // O upsert é da conta DESTA plataforma: entrar com o Google no
+      // Sucessorista cria a conta do Sucessorista, mesmo que já exista uma
+      // conta com o mesmo e-mail no Renomeador.
       await prisma.user.upsert({
-        where: { email },
+        where: { email_app: { email, app: APP } },
         // Conta já existente: marca o e-mail como confirmado (o Google atesta).
         update: { emailVerified: new Date() },
         create: {
           email,
+          app: APP,
           name: profile?.name ?? email,
           emailVerified: new Date(),
           role: "USER",
@@ -96,7 +110,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (account?.provider === "google") {
           // O id do `user` aqui é o do perfil Google — o que vale é o NOSSO.
           const local = await prisma.user.findUnique({
-            where: { email: String(user.email).toLowerCase() },
+            where: {
+              email_app: { email: String(user.email).toLowerCase(), app: APP },
+            },
             select: { id: true },
           });
           if (!local) return null;
@@ -124,9 +140,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       try {
         const atual = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { role: true, emailVerified: true },
+          select: { role: true, emailVerified: true, app: true },
         });
         if (!atual) return null;
+        // A conta é de outra plataforma: a sessão não vale aqui. Na prática o
+        // cookie nem chega (domínios distintos), mas a checagem é o que torna
+        // a separação real em vez de depender do navegador.
+        if (atual.app !== APP) return null;
         token.role = atual.role;
         token.emailConfirmed = atual.emailVerified !== null;
       } catch {

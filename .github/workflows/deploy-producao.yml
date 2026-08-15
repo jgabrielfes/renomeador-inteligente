@@ -1,4 +1,4 @@
-# Deploy de PRODUÇÃO da plataforma.
+# Deploy de PRODUÇÃO da plataforma — os DOIS sites publicados deste repositório.
 #
 # Por que existe: no plano Hobby da Vercel, o deploy de produção fica
 # "Blocked" quando o autor do commit no Git não é o dono da conta — foi o que
@@ -7,15 +7,25 @@
 # DONO da conta, então a Vercel o atribui a ele e não bloqueia, seja de quem
 # for o commit que entrou na `main`.
 #
+# São dois projetos na Vercel apontando para o MESMO repositório; o que os
+# diferencia é a variável de ambiente APP (ver lib/app.ts), configurada no
+# painel de cada projeto:
+#   renomeador   -> APP=renomeador   -> renomeador-inteligente.vercel.app
+#   sucessorista -> APP=sucessorista -> osucessorista.vercel.app
+# O `vercel pull` traz as envs do projeto, então cada job compila com o APP
+# certo sem que este arquivo precise saber qual é qual.
+#
 # O auto-deploy da `main` fica DESLIGADO em `vercel.json`
 # (git.deploymentEnabled.main = false) para não haver deploy duplicado; as
 # demais branches seguem publicando preview automaticamente, como antes.
 #
 # Segredos necessários em Settings → Secrets and variables → Actions
-# (os dois ids saem de `.vercel/project.json`, gerado por `vercel link`):
-#   VERCEL_TOKEN       — Vercel → Account Settings → Tokens
-#   VERCEL_ORG_ID      — campo `orgId`
-#   VERCEL_PROJECT_ID  — campo `projectId`
+# (os ids saem de `.vercel/project.json`, gerado por `vercel link` em cada
+# projeto):
+#   VERCEL_TOKEN                    — Vercel → Account Settings → Tokens
+#   VERCEL_ORG_ID                   — campo `orgId` (o mesmo nos dois)
+#   VERCEL_PROJECT_ID_RENOMEADOR    — `projectId` do projeto do Renomeador
+#   VERCEL_PROJECT_ID_SUCESSORISTA  — `projectId` do projeto do Sucessorista
 #
 # O token precisa ter escopo de CONTA ("Full Account"): com escopo de projeto
 # a CLI não passa do primeiro comando, porque ela lê recursos de usuário e de
@@ -36,11 +46,17 @@ concurrency:
 
 jobs:
   deploy:
-    name: Publicar na Vercel
+    name: Publicar ${{ matrix.site }}
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.url }}
+    strategy:
+      # Um site quebrado não impede a publicação do outro.
+      fail-fast: false
+      matrix:
+        include:
+          - site: renomeador
+            project_id_secret: VERCEL_PROJECT_ID_RENOMEADOR
+          - site: sucessorista
+            project_id_secret: VERCEL_PROJECT_ID_SUCESSORISTA
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
@@ -62,12 +78,17 @@ jobs:
         run: |
           mkdir -p .vercel
           org=$(printf '%s' "${{ secrets.VERCEL_ORG_ID }}" | tr -d '[:space:]"')
-          proj=$(printf '%s' "${{ secrets.VERCEL_PROJECT_ID }}" | tr -d '[:space:]"')
+          proj=$(printf '%s' "${{ secrets[matrix.project_id_secret] }}" | tr -d '[:space:]"')
+          if [ -z "$proj" ]; then
+            echo "::error::Secret ${{ matrix.project_id_secret }} não configurado."
+            exit 1
+          fi
           printf '{"orgId":"%s","projectId":"%s"}' "$org" "$proj" > .vercel/project.json
 
       - name: Puxar as variáveis de ambiente de produção
-        # Traz as envs do projeto (GEMINI_API_KEY, DATABASE_URL, AUTH_*…) —
-        # elas continuam vivendo só na Vercel, nunca no repositório.
+        # Traz as envs do projeto (APP, GEMINI_API_KEY, DATABASE_URL, AUTH_*…)
+        # — elas continuam vivendo só na Vercel, nunca no repositório. É daqui
+        # que vem o APP que decide qual dos dois sites este job compila.
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Compilar
@@ -79,5 +100,5 @@ jobs:
         run: |
           url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "### Produção publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Produção publicada — ${{ matrix.site }}" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"

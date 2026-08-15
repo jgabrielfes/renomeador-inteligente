@@ -5,6 +5,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { APP } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -22,7 +23,12 @@ export async function alternarMaster(userId: string): Promise<AcaoResult> {
 
   try {
     const alvo = await prisma.user.findUnique({ where: { id: userId } });
-    if (!alvo) return { ok: false, error: "Usuário não encontrado." };
+    // Conta de OUTRA plataforma responde igual a inexistente: um master do
+    // Renomeador não promove ninguém no Sucessorista (e vice-versa). A action
+    // é endpoint público — o id vem do cliente, então a checagem é aqui.
+    if (!alvo || alvo.app !== APP) {
+      return { ok: false, error: "Usuário não encontrado." };
+    }
 
     await prisma.user.update({
       where: { id: userId },

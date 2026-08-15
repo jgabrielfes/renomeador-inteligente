@@ -19,12 +19,12 @@ export default function NotFound() {
         </h1>
         <p className="text-muted-foreground">
           O endereço que você acessou não existe ou foi movido. Sem problema —
-          as ferramentas continuam no lugar de sempre.
+          a ferramenta continua no lugar de sempre.
         </p>
       </div>
       <Button nativeButton={false} render={<Link href="/" />}>
         <ArrowLeft className="size-4" />
-        Voltar para as ferramentas
+        Voltar para o início
       </Button>
     </main>
   );

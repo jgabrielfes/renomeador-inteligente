@@ -15,6 +15,7 @@ import {
 import { analisarMatriculas } from "@/lib/gemini-matricula";
 import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
+import { foraDaPlataforma } from '@/lib/app';
 
 // Um lote com vários PDFs pode levar mais que os 10s padrão da Vercel.
 export const maxDuration = 60;
@@ -27,6 +28,10 @@ const MAX_ITEMS = 10;
 const MAX_ITEMS_MATRICULA = 60;
 
 export async function POST(request: Request) {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   const session = await auth();
   if (!session) {
     return Response.json({ error: "Não autenticado." }, { status: 401 });

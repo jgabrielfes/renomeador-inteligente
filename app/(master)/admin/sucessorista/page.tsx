@@ -37,6 +37,7 @@ import {
   parsePeriodo,
   queryDaTabela,
 } from "@/lib/admin";
+import { requirePlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { FAIXAS_DE_PORTE } from "@/lib/porte";
@@ -68,6 +69,8 @@ export default async function AdminSucessoristaPage({
   searchParams,
 }: PageProps<"/admin/sucessorista">) {
   await requireMaster();
+  // Tela do Sucessorista: no /admin do Renomeador ela não existe (404).
+  await requirePlataforma("SUCESSORISTA");
 
   const params = await searchParams;
   const periodo = parsePeriodo(params.periodo);

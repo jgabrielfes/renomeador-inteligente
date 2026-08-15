@@ -1,6 +1,10 @@
 // Administração (somente MASTER — gate no servidor via requireMaster).
 // Resumo da plataforma com filtro de período via QUERY STRING
 // (?periodo=semana|mes|ano|tudo) e cards de navegação para as listagens.
+//
+// Cada site tem o SEU painel: o /admin do Renomeador mostra as contas, os
+// lotes e os erros do Renomeador; o do Sucessorista, os dele (lib/app.ts).
+// Nada aqui cruza a fronteira entre os dois, embora o banco seja o mesmo.
 
 import Link from "next/link";
 import {
@@ -22,35 +26,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { filtroDeData, parsePeriodo } from "@/lib/admin";
+import { APP, EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// As listagens deste site. "Renomeações" existe nos DOIS: o Renomeador roda
+// embutido no cofre do Sucessorista, e os lotes feitos lá contam para o painel
+// de lá. "O Sucessorista" só existe no site do Sucessorista.
 const LISTAGENS = [
   {
     href: "/admin/usuarios",
     icon: Users,
     titulo: "Usuários",
     descricao:
-      "Contas cadastradas, papel de acesso e quantos acessos cada uma fez a cada módulo.",
+      "Contas cadastradas neste site, papel de acesso e quantas vezes cada uma abriu a ferramenta.",
   },
   {
     href: "/admin/renomeacoes",
     icon: FileCheck2,
     titulo: "Renomeações",
-    descricao: "Lotes de arquivos renomeados, por usuário ou deslogado.",
+    descricao: EH_SUCESSORISTA
+      ? "Lotes renomeados dentro do cofre dos casos."
+      : "Lotes de arquivos renomeados, por usuário ou deslogado.",
   },
-  {
-    href: "/admin/sucessorista",
-    icon: Scale,
-    titulo: "O Sucessorista",
-    descricao:
-      "Casos de inventário trabalhados, porte e rito, leitura do cofre e minutas entregues.",
-  },
+  ...(EH_SUCESSORISTA
+    ? ([
+        {
+          href: "/admin/sucessorista",
+          icon: Scale,
+          titulo: "Casos de inventário",
+          descricao:
+            "Casos trabalhados, porte e rito, leitura do cofre e minutas entregues.",
+        },
+      ] as const)
+    : []),
   {
     href: "/admin/erros",
     icon: AlertTriangle,
     titulo: "Erros",
-    descricao: "Falhas da plataforma (IA inclusa): origem, usuário e detalhe.",
+    descricao: "Falhas deste site (IA inclusa): origem, usuário e detalhe.",
   },
 ] as const;
 
@@ -76,12 +90,12 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       contagemMinutas,
       contagemAcessos,
     ] = await Promise.all([
-      prisma.user.count({ where: { createdAt } }),
+      prisma.user.count({ where: { createdAt, app: APP } }),
       prisma.renameEvent.aggregate({
         _sum: { quantidade: true },
-        where: { createdAt },
+        where: { createdAt, app: APP },
       }),
-      prisma.errorEvent.count({ where: { createdAt } }),
+      prisma.errorEvent.count({ where: { createdAt, app: APP } }),
       // Uma linha de CALCULO por inventário: conta casos, não recálculos.
       prisma.sucessoristaEvent.count({
         where: { createdAt, acao: "CALCULO" },
@@ -89,7 +103,9 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       prisma.sucessoristaEvent.count({
         where: { createdAt, acao: "DOCUMENTO" },
       }),
-      prisma.moduleAccess.count({ where: { createdAt } }),
+      prisma.moduleAccess.count({
+        where: { createdAt, modulo: IDENTIDADE.modulo },
+      }),
     ]);
     usuarios = contagemUsuarios;
     arquivosRenomeados = somaRenomeados._sum.quantidade ?? 0;
@@ -108,13 +124,13 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        Voltar para as ferramentas
+        Voltar para a ferramenta
       </Link>
 
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
         <p className="text-sm text-muted-foreground">
-          Resumo da plataforma no período selecionado.
+          {IDENTIDADE.nome} — resumo do período selecionado.
         </p>
       </header>
 
@@ -167,7 +183,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       {usuarios !== null && (
         <>
           <h2 className="text-sm font-medium text-muted-foreground">
-            Produção por módulo no período
+            Produção no período
           </h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
@@ -179,21 +195,27 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
                 <CardTitle className="text-4xl tabular-nums">
                   {arquivosRenomeados}
                 </CardTitle>
-                <CardDescription>Renomeador</CardDescription>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardDescription className="flex items-center gap-1.5">
-                  <Scale className="size-4" />
-                  Casos de inventário
-                </CardDescription>
-                <CardTitle className="text-4xl tabular-nums">{casos}</CardTitle>
                 <CardDescription>
-                  {minutas} minuta(s)/planilha(s) gerada(s)
+                  {EH_SUCESSORISTA ? "no cofre dos casos" : "Renomeador"}
                 </CardDescription>
               </CardHeader>
             </Card>
+            {EH_SUCESSORISTA && (
+              <Card>
+                <CardHeader>
+                  <CardDescription className="flex items-center gap-1.5">
+                    <Scale className="size-4" />
+                    Casos de inventário
+                  </CardDescription>
+                  <CardTitle className="text-4xl tabular-nums">
+                    {casos}
+                  </CardTitle>
+                  <CardDescription>
+                    {minutas} minuta(s)/planilha(s) gerada(s)
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
           </div>
         </>
       )}

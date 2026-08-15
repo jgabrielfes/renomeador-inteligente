@@ -4,6 +4,7 @@ import {
   type QualificacaoHerdeiro,
 } from '@/lib/portal/store';
 import { registrarPortal } from '@/app/(private)/sucessorista/actions';
+import { foraDaPlataforma } from '@/lib/app';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ token: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   const { token } = await ctx.params;
   const convite = await store.obter(token);
   if (!convite) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
@@ -23,6 +28,10 @@ export async function GET(_req: Request, ctx: Ctx) {
  * gravar o blob e salvar a URL em nomeArquivo.
  */
 export async function PATCH(req: Request, ctx: Ctx) {
+  // Rota do Sucessorista: no deploy do Renomeador ela não existe.
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
   const { token } = await ctx.params;
   let body: {
     docId?: string;

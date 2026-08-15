@@ -191,6 +191,22 @@
   line-height: 1.5;
 }
 
+/* Faixa de sessão (nome, papel, Administração, Sair) no pé da lombada. Com um
+   caso aberto ela é o único caminho para a administração e para sair — antes
+   isso morava no painel de ferramentas, que deixou de existir. */
+.sucessorista .lombada .sessao {
+  margin-top: 20px;
+  padding: 14px 24px 0 0;
+  border-top: 1px solid rgba(124, 133, 128, 0.25);
+}
+/* O menu é shadcn: encolhe para caber na lombada estreita, sem alinhar tudo
+   à direita como faz na folha. */
+.sucessorista .lombada .sessao > div {
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+
 .sucessorista .folha {
   /* Mais respiro (pedido do escritório): a folha cresceu de 900 para 1080px
      e os espaçamentos internos aumentaram — mesma identidade, menos aperto. */

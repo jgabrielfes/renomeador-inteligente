@@ -3,11 +3,9 @@
 import "./renomeador.css";
 
 import * as React from "react";
-import Link from "next/link";
 import JSZip from "jszip";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Check,
   Cpu,
   Download,
@@ -167,6 +165,7 @@ const AI_MODES: Array<{ value: AiMode; title: string; description: string }> = [
 export default function Home({
   initialLessons,
   embutido = false,
+  menu,
   regrasExtras,
   registrarColeta,
   onConcluirNoCofre,
@@ -174,8 +173,11 @@ export default function Home({
   // Regras + correções da conta, carregadas no servidor (null = falha).
   initialLessons: LessonsState | null;
   /** true = renderizado DENTRO de outro módulo (overlay do Sucessorista):
-   *  esconde o link "← Módulos" — o resto da ferramenta fica inteiro. */
+   *  esconde a faixa de sessão — o resto da ferramenta fica inteiro. */
   embutido?: boolean;
+  /** Faixa de sessão (nome, papel, Administração, Sair). Vem pronta de um
+   *  server component — este arquivo é client e não pode chamar auth(). */
+  menu?: React.ReactNode;
   /** Calibração do módulo hospedeiro (ex.: inventário/sucessões): somada às
    *  regras do escritório em CADA lote enviado à IA — nunca persistida. */
   regrasExtras?: string;
@@ -1032,15 +1034,10 @@ export default function Home({
     <div className="renomeador-tema flex flex-1 flex-col">
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-10">
       <header className="space-y-2">
-        {!embutido && (
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Módulos
-          </Link>
-        )}
+        {/* Não há mais link "← Módulos": este site É o Renomeador, e `/` já é
+            esta tela. Embutido no cofre do Sucessorista a faixa some — quem
+            fecha o Renomeador de lá usa o botão do próprio diálogo. */}
+        {!embutido && menu}
         <h1 className="text-2xl font-semibold tracking-tight">
           Renomeador Inteligente de Documentos
         </h1>
