@@ -169,6 +169,7 @@ export default function Home({
   embutido = false,
   regrasExtras,
   registrarColeta,
+  onConcluirNoCofre,
 }: {
   // Regras + correções da conta, carregadas no servidor (null = falha).
   initialLessons: LessonsState | null;
@@ -184,6 +185,13 @@ export default function Home({
    * (marcados para uso) — é o que faz o fechamento anexar tudo ao caso.
    */
   registrarColeta?: (obter: () => File[]) => void;
+  /**
+   * Botão explícito do modo embutido: "renomear na pasta e enviar ao Cofre".
+   * O renomeador aplica os nomes na pasta real (quando aberta por pasta) e
+   * chama isto para o hospedeiro FECHAR o overlay — o que dispara a coleta e
+   * o anexo ao caso.
+   */
+  onConcluirNoCofre?: () => void;
 }) {
   // Uma vez por mount, ANTES do useSyncExternalStore das lições ler o
   // snapshot (inicializador de useState roda no primeiro render).
@@ -194,23 +202,33 @@ export default function Home({
   }, []);
 
   const [rows, setRows] = React.useState<Row[]>([]);
+  // Espelho sempre atual da fila: o getter da coleta lê daqui, então enxerga
+  // o estado recém-renomeado (imagens convertidas em PDF etc.) sem depender
+  // do timing de re-registro do efeito.
+  const rowsRef = React.useRef(rows);
+  React.useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
-  // Entrega ao módulo hospedeiro o getter da fila atual: cada arquivo sai
-  // com o nome PROPOSTO (quando marcado para uso) — materializado num File
-  // novo só quando o nome muda; o conteúdo nunca é copiado.
+  // Entrega ao módulo hospedeiro o getter da fila: cada arquivo sai com o
+  // nome PROPOSTO (quando marcado para uso) — materializado num File novo só
+  // quando o nome muda; o conteúdo nunca é copiado.
   React.useEffect(() => {
     if (!registrarColeta) return;
     registrarColeta(() =>
-      rows
+      rowsRef.current
         .filter((r) => r.status !== "erro")
         .map((r) => {
-          const nome = r.use && r.proposed ? r.proposed : r.file.name;
+          // Sem o prefixo de subpasta ("CATEGORIA/nome"): o cofre classifica
+          // sozinho, e a barra viraria nome de arquivo inválido.
+          const bruto = r.use && r.proposed ? r.proposed : r.file.name;
+          const nome = bruto.split("/").pop() || r.file.name;
           return nome === r.file.name
             ? r.file
             : new File([r.file], nome, { type: r.file.type });
         }),
     );
-  }, [rows, registrarColeta]);
+  }, [registrarColeta]);
   const [dirHandle, setDirHandle] =
     React.useState<FileSystemDirectoryHandle | null>(null);
   const [onlyWhatsapp, setOnlyWhatsapp] = React.useState(false);
@@ -1533,8 +1551,30 @@ export default function Home({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              {/* Embutido no cofre: o botão didático que faz TUDO — renomeia
+                  na pasta real (quando aberta por pasta) e joga os arquivos
+                  no cofre na ordem certa, fechando o overlay. */}
+              {embutido && onConcluirNoCofre && (
+                <Button
+                  onClick={async () => {
+                    if (hasFolderRows && applyTargets.length > 0) await applyRenames();
+                    // Deixa o React aplicar os patchRow do applyRenames antes
+                    // de o hospedeiro colher a fila ao fechar.
+                    await new Promise((r) => setTimeout(r, 0));
+                    onConcluirNoCofre();
+                  }}
+                  loading={applying}
+                  disabled={downloadable.length === 0 || processing}
+                >
+                  <FolderOpen className="size-4" />
+                  {hasFolderRows
+                    ? "Renomear na pasta e enviar ao Cofre"
+                    : "Enviar renomeados ao Cofre"}
+                </Button>
+              )}
               {hasFolderRows && (
                 <Button
+                  variant={embutido ? "outline" : "default"}
                   onClick={applyRenames}
                   loading={applying}
                   disabled={applyTargets.length === 0 || processing}
@@ -1544,7 +1584,7 @@ export default function Home({
                 </Button>
               )}
               <Button
-                variant={hasFolderRows ? "outline" : "default"}
+                variant={hasFolderRows || embutido ? "outline" : "default"}
                 onClick={downloadZip}
                 loading={zipping}
                 disabled={downloadable.length === 0}

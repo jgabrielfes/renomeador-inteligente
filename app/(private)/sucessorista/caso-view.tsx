@@ -927,6 +927,7 @@ export function CasoView({
                 registrarColeta={(obter) => {
                   coletaRenomeadorRef.current = obter;
                 }}
+                onConcluirNoCofre={() => setRenomeadorAberto(false)}
               />
             )}
           </ScrollArea>
