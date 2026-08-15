@@ -195,6 +195,46 @@ aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
   );
   eq('isenção a: hipótese com condições', [a2[0].verdito, a2[0].hipotese, a2[0].condicoes.length > 0], ['ISENTO_POSSIVEL', 'art. 6º, I, "a"', true]);
   eq('imóvel caro: tributado por inteiro', a2[1].verdito, 'TRIBUTADO');
+
+  // Alínea "a" decidida AUTOMATICAMENTE pela ficha do item I (pergunta
+  // "possui outro imóvel?"): algum SIM derruba; todos NÃO confirmam.
+  const doisImoveis: Parameters<typeof analisarIsencoesPorBem>[0] = [
+    { tipo: 'IMOVEL', valor: 150_000, descricao: 'Casa' },
+    { tipo: 'IMOVEL', valor: 800_000, descricao: 'Prédio' },
+  ];
+  const comOutro = analisarIsencoesPorBem(doisImoveis, ufesp, {
+    herdeiros: 2,
+    respostasOutroImovel: 2,
+    algumComOutroImovel: true,
+    nenhumComOutroImovel: false,
+  });
+  eq('ficha: herdeiro com outro imóvel derruba a alínea a', comOutro[0].verdito, 'TRIBUTADO');
+  eq('ficha: explicação cita a alínea a', comOutro[0].explicacao.includes('alínea "a"'), true);
+  const semOutro = analisarIsencoesPorBem(doisImoveis, ufesp, {
+    herdeiros: 2,
+    respostasOutroImovel: 2,
+    algumComOutroImovel: false,
+    nenhumComOutroImovel: true,
+  });
+  eq('ficha: todos sem outro imóvel confirmam a alínea a', [semOutro[0].verdito, semOutro[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "a"']);
+  eq('ficha: requisito confirmado sai das condições', semOutro[0].condicoes.some((c) => c.includes('outro imóvel')), false);
+  eq('ficha: explicação registra a confirmação automática', semOutro[0].explicacao.includes('requisito confirmado automaticamente'), true);
+  // Ficha incompleta: mantém a hipótese com a condição de responder.
+  const semResposta = analisarIsencoesPorBem(doisImoveis, ufesp, {
+    herdeiros: 2,
+    respostasOutroImovel: 1,
+    algumComOutroImovel: false,
+    nenhumComOutroImovel: false,
+  });
+  eq('ficha incompleta: condição pede as respostas', semResposta[0].condicoes.some((c) => c.includes('ficha do item I')), true);
+  // A alínea "b" (único transmitido) independe da ficha.
+  const bComOutro = analisarIsencoesPorBem([{ tipo: 'IMOVEL', valor: 90_000, descricao: 'Casa' }], ufesp, {
+    herdeiros: 2,
+    respostasOutroImovel: 2,
+    algumComOutroImovel: true,
+    nenhumComOutroImovel: false,
+  });
+  eq('alínea b não depende da ficha', [bComOutro[0].verdito, bComOutro[0].hipotese], ['ISENTO_POSSIVEL', 'art. 6º, I, "b"']);
   // Financeiro mede o CONJUNTO.
   const a3 = analisarIsencoesPorBem(
     [

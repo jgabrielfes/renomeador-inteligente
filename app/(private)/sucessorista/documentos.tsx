@@ -17,9 +17,34 @@ import {
 } from '@/lib/partilha/documentos';
 import { montarPdfUnificado, montarZipIndividualizado } from '@/lib/partilha/processo';
 import { baixarBlob } from '@/lib/partilha/xlsx';
+import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { LupaPreview } from './preview';
 
 export type AnexosProcesso = Record<string, File[]>;
+
+/**
+ * Onde cada pedido do PORTAL DO HERDEIRO se encaixa no catálogo do processo
+ * — é o que faz o envio do cofre aparecer no card CERTO, na ordem correlata.
+ */
+const CATALOGO_DO_PEDIDO_PORTAL: Record<string, string> = {
+  'rg-cpf': 'docs-herdeiros',
+  'certidao-estado-civil': 'certidoes-herdeiros',
+  'comprovante-endereco': 'comprovantes-endereco',
+  profissao: 'docs-herdeiros',
+};
+
+const ROTULO_STATUS_PORTAL: Record<string, string> = {
+  ENVIADO: 'aguardando conferência',
+  APROVADO: 'aprovado',
+  REJEITADO: 'devolvido para reenvio',
+};
+
+interface EnvioDoCofre {
+  herdeiro: string;
+  nomeArquivo: string;
+  tipoDetectado?: string;
+  status: string;
+}
 
 function BotaoAnexar({ onFiles }: { onFiles: (lista: FileList) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -54,6 +79,7 @@ export function DocumentosView({
   setAnexos,
   nomeCaso,
   temSobrevivente = true,
+  convites = {},
   onMontado,
 }: {
   anexos: AnexosProcesso;
@@ -61,6 +87,8 @@ export function DocumentosView({
   nomeCaso: string;
   /** false esconde o grupo do cônjuge supérstite — sucessão sem essa parte. */
   temSobrevivente?: boolean;
+  /** Convites do cofre: o que cada herdeiro enviou aparece no card certo. */
+  convites?: Record<string, ConviteHerdeiro>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
 }) {
@@ -68,6 +96,24 @@ export function DocumentosView({
   const [gerando, setGerando] = useState<'pdf' | 'zip' | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
+
+  // Envios do PORTAL agrupados pelo item do catálogo em que se encaixam. O
+  // ARQUIVO fica no navegador do herdeiro (fronteira de dados) — aqui entram
+  // o nome proposto, o tipo detectado e o status, para o advogado cobrar ou
+  // anexar o original recebido por outro canal.
+  const enviosDoCofre: Record<string, EnvioDoCofre[]> = {};
+  for (const convite of Object.values(convites)) {
+    for (const d of convite.documentos) {
+      if (!d.nomeArquivo || d.status === 'PENDENTE') continue;
+      const docId = CATALOGO_DO_PEDIDO_PORTAL[d.id] ?? 'outros';
+      (enviosDoCofre[docId] ??= []).push({
+        herdeiro: convite.nomeHerdeiro,
+        nomeArquivo: d.nomeArquivo,
+        tipoDetectado: d.tipoDetectado,
+        status: d.status,
+      });
+    }
+  }
 
   const catalogoDoCasoTopo = CATALOGO_DOCUMENTOS.filter(
     (doc) => temSobrevivente || doc.grupo !== 'SOBREVIVENTE',
@@ -155,6 +201,16 @@ export function DocumentosView({
                   <div>
                     <h4>{doc.titulo}</h4>
                     <p>{doc.descricao}</p>
+                    {(enviosDoCofre[doc.id] ?? []).map((envio, i) => (
+                      <p className="anexo-linha cofre" key={`cofre-${envio.herdeiro}-${i}`}>
+                        <span>
+                          🔗 <strong>{envio.herdeiro}</strong> enviou pelo cofre:{' '}
+                          <span className="num">{envio.nomeArquivo}</span>
+                          {envio.tipoDetectado ? ` · lido como ${envio.tipoDetectado}` : ''} ·{' '}
+                          {ROTULO_STATUS_PORTAL[envio.status] ?? envio.status}
+                        </span>
+                      </p>
+                    ))}
                     {arquivos.map((f, i) => (
                       <p className="anexo-linha" key={`${f.name}-${i}`}>
                         <span className="num">{f.name}</span>

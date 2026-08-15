@@ -135,6 +135,13 @@ export function CofreView({
                         ? 'Formulário de qualificação preenchido. '
                         : 'Aguardando o formulário de qualificação. '}
                       {enviados} de {convite.documentos.length} documentos enviados.
+                      {convite.envioConfirmadoEm && (
+                        <span style={{ color: 'var(--verde-registro)' }}>
+                          {' '}
+                          Envio confirmado pelo herdeiro em{' '}
+                          {new Date(convite.envioConfirmadoEm).toLocaleString('pt-BR')}.
+                        </span>
+                      )}
                     </p>
                     {convite.documentos
                       .filter((d) => d.nomeArquivo)

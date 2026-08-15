@@ -198,6 +198,34 @@ export function emolumentoRegistro(valor: number, issPct = 5): number {
   return f ? comIss(f, issPct) : 0;
 }
 
+/**
+ * ENUNCIADO Nº 7 do CNB/SP: nas escrituras de inventário e partilha, a base
+ * dos emolumentos é o MAIOR entre o valor atribuído pelas partes e o valor
+ * VENAL — este considerado na DATA DA LAVRATURA (critério temporal dos
+ * emolumentos é o ato notarial, art. 7º da Lei 11.331/2002; o do ITCMD é o
+ * óbito), excluída eventual meação.
+ *
+ * O maior valor é apurado BEM A BEM (valor atribuído × venal do exercício
+ * ATUAL) e a exclusão da meação/dívidas preserva a proporção: a legítima já
+ * apurada pelo valor atribuído é escalada pela razão entre o total "maior"
+ * e o total atribuído.
+ */
+export function baseDeEmolumentosDaEscritura(e: {
+  /** Bens do acervo: valor atribuído pelas partes e venal ATUAL (se houver). */
+  bens: { valor: number; venalAtual?: number | null }[];
+  /** Legítima apurada pelo valor ATRIBUÍDO (herança já sem a meação). */
+  legitima: number;
+}): number {
+  if (e.legitima <= 0) return 0;
+  const atribuido = e.bens.reduce((a, b) => a + Math.max(0, b.valor), 0);
+  const maior = e.bens.reduce(
+    (a, b) => a + Math.max(Math.max(0, b.valor), Math.max(0, b.venalAtual ?? 0)),
+    0,
+  );
+  if (atribuido <= 0 || maior <= atribuido) return r2(e.legitima);
+  return r2(e.legitima * (maior / atribuido));
+}
+
 /* ---------------- certidões (aproximadas por natureza) ---------------- */
 
 /** Valores unitários APROXIMADOS (2026) — variam com averbações e emissão. */
@@ -246,8 +274,8 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
         rotulo: 'Escritura de inventário e partilha (ato único pela legítima)',
         valor: emolumentoEscritura(e.baseEscritura, iss),
         quantidade: 1,
-        fundamento: 'Tabela de Notas 2026, item 1 (Lei 11.331/2002)',
-        detalhe: `Faixa pela herança transmitida de ${fmt(e.baseEscritura)} (monte-mor descontada a meação) — UM ato pelo TOTAL, qualquer que seja a quantidade de bens, herdeiros ou pagamentos. ISS de ${iss}%.`,
+        fundamento: 'Tabela de Notas 2026, item 1 (Lei 11.331/2002); Enunciado nº 7 do CNB/SP',
+        detalhe: `Faixa pela LEGÍTIMA de ${fmt(e.baseEscritura)} — o MAIOR entre o valor atribuído pelas partes e o venal na data do ato (Enunciado 7: o critério temporal dos emolumentos é a lavratura, art. 7º da Lei 11.331/2002), excluída a meação. UM ato pelo TOTAL, qualquer que seja a quantidade de bens, herdeiros ou pagamentos. ISS de ${iss}%.`,
         aproximado: false,
       });
     }

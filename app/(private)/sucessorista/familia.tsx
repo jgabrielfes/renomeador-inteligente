@@ -29,9 +29,11 @@ import {
 import { useState } from 'react';
 
 import { mascararCpf } from '@/lib/cpf';
+import { CurrencyInput } from '@/components/currency-input';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
   composicaoFamiliar,
+  formatarData,
   nomeProprio,
   QUALIFICACAO_VAZIA,
   PERGUNTAS_ITCMD_VAZIAS,
@@ -40,6 +42,7 @@ import {
   type PerguntasItcmd,
   type Qualificacao,
 } from '@/lib/partilha/familia';
+import type { SucessaoCumulada } from './itcmd-view';
 
 // Aleatório (não sequencial): o caso volta do sessionStorage e um contador
 // zerado no reload geraria ids que colidem com os herdeiros restaurados.
@@ -97,10 +100,16 @@ export function FamiliaView({
   estado,
   onChange,
   avancar,
+  sucessoes,
+  setSucessoes,
 }: {
   estado: EstadoFamilia;
   onChange: (e: EstadoFamilia) => void;
   avancar: () => void;
+  /** Sucessões CUMULADAS no mesmo inventário (CPC, art. 672) — vivem no
+   *  estado fiscal, mas a família é o lugar natural de lançá-las. */
+  sucessoes: SucessaoCumulada[];
+  setSucessoes: (s: SucessaoCumulada[]) => void;
 }) {
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = estado;
   const composicao = composicaoFamiliar(falecido, temSobrevivente, vinculo, regime, herdeiros);
@@ -118,6 +127,7 @@ export function FamiliaView({
         escritura, o espelho do ITCMD e o cofre de documentos.
       </p>
 
+      <div className="cartao">
       <span className="eyebrow">Autor(a) da herança</span>
       <div className="grade c2" style={{ marginTop: 10 }}>
         <label className="campo">
@@ -186,6 +196,7 @@ export function FamiliaView({
         }
         comConjuge={false}
       />
+      </div>
 
       <h2>Havia cônjuge ou companheiro(a)?</h2>
       <div className="escolha">
@@ -198,7 +209,7 @@ export function FamiliaView({
       </div>
 
       {temSobrevivente && (
-        <>
+        <div className="cartao">
           <h2>Vínculo e regime de bens</h2>
           <div className="escolha">
             <Pilula ativo={vinculo === 'CASAMENTO'} onClick={() => set({ vinculo: 'CASAMENTO' })}>
@@ -254,7 +265,7 @@ export function FamiliaView({
               set({ qualificacoes: { ...estado.qualificacoes, __sobrevivente__: q } })
             }
           />
-        </>
+        </div>
       )}
 
       <h2>Herdeiros</h2>
@@ -266,6 +277,16 @@ export function FamiliaView({
         as da declaração do ITCMD e entram prontas no item V.
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
+
+      <h2>Sucessões cumuladas no mesmo inventário</h2>
+      <p className="subtitulo" style={{ marginBottom: 10 }}>
+        Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…) na forma do
+        art. 672 do CPC: cada sucessão tem o PRÓPRIO fato gerador — o ITCMD é calculado
+        pela UFESP e pelos prazos da data do óbito respectiva, a escritura e os registros
+        ganham atos próprios, e tudo já soma no painel e no item V (Custos). Com
+        &quot;mesmos herdeiros&quot; marcado, o item III mostra uma partilha para CADA sucessão.
+      </p>
+      <EditorSucessoes herdeiros={herdeiros} sucessoes={sucessoes} setSucessoes={setSucessoes} />
 
       <h2>Composição familiar</h2>
       <div className="nota">
@@ -553,6 +574,175 @@ function EditorHerdeiros({
   );
 }
 
+/* ---------- sucessões cumuladas (CPC, art. 672) ---------- */
+
+const esquemaSucessao = z.object({
+  nome: z.string().trim().min(1, 'Informe o nome do(a) autor(a) desta sucessão.'),
+  dataObito: z.string().min(1, 'Informe a data do óbito — é o fato gerador desta sucessão.'),
+  base: z.string().trim().min(1, 'Informe a base transmitida nesta sucessão.'),
+  qtdImoveis: z.string().regex(/^\d*$/, 'Use apenas números.'),
+  mesmosHerdeiros: z.boolean(),
+});
+
+type NovaSucessao = z.infer<typeof esquemaSucessao>;
+
+const brlSucessao = (v: number) =>
+  `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function EditorSucessoes({
+  herdeiros,
+  sucessoes,
+  setSucessoes,
+}: {
+  herdeiros: Herdeiro[];
+  sucessoes: SucessaoCumulada[];
+  setSucessoes: (s: SucessaoCumulada[]) => void;
+}) {
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<NovaSucessao>({
+    resolver: zodResolver(esquemaSucessao),
+    defaultValues: { nome: '', dataObito: '', base: '', qtdImoveis: '', mesmosHerdeiros: true },
+  });
+
+  const lancar = (dados: NovaSucessao) => {
+    const decimal = Number(dados.base.replace(/\./g, '').replace(',', '.'));
+    setSucessoes([
+      ...sucessoes,
+      {
+        id: uid('su'),
+        nome: nomeProprio(dados.nome),
+        dataObito: dados.dataObito,
+        base: (Number.isFinite(decimal) ? decimal : 0).toFixed(2),
+        qtdImoveis: Number(dados.qtdImoveis) || 0,
+        mesmosHerdeiros: dados.mesmosHerdeiros,
+      },
+    ]);
+    reset();
+  };
+
+  const alternarMesmosHerdeiros = (id: string) =>
+    setSucessoes(
+      sucessoes.map((su) =>
+        su.id === id ? { ...su, mesmosHerdeiros: !(su.mesmosHerdeiros ?? false) } : su,
+      ),
+    );
+
+  return (
+    <div className="cartao">
+      {sucessoes.map((su) => (
+        <div key={su.id} className="linha-item">
+          <span>
+            <strong>{su.nome}</strong>
+            <span className="fracao num">
+              {' '}
+              · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · base{' '}
+              {brlSucessao(Number(su.base))} · {su.qtdImoveis} imóvel(is)
+            </span>
+            {su.mesmosHerdeiros && (
+              <span className="fund" style={{ marginLeft: 6 }}>
+                ★ mesmos herdeiros — partilha própria no item III
+              </span>
+            )}
+          </span>
+          <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              style={su.mesmosHerdeiros ? { color: 'var(--verde-registro)' } : undefined}
+              onClick={() => alternarMesmosHerdeiros(su.id)}
+            >
+              {su.mesmosHerdeiros ? 'mesmos herdeiros ✓' : 'usar os mesmos herdeiros'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={() => setSucessoes(sucessoes.filter((x) => x.id !== su.id))}
+            >
+              remover
+            </Button>
+          </span>
+        </div>
+      ))}
+
+      <form noValidate onSubmit={handleSubmit(lancar)}>
+        <div className="grade c2" style={{ marginTop: sucessoes.length > 0 ? 12 : 0 }}>
+          <Field data-invalid={Boolean(errors.nome)}>
+            <FieldLabel htmlFor="sucessao-nome">Autor(a) da sucessão cumulada</FieldLabel>
+            <Input id="sucessao-nome" aria-invalid={Boolean(errors.nome)} {...register('nome')} />
+            <FieldError errors={[errors.nome]} />
+          </Field>
+          <Field data-invalid={Boolean(errors.dataObito)}>
+            <FieldLabel>Data do óbito (fato gerador)</FieldLabel>
+            <Controller
+              control={control}
+              name="dataObito"
+              render={({ field }) => <DateInput value={field.value} onChange={field.onChange} />}
+            />
+            <FieldError errors={[errors.dataObito]} />
+          </Field>
+          <Field data-invalid={Boolean(errors.base)}>
+            <FieldLabel htmlFor="sucessao-base">Base transmitida (R$)</FieldLabel>
+            <Controller
+              control={control}
+              name="base"
+              render={({ field }) => (
+                <CurrencyInput
+                  id="sucessao-base"
+                  aria-invalid={Boolean(errors.base)}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+            <FieldError errors={[errors.base]} />
+          </Field>
+          <Field data-invalid={Boolean(errors.qtdImoveis)}>
+            <FieldLabel htmlFor="sucessao-imoveis">Imóveis envolvidos (nº)</FieldLabel>
+            <Input
+              id="sucessao-imoveis"
+              inputMode="numeric"
+              aria-invalid={Boolean(errors.qtdImoveis)}
+              {...register('qtdImoveis')}
+            />
+            <FieldError errors={[errors.qtdImoveis]} />
+          </Field>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Controller
+            control={control}
+            name="mesmosHerdeiros"
+            render={({ field }) => (
+              <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(v) => field.onChange(v === true)}
+                />
+                Usar os MESMOS herdeiros deste inventário nesta sucessão — o item III
+                (Partilha) ganha uma partilha própria para ela
+                {herdeiros.length === 0 ? ' (lance os herdeiros acima primeiro)' : ''}
+              </label>
+            )}
+          />
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Button type="submit" variant="outline">
+            Adicionar sucessão
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /* ---------- qualificação ---------- */
 
 interface CampoQualificacao {
@@ -560,7 +750,10 @@ interface CampoQualificacao {
   rotulo: string;
 }
 
-/** Agrupada na ordem em que a qualificação é lida numa escritura. */
+/** Agrupada na ordem em que a qualificação é lida numa escritura. A antiga
+ *  divisão "Identificação" × "Dados pessoais" foi UNIFICADA num grupo só
+ *  (pedido do escritório): a ficha fica mais curta, com mais campos por
+ *  linha, sem perder nenhum campo. */
 const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   {
     rotulo: 'Identificação',
@@ -569,11 +762,6 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
       { campo: 'rg', rotulo: 'RG' },
       { campo: 'dataNascimento', rotulo: 'Data de nascimento' },
       { campo: 'filiacao', rotulo: 'Filiação' },
-    ],
-  },
-  {
-    rotulo: 'Dados pessoais',
-    campos: [
       { campo: 'nacionalidade', rotulo: 'Nacionalidade' },
       { campo: 'estadoCivil', rotulo: 'Estado civil' },
       { campo: 'profissao', rotulo: 'Profissão' },

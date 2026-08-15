@@ -183,32 +183,34 @@ export function PainelCaso({
               <span className="rotulo">ITCMD — 4% (art. 16)</span>
               <span>{brl(impostoBase)}</span>
             </div>
+            {/* Encargos acessórios do imposto: recuados como itens SECUNDÁRIOS —
+                os principais da pilha são ITCMD, escritura, registros e certidões. */}
             {atualizacao !== 0 && (
-              <div>
+              <div className="sub">
                 <span className="rotulo">Atualização monetária — UFESP (art. 15)</span>
                 <span>{brl(atualizacao)}</span>
               </div>
             )}
             {multaAbertura > 0 && (
-              <div>
+              <div className="sub">
                 <span className="rotulo">Multa de abertura tardia (art. 21, I)</span>
                 <span style={{ color: 'var(--lacre)' }}>{brl(multaAbertura)}</span>
               </div>
             )}
             {multaMoratoria > 0 && (
-              <div>
+              <div className="sub">
                 <span className="rotulo">Multa moratória (art. 19)</span>
                 <span style={{ color: 'var(--lacre)' }}>{brl(multaMoratoria)}</span>
               </div>
             )}
             {juros > 0 && (
-              <div>
+              <div className="sub">
                 <span className="rotulo">Juros de mora — Selic (art. 20)</span>
                 <span style={{ color: 'var(--lacre)' }}>{brl(juros)}</span>
               </div>
             )}
             {desconto < 0 && (
-              <div>
+              <div className="sub">
                 <span className="rotulo">Desconto de 5% até 90 dias (art. 17, §2º)</span>
                 <span style={{ color: 'var(--verde-registro)' }}>− {brl(-desconto)}</span>
               </div>

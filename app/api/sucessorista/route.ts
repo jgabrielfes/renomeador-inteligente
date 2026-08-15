@@ -12,6 +12,7 @@ import {
   type ArquivoCofre,
   type EntradaRedacaoHonorarios,
 } from "@/lib/gemini-sucessorista";
+import { analisarMatriculas } from "@/lib/gemini-matricula";
 import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 
@@ -21,6 +22,9 @@ export const maxDuration = 60;
 // Margem sob o limite de corpo das funções serverless (Vercel: ~4,5 MB).
 const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
 const MAX_ITEMS = 10;
+// Matrículas grandes chegam como UMA IMAGEM POR PÁGINA (convertidas no
+// navegador) — o teto de itens é maior; o de bytes é o mesmo da plataforma.
+const MAX_ITEMS_MATRICULA = 60;
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -115,9 +119,10 @@ export async function POST(request: Request) {
   if (arquivos.length === 0) {
     return Response.json({ error: "Envie ao menos um arquivo." }, { status: 400 });
   }
-  if (arquivos.length > MAX_ITEMS) {
+  const maxItens = form.get("tipo") === "MATRICULA" ? MAX_ITEMS_MATRICULA : MAX_ITEMS;
+  if (arquivos.length > maxItens) {
     return Response.json(
-      { error: `Máximo de ${MAX_ITEMS} arquivos por leitura.` },
+      { error: `Máximo de ${maxItens} arquivos por leitura.` },
       { status: 400 }
     );
   }
@@ -129,6 +134,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Campo "tipo" do multipart: MATRICULA = Analisador de Matrícula (item
+    // IX) — relatório de situação dominial; sem o campo, leitura do cofre.
+    if (form.get("tipo") === "MATRICULA") {
+      const matriculas = await analisarMatriculas(apiKey, arquivos);
+      return Response.json({ matriculas });
+    }
     const caso = await extrairCasoDoCofre(apiKey, arquivos);
     return Response.json({ caso });
   } catch (err) {

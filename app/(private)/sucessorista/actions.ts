@@ -34,6 +34,8 @@ const DOCUMENTOS = [
   "PDF_PROCESSO",
   "ZIP_PROCESSO",
   "ARQUIVO_CASO",
+  "ANALISE_MATRICULA",
+  "ANALISE_MATRICULA_PDF",
 ];
 const MODALIDADES = ["PRESENCIAL", "VIDEOCONFERENCIA", "HIBRIDA"];
 
@@ -245,8 +247,8 @@ export async function registrarDocumentoGerado(dados: {
  */
 export async function registrarPortal(dados: {
   casoId: string;
-  /** CONVITE = advogado gerou o link; QUALIFICACAO/DOCUMENTO = herdeiro respondeu. */
-  etapa: "CONVITE" | "QUALIFICACAO" | "DOCUMENTO";
+  /** CONVITE = advogado gerou o link; QUALIFICACAO/DOCUMENTO/CONFIRMACAO = herdeiro respondeu. */
+  etapa: "CONVITE" | "QUALIFICACAO" | "DOCUMENTO" | "CONFIRMACAO";
   /** Convites do caso, campos preenchidos ou documentos enviados. */
   quantidade?: number;
   /** Tag de tipo do documento enviado pelo herdeiro (nunca o nome do arquivo). */
@@ -255,7 +257,7 @@ export async function registrarPortal(dados: {
   comUsuario?: boolean;
 }): Promise<void> {
   try {
-    const etapa = tag(dados.etapa, ["CONVITE", "QUALIFICACAO", "DOCUMENTO"]);
+    const etapa = tag(dados.etapa, ["CONVITE", "QUALIFICACAO", "DOCUMENTO", "CONFIRMACAO"]);
     if (!etapa) return;
     const userId = dados.comUsuario === false ? null : await usuarioLogado();
     await prisma.sucessoristaEvent.create({

@@ -14,6 +14,7 @@ import {
   taxaJudiciaria,
   projetarCustos,
   type EntradaCustos,
+  baseDeEmolumentosDaEscritura,
 } from './custas';
 
 let ok = 0, fail = 0;
@@ -68,7 +69,7 @@ const escritura = partilha.parcelas.find((p) => p.id === 'escritura')!;
 eq('escritura: ato único pela legítima', escritura.valor, 5_519.9);
 eq('escritura: quantidade 1', escritura.quantidade, 1);
 eq('escritura: valor de tabela (sem asterisco)', escritura.aproximado, false);
-eq('escritura: detalhe cita a meação descontada', escritura.detalhe!.includes('descontada a meação'), true);
+eq('escritura: detalhe cita a exclusão da meação', escritura.detalhe!.includes('excluída a meação'), true);
 
 /* renúncia: um ato SEM valor declarado por renunciante */
 const comRenuncia = projetarCustos({ ...BASE, qtdRenunciantes: 2 });
@@ -144,6 +145,47 @@ eq('aviso de despesas judiciais fora', judicial.avisos.some((a) => a.includes('p
 const semImovel = projetarCustos({ ...BASE, imoveis: [] });
 eq('sem imóvel: sem registro', semImovel.parcelas.some((p) => p.id.startsWith('registro')), false);
 eq('sem imóvel: sem certidão de matrícula', semImovel.parcelas.some((p) => p.id === 'certidoes-matricula'), false);
+
+
+/* ---------- Enunciado nº 7 do CNB/SP: base da escritura ---------- */
+
+// Venal ATUAL maior que o atribuído: a base sobe na mesma proporção,
+// preservada a exclusão da meação (legítima 250k sobre 500k atribuídos;
+// venal atual 600k → base 250k × 600/500 = 300k).
+eq('Enunciado 7: venal atual maior eleva a base', baseDeEmolumentosDaEscritura({
+  bens: [{ valor: 500_000, venalAtual: 600_000 }],
+  legitima: 250_000,
+}), 300_000);
+
+// Valor atribuído maior (ou venal ausente): prevalece o atribuído — a
+// legítima segue como está.
+eq('Enunciado 7: atribuído maior prevalece', baseDeEmolumentosDaEscritura({
+  bens: [{ valor: 500_000, venalAtual: 400_000 }],
+  legitima: 250_000,
+}), 250_000);
+eq('Enunciado 7: sem venal, legítima intacta', baseDeEmolumentosDaEscritura({
+  bens: [{ valor: 500_000 }, { valor: 100_000, venalAtual: null }],
+  legitima: 300_000,
+}), 300_000);
+
+// O maior é apurado BEM A BEM: um bem com venal acima e outro abaixo não se
+// compensam (500k×600k venal + 100k×80k venal → maior = 700k sobre 600k).
+eq('Enunciado 7: maior bem a bem, sem compensar', baseDeEmolumentosDaEscritura({
+  bens: [
+    { valor: 500_000, venalAtual: 600_000 },
+    { valor: 100_000, venalAtual: 80_000 },
+  ],
+  legitima: 300_000,
+}), 350_000);
+
+eq('Enunciado 7: legítima zerada devolve zero', baseDeEmolumentosDaEscritura({
+  bens: [{ valor: 500_000, venalAtual: 600_000 }],
+  legitima: 0,
+}), 0);
+
+// O fundamento da parcela da escritura cita o Enunciado 7.
+eq('parcela da escritura cita o Enunciado 7',
+  partilha.parcelas.find((p) => p.id === 'escritura')!.fundamento.includes('Enunciado'), true);
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

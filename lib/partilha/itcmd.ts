@@ -138,9 +138,28 @@ export interface AnaliseIsencaoBem {
  * confirmar. A isenção é declarada no próprio sistema da declaração do
  * ITCMD — não há pedido apartado.
  */
+/**
+ * Respostas agregadas da FICHA dos herdeiros (perguntas da declaração do
+ * ITCMD lançadas no item I): decidem automaticamente o requisito "não terem
+ * outro imóvel" da alínea "a" do art. 6º, I — herdeiro que declara possuir
+ * outro imóvel derruba a hipótese; todos declarando que não, o requisito é
+ * dado como confirmado (restando só a residência no imóvel).
+ */
+export interface RespostasFichaIsencao {
+  /** Herdeiros lançados no caso. */
+  herdeiros: number;
+  /** Quantos responderam a pergunta "possui outro imóvel?". */
+  respostasOutroImovel: number;
+  /** Algum herdeiro respondeu SIM (possui outro imóvel). */
+  algumComOutroImovel: boolean;
+  /** TODOS responderam e todos NÃO. */
+  nenhumComOutroImovel: boolean;
+}
+
 export function analisarIsencoesPorBem(
   bens: { tipo?: string; valor: number; descricao?: string; codigoItcmd?: string }[],
   ufespObito: number,
+  respostas?: RespostasFichaIsencao,
 ): AnaliseIsencaoBem[] {
   const teto = (u: number) => u * ufespObito;
   const imoveis = bens.filter((b) => b.tipo === 'IMOVEL' && b.valor > 0);
@@ -174,15 +193,38 @@ export function analisarIsencoesPorBem(
         };
       }
       if (b.valor <= teto(5000)) {
+        // Alínea "a" interpretada com a FICHA do item I: a pergunta "possui
+        // outro imóvel?" decide o requisito legal automaticamente.
+        if (respostas?.algumComOutroImovel) {
+          return {
+            ...base,
+            verdito: 'TRIBUTADO' as const,
+            hipotese: null,
+            explicacao: `Dentro de 5.000 UFESPs (${fmt(teto(5000))}), mas a ficha da qualificação (item I) aponta herdeiro proprietário de OUTRO imóvel — a alínea "a" do art. 6º, I exige que os familiares beneficiados não tenham outro imóvel.`,
+            condicoes: [],
+          };
+        }
+        if (respostas?.nenhumComOutroImovel) {
+          return {
+            ...base,
+            verdito: 'ISENTO_POSSIVEL' as const,
+            hipotese: 'art. 6º, I, "a"',
+            explicacao: `Dentro de 5.000 UFESPs (${fmt(teto(5000))}) — isenção do imóvel de residência. Ficha do item I: nenhum dos ${respostas.herdeiros} herdeiro(s) declara outro imóvel — requisito confirmado automaticamente pelas respostas.`,
+            condicoes: [
+              'Ser imóvel de residência (urbano ou rural).',
+              'Os familiares beneficiados nele residirem.',
+            ],
+          };
+        }
         return {
           ...base,
           verdito: 'ISENTO_POSSIVEL' as const,
           hipotese: 'art. 6º, I, "a"',
-          explicacao: `Dentro de 5.000 UFESPs (${fmt(teto(5000))}) — isenção do imóvel de residência.`,
+          explicacao: `Dentro de 5.000 UFESPs (${fmt(teto(5000))}) — isenção do imóvel de residência. Responda a pergunta "possui outro imóvel?" na ficha de cada herdeiro (item I) e o requisito é conferido automaticamente.`,
           condicoes: [
             'Ser imóvel de residência (urbano ou rural).',
             'Os familiares beneficiados nele residirem.',
-            'Os beneficiados não terem outro imóvel.',
+            'Os beneficiados não terem outro imóvel (responda na ficha do item I).',
           ],
         };
       }

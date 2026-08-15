@@ -53,6 +53,8 @@ export interface ConviteHerdeiro {
   /** Preenchida pelo próprio herdeiro no portal. */
   qualificacao?: QualificacaoHerdeiro;
   qualificacaoEnviadaEm?: string;
+  /** O herdeiro clicou "Salvar": confirmação de que o envio chegou à folha. */
+  envioConfirmadoEm?: string;
   criadoEm: string;
 }
 
@@ -68,6 +70,7 @@ export interface PortalStore {
     token: string,
     qualificacao: QualificacaoHerdeiro,
   ): Promise<ConviteHerdeiro | null>;
+  confirmarEnvio(token: string): Promise<ConviteHerdeiro | null>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -92,6 +95,12 @@ export const memoryStore: PortalStore = {
     if (!c) return null;
     c.qualificacao = { ...c.qualificacao, ...qualificacao };
     c.qualificacaoEnviadaEm = new Date().toISOString();
+    return c;
+  },
+  async confirmarEnvio(token) {
+    const c = mem.get(token);
+    if (!c) return null;
+    c.envioConfirmadoEm = new Date().toISOString();
     return c;
   },
 };

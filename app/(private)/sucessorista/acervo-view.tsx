@@ -24,10 +24,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import type { Bem, TipoBem } from '@/lib/partilha/types';
+import type { AvaliacaoBemSucessao, Bem, TipoBem } from '@/lib/partilha/types';
 import { TIPOS_BEM_ITCMD, tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
-import type { StatusItemAcervo } from '@/lib/partilha/acervo';
-import type { montarChecklistAcervo } from '@/lib/partilha/acervo';
+import type { SucessaoCumulada } from './itcmd-view';
 import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
 
 export interface ResumoSociedade {
@@ -123,8 +122,7 @@ export function AcervoView({
   dividas,
   setDividas,
   sociedades = [],
-  checklist,
-  setChecklist,
+  sucessoes = [],
   voltar,
   avancar,
 }: {
@@ -133,8 +131,8 @@ export function AcervoView({
   dividas: string;
   setDividas: (v: string) => void;
   sociedades?: ResumoSociedade[];
-  checklist: ReturnType<typeof montarChecklistAcervo>;
-  setChecklist: (c: ReturnType<typeof montarChecklistAcervo>) => void;
+  /** Sucessões cumuladas do caso: abrem a avaliação POR SUCESSÃO em cada bem. */
+  sucessoes?: SucessaoCumulada[];
   voltar: () => void;
   avancar: () => void;
 }) {
@@ -148,10 +146,6 @@ export function AcervoView({
     resolver: zodResolver(esquemaBem),
     defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM' },
   });
-
-  const feitos = checklist.filter(
-    (i) => i.status === 'RECEBIDO' || i.status === 'NAO_SE_APLICA'
-  ).length;
 
   const lancar = (dados: NovoBem) => {
     setBens([
@@ -252,6 +246,7 @@ export function AcervoView({
           key={b.id}
           bem={b}
           numero={i + 1}
+          sucessoes={sucessoes}
           ehPrimeiro={i === 0}
           ehUltimo={i === bens.length - 1}
           onMover={(delta) => {
@@ -337,55 +332,6 @@ export function AcervoView({
         base do ITCMD.
       </p>
 
-      <h2>Fontes de pesquisa patrimonial</h2>
-      <p className="subtitulo" style={{ marginBottom: 8 }}>
-        O que mais atrasa inventário é herdeiro que não sabe o que o falecido tinha. Percorra
-        as fontes na ordem — o testamento primeiro, porque decide a via.
-      </p>
-      <p className="progresso num">
-        {feitos} de {checklist.length} fontes concluídas
-      </p>
-      <div className="check">
-        {checklist.map((item, idx) => (
-          <div className="check-item" key={item.fonte.id}>
-            <span className="prio">P{item.fonte.prioridade}</span>
-            <div>
-              <h4>{item.fonte.nome}</h4>
-              <p>{item.fonte.oQueRevela}</p>
-              <p>
-                <strong>Como:</strong> {item.fonte.comoConsultar}{' '}
-                {item.fonte.url && (
-                  <a href={item.fonte.url} target="_blank" rel="noreferrer">
-                    abrir portal ↗
-                  </a>
-                )}
-              </p>
-            </div>
-            <Select
-              value={item.status}
-              onValueChange={(v) => {
-                if (!v) return;
-                setChecklist(
-                  checklist.map((x, i) =>
-                    i === idx ? { ...x, status: String(v) as StatusItemAcervo } : x
-                  )
-                );
-              }}
-            >
-              <SelectTrigger size="sm" aria-label={`Status de ${item.fonte.nome}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PENDENTE">Pendente</SelectItem>
-                <SelectItem value="SOLICITADO">Solicitado</SelectItem>
-                <SelectItem value="RECEBIDO">Recebido</SelectItem>
-                <SelectItem value="NAO_SE_APLICA">Não se aplica</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        ))}
-      </div>
-
       <div className="rodape-acoes">
         <Button variant="outline" onClick={voltar}>
           Voltar à família
@@ -405,6 +351,7 @@ export function AcervoView({
 function LinhaBem({
   bem,
   numero,
+  sucessoes = [],
   ehPrimeiro,
   ehUltimo,
   onMover,
@@ -413,6 +360,7 @@ function LinhaBem({
 }: {
   bem: Bem;
   numero: number;
+  sucessoes?: SucessaoCumulada[];
   ehPrimeiro: boolean;
   ehUltimo: boolean;
   onMover: (delta: number) => void;
@@ -459,6 +407,7 @@ function LinhaBem({
 
   if (!editando) {
     return (
+      <div>
       <div className="linha-item">
         <span>
           <span className="numero-bem num">{numero}.</span>{' '}
@@ -505,6 +454,10 @@ function LinhaBem({
             remover
           </Button>
         </span>
+      </div>
+      {sucessoes.length > 0 && (
+        <FaixaSucessoesDoBem bem={bem} sucessoes={sucessoes} onSalvar={onSalvar} />
+      )}
       </div>
     );
   }
@@ -554,6 +507,112 @@ function LinhaBem({
           Cancelar
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Avaliação POR SUCESSÃO do bem (inventário conjunto): cada sucessão abre a
+ * própria coluna — valor na data do óbito respectivo e a fração do bem que
+ * transita naquela sucessão — além da exclusividade (bem que só integra o
+ * rol de UMA das sucessões, como o particular adquirido pelo viúvo depois
+ * do primeiro óbito). Edição inline ad-hoc, convenção das listas.
+ */
+function FaixaSucessoesDoBem({
+  bem,
+  sucessoes,
+  onSalvar,
+}: {
+  bem: Bem;
+  sucessoes: SucessaoCumulada[];
+  onSalvar: (b: Bem) => void;
+}) {
+  const patchSucessao = (suId: string, patch: Partial<AvaliacaoBemSucessao>) => {
+    const atual = bem.sucessoes?.[suId] ?? {};
+    onSalvar({
+      ...bem,
+      sucessoes: { ...bem.sucessoes, [suId]: { ...atual, ...patch } },
+    });
+  };
+
+  return (
+    <div className="bem-sucessoes">
+      <div className="cabeca-sucessoes">
+        <span className="eyebrow">Avaliação por sucessão</span>
+        <label className="campo exclusividade">
+          <span>Integra</span>
+          <select
+            className="seletor"
+            value={bem.sucessaoExclusiva ?? ''}
+            aria-label={`Exclusividade do bem ${bem.descricao}`}
+            onChange={(e) =>
+              onSalvar({
+                ...bem,
+                sucessaoExclusiva: e.target.value || undefined,
+              })
+            }
+          >
+            <option value="">Todas as sucessões</option>
+            <option value="PRINCIPAL">Só a 1ª sucessão (autor principal)</option>
+            {sucessoes.map((su) => (
+              <option key={su.id} value={su.id}>
+                Só a sucessão de {su.nome || '(sem nome)'}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {sucessoes.map((su) => {
+        const excluido = Boolean(bem.sucessaoExclusiva) && bem.sucessaoExclusiva !== su.id;
+        const av = bem.sucessoes?.[su.id] ?? {};
+        return (
+          <div key={su.id} className={`linha-sucessao${excluido ? ' excluido' : ''}`}>
+            <span className="nome-sucessao">
+              {su.nome || 'Sucessão'}
+              {su.dataObito ? (
+                <span className="fracao num"> · óbito {su.dataObito.slice(0, 4)}</span>
+              ) : null}
+            </span>
+            {excluido ? (
+              <span className="fracao">fora do rol desta sucessão</span>
+            ) : (
+              <>
+                <label className="campo">
+                  <span>
+                    Valor no óbito de {su.dataObito ? su.dataObito.slice(0, 4) : '—'} (R$)
+                  </span>
+                  <CurrencyInput
+                    value={av.valor ? paraMascara(av.valor) : ''}
+                    onChange={(v) =>
+                      patchSucessao(su.id, {
+                        valor: v.trim() ? paraDecimal(v) : undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label className="campo">
+                  <span>Fração nesta sucessão (%)</span>
+                  <Input
+                    inputMode="decimal"
+                    value={av.fracaoPct ?? ''}
+                    onChange={(e) =>
+                      patchSucessao(su.id, {
+                        fracaoPct:
+                          e.target.value.replace(/[^\d.,]/g, '').slice(0, 6) || undefined,
+                      })
+                    }
+                  />
+                </label>
+              </>
+            )}
+          </div>
+        );
+      })}
+      <p className="fund" style={{ margin: '4px 0 0' }}>
+        Vazio = vale o valor lançado do bem e 100% — preencha quando a avaliação do fato
+        gerador ou a proporção do(a) de cujus for outra. A base de cada sucessão soma
+        (valor × fração) dos bens que a integram.
+      </p>
     </div>
   );
 }
