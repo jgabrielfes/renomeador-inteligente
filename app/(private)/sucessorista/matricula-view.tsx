@@ -322,13 +322,19 @@ function RelatorioMatricula({
       </div>
 
       <h2>Tabela Consolidada de Situação Dominial</h2>
-      <Table>
+      <p className="fund" style={{ margin: '0 0 6px' }}>
+        Casal com bem comunicado sai numa linha só (os dois juntos, 100% do casal), com o
+        regime de bens e o tipo do ato de origem — é o tipo (venda, doação, partilha…) que
+        indica a comunicação.
+      </p>
+      <Table className="tabela-dominial">
         <TableHeader>
           <TableRow>
             <TableHead>Nome</TableHead>
             <TableHead>Fração</TableHead>
             <TableHead>Participação (%)</TableHead>
             <TableHead>Tipo de Domínio</TableHead>
+            <TableHead>Regime de Bens</TableHead>
             <TableHead>Origens</TableHead>
             <TableHead>Status Cônjuge</TableHead>
           </TableRow>
@@ -336,7 +342,7 @@ function RelatorioMatricula({
         <TableBody>
           {analise.proprietarios.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6}>Nenhum titular atual identificado.</TableCell>
+              <TableCell colSpan={7}>Nenhum titular atual identificado.</TableCell>
             </TableRow>
           )}
           {analise.proprietarios.map((p, i) => (
@@ -347,6 +353,7 @@ function RelatorioMatricula({
                 {p.participacaoPct !== null ? `${p.participacaoPct}%` : '—'}
               </TableCell>
               <TableCell>{p.tipoDominio ?? '—'}</TableCell>
+              <TableCell>{p.regimeBens ?? '—'}</TableCell>
               <TableCell>{p.origens ?? '—'}</TableCell>
               <TableCell>{p.statusConjuge ?? '—'}</TableCell>
             </TableRow>

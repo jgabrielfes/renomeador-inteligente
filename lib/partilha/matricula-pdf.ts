@@ -222,20 +222,24 @@ export async function montarRelatorioMatriculaPdf(analise: AnaliseMatricula): Pr
   tituloSecao('Tabela Consolidada de Situação Dominial');
   {
     const colunas = [
-      { titulo: 'Nome', largura: 150 },
-      { titulo: 'Fração', largura: 52 },
-      { titulo: 'Part. (%)', largura: 52 },
-      { titulo: 'Domínio', largura: 70 },
-      { titulo: 'Origens', largura: 105 },
-      { titulo: 'Cônjuge', largura: 70 },
+      { titulo: 'Nome', largura: 128 },
+      { titulo: 'Fração', largura: 40 },
+      { titulo: 'Part.', largura: 40 },
+      { titulo: 'Domínio', largura: 58 },
+      { titulo: 'Regime', largura: 74 },
+      { titulo: 'Origens', largura: 84 },
+      { titulo: 'Cônjuge', largura: 75 },
     ];
     const tamanho = 8.5;
-    const alturaLinha = tamanho * 1.35;
+    // Linhas mais altas (pedido do escritório): nome de casal quebra em duas
+    // linhas sem apertar.
+    const alturaLinha = tamanho * 1.5;
     const celulas = (p: (typeof analise.proprietarios)[number]) => [
       p.nome,
       p.fracao ?? '—',
       p.participacaoPct !== null ? `${p.participacaoPct}%` : '—',
       p.tipoDominio ?? '—',
+      p.regimeBens ?? '—',
       p.origens ?? '—',
       p.statusConjuge ?? '—',
     ];
@@ -250,7 +254,7 @@ export async function montarRelatorioMatriculaPdf(analise: AnaliseMatricula): Pr
         quebrar(v, fonte, tamanho, colunas[i].largura - 10),
       );
       const linhas = Math.max(...linhasPorCelula.map((l) => l.length));
-      const altura = linhas * alturaLinha + 7;
+      const altura = linhas * alturaLinha + 10;
       garantir(altura);
       if (fundo) {
         page.drawRectangle({

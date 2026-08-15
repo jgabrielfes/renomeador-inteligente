@@ -1002,6 +1002,18 @@
   .sucessorista .dash-grade { grid-template-columns: 1fr; }
 }
 
+/* Tabela Consolidada de Situação Dominial (Analisador de Matrícula): mais
+   respiro vertical — nomes de casal ocupam duas linhas sem apertar. */
+.sucessorista .tabela-dominial { font-size: 13.5px; }
+.sucessorista .tabela-dominial th { padding: 12px 10px; }
+.sucessorista .tabela-dominial td {
+  padding: 13px 10px;
+  line-height: 1.45;
+  white-space: normal;
+  vertical-align: top;
+}
+.sucessorista .tabela-dominial td:first-child { min-width: 180px; }
+
 /* ---------- avaliação por sucessão no acervo (inventário conjunto) ---------- */
 
 .sucessorista .bem-sucessoes {

@@ -16,16 +16,20 @@ import { getExtension } from "./renamer";
 import type { ArquivoCofre } from "./gemini-sucessorista";
 
 export interface ProprietarioMatricula {
+  /** Titular OU o CASAL em linha única ("VALDIR CAMPOS e JAINE CAMPOS"). */
   nome: string;
-  /** Fração ideal como consta ("1/4", "50%"). */
+  /** Fração ideal como consta ("1/4", "50%") — a do casal quando comunicado. */
   fracao: string | null;
-  /** Participação em % (0–100). */
+  /** Participação em % (0–100) — a do casal quando comunicado. */
   participacaoPct: number | null;
   /** Plena, nua-propriedade, usufruto, resolúvel… */
   tipoDominio: string | null;
-  /** Registro(s) de origem ("Compra e venda R.09"). */
+  /** Regime de bens do titular/casal, quando constar. */
+  regimeBens: string | null;
+  /** Tipo do ato + registro de origem ("Compra e venda R.09") — o tipo
+   *  (venda, doação, partilha…) indica a comunicação ou não do bem. */
   origens: string | null;
-  /** Meeiro(a), próprio, não consta… */
+  /** "Casal — bem comunicado", "não comunica (doação)", "próprio"… */
   statusConjuge: string | null;
 }
 
@@ -127,6 +131,7 @@ const SCHEMA_MATRICULA = {
                 fracao: texto,
                 participacaoPct: { type: "number", nullable: true },
                 tipoDominio: texto,
+                regimeBens: texto,
                 origens: texto,
                 statusConjuge: texto,
               },
@@ -224,7 +229,7 @@ Para cada matrícula, extraia e analise:
 
 1. identificacao — tipoDocumento ("Matrícula de Imóvel"), numeroMatricula, livro, cartorio (nome completo da serventia), comarca, dataAbertura (dd/mm/aaaa), dataEmissaoCertidao (dd/mm/aaaa), seloDigital (autenticação/selo digital da certidão) e cnm (Código Nacional de Matrícula), quando constarem.
 2. descricaoImovel — descrição curta e útil (tipo, endereço, área).
-3. proprietarios — a TABELA CONSOLIDADA DE SITUAÇÃO DOMINIAL: a situação ATUAL da propriedade, aplicando toda a cadeia de registros e averbações (o último ato prevalece). Um item por titular ATUAL: nome; fracao como consta ("1/4"); participacaoPct em número (25); tipoDominio (Plena, Nua-propriedade, Usufruto, Resolúvel…); origens (ato de aquisição, ex.: "Compra e venda R.09"); statusConjuge (Meeiro(a) quando o regime comunica a aquisição ao cônjuge; "próprio" quando adquiriu em nome próprio; null se não constar). ATENÇÃO ao regime de bens: aquisição onerosa na comunhão parcial/universal comunica ao cônjuge — inclua o cônjuge como titular meeiro com a fração dele.
+3. proprietarios — a TABELA CONSOLIDADA DE SITUAÇÃO DOMINIAL: a situação ATUAL da propriedade, aplicando toda a cadeia de registros e averbações (o último ato prevalece). REGRA DO CASAL (crítica): quando a aquisição SE COMUNICOU ao cônjuge (aquisição onerosa na comunhão parcial, qualquer aquisição na comunhão universal, ou aquisição em nome dos dois), lance UMA LINHA SÓ com o CASAL — nome = os dois nomes juntos ("VALDIR CAMPOS e JAINE CAMPOS"), fracao e participacaoPct SOMADAS do casal (casal único dono = "1/1" e 100; dois casais = "1/2" e 50 cada casal), regimeBens = o regime que consta ("comunhão parcial de bens"), statusConjuge = "Casal — bem comunicado". NUNCA divida o casal em duas linhas (um com tudo e o outro meeiro com 0%). Titular SEM comunicação (solteiro, separação total, ou aquisição por doação/herança sem cláusula de comunicação na comunhão parcial): linha própria, com regimeBens quando constar e statusConjuge explicando ("próprio — não comunica (doação)", "próprio — separação total", null se não constar). Campos por linha: nome; fracao como consta; participacaoPct em número; tipoDominio (Plena, Nua-propriedade, Usufruto, Resolúvel…); regimeBens; origens = TIPO do ato + registro (ex.: "Compra e venda R.09", "Doação R.05", "Partilha R.07" — o tipo do ato é o que indica a comunicação ou não); statusConjuge.
 4. onusAtivos — APENAS os ônus VIGENTES (hipoteca, alienação fiduciária, penhora, usufruto, cláusula resolutiva, indisponibilidade…): titulo ("Cláusula Resolutiva Expressa — Registro R.09"), status ("ativo"), dataRegistro, credor/beneficiário, valor (como consta, ex.: "R$ 120.000,00"), prazo e descricao (o teor resumido, com a consequência jurídica). Ônus CANCELADOS por averbação NÃO entram.
 5. alertas — o que o profissional precisa ver: nivel ALTA (impede/condiciona negócio: ônus ativo, indisponibilidade, bloqueio judicial, proprietário falecido sem inventário) ou BAIXA (atenção operacional: múltiplos proprietários, certidão antiga…); tipo em tag curta em caixa alta (ONUS_ATIVO, INDISPONIBILIDADE, USUFRUTO, PROPRIETARIO_FALECIDO, MULTIPLOS_PROPRIETARIOS, CERTIDAO_VENCIDA…); descricao objetiva; acaoRecomendada prática (que documento exigir, que averbação providenciar).
 6. resumo — o checklist booleano da situação: livreDeOnus, onusAtivos, usufrutoVigente, clausulasRestritivas, indisponibilidade, processoJudicial (penhora/bloqueio/citação registrados), proprietarioFalecido (titular atual com óbito averbado ou conhecido), documentoCompleto (a certidão veio inteira, sem páginas faltando), certidaoVigente (emitida há menos de 30 dias da data de emissão mais recente no lote), qtdProprietarios, qtdUsufrutuarios, qtdOnusAtivos e fracoesFecham100 (a soma das frações dos titulares atuais fecha 100%).
@@ -317,15 +322,16 @@ export async function analisarMatriculas(
         proprietarios: (Array.isArray(m.proprietarios) ? m.proprietarios : [])
           .map((x) => {
             const p = x as Record<string, unknown>;
-            const nome = limpar(p.nome, 120);
+            const nome = limpar(p.nome, 180);
             if (!nome) return null;
             return {
               nome,
               fracao: limpar(p.fracao, 30),
               participacaoPct: pct(p.participacaoPct),
               tipoDominio: limpar(p.tipoDominio, 60),
+              regimeBens: limpar(p.regimeBens, 60),
               origens: limpar(p.origens, 120),
-              statusConjuge: limpar(p.statusConjuge, 60),
+              statusConjuge: limpar(p.statusConjuge, 80),
             };
           })
           .filter((x): x is ProprietarioMatricula => x !== null)
