@@ -166,9 +166,24 @@ const AI_MODES: Array<{ value: AiMode; title: string; description: string }> = [
 
 export default function Home({
   initialLessons,
+  embutido = false,
+  regrasExtras,
+  registrarColeta,
 }: {
   // Regras + correções da conta, carregadas no servidor (null = falha).
   initialLessons: LessonsState | null;
+  /** true = renderizado DENTRO de outro módulo (overlay do Sucessorista):
+   *  esconde o link "← Módulos" — o resto da ferramenta fica inteiro. */
+  embutido?: boolean;
+  /** Calibração do módulo hospedeiro (ex.: inventário/sucessões): somada às
+   *  regras do escritório em CADA lote enviado à IA — nunca persistida. */
+  regrasExtras?: string;
+  /**
+   * Módulo hospedeiro colhe os arquivos ao fechar o overlay: recebe um
+   * getter que devolve os arquivos da fila JÁ COM os nomes propostos
+   * (marcados para uso) — é o que faz o fechamento anexar tudo ao caso.
+   */
+  registrarColeta?: (obter: () => File[]) => void;
 }) {
   // Uma vez por mount, ANTES do useSyncExternalStore das lições ler o
   // snapshot (inicializador de useState roda no primeiro render).
@@ -179,6 +194,23 @@ export default function Home({
   }, []);
 
   const [rows, setRows] = React.useState<Row[]>([]);
+
+  // Entrega ao módulo hospedeiro o getter da fila atual: cada arquivo sai
+  // com o nome PROPOSTO (quando marcado para uso) — materializado num File
+  // novo só quando o nome muda; o conteúdo nunca é copiado.
+  React.useEffect(() => {
+    if (!registrarColeta) return;
+    registrarColeta(() =>
+      rows
+        .filter((r) => r.status !== "erro")
+        .map((r) => {
+          const nome = r.use && r.proposed ? r.proposed : r.file.name;
+          return nome === r.file.name
+            ? r.file
+            : new File([r.file], nome, { type: r.file.type });
+        }),
+    );
+  }, [rows, registrarColeta]);
   const [dirHandle, setDirHandle] =
     React.useState<FileSystemDirectoryHandle | null>(null);
   const [onlyWhatsapp, setOnlyWhatsapp] = React.useState(false);
@@ -413,10 +445,11 @@ export default function Home({
         for (let attempt = 0; attempt < 2 && !results; attempt++) {
           try {
             // Regras e correções do escritório calibram cada lote — inclusive
-            // as capturadas há pouco, nesta mesma sessão.
+            // as capturadas há pouco, nesta mesma sessão. A calibração do
+            // módulo hospedeiro (regrasExtras) entra antes, sem ser gravada.
             const lessons = getLessonsSnapshot();
             results = await aiProposeBatch(items, {
-              rules: lessons.rules,
+              rules: [regrasExtras?.trim(), lessons.rules].filter(Boolean).join('\n'),
               corrections: lessons.corrections,
             });
           } catch (err) {
@@ -514,7 +547,7 @@ export default function Home({
     } finally {
       processingRef.current = false;
     }
-  }, [applyProposal, patchRow, processLocally]);
+  }, [applyProposal, patchRow, processLocally, regrasExtras]);
 
   const enqueueRows = React.useCallback(
     (newRows: Row[], replace: boolean) => {
@@ -981,19 +1014,22 @@ export default function Home({
     <div className="renomeador-tema flex flex-1 flex-col">
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-10">
       <header className="space-y-2">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" />
-          Módulos
-        </Link>
+        {!embutido && (
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Módulos
+          </Link>
+        )}
         <h1 className="text-2xl font-semibold tracking-tight">
           Renomeador Inteligente de Documentos
         </h1>
         <p className="text-muted-foreground">
-          Analisa imagens e PDFs (RG, CNH, certidões, matrículas, contratos…) e
-          sugere nomes de arquivo com base no conteúdo do documento.
+          {embutido
+            ? 'A ferramenta completa, aqui dentro do caso: a sugestão de nomes está calibrada para documentos de inventário, família e sucessões — e as suas Regras do escritório continuam valendo. Ao FECHAR esta janela, os arquivos da fila entram no caso automaticamente, já com os nomes renomeados.'
+            : 'Analisa imagens e PDFs (RG, CNH, certidões, matrículas, contratos…) e sugere nomes de arquivo com base no conteúdo do documento.'}
         </p>
       </header>
 
