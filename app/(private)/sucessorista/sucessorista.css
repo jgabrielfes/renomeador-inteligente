@@ -1130,3 +1130,17 @@
 }
 
 .sucessorista .voltar:hover { color: var(--papel); }
+
+/* ---------- módulos fiscais (item XI) ---------- */
+.sucessorista .radar-item {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--fio);
+}
+.sucessorista .radar-item .radar-campos {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: 8px 0 2px 30px;
+}
+.sucessorista .radar-item .radar-campos .campo { font-size: 12px; gap: 4px; max-width: 200px; }

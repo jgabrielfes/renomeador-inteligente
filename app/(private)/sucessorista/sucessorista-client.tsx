@@ -64,6 +64,11 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumulada } from './itcmd-view';
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
+import {
+  FiscalView,
+  ESTADO_MODULOS_FISCAIS_INICIAL,
+  type EstadoModulosFiscais,
+} from './fiscal-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { FontesView } from './fontes-view';
 import {
@@ -186,7 +191,8 @@ type Aba =
   | 'minutas'
   | 'escritura'
   | 'matricula'
-  | 'fontes';
+  | 'fontes'
+  | 'fiscal';
 
 const ABAS: readonly Aba[] = [
   'caso',
@@ -201,6 +207,7 @@ const ABAS: readonly Aba[] = [
   'escritura',
   'matricula',
   'fontes',
+  'fiscal',
 ];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
@@ -240,6 +247,8 @@ interface CasoSalvo {
   honorarios?: CondicoesHonorarios;
   casoId: string;
   convites: Record<string, ConviteHerdeiro>;
+  /** Módulos fiscais e pré-inventário (radar, alvará, declaração, ganho). */
+  modulosFiscais?: EstadoModulosFiscais;
 }
 
 export default function SucessoristaClient({
@@ -302,6 +311,11 @@ export default function SucessoristaClient({
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
+
+  /* --- XI: módulos fiscais e pré-inventário (radar, alvará, DF, ganho) --- */
+  const [modulosFiscais, setModulosFiscais] = useState<EstadoModulosFiscais>(
+    ESTADO_MODULOS_FISCAIS_INICIAL,
+  );
 
   const caso: Caso = useMemo(() => {
     const limpo = dividasEspolio.replace(/\./g, '').replace(',', '.');
@@ -567,6 +581,8 @@ export default function SucessoristaClient({
       setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
     if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
     if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
+    if (salvo.modulosFiscais && typeof salvo.modulosFiscais === 'object')
+      setModulosFiscais(salvo.modulosFiscais);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -586,6 +602,7 @@ export default function SucessoristaClient({
       honorarios: condicoesHonorarios,
       casoId,
       convites,
+      modulosFiscais,
     };
   };
 
@@ -921,6 +938,21 @@ export default function SucessoristaClient({
     return mapa;
   }, [resultado]);
 
+  /** Herdeiros com quinhão e CPF — alimenta a Declaração Final (módulo fiscal). */
+  const herdeirosQuinhao = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return [];
+    const porHerdeiro = new Map<string, number>();
+    for (const q of resultado.quinhoes)
+      porHerdeiro.set(q.herdeiroId, (porHerdeiro.get(q.herdeiroId) ?? 0) + Number(q.valor));
+    return herdeiros
+      .filter((h) => porHerdeiro.has(h.id))
+      .map((h) => ({
+        nome: h.nome,
+        cpf: familia.qualificacoes[h.id]?.cpf ?? '',
+        quinhao: porHerdeiro.get(h.id) ?? 0,
+      }));
+  }, [resultado, herdeiros, familia.qualificacoes]);
+
   /**
    * Partilha diferenciada em MATRIZ: cada linha (bem) distribui percentuais
    * entre os participantes; linha toda vazia segue a proporção exata do
@@ -1210,7 +1242,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -2009,11 +2041,13 @@ export default function SucessoristaClient({
                   ['minutas', 'VIII', 'Minutas'],
                   ['matricula', 'IX', 'Análise de Matrícula'],
                   ['fontes', 'X', 'Fontes de Pesquisa'],
+                  ['fiscal', 'XI', 'Fiscal e pré-inventário'],
                 ] as const)
               : ([
                   ['escritura', 'VII', 'Escritura'],
                   ['matricula', 'VIII', 'Análise de Matrícula'],
                   ['fontes', 'IX', 'Fontes de Pesquisa'],
+                  ['fiscal', 'X', 'Fiscal e pré-inventário'],
                 ] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -2489,6 +2523,17 @@ export default function SucessoristaClient({
             checklist={checklistAcervo}
             setChecklist={setChecklistAcervo}
             irParaAcervo={() => irPara('acervo')}
+          />
+        )}
+
+        {abaProc === 'fiscal' && (
+          <FiscalView
+            estado={modulosFiscais}
+            setEstado={setModulosFiscais}
+            bens={bens}
+            herdeiros={herdeirosQuinhao}
+            dataObito={falecido.dataObito}
+            aliquotaItcmd={0.04}
           />
         )}
       </main>
