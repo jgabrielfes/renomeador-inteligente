@@ -11,11 +11,12 @@
  * estimado) já acorda o painel ao lado.
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { Moon, Sun } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -104,6 +105,70 @@ async function comprimirImagem(file: File): Promise<File> {
   }
 }
 
+/**
+ * Novidades da plataforma — o card do dashboard. Lista curta mantida no
+ * código, atualizada a cada leva de funcionalidades do módulo.
+ */
+const NOVIDADES: { titulo: string; descricao: string }[] = [
+  {
+    titulo: 'Analisador de Matrícula',
+    descricao:
+      'Relatório completo de situação dominial com Tabela Consolidada, alertas e PDF — último item da lombada.',
+  },
+  {
+    titulo: 'Sucessões cumuladas com partilha própria',
+    descricao:
+      'Lance a 2ª sucessão em A Família com "mesmos herdeiros" e o item III mostra uma partilha por sucessão.',
+  },
+  {
+    titulo: 'Custos pelo Enunciado 7 do CNB/SP',
+    descricao:
+      'A escritura sai pela legítima no MAIOR entre valor atribuído e venal na data do ato, excluída a meação.',
+  },
+  {
+    titulo: 'Portal do herdeiro com "Salvar"',
+    descricao:
+      'O herdeiro confirma o envio e os documentos do cofre aparecem no card correlato da aba Documentos.',
+  },
+];
+
+/** Relógio vivo do dashboard — monta só no cliente (nada de hidratação). */
+function RelogioCard() {
+  const [agora, setAgora] = useState<Date | null>(null);
+  useEffect(() => {
+    // Primeiro tique diferido (setTimeout 0): setState síncrono em efeito é
+    // proibido pelo lint do React Compiler — mesmo padrão do restauro do caso.
+    const tick = () => setAgora(new Date());
+    const t0 = setTimeout(tick, 0);
+    const t = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(t0);
+      clearInterval(t);
+    };
+  }, []);
+  const dia = agora
+    ? agora.toLocaleDateString('pt-BR', { weekday: 'long' }).replace('-feira', '-feira')
+    : '';
+  return (
+    <div className="cartao relogio">
+      <span className="dia">{dia || ' '}</span>
+      <span className="hora num">
+        {agora
+          ? agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+          : '--:--'}
+        <small className="num">
+          {agora ? String(agora.getSeconds()).padStart(2, '0') : ''}
+        </small>
+      </span>
+      <span className="data">
+        {agora
+          ? agora.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+          : ' '}
+      </span>
+    </div>
+  );
+}
+
 const esquemaInicioRapido = z.object({
   dataObito: z
     .string()
@@ -130,6 +195,8 @@ export function CasoView({
   onNovoCaso,
   casoId,
   perfil,
+  tema,
+  setTema,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -145,6 +212,9 @@ export function CasoView({
   /** Telemetria: id aleatório do caso e perfil ativo (sem dado pessoal). */
   casoId: string;
   perfil: string;
+  /** Tema do módulo (claro/escuro) — o alternador vive neste dashboard. */
+  tema: 'claro' | 'escuro';
+  setTema: (t: 'claro' | 'escuro') => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -458,13 +528,63 @@ export function CasoView({
 
   return (
     <section>
-      <h1>O caso</h1>
-      <p className="subtitulo">
-        Solte aqui a pasta do inventário. O cofre lê certidão de óbito, certidão de
-        casamento, RG, CPF e matrículas — e devolve a folha preenchida para você{' '}
-        <strong>conferir</strong>, não digitar. Cada arquivo já cai classificado nos
-        documentos do processo (item V).
-      </p>
+      {/* Topo do dashboard: título + alternador de tema claro/escuro. */}
+      <div className="dash-topo">
+        <div>
+          <h1>O caso</h1>
+          <p className="subtitulo" style={{ marginBottom: 0 }}>
+            O painel de entrada do inventário: solte a pasta no cofre, acompanhe as
+            novidades e comece pelo essencial — cada card abaixo é um caminho.
+          </p>
+        </div>
+        <div className="tema-alternador" role="radiogroup" aria-label="Tema do módulo">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tema === 'claro'}
+            className={tema === 'claro' ? 'ativo' : ''}
+            title="Tema claro"
+            onClick={() => setTema('claro')}
+          >
+            <Sun size={15} aria-hidden />
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tema === 'escuro'}
+            className={tema === 'escuro' ? 'ativo' : ''}
+            title="Tema escuro"
+            onClick={() => setTema('escuro')}
+          >
+            <Moon size={15} aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <div className="dash-grade">
+        {/* coluna esquerda: relógio + novidades, como uma intranet */}
+        <div className="dash-coluna">
+          <RelogioCard />
+          <div className="cartao">
+            <span className="eyebrow">Novidades da plataforma</span>
+            {NOVIDADES.map((n) => (
+              <div key={n.titulo} className="novidade">
+                <h4>{n.titulo}</h4>
+                <p>{n.descricao}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* coluna principal: cofre, arquivo do caso e início rápido */}
+        <div className="dash-coluna">
+          <div className="cartao">
+            <span className="eyebrow">Cofre de documentos</span>
+            <p className="fund" style={{ margin: '4px 0 12px' }}>
+              O cofre lê certidão de óbito, certidão de casamento, RG, CPF e matrículas — e
+              devolve a folha preenchida para você CONFERIR, não digitar. Cada arquivo já
+              cai classificado nos documentos do processo.
+            </p>
 
       {/* Visível logo no início: o caso não se perde. */}
       <div className="nota registro" style={{ marginBottom: 14 }}>
@@ -616,6 +736,9 @@ export function CasoView({
         </div>
       )}
 
+          </div>
+
+          <div className="cartao">
       <h2>Arquivo do caso (.json)</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
         Exporte o caso inteiro num arquivo e salve na pasta do processo, junto dos
@@ -677,6 +800,9 @@ export function CasoView({
         }}
       />
 
+          </div>
+
+          <div className="cartao">
       <h2>Sem a pasta em mãos?</h2>
       <p className="subtitulo" style={{ marginBottom: 14 }}>
         Preencha só a data do óbito e um valor estimado do acervo. O painel ao lado já
@@ -733,6 +859,9 @@ export function CasoView({
           </Button>
         </div>
       </form>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

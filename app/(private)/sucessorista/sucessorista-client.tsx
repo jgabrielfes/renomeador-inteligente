@@ -43,7 +43,7 @@ import type { Caso, Bem, Herdeiro } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
-import { projetarCustos } from '@/lib/partilha/custas';
+import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import {
   avaliarQuotas,
@@ -213,6 +213,10 @@ const CHAVE_CASO = 'sucessorista-caso';
 /** Perfil de uso do módulo — muda as minutas da montagem do processo. */
 export type Perfil = 'ADVOGADO' | 'ESCREVENTE';
 const CHAVE_PERFIL = 'sucessorista-perfil';
+
+/** Tema do módulo (claro = identidade papel; escuro = mesma paleta invertida). */
+export type TemaSucessorista = 'claro' | 'escuro';
+const CHAVE_TEMA = 'sucessorista-tema';
 
 interface CasoSalvo {
   v: 1;
@@ -389,8 +393,9 @@ export default function SucessoristaClient() {
   const [condicoesHonorarios, setCondicoesHonorarios] =
     useState<CondicoesHonorarios>(CONDICOES_INICIAIS);
 
-  /* --- perfil de uso + rascunho local persistente --- */
+  /* --- perfil de uso + tema + rascunho local persistente --- */
   const [perfil, setPerfil] = useState<Perfil>('ADVOGADO');
+  const [tema, setTema] = useState<TemaSucessorista>('claro');
   const [rascunhoSalvoEm, setRascunhoSalvoEm] = useState<string | null>(null);
 
   /* --- persistência local: CaseStore (pasta do processo ou portátil) --- */
@@ -554,6 +559,8 @@ export default function SucessoristaClient() {
         try {
           const p = localStorage.getItem(CHAVE_PERFIL);
           if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
+          const t = localStorage.getItem(CHAVE_TEMA);
+          if (t === 'claro' || t === 'escuro') setTema(t);
         } catch {
           // modo restrito
         }
@@ -796,6 +803,16 @@ export default function SucessoristaClient() {
     }
   }, [perfil]);
 
+  // Tema claro × escuro: preferência do navegador, como o perfil.
+  useEffect(() => {
+    if (!restauradoRef.current) return;
+    try {
+      localStorage.setItem(CHAVE_TEMA, tema);
+    } catch {
+      // modo restrito
+    }
+  }, [tema]);
+
   /* --- sociedades lidas → bem de quotas no acervo ---
      Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
      max(patrimônio líquido, capital social) × percentual do falecido (ou do
@@ -970,8 +987,15 @@ export default function SucessoristaClient() {
       : [];
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
-      // Legítima: a escritura é UM ato pela herança transmitida (sem a meação).
-      baseEscritura: Number(resultado.heranca.total),
+      // Legítima pelo ENUNCIADO 7 do CNB/SP: um ato pelo MAIOR entre o valor
+      // atribuído e o venal na data da lavratura (venal ATUAL), sem a meação.
+      baseEscritura: baseDeEmolumentosDaEscritura({
+        bens: bens.map((b) => ({
+          valor: Number(b.valor),
+          venalAtual: Number(b.imovel?.valorVenalAtual) || null,
+        })),
+        legitima: Number(resultado.heranca.total),
+      }),
       qtdRenunciantes: herdeiros.filter((h) => h.status === 'RENUNCIANTE').length,
       sucessoes: (fiscal.sucessoes ?? []).map((su) => ({
         nome: su.nome,
@@ -1850,7 +1874,7 @@ export default function SucessoristaClient() {
   /* ---------- render ---------- */
 
   return (
-    <div className="sucessorista">
+    <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
     {/* Sem caso aberto, a tela inicial é o painel "Meus casos". */}
     {casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -1984,6 +2008,8 @@ export default function SucessoristaClient() {
             onNovoCaso={novoCaso}
             casoId={casoId}
             perfil={perfil}
+            tema={tema}
+            setTema={setTema}
           />
         )}
 

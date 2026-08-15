@@ -46,18 +46,31 @@ function extrairNoticias(html: string): Noticia[] {
     if (brutos.length >= 12) break;
   }
   return brutos.map((b, i) => {
-    // A introdução da matéria costuma vir num <p> logo após a âncora do
-    // título, antes da âncora seguinte — melhor esforço, tolerante a mudança
-    // de layout da fonte (sem <p> reconhecível, a manchete sai sem intro).
+    // A introdução da matéria costuma vir logo após a âncora do título,
+    // antes da âncora seguinte — melhor esforço em três degraus, tolerante a
+    // mudança de layout da fonte: <p> → <div>/<span> → texto solto do trecho.
     const limite = i + 1 < brutos.length ? brutos[i + 1].inicio : b.fim + 2500;
     const trecho = html.slice(b.fim, Math.min(limite, b.fim + 2500));
+    const encurtar = (texto: string) =>
+      texto.length > 260 ? `${texto.slice(0, 257).trimEnd()}…` : texto;
+    const serve = (texto: string) =>
+      texto.length >= 40 && texto !== b.titulo && !texto.startsWith(b.titulo);
     let intro: string | undefined;
-    for (const pm of trecho.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) {
-      const texto = limparTexto(pm[1]);
-      if (texto.length >= 60 && texto !== b.titulo) {
-        intro = texto.length > 260 ? `${texto.slice(0, 257).trimEnd()}…` : texto;
-        break;
+    for (const re of [/<p[^>]*>([\s\S]*?)<\/p>/gi, /<(?:div|span)[^>]*>([\s\S]*?)<\/(?:div|span)>/gi]) {
+      for (const pm of trecho.matchAll(re)) {
+        const texto = limparTexto(pm[1]);
+        if (serve(texto)) {
+          intro = encurtar(texto);
+          break;
+        }
       }
+      if (intro) break;
+    }
+    if (!intro) {
+      // Último degrau: o texto corrido do trecho (sem tags), tirando datas e
+      // rótulos curtos que sobram do card da listagem.
+      const solto = limparTexto(trecho).replace(/^\d{1,2}\/\d{1,2}\/\d{2,4}\s*/, '');
+      if (serve(solto)) intro = encurtar(solto);
     }
     return { titulo: b.titulo.slice(0, 180), url: b.url, intro };
   });

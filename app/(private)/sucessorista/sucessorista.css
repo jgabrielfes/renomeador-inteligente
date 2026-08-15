@@ -65,8 +65,9 @@
 /* ---------- estrutura: lombada + folha + painel ---------- */
 
 .sucessorista .processo {
+  /* Lombada de 248px: "O Sucessorista" (Fraunces 20px) cabe numa linha só. */
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 380px;
+  grid-template-columns: 248px minmax(0, 1fr) 380px;
   min-height: 100vh;
 }
 
@@ -866,7 +867,7 @@
    as três colunas só encolhem. Ele só desce abaixo da folha em telas
    estreitas de verdade (≤1024px). */
 @media (max-width: 1280px) {
-  .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr) 320px; }
+  .sucessorista .processo { grid-template-columns: 204px minmax(0, 1fr) 320px; }
   .sucessorista .folha { padding: 32px 26px 80px; }
   /* Em folha estreita, a ficha compacta volta a 3 campos por linha. */
   .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); }
@@ -906,6 +907,132 @@
   .sucessorista .nota, .sucessorista .espelho .lanc { animation: surgir 0.25s ease-out both; }
   @keyframes surgir { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
 }
+
+/* ---------- dashboard do "O Caso" (cards estilo intranet) ---------- */
+
+.sucessorista .dash-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+/* Alternador de tema claro/escuro — pílula no topo do dashboard. */
+.sucessorista .tema-alternador {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  padding: 3px;
+  background: var(--papel-alto);
+  flex-shrink: 0;
+}
+
+.sucessorista .tema-alternador button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--tinta-media);
+  padding: 6px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sucessorista .tema-alternador button.ativo {
+  background: var(--tinta);
+  color: var(--papel);
+}
+
+.sucessorista .dash-grade {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.sucessorista .dash-coluna { display: grid; gap: 16px; }
+.sucessorista .dash-grade .cartao { margin: 0; }
+
+/* Card do relógio: dia da semana, hora grande e data por extenso. */
+.sucessorista .relogio { text-align: center; padding: 28px 18px 24px; }
+
+.sucessorista .relogio .dia {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+  min-height: 15px;
+}
+
+.sucessorista .relogio .hora {
+  display: block;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 52px;
+  line-height: 1.1;
+  margin-top: 6px;
+}
+
+.sucessorista .relogio .hora small {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--tinta-media);
+  margin-left: 4px;
+}
+
+.sucessorista .relogio .data {
+  display: block;
+  font-size: 14px;
+  color: var(--tinta-media);
+  margin-top: 4px;
+  min-height: 18px;
+}
+
+/* Lista de novidades da plataforma. */
+.sucessorista .novidade { border-top: 1px solid var(--fio); padding: 9px 0 3px; margin-top: 8px; }
+.sucessorista .novidade:first-of-type { margin-top: 8px; }
+.sucessorista .novidade h4 { font-size: 13.5px; font-weight: 600; margin: 0 0 2px; }
+.sucessorista .novidade p { font-size: 12px; color: var(--tinta-media); margin: 0; }
+
+@media (max-width: 1100px) {
+  .sucessorista .dash-grade { grid-template-columns: 1fr; }
+}
+
+/* ---------- tema escuro (alternador no dashboard do "O Caso") ----------
+   Mesma identidade com a paleta invertida: o papel vira tinta profunda, a
+   tipografia clareia e lacre/bronze/verde ganham variantes legíveis. As
+   variáveis do shadcn seguem re-mapeadas automaticamente. */
+
+.sucessorista.tema-escuro {
+  --papel: #151a18;
+  --papel-alto: #1d2320;
+  --tinta: #ebe6d9;
+  --tinta-media: #a4ada7;
+  --lacre: #d06a60;
+  --bronze: #c19a5f;
+  --verde-registro: #7dab97;
+  --fio: #2c332f;
+  --fio-forte: #46514b;
+  --secondary: #242b27;
+  --muted: #242b27;
+  --accent: #273028;
+  color-scheme: dark;
+}
+
+/* A lombada já era escura: no tema escuro ela desce um tom em relação à
+   folha e os textos que usavam var(--papel) apontam para a tinta clara. */
+.sucessorista.tema-escuro .lombada { background: #0f1311; color: var(--tinta); }
+.sucessorista.tema-escuro .aba:hover,
+.sucessorista.tema-escuro .lombada .voltar:hover { color: var(--tinta); }
+.sucessorista.tema-escuro .arrasto:hover,
+.sucessorista.tema-escuro .arrasto.ativo { background: #202723; }
+.sucessorista.tema-escuro .alerta-painel { background: #3a2420; color: #e8b0a8; }
+.sucessorista.tema-escuro .alerta-painel.info { background: #35301f; color: #d9c087; }
+.sucessorista.tema-escuro .lombada .rascunho-info { filter: none; }
 
 /* ---------- integração com a moldura do app ---------- */
 
