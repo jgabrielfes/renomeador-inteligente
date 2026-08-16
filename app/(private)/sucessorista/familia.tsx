@@ -102,6 +102,7 @@ export function FamiliaView({
   avancar,
   sucessoes,
   setSucessoes,
+  basesSucessoes = {},
 }: {
   estado: EstadoFamilia;
   onChange: (e: EstadoFamilia) => void;
@@ -110,6 +111,8 @@ export function FamiliaView({
    *  estado fiscal, mas a família é o lugar natural de lançá-las. */
   sucessoes: SucessaoCumulada[];
   setSucessoes: (s: SucessaoCumulada[]) => void;
+  /** Monte partível apurado por sucessão (id → R$), para exibir na lista. */
+  basesSucessoes?: Record<string, number>;
 }) {
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = estado;
   const composicao = composicaoFamiliar(falecido, temSobrevivente, vinculo, regime, herdeiros);
@@ -126,6 +129,30 @@ export function FamiliaView({
         preenchido move um número no painel ao lado na hora; a qualificação alimenta a
         escritura, o espelho do ITCMD e o cofre de documentos.
       </p>
+
+      {/* Sucessões cumuladas ABREM o módulo: é a primeira decisão do caso
+          (um óbito ou vários no mesmo inventário) e muda o monte, a legítima
+          e os prazos de cada fato gerador. */}
+      <div className="cartao">
+        <span className="eyebrow">Há mais de um falecimento neste inventário?</span>
+        <h2 style={{ marginTop: 6 }}>Sucessões cumuladas (CPC, art. 672)</h2>
+        <p className="subtitulo" style={{ marginBottom: 10 }}>
+          Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…): cada sucessão
+          tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da data do óbito
+          respectiva, atos próprios de escritura e registro. Como os óbitos costumam ser de
+          anos diferentes, cada sucessão tem seu MONTE PARTÍVEL e sua LEGÍTIMA. Escolha, em
+          cada uma, se usa os MESMOS bens do 1º falecimento (com o valor de avaliação
+          próprio daquela data, lançado no acervo) ou se ela tem BENS PARTICULARES. Com
+          &quot;mesmos herdeiros&quot;, o item III mostra uma partilha para CADA sucessão.
+          Deixe vazio se houver um só falecimento.
+        </p>
+        <EditorSucessoes
+          herdeiros={herdeiros}
+          sucessoes={sucessoes}
+          setSucessoes={setSucessoes}
+          basesSucessoes={basesSucessoes}
+        />
+      </div>
 
       <div className="cartao">
       <span className="eyebrow">Autor(a) da herança</span>
@@ -277,16 +304,6 @@ export function FamiliaView({
         as da declaração do ITCMD e entram prontas no item V.
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
-
-      <h2>Sucessões cumuladas no mesmo inventário</h2>
-      <p className="subtitulo" style={{ marginBottom: 10 }}>
-        Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…) na forma do
-        art. 672 do CPC: cada sucessão tem o PRÓPRIO fato gerador — o ITCMD é calculado
-        pela UFESP e pelos prazos da data do óbito respectiva, a escritura e os registros
-        ganham atos próprios, e tudo já soma no painel e no item V (Custos). Com
-        &quot;mesmos herdeiros&quot; marcado, o item III mostra uma partilha para CADA sucessão.
-      </p>
-      <EditorSucessoes herdeiros={herdeiros} sucessoes={sucessoes} setSucessoes={setSucessoes} />
 
       <h2>Composição familiar</h2>
       <div className="nota">
@@ -582,6 +599,7 @@ const esquemaSucessao = z.object({
   base: z.string().trim().min(1, 'Informe a base transmitida nesta sucessão.'),
   qtdImoveis: z.string().regex(/^\d*$/, 'Use apenas números.'),
   mesmosHerdeiros: z.boolean(),
+  mesmosBens: z.boolean(),
 });
 
 type NovaSucessao = z.infer<typeof esquemaSucessao>;
@@ -593,10 +611,12 @@ function EditorSucessoes({
   herdeiros,
   sucessoes,
   setSucessoes,
+  basesSucessoes = {},
 }: {
   herdeiros: Herdeiro[];
   sucessoes: SucessaoCumulada[];
   setSucessoes: (s: SucessaoCumulada[]) => void;
+  basesSucessoes?: Record<string, number>;
 }) {
   const {
     register,
@@ -606,7 +626,14 @@ function EditorSucessoes({
     formState: { errors },
   } = useForm<NovaSucessao>({
     resolver: zodResolver(esquemaSucessao),
-    defaultValues: { nome: '', dataObito: '', base: '', qtdImoveis: '', mesmosHerdeiros: true },
+    defaultValues: {
+      nome: '',
+      dataObito: '',
+      base: '',
+      qtdImoveis: '',
+      mesmosHerdeiros: true,
+      mesmosBens: true,
+    },
   });
 
   const lancar = (dados: NovaSucessao) => {
@@ -620,6 +647,7 @@ function EditorSucessoes({
         base: (Number.isFinite(decimal) ? decimal : 0).toFixed(2),
         qtdImoveis: Number(dados.qtdImoveis) || 0,
         mesmosHerdeiros: dados.mesmosHerdeiros,
+        mesmosBens: dados.mesmosBens,
       },
     ]);
     reset();
@@ -632,16 +660,31 @@ function EditorSucessoes({
       ),
     );
 
+  const alternarMesmosBens = (id: string) =>
+    setSucessoes(
+      sucessoes.map((su) =>
+        su.id === id ? { ...su, mesmosBens: !(su.mesmosBens ?? true) } : su,
+      ),
+    );
+
   return (
     <div className="cartao">
-      {sucessoes.map((su) => (
+      {sucessoes.map((su) => {
+        const usaMesmosBens = su.mesmosBens ?? true;
+        const monte = basesSucessoes[su.id];
+        return (
         <div key={su.id} className="linha-item">
           <span>
             <strong>{su.nome}</strong>
             <span className="fracao num">
               {' '}
-              · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · base{' '}
-              {brlSucessao(Number(su.base))} · {su.qtdImoveis} imóvel(is)
+              · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · monte partível{' '}
+              {brlSucessao(monte !== undefined ? monte : Number(su.base))} · {su.qtdImoveis} imóvel(is)
+            </span>
+            <span className="fund" style={{ marginLeft: 6 }}>
+              {usaMesmosBens
+                ? '· mesmos bens (avaliação por sucessão no acervo)'
+                : '· bens particulares (lançados à parte)'}
             </span>
             {su.mesmosHerdeiros && (
               <span className="fund" style={{ marginLeft: 6 }}>
@@ -650,6 +693,15 @@ function EditorSucessoes({
             )}
           </span>
           <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              style={usaMesmosBens ? { color: 'var(--verde-registro)' } : { color: 'var(--bronze)' }}
+              onClick={() => alternarMesmosBens(su.id)}
+            >
+              {usaMesmosBens ? 'mesmos bens ✓' : 'bens particulares'}
+            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -670,7 +722,8 @@ function EditorSucessoes({
             </Button>
           </span>
         </div>
-      ))}
+        );
+      })}
 
       <form noValidate onSubmit={handleSubmit(lancar)}>
         <div className="grade c2" style={{ marginTop: sucessoes.length > 0 ? 12 : 0 }}>
@@ -719,6 +772,23 @@ function EditorSucessoes({
         <div style={{ marginTop: 10 }}>
           <Controller
             control={control}
+            name="mesmosBens"
+            render={({ field }) => (
+              <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(v) => field.onChange(v === true)}
+                />
+                Usar os MESMOS bens do 1º falecimento — no acervo, cada bem abre um campo de
+                valor de avaliação para esta data de óbito (desmarque para lançar BENS
+                PARTICULARES desta sucessão à parte)
+              </label>
+            )}
+          />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Controller
+            control={control}
             name="mesmosHerdeiros"
             render={({ field }) => (
               <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
@@ -728,7 +798,7 @@ function EditorSucessoes({
                 />
                 Usar os MESMOS herdeiros deste inventário nesta sucessão — o item III
                 (Partilha) ganha uma partilha própria para ela
-                {herdeiros.length === 0 ? ' (lance os herdeiros acima primeiro)' : ''}
+                {herdeiros.length === 0 ? ' (lance os herdeiros abaixo)' : ''}
               </label>
             )}
           />

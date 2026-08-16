@@ -20,6 +20,8 @@
  * advogado(a) responsável. Números sempre do motor, nunca de IA.
  */
 
+import { emolumentoEscritura, emolumentoRegistro } from './custas';
+
 export interface OportunidadeEconomia {
   id: string;
   titulo: string;
@@ -63,6 +65,8 @@ export interface EntradaEconomia {
   extrajudicial?: boolean | null;
   /** Acertos da partilha diferenciada (tornas), quando montada. */
   transferencias: TransferenciaEconomia[];
+  /** ISS do município (2–5%) para dimensionar os atos extra do usufruto. */
+  issPct?: number;
 }
 
 const ALIQUOTA = 0.04; // art. 16 (Lei 10.992/2001)
@@ -184,43 +188,82 @@ export function mapearEconomias(e: EntradaEconomia): OportunidadeEconomia[] {
   }
 
   /* --- planejamento na partilha: o segundo inventário ---
-     A sugestão do usufruto NÃO é automática: atribuir os imóveis aos
-     herdeiros gera uma TORNA do(a) sobrevivente (a parte do direito dele(a)
-     que não se compensa com os demais bens) — e torna cedida de graça é
-     DOAÇÃO, com ITCMD inter vivos AGORA sobre o que passar da isenção de
-     2.500 UFESPs por donatário/ano. A economia só é real quando essa torna
-     cabe na isenção (ou quando nem há torna); havendo excesso, o card muda
-     de tom: aponta o imposto antecipado e sugere limitar/escalonar. */
+     A sugestão do usufruto exige o RACIOCÍNIO COMPLETO, não só o imposto
+     evitado no 2º óbito. Os coeficientes fiscais do RITCMD-SP são usufruto
+     = 1/3 e nua-propriedade = 2/3 do valor do bem. O(a) sobrevivente RESERVA
+     o usufruto vitalício (fica com 1/3) e os herdeiros ficam com a nua-
+     propriedade (2/3): a torna é só a diferença entre o que o(a) sobrevivente
+     TINHA direito e o usufruto que retém — não o valor cheio dos imóveis.
+     Essa torna cedida de graça é DOAÇÃO (isenta até 2.500 UFESPs por
+     donatário/ano). E o desenho ACRESCENTA custos AGORA: uma escritura a mais
+     (a cessão da torna) e o registro DESMEMBRADO (usufruto + nua em atos
+     próprios, contra o registro único que ocorreria sem o desmembramento).
+     A economia só é real quando o imposto futuro evitado supera tudo isso. */
 
   if (e.valorSobrevivente > 0 && imoveis.length > 0) {
-    const baseFutura = Math.min(e.valorSobrevivente, valorImoveis);
+    const iss = e.issPct ?? 5;
     const nome = e.nomeSobrevivente?.trim() || 'o(a) sobrevivente';
+
+    // Coeficientes fiscais do RITCMD-SP: usufruto 1/3, nua-propriedade 2/3.
+    const valorUsufruto = r2(valorImoveis / 3);
+    const valorNua = r2(valorImoveis - valorUsufruto);
+
+    // A parte dos imóveis atribuível ao(à) sobrevivente — o que, em plena
+    // propriedade, voltaria ao 2º inventário. É a base da economia futura.
+    const baseFutura = Math.min(e.valorSobrevivente, valorImoveis);
     const valorNaoImoveis = e.bens
       .filter((b) => b.tipo !== 'IMOVEL' && b.valor > 0)
       .reduce((a, b) => a + b.valor, 0);
-    // Torna da reserva: o que o(a) sobrevivente deixa de receber em imóveis
-    // e NÃO consegue compensar com os demais bens — vira cessão gratuita.
-    const tornaReserva = r2(Math.min(baseFutura, Math.max(0, e.valorSobrevivente - valorNaoImoveis)));
+
+    // Torna da reserva: o(a) sobrevivente RETÉM o usufruto (1/3) + os bens
+    // não-imóveis (até o seu quinhão); o que sobra do direito é cedido aos
+    // herdeiros. Ex.: meação 125.000 − usufruto 83.333,33 = torna 41.666,67.
+    const retido = Math.min(e.valorSobrevivente, valorUsufruto + valorNaoImoveis);
+    const tornaReserva = r2(Math.max(0, e.valorSobrevivente - retido));
+
     const tetoIsencao = e.ufespReferencia ? r2(2500 * e.ufespReferencia * Math.max(1, e.qtdHerdeiros)) : null;
     const excesso = tetoIsencao === null ? 0 : r2(Math.max(0, tornaReserva - tetoIsencao));
     const itcmdInterVivos = r2(excesso * ALIQUOTA);
-    const economiaFutura = r2(baseFutura * ALIQUOTA);
-    const economiaLiquida = r2(economiaFutura - itcmdInterVivos);
+
+    // Economia FUTURA: o ITCMD que não incide no 2º inventário (o usufruto
+    // apenas se extingue, sem fato gerador). Escritura, registro e honorários
+    // de um novo inventário evitados entram como ganho ADICIONAL, qualitativo.
+    const economiaItcmdFutura = r2(baseFutura * ALIQUOTA);
+
+    // CUSTO do planejamento AGORA (o que o desenho acrescenta a este ato):
+    const custoEscrituraTorna = tornaReserva > 0 ? emolumentoEscritura(tornaReserva, iss) : 0;
+    const registroUnico = emolumentoRegistro(valorImoveis, iss);
+    const registroDesmembrado = r2(
+      emolumentoRegistro(valorUsufruto, iss) + emolumentoRegistro(valorNua, iss),
+    );
+    const custoRegistroExtra = r2(Math.max(0, registroDesmembrado - registroUnico));
+    const custoAgora = r2(custoEscrituraTorna + custoRegistroExtra + itcmdInterVivos);
+
+    const economiaLiquida = r2(economiaItcmdFutura - custoAgora);
 
     const situacaoTorna =
       tornaReserva <= 0
-        ? `Nesta montagem a compensação fecha com os demais bens — ${nome} não cede nada de graça, e não há ITCMD inter vivos.`
+        ? `Nesta montagem ${nome} retém o usufruto e é compensado(a) pelos demais bens — não cede nada de graça e não há ITCMD inter vivos.`
         : excesso <= 0
-          ? `A torna da reserva (${fmt(tornaReserva)}) CABE na isenção de doação de 2.500 UFESPs por donatário/ano${tetoIsencao ? ` (${fmt(tetoIsencao)} no total para ${Math.max(1, e.qtdHerdeiros)} herdeiro(s))` : ''} — sem ITCMD inter vivos: a economia é real.`
-          : `ATENÇÃO: a torna da reserva (${fmt(tornaReserva)}) PASSA da isenção de doação — ${fmt(excesso)} de excesso pagariam ${fmt(itcmdInterVivos)} de ITCMD inter vivos JÁ NA LAVRATURA, antecipando imposto para economizar depois. A conta líquida cai para ${fmt(economiaLiquida)}; o desenho melhora limitando a reserva à parte isenta ou escalonando cessões por exercício.`;
+          ? `A torna da reserva (${fmt(tornaReserva)} = direito de ${nome} menos o usufruto retido) CABE na isenção de doação de 2.500 UFESPs por donatário/ano${tetoIsencao ? ` (${fmt(tetoIsencao)} no total para ${Math.max(1, e.qtdHerdeiros)} herdeiro(s))` : ''} — cessão gratuita sem ITCMD inter vivos.`
+          : `ATENÇÃO: a torna da reserva (${fmt(tornaReserva)}) PASSA da isenção de doação — ${fmt(excesso)} de excesso pagariam ${fmt(itcmdInterVivos)} de ITCMD inter vivos JÁ NA LAVRATURA. O desenho melhora limitando a reserva à parte isenta ou escalonando cessões por exercício.`;
+
+    // O bloco de custos-extra, sempre explícito (o raciocínio pedido).
+    const blocoCustos =
+      `Contas do ato: usufruto de ${nome} = ${fmt(valorUsufruto)} (1/3) e nua-propriedade dos herdeiros = ${fmt(valorNua)} (2/3). ` +
+      `O planejamento acrescenta AGORA ${fmt(custoAgora)} em custas: ` +
+      (custoEscrituraTorna > 0 ? `1 escritura a mais da cessão da torna (base ${fmt(tornaReserva)} ≈ ${fmt(r2(custoEscrituraTorna))})` : 'sem escritura de torna') +
+      ` e o registro desmembrado em 2 atos — usufruto (${fmt(valorUsufruto)}) + nua-propriedade (${fmt(valorNua)}) — ${fmt(r2(custoRegistroExtra))} acima do registro único` +
+      (itcmdInterVivos > 0 ? `, mais ${fmt(itcmdInterVivos)} de ITCMD inter vivos sobre o excesso` : '') +
+      `. Contra o imposto de ${fmt(economiaItcmdFutura)} que não incide no 2º inventário, a economia LÍQUIDA fica em ${fmt(economiaLiquida)} — e ainda se evita a escritura, o registro e os honorários de um novo inventário sobre esses bens.`;
 
     if (economiaLiquida > 0) {
       lista.push({
         id: 'usufruto-nua-propriedade',
         titulo: 'Nua-propriedade aos herdeiros com usufruto vitalício do(a) sobrevivente',
-        explicacao: `Em vez de imóvel em nome de ${nome} (que voltaria a inventário no futuro), a partilha pode atribuir a NUA-PROPRIEDADE aos herdeiros com reserva de USUFRUTO VITALÍCIO a ${nome} — quem segue morando e administrando o bem. No falecimento do(a) usufrutuário(a) o usufruto apenas se EXTINGUE e a propriedade se consolida: a extinção de usufruto não é fato gerador do ITCMD em SP, e o bem não integra o segundo inventário — economia futura estimada de ${fmt(economiaFutura)} só de imposto, além de escritura, registro e honorários de um novo inventário sobre esses bens. ${situacaoTorna}`,
+        explicacao: `Em vez de imóvel em plena propriedade de ${nome} (que voltaria a inventário no futuro), a partilha atribui a NUA-PROPRIEDADE aos herdeiros (2/3) com reserva de USUFRUTO VITALÍCIO a ${nome} (1/3) — quem segue morando e administrando o bem. No falecimento do(a) usufrutuário(a) o usufruto apenas se EXTINGUE e a propriedade se consolida: a extinção de usufruto não é fato gerador do ITCMD em SP. ${situacaoTorna} ${blocoCustos}`,
         fundamento:
-          'Lei 10.705/2000, arts. 2º e 3º (extinção de usufruto não listada como fato gerador) e art. 6º, II, "a" (isenção da doação); coeficientes do RITCMD-SP (usufruto 1/3, nua-propriedade 2/3)',
+          'Lei 10.705/2000, arts. 2º e 3º (extinção de usufruto não listada como fato gerador) e art. 6º, II, "a" (isenção da doação); coeficientes do RITCMD-SP (usufruto 1/3, nua-propriedade 2/3); custas pelas Tabelas de Notas e Registro 2026',
         economiaEstimada: economiaLiquida,
         horizonte: 'FUTURA',
         aplicada: false,
@@ -229,6 +272,7 @@ export function mapearEconomias(e: EntradaEconomia): OportunidadeEconomia[] {
           excesso > 0
             ? `Excesso sobre a isenção: limitar a reserva à parte isenta, escalonar cessões por ano civil ou aceitar os ${fmt(itcmdInterVivos)} de ITCMD de doação — somar outras doações do mesmo doador no exercício.`
             : 'Somar outras doações do MESMO doador ao MESMO donatário no ano civil — o teto da isenção é anual, por par.',
+          `Pesar as custas extra (escritura da torna + registro desmembrado ≈ ${fmt(r2(custoAgora))}) contra o imposto de ${fmt(economiaItcmdFutura)} e o custo de um novo inventário — só compensa com a conta líquida positiva.`,
           `${nome} deixa de poder vender o bem sozinho(a) (fica só com o usufruto) — alinhar a decisão com a família.`,
           'Averbações e valores dos coeficientes: conferir a redação vigente do RITCMD antes da lavratura.',
         ],

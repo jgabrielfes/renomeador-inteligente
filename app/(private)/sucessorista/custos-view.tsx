@@ -28,7 +28,7 @@ export function CustosView({
   setIssPct,
   irParaFamilia,
   irParaAcervo,
-  irParaItcmd,
+  avancar,
 }: {
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
@@ -38,7 +38,8 @@ export function CustosView({
   setIssPct: (v: string) => void;
   irParaFamilia: () => void;
   irParaAcervo: () => void;
-  irParaItcmd: () => void;
+  /** Avança para o próximo item da esteira (Documentos). */
+  avancar: () => void;
 }) {
   const temTaxaJudicial = custos?.parcelas.some((p) => p.id === 'taxa-judiciaria') ?? false;
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
@@ -159,7 +160,7 @@ export function CustosView({
         <Button variant="outline" onClick={irParaAcervo}>
           Voltar ao acervo
         </Button>
-        <Button onClick={irParaItcmd}>Ver o ITCMD</Button>
+        <Button onClick={avancar}>Avançar aos documentos</Button>
       </div>
     </section>
   );

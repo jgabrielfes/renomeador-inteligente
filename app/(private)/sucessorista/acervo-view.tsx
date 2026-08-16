@@ -623,7 +623,12 @@ function FaixaSucessoesDoBem({
         </label>
       </div>
       {sucessoes.map((su) => {
-        const excluido = Boolean(bem.sucessaoExclusiva) && bem.sucessaoExclusiva !== su.id;
+        // Bens particulares: a sucessão só considera os bens EXCLUSIVOS dela —
+        // um bem compartilhado não abre coluna de avaliação para ela.
+        const soBensProprios = su.mesmosBens === false;
+        const excluido =
+          (Boolean(bem.sucessaoExclusiva) && bem.sucessaoExclusiva !== su.id) ||
+          (soBensProprios && bem.sucessaoExclusiva !== su.id);
         const av = bem.sucessoes?.[su.id] ?? {};
         return (
           <div key={su.id} className={`linha-sucessao${excluido ? ' excluido' : ''}`}>
@@ -634,7 +639,11 @@ function FaixaSucessoesDoBem({
               ) : null}
             </span>
             {excluido ? (
-              <span className="fracao">fora do rol desta sucessão</span>
+              <span className="fracao">
+                {soBensProprios && bem.sucessaoExclusiva !== su.id
+                  ? 'usa bens particulares (lançados à parte)'
+                  : 'fora do rol desta sucessão'}
+              </span>
             ) : (
               <>
                 <label className="campo">

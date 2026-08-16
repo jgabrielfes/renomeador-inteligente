@@ -309,6 +309,38 @@
 .sucessorista .pilha > div.sub { padding-left: 16px; font-size: 11.5px; }
 .sucessorista .pilha > div.sub .rotulo { font-style: italic; }
 
+/* Tabelinha Monte-mor · Meação · Legítima no painel — três linhas com o
+   rótulo à esquerda e o valor alinhado à direita, fio sutil entre elas. */
+.sucessorista .tabela-mml {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+.sucessorista .tabela-mml th,
+.sucessorista .tabela-mml td {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--fio);
+}
+.sucessorista .tabela-mml tr:last-child th,
+.sucessorista .tabela-mml tr:last-child td { border-bottom: none; }
+.sucessorista .tabela-mml th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--tinta-media);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+  width: 100%;
+}
+.sucessorista .tabela-mml td {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+  padding-left: 10px;
+}
+
 .sucessorista .alerta-painel {
   font-size: 12px;
   padding: 7px 10px;
@@ -424,15 +456,38 @@
 /* Matriz da partilha diferenciada (bem × participante, % por célula). O
    container do Table do shadcn já é ScrollArea horizontal — colunas a mais
    (muitos herdeiros) rolam com a barra estilizada. */
+/* Quadro da partilha diferenciada com altura própria e rolagem vertical
+   dedicada — evita o bloco apertado quando há muitos bens. O ScrollArea
+   externo (vertical) rola as linhas; o interno da Table rola as colunas. */
+.sucessorista .matriz-scroll {
+  max-height: 56vh;
+  min-height: 240px;
+  border: 1px solid var(--fio);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--papel) 60%, transparent);
+  margin-top: 12px;
+}
+
 .sucessorista .matriz-partilha {
   /* Quadro maior (pedido do escritório): fonte, células e campos cresceram —
      com a folha de 1080px o scroll horizontal só aparece com MUITAS partes. */
-  margin-top: 12px;
   font-size: 14px;
 }
 
 .sucessorista .matriz-partilha th,
-.sucessorista .matriz-partilha td { padding: 10px 10px; }
+.sucessorista .matriz-partilha td { padding: 12px 12px; }
+
+/* Rótulo pequeno sob a célula (ex.: "usufruto vitalício", "50% da
+   nua-propriedade") — hint do redesenho do usufruto no espelho. */
+.sucessorista .matriz-partilha .pct-rotulo {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--bronze);
+  text-align: right;
+  max-width: 104px;
+}
 
 .sucessorista .matriz-partilha .col-bem {
   min-width: 260px;

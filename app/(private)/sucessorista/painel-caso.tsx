@@ -70,15 +70,6 @@ export function PainelCaso({
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
   const imposto = provisao?.imposto ?? 0;
 
-  const parcela = (id: string) =>
-    provisao?.parcelas.filter((p) => p.id === id).reduce((s, p) => s + p.valor, 0) ?? 0;
-  const impostoBase = parcela('imposto');
-  const atualizacao = parcela('atualizacao');
-  const multaAbertura = parcela('multa-abertura');
-  const multaMoratoria = parcela('multa-moratoria');
-  const juros = parcela('juros');
-  const desconto = parcela('desconto');
-
   /* comparativo da reforma: mesmas bases do item V (líquidas de isenção e
      atualizadas pela UFESP), faixas sobre cada quinhão */
   const comparativo = useMemo(() => {
@@ -170,6 +161,38 @@ export function PainelCaso({
         </div>
       )}
 
+      {/* Monte-mor · Meação · Legítima: o retrato patrimonial do caso, entre
+          o relógio do prazo e o custo — os três números que o advogado
+          confere primeiro (dois de cada quando há sucessão cumulada). */}
+      {resultado && resultado.bloqueios.length === 0 && (
+        <div className="metrica">
+          <div className="k">Monte-mor · Meação · Legítima</div>
+          <table className="tabela-mml num">
+            <tbody>
+              <tr>
+                <th scope="row">Monte-mor</th>
+                <td>
+                  {brl(
+                    Number(resultado.acervo.bensComuns) +
+                      Number(resultado.acervo.bensParticulares),
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Meação{resultado.meacao ? ` — ${resultado.meacao.beneficiario}` : ''}
+                </th>
+                <td>{resultado.meacao ? brl(resultado.meacao.valor) : brl(0)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Legítima (herança transmitida)</th>
+                <td>{brl(resultado.heranca.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="metrica">
         <div className="k">Custo projetado do inventário</div>
         <div className="v num">
@@ -177,42 +200,17 @@ export function PainelCaso({
         </div>
         {provisao ? (
           <div className="pilha num">
-            {/* Parcelas discriminadas conforme a Lei 10.705/2000 — cada
-                encargo só aparece quando incide no caso. */}
+            {/* ITCMD UNIFICADO no painel: imposto + encargos (atualização,
+                multa, juros, desconto) num só número — a discriminação por
+                artigo fica no item V (Custos), para não poluir o resumo. */}
             <div>
-              <span className="rotulo">ITCMD — 4% (art. 16)</span>
-              <span>{brl(impostoBase)}</span>
+              <span className="rotulo">ITCMD (imposto + encargos)</span>
+              <span>{brl(provisao.total)}</span>
             </div>
-            {/* Encargos acessórios do imposto: recuados como itens SECUNDÁRIOS —
-                os principais da pilha são ITCMD, escritura, registros e certidões. */}
-            {atualizacao !== 0 && (
-              <div className="sub">
-                <span className="rotulo">Atualização monetária — UFESP (art. 15)</span>
-                <span>{brl(atualizacao)}</span>
-              </div>
-            )}
-            {multaAbertura > 0 && (
-              <div className="sub">
-                <span className="rotulo">Multa de abertura tardia (art. 21, I)</span>
-                <span style={{ color: 'var(--lacre)' }}>{brl(multaAbertura)}</span>
-              </div>
-            )}
-            {multaMoratoria > 0 && (
-              <div className="sub">
-                <span className="rotulo">Multa moratória (art. 19)</span>
-                <span style={{ color: 'var(--lacre)' }}>{brl(multaMoratoria)}</span>
-              </div>
-            )}
-            {juros > 0 && (
-              <div className="sub">
-                <span className="rotulo">Juros de mora — Selic (art. 20)</span>
-                <span style={{ color: 'var(--lacre)' }}>{brl(juros)}</span>
-              </div>
-            )}
-            {desconto < 0 && (
-              <div className="sub">
-                <span className="rotulo">Desconto de 5% até 90 dias (art. 17, §2º)</span>
-                <span style={{ color: 'var(--verde-registro)' }}>− {brl(-desconto)}</span>
+            {impostoSucessoes > 0 && (
+              <div>
+                <span className="rotulo">ITCMD — sucessões cumuladas</span>
+                <span>{brl(impostoSucessoes)}</span>
               </div>
             )}
             {custos && (

@@ -6,6 +6,40 @@
  */
 
 import { mapearEconomias, totalEstimado, type EntradaEconomia } from './economia';
+import { emolumentoEscritura, emolumentoRegistro } from './custas';
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * Recalcula a economia LÍQUIDA do usufruto pelo mesmo raciocínio do motor:
+ * ITCMD futuro evitado − (escritura da torna + registro desmembrado + ITCMD
+ * inter vivos). Mantém o teste em sincronia com as tabelas de custas.
+ */
+function liquidaUsufruto(o: {
+  valorSobrevivente: number;
+  valorImoveis: number;
+  valorNaoImoveis: number;
+  ufesp: number;
+  qtdHerdeiros: number;
+  iss?: number;
+}): number {
+  const iss = o.iss ?? 5;
+  const valorUsufruto = r2(o.valorImoveis / 3);
+  const valorNua = r2(o.valorImoveis - valorUsufruto);
+  const baseFutura = Math.min(o.valorSobrevivente, o.valorImoveis);
+  const retido = Math.min(o.valorSobrevivente, valorUsufruto + o.valorNaoImoveis);
+  const torna = r2(Math.max(0, o.valorSobrevivente - retido));
+  const teto = r2(2500 * o.ufesp * Math.max(1, o.qtdHerdeiros));
+  const excesso = r2(Math.max(0, torna - teto));
+  const itcmdInterVivos = r2(excesso * 0.04);
+  const itcmdFuturo = r2(baseFutura * 0.04);
+  const escrTorna = torna > 0 ? emolumentoEscritura(torna, iss) : 0;
+  const regExtra = r2(
+    Math.max(0, r2(emolumentoRegistro(valorUsufruto, iss) + emolumentoRegistro(valorNua, iss)) - emolumentoRegistro(o.valorImoveis, iss)),
+  );
+  const custoAgora = r2(escrTorna + regExtra + itcmdInterVivos);
+  return r2(itcmdFuturo - custoAgora);
+}
 
 let ok = 0, fail = 0;
 function eq(nome: string, a: unknown, e: unknown) {
@@ -66,32 +100,47 @@ eq('200 dias judicial: sem defesa', ids({ ...BASE, diasDesdeObito: 200, extrajud
   'valor-transmissao-ir',
 ]);
 
-/* ---------- usufruto: a economia depende da torna ser isenta ---------- */
+/* ---------- usufruto: raciocínio completo (coeficientes + custas) ---------- */
 
-// Viúva meeira com imóvel e SEM outros bens: a torna da reserva (450 mil)
-// passa da isenção de 2 herdeiros (2 × 2.500 × 38,42 = 192.100) — o card
-// avisa do ITCMD inter vivos e a economia cai para o líquido.
-const comViuva = mapearEconomias({
+// Exemplo do escritório: imóvel de 250.000, viúva meeira (125.000), 2 herdeiros.
+// Usufruto (1/3) = 83.333,33 → torna = 125.000 − 83.333,33 = 41.666,67 (isenta).
+// A economia é o ITCMD futuro (5.000) menos as custas extra do desenho.
+const exemplo = mapearEconomias({
   ...BASE,
   diasDesdeObito: 200,
-  valorSobrevivente: 450_000,
+  valorSobrevivente: 125_000,
   nomeSobrevivente: 'Maria',
+  bens: [{ descricao: 'Imóvel', valor: 250_000, tipo: 'IMOVEL' }],
+  ufespReferencia: 38.42,
+  qtdHerdeiros: 2,
 });
-eq('viúva: defesa + usufruto + IR', comViuva.map((o) => o.id), [
-  'defesa-multa-abertura',
-  'usufruto-nua-propriedade',
-  'valor-transmissao-ir',
-]);
-const usufrutoComExcesso = comViuva[1];
-eq('usufruto é FUTURA e não aplicada', [usufrutoComExcesso.horizonte, usufrutoComExcesso.aplicada], ['FUTURA', false]);
-// Excesso = 450.000 − 192.100 = 257.900 → ITCMD inter vivos 10.316;
-// economia futura 18.000 − 10.316 = 7.684 (líquida).
-eq('excesso: economia LÍQUIDA do ITCMD inter vivos', usufrutoComExcesso.economiaEstimada, 7_684);
-eq('excesso: o card avisa do imposto antecipado', usufrutoComExcesso.explicacao.includes('ATENÇÃO'), true);
-eq('explicação cita a viúva', usufrutoComExcesso.explicacao.includes('Maria'), true);
-eq('condição sugere limitar/escalonar', usufrutoComExcesso.condicoes.some((c) => c.includes('escalonar')), true);
+const usoExemplo = exemplo.find((o) => o.id === 'usufruto-nua-propriedade')!;
+eq('usufruto é FUTURA e não aplicada', [usoExemplo.horizonte, usoExemplo.aplicada], ['FUTURA', false]);
+eq('exemplo: líquida = ITCMD futuro − custas extra', usoExemplo.economiaEstimada,
+  liquidaUsufruto({ valorSobrevivente: 125_000, valorImoveis: 250_000, valorNaoImoveis: 0, ufesp: 38.42, qtdHerdeiros: 2 }));
+eq('exemplo: torna 41.666,67 cabe na isenção', usoExemplo.explicacao.includes('CABE na isenção'), true);
+eq('exemplo: mostra os coeficientes 1/3 e 2/3', usoExemplo.explicacao.includes('(1/3)') && usoExemplo.explicacao.includes('(2/3)'), true);
+eq('exemplo: cita o registro desmembrado', usoExemplo.explicacao.includes('registro desmembrado'), true);
+eq('explicação cita a viúva', usoExemplo.explicacao.includes('Maria'), true);
 
-// Com outros bens compensando a viúva, NÃO há torna — economia integral.
+// Torna acima da isenção: o card avisa do ITCMD inter vivos.
+const comExcesso = mapearEconomias({
+  ...BASE,
+  diasDesdeObito: 200,
+  valorSobrevivente: 900_000,
+  nomeSobrevivente: 'Maria',
+  bens: [{ descricao: 'Casa', valor: 1_800_000, tipo: 'IMOVEL' }],
+  ufespReferencia: 38.42,
+  qtdHerdeiros: 2,
+});
+const usoExcesso = comExcesso.find((o) => o.id === 'usufruto-nua-propriedade')!;
+eq('excesso: economia LÍQUIDA', usoExcesso.economiaEstimada,
+  liquidaUsufruto({ valorSobrevivente: 900_000, valorImoveis: 1_800_000, valorNaoImoveis: 0, ufesp: 38.42, qtdHerdeiros: 2 }));
+eq('excesso: o card avisa do imposto antecipado', usoExcesso.explicacao.includes('ATENÇÃO'), true);
+eq('condição sugere limitar/escalonar', usoExcesso.condicoes.some((c) => c.includes('escalonar')), true);
+
+// Com outros bens compensando a viúva, NÃO há torna — mas o registro
+// desmembrado ainda tem custo, então a líquida < ITCMD futuro cheio.
 const viuvaCompensada = mapearEconomias({
   ...BASE,
   diasDesdeObito: 200,
@@ -101,22 +150,12 @@ const viuvaCompensada = mapearEconomias({
     { descricao: 'Casa', valor: 900_000, tipo: 'IMOVEL' },
     { descricao: 'CDB', valor: 500_000, tipo: 'FINANCEIRO' },
   ],
+  ufespReferencia: 38.42,
 });
 const usufrutoSemTorna = viuvaCompensada.find((o) => o.id === 'usufruto-nua-propriedade')!;
-eq('sem torna: economia futura integral', usufrutoSemTorna.economiaEstimada, 18_000);
+eq('sem torna: líquida = 18.000 − registro extra', usufrutoSemTorna.economiaEstimada,
+  liquidaUsufruto({ valorSobrevivente: 450_000, valorImoveis: 900_000, valorNaoImoveis: 500_000, ufesp: 38.42, qtdHerdeiros: 2 }));
 eq('sem torna: card diz que a compensação fecha', usufrutoSemTorna.explicacao.includes('não cede nada'), true);
-
-// Torna pequena DENTRO da isenção: economia real, card confirma.
-const viuvaIsenta = mapearEconomias({
-  ...BASE,
-  diasDesdeObito: 200,
-  valorSobrevivente: 450_000,
-  nomeSobrevivente: 'Maria',
-  qtdHerdeiros: 5, // 5 × 96.050 = 480.250 de isenção ≥ 450.000 de torna
-});
-const usufrutoIsento = viuvaIsenta.find((o) => o.id === 'usufruto-nua-propriedade')!;
-eq('torna isenta: economia integral', usufrutoIsento.economiaEstimada, 18_000);
-eq('torna isenta: card confirma a isenção', usufrutoIsento.explicacao.includes('CABE na isenção'), true);
 
 // Base futura limitada ao valor dos imóveis (viúva "rica" compensada).
 const viuvaRica = mapearEconomias({
@@ -128,8 +167,10 @@ const viuvaRica = mapearEconomias({
     { descricao: 'Casa', valor: 900_000, tipo: 'IMOVEL' },
     { descricao: 'Aplicações', valor: 2_000_000, tipo: 'FINANCEIRO' },
   ],
+  ufespReferencia: 38.42,
 });
-eq('teto pelos imóveis', viuvaRica.find((o) => o.id === 'usufruto-nua-propriedade')!.economiaEstimada, 36_000);
+eq('teto pelos imóveis', viuvaRica.find((o) => o.id === 'usufruto-nua-propriedade')!.economiaEstimada,
+  liquidaUsufruto({ valorSobrevivente: 2_000_000, valorImoveis: 900_000, valorNaoImoveis: 2_000_000, ufesp: 38.42, qtdHerdeiros: 2 }));
 
 // Sem imóvel não há segundo inventário a evitar por usufruto.
 eq('sem imóvel: sem usufruto', ids({
