@@ -2381,6 +2381,8 @@ export default function SucessoristaClient({
             tema={tema}
             setTema={setTema}
             licoesRenomeador={licoesRenomeador}
+            convites={convites}
+            irParaDocumentos={() => irPara('documentos')}
           />
         )}
 
