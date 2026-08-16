@@ -2606,7 +2606,7 @@ export default function SucessoristaClient({
             provisoesSucessoes={provisoesSucessoes}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
-            irParaItcmd={() => irPara('itcmd')}
+            avancar={() => irPara('documentos')}
           />
         )}
 
