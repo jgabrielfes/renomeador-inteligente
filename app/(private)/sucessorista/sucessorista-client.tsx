@@ -64,6 +64,12 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumulada } from './itcmd-view';
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
+import {
+  FiscalView,
+  ESTADO_MODULOS_FISCAIS_INICIAL,
+  type EstadoModulosFiscais,
+} from './fiscal-view';
+import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { FontesView } from './fontes-view';
 import {
@@ -186,7 +192,8 @@ type Aba =
   | 'minutas'
   | 'escritura'
   | 'matricula'
-  | 'fontes';
+  | 'fontes'
+  | 'fiscal';
 
 const ABAS: readonly Aba[] = [
   'caso',
@@ -201,6 +208,7 @@ const ABAS: readonly Aba[] = [
   'escritura',
   'matricula',
   'fontes',
+  'fiscal',
 ];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
@@ -240,6 +248,10 @@ interface CasoSalvo {
   honorarios?: CondicoesHonorarios;
   casoId: string;
   convites: Record<string, ConviteHerdeiro>;
+  /** Módulos fiscais e pré-inventário (radar, alvará, declaração, ganho). */
+  modulosFiscais?: EstadoModulosFiscais;
+  /** Sobrepartilha aberta (bens de fora marcados no próprio array de bens). */
+  sobrepartilhaAberta?: boolean;
 }
 
 export default function SucessoristaClient({
@@ -303,6 +315,13 @@ export default function SucessoristaClient({
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
 
+  /* --- XI: módulos fiscais e pré-inventário (radar, alvará, DF, ganho) --- */
+  const [modulosFiscais, setModulosFiscais] = useState<EstadoModulosFiscais>(
+    ESTADO_MODULOS_FISCAIS_INICIAL,
+  );
+  /* --- sobrepartilha (CPC 669/670): bens de fora, partilha suplementar --- */
+  const [sobrepartilhaAberta, setSobrepartilhaAberta] = useState(false);
+
   const caso: Caso = useMemo(() => {
     const limpo = dividasEspolio.replace(/\./g, '').replace(',', '.');
     const dividas =
@@ -322,9 +341,11 @@ export default function SucessoristaClient({
         ? { vinculo, regime, nome: nomeSobrev || 'Cônjuge/companheiro(a)' }
         : null,
       herdeiros,
-      // Bem EXCLUSIVO de uma sucessão cumulada não integra o rol do
-      // inventário principal (ex.: particular adquirido pelo viúvo depois).
-      bens: bens.filter((b) => !b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
+      // Bem EXCLUSIVO de sucessão cumulada e bem de SOBREPARTILHA não entram
+      // no rol do inventário principal — cada um é partilhado à parte.
+      bens: bens.filter(
+        (b) => !b.sobrepartilha && (!b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
+      ),
       dividas,
     };
   }, [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens, dividasEspolio]);
@@ -567,6 +588,9 @@ export default function SucessoristaClient({
       setCondicoesHonorarios({ ...CONDICOES_INICIAIS, ...salvo.honorarios });
     if (typeof salvo.casoId === 'string' && salvo.casoId) setCasoId(salvo.casoId);
     if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
+    if (salvo.modulosFiscais && typeof salvo.modulosFiscais === 'object')
+      setModulosFiscais(salvo.modulosFiscais);
+    if (typeof salvo.sobrepartilhaAberta === 'boolean') setSobrepartilhaAberta(salvo.sobrepartilhaAberta);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -586,6 +610,8 @@ export default function SucessoristaClient({
       honorarios: condicoesHonorarios,
       casoId,
       convites,
+      modulosFiscais,
+      sobrepartilhaAberta,
     };
   };
 
@@ -921,6 +947,21 @@ export default function SucessoristaClient({
     return mapa;
   }, [resultado]);
 
+  /** Herdeiros com quinhão e CPF — alimenta a Declaração Final (módulo fiscal). */
+  const herdeirosQuinhao = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return [];
+    const porHerdeiro = new Map<string, number>();
+    for (const q of resultado.quinhoes)
+      porHerdeiro.set(q.herdeiroId, (porHerdeiro.get(q.herdeiroId) ?? 0) + Number(q.valor));
+    return herdeiros
+      .filter((h) => porHerdeiro.has(h.id))
+      .map((h) => ({
+        nome: h.nome,
+        cpf: familia.qualificacoes[h.id]?.cpf ?? '',
+        quinhao: porHerdeiro.get(h.id) ?? 0,
+      }));
+  }, [resultado, herdeiros, familia.qualificacoes]);
+
   /**
    * Partilha diferenciada em MATRIZ: cada linha (bem) distribui percentuais
    * entre os participantes; linha toda vazia segue a proporção exata do
@@ -1052,11 +1093,16 @@ export default function SucessoristaClient({
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
       // Legítima pelo ENUNCIADO 7 do CNB/SP: um ato pelo MAIOR entre o valor
-      // atribuído e o venal na data da lavratura (venal ATUAL), sem a meação.
+      // atribuído e o venal na data da lavratura — e também o valor venal e o
+      // de avaliação lançados no acervo (o maior de todos manda nas custas).
       baseEscritura: baseDeEmolumentosDaEscritura({
         bens: bens.map((b) => ({
           valor: Number(b.valor),
-          venalAtual: Number(b.imovel?.valorVenalAtual) || null,
+          venalAtual: Math.max(
+            Number(b.imovel?.valorVenalAtual) || 0,
+            Number(b.valorVenal) || 0,
+            Number(b.valorAvaliacao) || 0,
+          ) || null,
         })),
         legitima: Number(resultado.heranca.total),
       }),
@@ -1066,9 +1112,17 @@ export default function SucessoristaClient({
         base: basesSucessoes[su.id] ?? 0,
         qtdImoveis: su.qtdImoveis,
       })),
+      // Registro de imóveis: base pelo MAIOR entre atribuído, venal e avaliação.
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
-        .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
+        .map((b) => ({
+          descricao: b.descricao,
+          valor: Math.max(
+            Number(b.valor) || 0,
+            Number(b.valorVenal) || 0,
+            Number(b.valorAvaliacao) || 0,
+          ),
+        })),
       rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
       // Certidões do registro civil: provisiona pelo MAIOR entre os herdeiros
       // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
@@ -1210,7 +1264,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -2009,11 +2063,13 @@ export default function SucessoristaClient({
                   ['minutas', 'VIII', 'Minutas'],
                   ['matricula', 'IX', 'Análise de Matrícula'],
                   ['fontes', 'X', 'Fontes de Pesquisa'],
+                  ['fiscal', 'XI', 'Fiscal e pré-inventário'],
                 ] as const)
               : ([
                   ['escritura', 'VII', 'Escritura'],
                   ['matricula', 'VIII', 'Análise de Matrícula'],
                   ['fontes', 'IX', 'Fontes de Pesquisa'],
+                  ['fiscal', 'X', 'Fiscal e pré-inventário'],
                 ] as const)),
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -2380,6 +2436,31 @@ export default function SucessoristaClient({
                 },
               }}
             />
+
+            {/* Ao final do caso: abrir a sobrepartilha (bens que ficaram de
+                fora), reaproveitando família e herdeiros — CPC, arts. 669/670. */}
+            {!sobrepartilhaAberta ? (
+              <div className="rodape-acoes" style={{ marginTop: 28 }}>
+                <span />
+                <Button variant="outline" onClick={() => setSobrepartilhaAberta(true)}>
+                  + Abrir sobrepartilha (bens de fora)
+                </Button>
+              </div>
+            ) : (
+              <SobrepartilhaView
+                bens={bens}
+                setBens={setBens}
+                falecido={{ dataObito: falecido.dataObito, nome: falecido.nome }}
+                temSobrevivente={temSobrevivente}
+                vinculo={vinculo}
+                regime={regime}
+                nomeSobrev={nomeSobrev}
+                herdeiros={herdeiros}
+                issPct={Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5))}
+                ufesp={provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor}
+                onFechar={() => setSobrepartilhaAberta(false)}
+              />
+            )}
           </>
         )}
 
@@ -2489,6 +2570,17 @@ export default function SucessoristaClient({
             checklist={checklistAcervo}
             setChecklist={setChecklistAcervo}
             irParaAcervo={() => irPara('acervo')}
+          />
+        )}
+
+        {abaProc === 'fiscal' && (
+          <FiscalView
+            estado={modulosFiscais}
+            setEstado={setModulosFiscais}
+            bens={bens}
+            herdeiros={herdeirosQuinhao}
+            dataObito={falecido.dataObito}
+            aliquotaItcmd={0.04}
           />
         )}
       </main>

@@ -99,6 +99,8 @@ const esquemaBem = z.object({
     .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
   codigo: z.string().min(1, 'Escolha o tipo na lista da declaração do ITCMD-SP.'),
   natureza: z.enum(['COMUM', 'PARTICULAR']),
+  valorVenal: z.string().trim().refine((v) => v === '' || VALOR_PTBR.test(v), 'Valor inválido.'),
+  valorAvaliacao: z.string().trim().refine((v) => v === '' || VALOR_PTBR.test(v), 'Valor inválido.'),
 });
 
 type NovoBem = z.infer<typeof esquemaBem>;
@@ -106,6 +108,15 @@ type NovoBem = z.infer<typeof esquemaBem>;
 export function paraDecimal(valor: string): string {
   const limpo = valor.replace(/\./g, '').replace(',', '.');
   return Number(limpo).toFixed(2);
+}
+
+/** Base das custas: o MAIOR entre valor atribuído, venal e avaliação. */
+export function baseDeCustaMaior(bem: Bem): number {
+  return Math.max(
+    Number(bem.valor) || 0,
+    Number(bem.valorVenal) || 0,
+    Number(bem.valorAvaliacao) || 0,
+  );
 }
 
 /** Decimal armazenado ("900000.00") → texto mascarado do CurrencyInput. */
@@ -144,7 +155,7 @@ export function AcervoView({
     formState: { errors },
   } = useForm<NovoBem>({
     resolver: zodResolver(esquemaBem),
-    defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM' },
+    defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '' },
   });
 
   const lancar = (dados: NovoBem) => {
@@ -157,9 +168,11 @@ export function AcervoView({
         natureza: dados.natureza,
         tipo: tipoBemItcmd(dados.codigo)?.tipo ?? 'OUTRO',
         codigoItcmd: dados.codigo,
+        ...(dados.valorVenal.trim() ? { valorVenal: paraDecimal(dados.valorVenal) } : {}),
+        ...(dados.valorAvaliacao.trim() ? { valorAvaliacao: paraDecimal(dados.valorAvaliacao) } : {}),
       },
     ]);
-    reset({ descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza });
+    reset({ descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza, valorVenal: '', valorAvaliacao: '' });
   };
 
   return (
@@ -233,7 +246,33 @@ export function AcervoView({
               )}
             />
           </Field>
+          <Field data-invalid={Boolean(errors.valorVenal)}>
+            <FieldLabel htmlFor="bem-venal">Valor venal (R$) — opcional</FieldLabel>
+            <Controller
+              control={control}
+              name="valorVenal"
+              render={({ field }) => (
+                <CurrencyInput id="bem-venal" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+              )}
+            />
+            <FieldError errors={[errors.valorVenal]} />
+          </Field>
+          <Field data-invalid={Boolean(errors.valorAvaliacao)}>
+            <FieldLabel htmlFor="bem-avaliacao">Valor de avaliação (R$) — opcional</FieldLabel>
+            <Controller
+              control={control}
+              name="valorAvaliacao"
+              render={({ field }) => (
+                <CurrencyInput id="bem-avaliacao" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+              )}
+            />
+            <FieldError errors={[errors.valorAvaliacao]} />
+          </Field>
         </div>
+        <p className="fund" style={{ marginTop: 6 }}>
+          As custas de escritura e registro recaem sobre o MAIOR entre o valor atribuído, o
+          venal e a avaliação (Enunciado 7 do CNB/SP) — informe quando forem diferentes.
+        </p>
         <div style={{ marginTop: 12 }}>
           <Button type="submit" variant="outline">
             Lançar bem
@@ -372,6 +411,8 @@ function LinhaBem({
   const [valor, setValor] = useState('');
   const [codigo, setCodigo] = useState(bem.codigoItcmd ?? '');
   const [natureza, setNatureza] = useState<Bem['natureza']>(bem.natureza);
+  const [venal, setVenal] = useState('');
+  const [avaliacao, setAvaliacao] = useState('');
   const [erro, setErro] = useState<string | null>(null);
 
   const abrir = () => {
@@ -379,6 +420,8 @@ function LinhaBem({
     setValor(paraMascara(bem.valor));
     setCodigo(bem.codigoItcmd ?? '');
     setNatureza(bem.natureza);
+    setVenal(bem.valorVenal ? paraMascara(bem.valorVenal) : '');
+    setAvaliacao(bem.valorAvaliacao ? paraMascara(bem.valorAvaliacao) : '');
     setErro(null);
     setEditando(true);
   };
@@ -401,6 +444,8 @@ function LinhaBem({
       tipo: oficial ? oficial.tipo : bem.tipo,
       codigoItcmd: oficial ? codigo : bem.codigoItcmd,
       natureza,
+      valorVenal: venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined,
+      valorAvaliacao: avaliacao.trim() && VALOR_PTBR.test(avaliacao.trim()) ? paraDecimal(avaliacao) : undefined,
     });
     setEditando(false);
   };
@@ -417,6 +462,13 @@ function LinhaBem({
             · {brl(bem.valor)} · {rotuloDoBem(bem)} ·{' '}
             {bem.natureza === 'COMUM' ? 'comum' : 'particular'}
           </span>
+          {baseDeCustaMaior(bem) > Number(bem.valor) && (
+            <span className="fund num" style={{ display: 'block' }}>
+              Base das custas (maior valor): {brl(baseDeCustaMaior(bem).toFixed(2))}
+              {bem.valorVenal ? ` · venal ${brl(bem.valorVenal)}` : ''}
+              {bem.valorAvaliacao ? ` · avaliação ${brl(bem.valorAvaliacao)}` : ''}
+            </span>
+          )}
         </span>
         <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <Button
@@ -496,6 +548,14 @@ function LinhaBem({
               <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
             </SelectContent>
           </Select>
+        </label>
+        <label className="campo">
+          Valor venal (R$) — opcional
+          <CurrencyInput value={venal} onChange={setVenal} />
+        </label>
+        <label className="campo">
+          Valor de avaliação (R$) — opcional
+          <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
         </label>
       </div>
       {erro && <p className="mono-alerta">{erro}</p>}

@@ -65,9 +65,10 @@
 /* ---------- estrutura: lombada + folha + painel ---------- */
 
 .sucessorista .processo {
-  /* Lombada de 248px: "O Sucessorista" (Fraunces 20px) cabe numa linha só. */
+  /* Painéis laterais enxutos: mais espaço para os módulos centrais. A
+     lombada ainda comporta "O Sucessorista" (Fraunces 20px) numa linha. */
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 380px;
+  grid-template-columns: 216px minmax(0, 1fr) 336px;
   min-height: 100vh;
 }
 
@@ -226,7 +227,7 @@
 .sucessorista .painel {
   border-left: 1px solid var(--fio);
   background: var(--papel-alto);
-  padding: 28px 24px 40px;
+  padding: 24px 18px 36px;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -883,7 +884,7 @@
    as três colunas só encolhem. Ele só desce abaixo da folha em telas
    estreitas de verdade (≤1024px). */
 @media (max-width: 1280px) {
-  .sucessorista .processo { grid-template-columns: 204px minmax(0, 1fr) 320px; }
+  .sucessorista .processo { grid-template-columns: 192px minmax(0, 1fr) 300px; }
   .sucessorista .folha { padding: 32px 26px 80px; }
   /* Em folha estreita, a ficha compacta volta a 3 campos por linha. */
   .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1130,3 +1131,47 @@
 }
 
 .sucessorista .voltar:hover { color: var(--papel); }
+
+/* ---------- módulos fiscais (item XI) ---------- */
+.sucessorista .radar-item {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--fio);
+}
+.sucessorista .radar-item .radar-campos {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: 8px 0 2px 30px;
+}
+.sucessorista .radar-item .radar-campos .campo { font-size: 12px; gap: 4px; max-width: 200px; }
+
+/* ---------- gráfico redondo de complexidade (honorários) ---------- */
+.sucessorista .complexidade-grade {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 20px;
+  align-items: center;
+  margin: 14px 0;
+}
+.sucessorista .grafico-complexidade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.sucessorista .grafico-complexidade .legenda {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.sucessorista .grafico-complexidade .honor-pct {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+}
+@media (max-width: 900px) {
+  .sucessorista .complexidade-grade { grid-template-columns: 1fr; justify-items: center; }
+}
