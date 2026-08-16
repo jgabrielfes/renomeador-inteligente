@@ -69,6 +69,7 @@ import {
   ESTADO_MODULOS_FISCAIS_INICIAL,
   type EstadoModulosFiscais,
 } from './fiscal-view';
+import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { FontesView } from './fontes-view';
 import {
@@ -249,6 +250,8 @@ interface CasoSalvo {
   convites: Record<string, ConviteHerdeiro>;
   /** Módulos fiscais e pré-inventário (radar, alvará, declaração, ganho). */
   modulosFiscais?: EstadoModulosFiscais;
+  /** Sobrepartilha aberta (bens de fora marcados no próprio array de bens). */
+  sobrepartilhaAberta?: boolean;
 }
 
 export default function SucessoristaClient({
@@ -316,6 +319,8 @@ export default function SucessoristaClient({
   const [modulosFiscais, setModulosFiscais] = useState<EstadoModulosFiscais>(
     ESTADO_MODULOS_FISCAIS_INICIAL,
   );
+  /* --- sobrepartilha (CPC 669/670): bens de fora, partilha suplementar --- */
+  const [sobrepartilhaAberta, setSobrepartilhaAberta] = useState(false);
 
   const caso: Caso = useMemo(() => {
     const limpo = dividasEspolio.replace(/\./g, '').replace(',', '.');
@@ -336,9 +341,11 @@ export default function SucessoristaClient({
         ? { vinculo, regime, nome: nomeSobrev || 'Cônjuge/companheiro(a)' }
         : null,
       herdeiros,
-      // Bem EXCLUSIVO de uma sucessão cumulada não integra o rol do
-      // inventário principal (ex.: particular adquirido pelo viúvo depois).
-      bens: bens.filter((b) => !b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
+      // Bem EXCLUSIVO de sucessão cumulada e bem de SOBREPARTILHA não entram
+      // no rol do inventário principal — cada um é partilhado à parte.
+      bens: bens.filter(
+        (b) => !b.sobrepartilha && (!b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
+      ),
       dividas,
     };
   }, [falecido.dataObito, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros, bens, dividasEspolio]);
@@ -583,6 +590,7 @@ export default function SucessoristaClient({
     if (salvo.convites && typeof salvo.convites === 'object') setConvites(salvo.convites);
     if (salvo.modulosFiscais && typeof salvo.modulosFiscais === 'object')
       setModulosFiscais(salvo.modulosFiscais);
+    if (typeof salvo.sobrepartilhaAberta === 'boolean') setSobrepartilhaAberta(salvo.sobrepartilhaAberta);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -603,6 +611,7 @@ export default function SucessoristaClient({
       casoId,
       convites,
       modulosFiscais,
+      sobrepartilhaAberta,
     };
   };
 
@@ -1084,11 +1093,16 @@ export default function SucessoristaClient({
     return projetarCustos({
       monteMor: Number(resultado.acervo.massaPartilhavel),
       // Legítima pelo ENUNCIADO 7 do CNB/SP: um ato pelo MAIOR entre o valor
-      // atribuído e o venal na data da lavratura (venal ATUAL), sem a meação.
+      // atribuído e o venal na data da lavratura — e também o valor venal e o
+      // de avaliação lançados no acervo (o maior de todos manda nas custas).
       baseEscritura: baseDeEmolumentosDaEscritura({
         bens: bens.map((b) => ({
           valor: Number(b.valor),
-          venalAtual: Number(b.imovel?.valorVenalAtual) || null,
+          venalAtual: Math.max(
+            Number(b.imovel?.valorVenalAtual) || 0,
+            Number(b.valorVenal) || 0,
+            Number(b.valorAvaliacao) || 0,
+          ) || null,
         })),
         legitima: Number(resultado.heranca.total),
       }),
@@ -1098,9 +1112,17 @@ export default function SucessoristaClient({
         base: basesSucessoes[su.id] ?? 0,
         qtdImoveis: su.qtdImoveis,
       })),
+      // Registro de imóveis: base pelo MAIOR entre atribuído, venal e avaliação.
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
-        .map((b) => ({ descricao: b.descricao, valor: Number(b.valor) })),
+        .map((b) => ({
+          descricao: b.descricao,
+          valor: Math.max(
+            Number(b.valor) || 0,
+            Number(b.valorVenal) || 0,
+            Number(b.valorAvaliacao) || 0,
+          ),
+        })),
       rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
       // Certidões do registro civil: provisiona pelo MAIOR entre os herdeiros
       // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
@@ -1242,7 +1264,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -2414,6 +2436,31 @@ export default function SucessoristaClient({
                 },
               }}
             />
+
+            {/* Ao final do caso: abrir a sobrepartilha (bens que ficaram de
+                fora), reaproveitando família e herdeiros — CPC, arts. 669/670. */}
+            {!sobrepartilhaAberta ? (
+              <div className="rodape-acoes" style={{ marginTop: 28 }}>
+                <span />
+                <Button variant="outline" onClick={() => setSobrepartilhaAberta(true)}>
+                  + Abrir sobrepartilha (bens de fora)
+                </Button>
+              </div>
+            ) : (
+              <SobrepartilhaView
+                bens={bens}
+                setBens={setBens}
+                falecido={{ dataObito: falecido.dataObito, nome: falecido.nome }}
+                temSobrevivente={temSobrevivente}
+                vinculo={vinculo}
+                regime={regime}
+                nomeSobrev={nomeSobrev}
+                herdeiros={herdeiros}
+                issPct={Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5))}
+                ufesp={provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor}
+                onFechar={() => setSobrepartilhaAberta(false)}
+              />
+            )}
           </>
         )}
 

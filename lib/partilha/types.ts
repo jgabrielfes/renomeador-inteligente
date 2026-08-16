@@ -95,6 +95,13 @@ export interface Bem {
   tipo?: TipoBem;
   /** Código do tipo na declaração do ITCMD-SP (ex.: "101") — lista de `tipos-itcmd.ts`. */
   codigoItcmd?: string;
+  /**
+   * Valor venal e valor de avaliação (decimais "12345.67"), quando distintos
+   * do valor atribuído. As CUSTAS (escritura/registro) recaem sobre o MAIOR
+   * entre atribuído, venal e avaliação — Enunciado 7 do CNB/SP e prática do RI.
+   */
+  valorVenal?: string;
+  valorAvaliacao?: string;
   imovel?: DetalhesImovel;
   veiculo?: DetalhesVeiculo;
   /** Avaliação por sucessão cumulada (chave = id da sucessão do estado fiscal). */
@@ -105,6 +112,11 @@ export interface Bem {
    * viúvo adquiriu depois do primeiro óbito). Ausente = integra todas.
    */
   sucessaoExclusiva?: string;
+  /**
+   * Bem da SOBREPARTILHA (CPC, arts. 669/670): ficou de fora do inventário
+   * principal e é partilhado à parte — não entra no monte-mor principal.
+   */
+  sobrepartilha?: boolean;
 }
 
 export interface Divida {
