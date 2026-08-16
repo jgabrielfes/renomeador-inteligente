@@ -16,6 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ROTULO_MODALIDADE, type ModalidadeEscritura } from '@/lib/partilha/escritura';
 import { agruparPendencias, type Pendencia } from '@/lib/partilha/pendencias';
+import type { RelatorioAntecipador } from '@/lib/partilha/antecipador';
+import { baixarBlob } from '@/lib/partilha/xlsx';
 import { Pilula } from './familia';
 
 /**
@@ -51,6 +53,93 @@ export function ChecklistPendencias({ pendencias }: { pendencias: Pendencia[] })
   );
 }
 
+/**
+ * Antecipador de qualificação registral: confronto do ato com as matrículas
+ * — o que o Registro de Imóveis pode exigir junto ao traslado/formal, antes
+ * que vire nota devolutiva. Relatório inline + exportação em PDF nas cores
+ * do módulo.
+ */
+export function AntecipadorSection({
+  relatorio,
+  nomeCaso,
+  onPdf,
+}: {
+  relatorio: RelatorioAntecipador | null;
+  nomeCaso: string;
+  /** Telemetria: o PDF do antecipador saiu. */
+  onPdf?: () => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [gerando, setGerando] = useState(false);
+  if (!relatorio) return null;
+
+  const baixarPdf = async () => {
+    setGerando(true);
+    try {
+      const { montarAntecipadorPdf } = await import('@/lib/partilha/antecipador-pdf');
+      const blob = await montarAntecipadorPdf(relatorio, nomeCaso);
+      baixarBlob(blob, `Antecipador registral${nomeCaso ? ` - ${nomeCaso}` : ''}.pdf`);
+      onPdf?.();
+    } finally {
+      setGerando(false);
+    }
+  };
+
+  const Apontamento = ({ a }: { a: RelatorioAntecipador['gerais'][number] }) => (
+    <p style={{ margin: '6px 0 0' }}>
+      <strong style={{ color: a.nivel === 'EXIGENCIA' ? 'var(--lacre)' : 'var(--bronze)' }}>
+        [{a.nivel === 'EXIGENCIA' ? 'EXIGÊNCIA' : 'CONFERIR'}]
+      </strong>{' '}
+      {a.texto} <span className="fund">{a.fundamento}</span>
+    </p>
+  );
+
+  return (
+    <div className="nota" style={{ marginTop: 16 }}>
+      <span className="eyebrow">Antecipador de qualificação registral</span>
+      <p style={{ marginBottom: 6 }}>
+        Confronto do ato com as certidões de matrícula: o que o Registro de Imóveis pode
+        exigir junto ao {relatorio.tituloRegistro} —{' '}
+        <strong style={{ color: relatorio.totalExigencias > 0 ? 'var(--lacre)' : undefined }}>
+          {relatorio.totalExigencias} exigência(s) prevista(s)
+        </strong>
+        . Relatório de apoio: a qualificação registral é do Oficial.
+      </p>
+      <div className="escolha">
+        <Button type="button" variant="outline" size="sm" onClick={() => setAberto(!aberto)}>
+          {aberto ? 'Recolher o relatório' : 'Ver o relatório'}
+        </Button>
+        <Button type="button" variant="outline" size="sm" loading={gerando} onClick={baixarPdf}>
+          Baixar em PDF
+        </Button>
+      </div>
+      {aberto && (
+        <div style={{ marginTop: 8 }}>
+          {relatorio.imoveis.map((im, i) => (
+            <div key={i} style={{ marginTop: 8 }}>
+              <strong>
+                {im.descricao}
+                {im.matricula ? ` — matrícula ${im.matricula}` : ''}
+              </strong>
+              {im.apontamentos.length === 0 ? (
+                <p className="fund">Nenhum apontamento — a folha confere com a titularidade.</p>
+              ) : (
+                im.apontamentos.map((a, j) => <Apontamento key={j} a={a} />)
+              )}
+            </div>
+          ))}
+          <div style={{ marginTop: 8 }}>
+            <strong>Itens de praxe do caso</strong>
+            {relatorio.gerais.map((a, j) => (
+              <Apontamento key={j} a={a} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Campo de prompt à IA — instruções livres antes de gerar o DOCX. */
 function CampoInstrucoes({
   valor,
@@ -77,11 +166,18 @@ export function MinutasView({
   onGerarPeticao,
   onGerarPeticaoJudicial,
   pendencias = [],
+  antecipador = null,
+  nomeCaso = '',
+  onAntecipadorPdf,
 }: {
   onGerarPeticao: (instrucoes: string) => Promise<void>;
   onGerarPeticaoJudicial: (instrucoes: string) => Promise<void>;
   /** Campos que ainda faltam para a minuta sair completa (checklist). */
   pendencias?: Pendencia[];
+  /** Antecipador de qualificação registral (confronto com as matrículas). */
+  antecipador?: RelatorioAntecipador | null;
+  nomeCaso?: string;
+  onAntecipadorPdf?: () => void;
 }) {
   const [gerando, setGerando] = useState<'tabelionato' | 'judicial' | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -109,6 +205,8 @@ export function MinutasView({
       </p>
 
       <ChecklistPendencias pendencias={pendencias} />
+
+      <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
 
       <CampoInstrucoes
         valor={instrucoes}
@@ -168,6 +266,9 @@ export function MinutasView({
 export function EscrituraView({
   onGerarEscritura,
   pendencias = [],
+  antecipador = null,
+  nomeCaso = '',
+  onAntecipadorPdf,
 }: {
   onGerarEscritura: (
     modalidade: ModalidadeEscritura,
@@ -176,6 +277,10 @@ export function EscrituraView({
   ) => Promise<void>;
   /** Campos que ainda faltam para a escritura sair completa (checklist). */
   pendencias?: Pendencia[];
+  /** Antecipador de qualificação registral (confronto com as matrículas). */
+  antecipador?: RelatorioAntecipador | null;
+  nomeCaso?: string;
+  onAntecipadorPdf?: () => void;
 }) {
   const [modalidade, setModalidade] = useState<ModalidadeEscritura>('PRESENCIAL');
   const [partesRemotas, setPartesRemotas] = useState('');
@@ -216,6 +321,8 @@ export function EscrituraView({
       )}
 
       <ChecklistPendencias pendencias={pendencias} />
+
+      <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
 
       <CampoInstrucoes
         valor={instrucoes}

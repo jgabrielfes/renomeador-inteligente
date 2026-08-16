@@ -45,6 +45,9 @@ import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/part
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
+import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
+import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
+import { anteciparQualificacaoRegistral } from '@/lib/partilha/antecipador';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import {
   avaliarQuotas,
@@ -147,13 +150,16 @@ const mesmaPessoa = (a: string, b: string) => {
 /** Copia da origem apenas os campos VAZIOS da ficha (extração é apoio). */
 function preencherVazios(
   destino: Qualificacao,
-  origem: Partial<Record<keyof Qualificacao, string | null>> | null | undefined,
+  origem: Partial<Record<keyof Qualificacao, string | boolean | null>> | null | undefined,
 ): Qualificacao {
   if (!origem) return destino;
   const ficha = { ...destino };
+  // Só os campos de TEXTO da ficha (QUALIFICACAO_VAZIA não traz o boolean
+  // uniaoEstavel — ele nunca é sobrescrito pela mesclagem).
   for (const campo of Object.keys(QUALIFICACAO_VAZIA) as (keyof Qualificacao)[]) {
     const v = origem[campo];
-    if (v && !ficha[campo]) ficha[campo] = v;
+    if (typeof v === 'string' && v && !ficha[campo])
+      (ficha as unknown as Record<string, string>)[campo] = v;
   }
   return ficha;
 }
@@ -254,11 +260,17 @@ interface CasoSalvo {
   modulosFiscais?: EstadoModulosFiscais;
   /** Sobrepartilha aberta (bens de fora marcados no próprio array de bens). */
   sobrepartilhaAberta?: boolean;
+  /** Bloco de notas do painel do caso (anotações livres do profissional). */
+  notas?: string;
+  /** Bens levados à colação (CC 2.002) — abatem na partilha. */
+  colacoes?: Colacao[];
 }
 
 export default function SucessoristaClient({
   licoesRenomeador = null,
   menu,
+  perfilConta = null,
+  ehMaster = false,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -266,6 +278,12 @@ export default function SucessoristaClient({
   /** Faixa de sessão (nome, papel, Administração, Sair). Vem pronta de um
    *  server component — este arquivo é client e não pode chamar auth(). */
   menu?: React.ReactNode;
+  /** Perfil VINCULADO À CONTA (banco): null = primeiro acesso, ainda não
+   *  escolhido — o módulo abre a escolha obrigatória. */
+  perfilConta?: Perfil | null;
+  /** MASTER circula pelos dois perfis (alternador na lombada); conta comum
+   *  fica travada no perfil escolhido no primeiro acesso. */
+  ehMaster?: boolean;
 }) {
   // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
   // compartilhável. A troca usa history.replaceState — atualização rasa, sem
@@ -302,6 +320,10 @@ export default function SucessoristaClient({
   const [bens, setBens] = useState<Bem[]>([]);
   /** Dívidas e despesas do espólio (R$) — abatem a massa antes da partilha. */
   const [dividasEspolio, setDividasEspolio] = useState('');
+  /** Bens levados à COLAÇÃO (CC 2.002): doações em vida que abatem o quinhão. */
+  const [colacoes, setColacoes] = useState<Colacao[]>([]);
+  /** Bloco de notas do painel do caso — anotações livres, salvas no caso. */
+  const [notasCaso, setNotasCaso] = useState('');
   const [checklistAcervo, setChecklistAcervo] = useState(montarChecklistAcervo());
   /** Sociedades lidas do contrato social/balanço, mescladas por empresa. */
   const [sociedades, setSociedades] = useState<Record<string, SociedadeExtraida>>({});
@@ -456,8 +478,11 @@ export default function SucessoristaClient({
   const [condicoesHonorarios, setCondicoesHonorarios] =
     useState<CondicoesHonorarios>(CONDICOES_INICIAIS);
 
-  /* --- perfil de uso + tema + rascunho local persistente --- */
-  const [perfil, setPerfil] = useState<Perfil>('ADVOGADO');
+  /* --- perfil de uso (vinculado à CONTA) + tema + rascunho local --- */
+  // O perfil vem do banco (users.perfilSucessorista): a conta comum escolhe
+  // UMA vez no primeiro acesso e fica travada nele; só MASTER alterna.
+  const [perfil, setPerfil] = useState<Perfil>(perfilConta ?? 'ADVOGADO');
+  const [escolhendoPerfil, setEscolhendoPerfil] = useState(false);
   const [tema, setTema] = useState<TemaSucessorista>('claro');
   const [rascunhoSalvoEm, setRascunhoSalvoEm] = useState<string | null>(null);
 
@@ -597,6 +622,8 @@ export default function SucessoristaClient({
     if (salvo.modulosFiscais && typeof salvo.modulosFiscais === 'object')
       setModulosFiscais(salvo.modulosFiscais);
     if (typeof salvo.sobrepartilhaAberta === 'boolean') setSobrepartilhaAberta(salvo.sobrepartilhaAberta);
+    if (typeof salvo.notas === 'string') setNotasCaso(salvo.notas);
+    if (Array.isArray(salvo.colacoes)) setColacoes(salvo.colacoes);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -618,6 +645,8 @@ export default function SucessoristaClient({
       convites,
       modulosFiscais,
       sobrepartilhaAberta,
+      notas: notasCaso,
+      colacoes,
     };
   };
 
@@ -625,8 +654,12 @@ export default function SucessoristaClient({
     const t = setTimeout(() => {
       void (async () => {
         try {
-          const p = localStorage.getItem(CHAVE_PERFIL);
-          if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
+          // Perfil agora é da CONTA (banco, via prop) — a chave antiga do
+          // navegador só vale como transição para quem ainda não escolheu.
+          if (perfilConta === null) {
+            const p = localStorage.getItem(CHAVE_PERFIL);
+            if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
+          }
           const t = localStorage.getItem(CHAVE_TEMA);
           if (t === 'claro' || t === 'escuro') setTema(t);
         } catch {
@@ -667,7 +700,9 @@ export default function SucessoristaClient({
       })();
     }, 0);
     return () => clearTimeout(t);
-  }, []);
+    // perfilConta é prop do servidor, estável na sessão — o efeito continua
+    // rodando uma vez só.
+  }, [perfilConta]);
 
 
   /* --- ações do painel "Meus casos" --- */
@@ -861,15 +896,41 @@ export default function SucessoristaClient({
     });
   };
 
-  // Perfil (Advogado × Escrevente) vale para o navegador, não para o caso.
+  // Perfil (Advogado × Escrevente) agora é da CONTA; a chave do navegador
+  // segue gravada só como espelho de transição (contas antigas sem escolha).
   useEffect(() => {
     if (!restauradoRef.current) return;
     try {
       localStorage.setItem(CHAVE_PERFIL, perfil);
     } catch {
-      // modo restrito: o perfil volta ao padrão na próxima visita
+      // modo restrito
     }
   }, [perfil]);
+
+  /** Primeiro acesso: a conta ainda não escolheu o perfil — escolha
+   *  obrigatória (dialog), gravada no banco pela server action. */
+  useEffect(() => {
+    if (perfilConta === null) {
+      const t = setTimeout(() => setEscolhendoPerfil(true), 0);
+      return () => clearTimeout(t);
+    }
+  }, [perfilConta]);
+
+  const escolherPerfilConta = async (p: Perfil) => {
+    setPerfil(p);
+    setEscolhendoPerfil(false);
+    try {
+      const { salvarPerfilConta } = await import('./perfil-actions');
+      const r = await salvarPerfilConta(p);
+      if (!r.ok) {
+        toast.error('Não foi possível gravar o perfil na conta', {
+          description: 'A escolha vale nesta sessão; tente de novo mais tarde.',
+        });
+      }
+    } catch {
+      // melhor-esforço: a escolha local segue valendo nesta sessão
+    }
+  };
 
   // Tema claro × escuro: preferência do navegador, como o perfil.
   useEffect(() => {
@@ -1221,6 +1282,89 @@ export default function SucessoristaClient({
   }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens]);
 
   /**
+   * Conferidor de QUALIFICAÇÃO CRUZADA (motor puro): folha × certidões do
+   * registro civil lidas pelo cofre — divórcio averbado × declarado casado,
+   * casamento pré-1977, regime sem pacto, grafia, datas. Divergência ALTA
+   * vira alerta VERMELHO no item I e no painel, pedindo a correção.
+   */
+  const divergenciasConferencia = useMemo(() => {
+    const certidoes = familia.certidoesCivis ?? [];
+    if (certidoes.length === 0 && herdeiros.length === 0) return [];
+    const pessoas: PessoaConferencia[] = [];
+    const q = (id: string) => familia.qualificacoes[id];
+    if (falecido.nome.trim()) {
+      pessoas.push({
+        id: '__falecido__',
+        nome: falecido.nome,
+        papel: 'FALECIDO',
+        estadoCivil: q('__falecido__')?.estadoCivil,
+        uniaoEstavel: q('__falecido__')?.uniaoEstavel,
+        conjugeNome: temSobrevivente ? nomeSobrev : q('__falecido__')?.conjugeNome,
+        casamentoRegime: q('__falecido__')?.casamentoRegime,
+        dataNascimento: q('__falecido__')?.dataNascimento,
+      });
+    }
+    if (temSobrevivente && nomeSobrev.trim()) {
+      pessoas.push({
+        id: '__sobrevivente__',
+        nome: nomeSobrev,
+        papel: 'SOBREVIVENTE',
+        estadoCivil: q('__sobrevivente__')?.estadoCivil,
+        uniaoEstavel: q('__sobrevivente__')?.uniaoEstavel,
+        conjugeNome: falecido.nome,
+        casamentoRegime: q('__sobrevivente__')?.casamentoRegime,
+        dataNascimento: q('__sobrevivente__')?.dataNascimento,
+      });
+    }
+    for (const h of herdeiros) {
+      pessoas.push({
+        id: h.id,
+        nome: h.nome,
+        papel: 'HERDEIRO',
+        estadoCivil: q(h.id)?.estadoCivil,
+        uniaoEstavel: q(h.id)?.uniaoEstavel,
+        conjugeNome: q(h.id)?.conjugeNome,
+        casamentoRegime: q(h.id)?.casamentoRegime,
+        dataNascimento: q(h.id)?.dataNascimento,
+      });
+    }
+    return conferirQualificacoes({
+      pessoas,
+      certidoes,
+      dataObitoInventario: falecido.dataObito || null,
+    });
+  }, [familia.certidoesCivis, familia.qualificacoes, falecido.nome, falecido.dataObito, temSobrevivente, nomeSobrev, herdeiros]);
+
+  /**
+   * COLAÇÃO aplicada (motor puro): bens doados em vida somam à massa de
+   * cálculo e abatem do quinhão do herdeiro donatário — o espelho mostra o
+   * quadro ajustado quando há colação lançada.
+   */
+  const resultadoColacoes = useMemo(() => {
+    if (!resultado || resultado.bloqueios.length > 0) return null;
+    return aplicarColacoes(resultado, colacoes);
+  }, [resultado, colacoes]);
+
+  /**
+   * ANTECIPADOR DE QUALIFICAÇÃO REGISTRAL (motor puro): confronto do ato com
+   * as matrículas — o que o RI vai exigir junto ao traslado/formal.
+   */
+  const relatorioAntecipador = useMemo(() => {
+    if (!bens.some((b) => b.tipo === 'IMOVEL' && !b.sobrepartilha)) return null;
+    return anteciparQualificacaoRegistral({
+      falecido: {
+        nome: falecido.nome,
+        estadoCivil: familia.qualificacoes['__falecido__']?.estadoCivil ?? null,
+      },
+      temSobrevivente,
+      nomeSobrev,
+      regime,
+      extrajudicial: resultado ? resultado.elegivelExtrajudicial : true,
+      bens,
+    });
+  }, [bens, falecido.nome, familia.qualificacoes, temSobrevivente, nomeSobrev, regime, resultado]);
+
+  /**
    * Monta o caso.json atual: cabeçalho vivo (autor, óbito, nº de documentos
    * e custo projetado saem da própria folha), dados = snapshot do wizard e
    * manifesto com a classificação sincronizada dos anexos.
@@ -1289,7 +1433,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -1658,6 +1802,18 @@ export default function SucessoristaClient({
             .map((n) => nomeProprio(n))
             .filter((n) => n && !atuais.some((x) => mesmaPessoa(x, n)));
           return [...atuais, ...novosDecl];
+        })(),
+        // Certidões do registro civil lidas: acumulam (dedup por tipo +
+        // titular) e alimentam o conferidor de qualificação cruzada.
+        certidoesCivis: (() => {
+          const atuais = prev.certidoesCivis ?? [];
+          const novas = (lido.certidoesCivis ?? []).filter(
+            (c) =>
+              !atuais.some(
+                (x) => x.tipo === c.tipo && mesmaPessoa(x.pessoa, c.pessoa),
+              ),
+          );
+          return novas.length > 0 ? [...atuais, ...novas] : atuais;
         })(),
       };
     });
@@ -2100,24 +2256,34 @@ export default function SucessoristaClient({
           O Sucessorista
           <small>Folha de trabalho do inventário</small>
         </div>
-        <div className="perfil" role="radiogroup" aria-label="Perfil de uso">
-          {(
-            [
-              ['ADVOGADO', 'Advogado(a)'],
-              ['ESCREVENTE', 'Escrevente Notarial'],
-            ] as const
-          ).map(([id, rotulo]) => (
-            <button
-              key={id}
-              role="radio"
-              aria-checked={perfil === id}
-              className={perfil === id ? 'ativo' : ''}
-              onClick={() => setPerfil(id)}
-            >
-              {rotulo}
+        {/* O perfil é da CONTA: usuário comum vê o próprio perfil fixo;
+            só MASTER circula pelos dois (administração). */}
+        {ehMaster ? (
+          <div className="perfil" role="radiogroup" aria-label="Perfil de uso">
+            {(
+              [
+                ['ADVOGADO', 'Advogado(a)'],
+                ['ESCREVENTE', 'Escrevente Notarial'],
+              ] as const
+            ).map(([id, rotulo]) => (
+              <button
+                key={id}
+                role="radio"
+                aria-checked={perfil === id}
+                className={perfil === id ? 'ativo' : ''}
+                onClick={() => setPerfil(id)}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="perfil" aria-label="Perfil da conta">
+            <button className="ativo" disabled aria-disabled="true">
+              {perfil === 'ADVOGADO' ? 'Advogado(a)' : 'Escrevente Notarial'}
             </button>
-          ))}
-        </div>
+          </div>
+        )}
         {(
           [
             ['caso', '0', 'O caso'],
@@ -2226,6 +2392,7 @@ export default function SucessoristaClient({
             sucessoes={fiscal.sucessoes ?? []}
             setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
             basesSucessoes={basesSucessoes}
+            divergencias={divergenciasConferencia}
           />
         )}
 
@@ -2235,6 +2402,9 @@ export default function SucessoristaClient({
             setBens={setBens}
             dividas={dividasEspolio}
             setDividas={setDividasEspolio}
+            herdeiros={herdeiros}
+            colacoes={colacoes}
+            setColacoes={setColacoes}
             sociedades={resumoSociedades}
             sucessoes={fiscal.sucessoes ?? []}
             voltar={() => irPara('familia')}
@@ -2279,6 +2449,7 @@ export default function SucessoristaClient({
                 onExportado={(quinhoes) =>
                   registrarDoc('XLSX_PARTILHA', { itens: quinhoes })
                 }
+                colacao={resultadoColacoes}
               />
             )}
 
@@ -2562,6 +2733,13 @@ export default function SucessoristaClient({
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
+              rito={
+                resultado && resultado.bloqueios.length === 0
+                  ? resultado.elegivelExtrajudicial
+                    ? 'EXTRAJUDICIAL'
+                    : 'JUDICIAL'
+                  : null
+              }
               convites={convites}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
@@ -2637,11 +2815,20 @@ export default function SucessoristaClient({
             onGerarPeticao={gerarPeticao}
             onGerarPeticaoJudicial={gerarPeticaoJudicial}
             pendencias={pendenciasMinuta}
+            antecipador={relatorioAntecipador}
+            nomeCaso={falecido.nome}
+            onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
           />
         )}
 
         {abaProc === 'escritura' && perfil === 'ESCREVENTE' && (
-          <EscrituraView onGerarEscritura={gerarEscritura} pendencias={pendenciasMinuta} />
+          <EscrituraView
+            onGerarEscritura={gerarEscritura}
+            pendencias={pendenciasMinuta}
+            antecipador={relatorioAntecipador}
+            nomeCaso={falecido.nome}
+            onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
+          />
         )}
 
         {abaProc === 'matricula' && (
@@ -2686,10 +2873,41 @@ export default function SucessoristaClient({
         economias={economias}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
-        alertasLeitura={alertasLeitura}
+        alertasLeitura={[
+          // Divergências ALTAS do conferidor entram como pontos de atenção
+          // (alerta vermelho) — a correção é pedida no item I.
+          ...divergenciasConferencia
+            .filter((d) => d.nivel === 'ALTA')
+            .map((d) => `${d.pessoa}: ${d.mensagem}`),
+          ...alertasLeitura,
+        ]}
+        notas={notasCaso}
+        setNotas={setNotasCaso}
       />
     </div>
     )}
+
+    {/* primeiro acesso: a escolha do perfil é OBRIGATÓRIA e fica na conta —
+        um mesmo login não circula pelos dois (só MASTER). */}
+    <Dialog open={escolhendoPerfil} onOpenChange={() => undefined}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
+          <DialogDescription>
+            Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA ao seu
+            login — Advogado(a) trabalha com honorários e minutas ao Tabelionato/petição;
+            Escrevente Notarial trabalha com a minuta da escritura. Para trocar depois,
+            fale com a administração.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="escolha" style={{ marginTop: 8, gap: 10 }}>
+          <Button onClick={() => void escolherPerfilConta('ADVOGADO')}>Advogado(a)</Button>
+          <Button variant="outline" onClick={() => void escolherPerfilConta('ESCREVENTE')}>
+            Escrevente Notarial
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
     {/* guarda de conflito: outro computador salvou este caso depois de você abrir */}
     <Dialog open={conflito !== null} onOpenChange={() => undefined}>
@@ -2885,6 +3103,7 @@ function EspelhoView({
   avancar,
   irParaItcmd,
   onExportado,
+  colacao = null,
 }: {
   resultado: ReturnType<typeof partilhar> | null;
   bens: Bem[];
@@ -2894,6 +3113,8 @@ function EspelhoView({
   irParaItcmd: () => void;
   /** Telemetria: a planilha da partilha saiu (quantidade de quinhões). */
   onExportado: (quinhoes: number) => void;
+  /** Quadro ajustado pela COLAÇÃO (CC 2.002), quando há colação lançada. */
+  colacao?: import('@/lib/partilha/colacao').ResultadoColacao | null;
 }) {
   const [exportando, setExportando] = useState(false);
 
@@ -3057,6 +3278,41 @@ function EspelhoView({
               );
             })}
           </div>
+
+          {/* COLAÇÃO (CC 2.002): quadro ajustado — massa fictícia, abate do
+              donatário e quinhão líquido a receber de cada herdeiro. */}
+          {colacao && (
+            <div className="nota" style={{ marginTop: 14 }}>
+              <span className="eyebrow">
+                Colação aplicada — {brl(colacao.totalColacionado.toFixed(2))} voltando à massa de cálculo
+              </span>
+              <div className="espelho" style={{ marginTop: 8 }}>
+                <div className="cabeca">
+                  <span>Herdeiro</span>
+                  <span style={{ textAlign: 'right' }}>Quinhão − colacionado</span>
+                  <span style={{ textAlign: 'right' }}>Líquido a receber</span>
+                </div>
+                {colacao.quinhoes.map((q) => (
+                  <div key={q.herdeiroId} className="lanc">
+                    <span className="nome">{q.nome}</span>
+                    <span className="fracao num">
+                      {brl(q.valorComMassaFicticia.toFixed(2))}
+                      {q.colacionado > 0 ? ` − ${brl(q.colacionado.toFixed(2))}` : ''}
+                    </span>
+                    <span className="valor num">{brl(q.valorLiquido.toFixed(2))}</span>
+                  </div>
+                ))}
+              </div>
+              {colacao.avisos.map((a, i) => (
+                <p key={i} className="mono-alerta" style={{ marginTop: 6 }}>
+                  {a}
+                </p>
+              ))}
+              <p className="fund" style={{ marginTop: 6 }}>
+                {colacao.fundamento}
+              </p>
+            </div>
+          )}
 
           <div style={{ marginTop: 14 }}>
             <Button variant="outline" onClick={exportarExcel} loading={exportando}>

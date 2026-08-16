@@ -56,7 +56,14 @@ export interface Qualificacao {
   dataNascimento: string;
   filiacao: string;
   profissao: string;
+  /** Escolha fechada: solteiro(a) · casado(a) · divorciado(a) · viúvo(a). */
   estadoCivil: string;
+  /**
+   * Convive em UNIÃO ESTÁVEL — separada do estado civil de propósito: união
+   * estável NÃO é estado civil (o convivente mantém o próprio). Marcada,
+   * abre a qualificação do(a) convivente (campos conjuge*).
+   */
+  uniaoEstavel?: boolean;
   email: string;
   endereco: string;
   complemento: string;

@@ -19,6 +19,7 @@ export type GrupoDocumento =
   | 'VEICULOS'
   | 'SOCIETARIO'
   | 'FISCAL'
+  | 'ENCERRAMENTO'
   | 'OUTROS';
 
 export const ROTULO_GRUPO: Record<GrupoDocumento, string> = {
@@ -32,6 +33,7 @@ export const ROTULO_GRUPO: Record<GrupoDocumento, string> = {
   VEICULOS: 'Veículos',
   SOCIETARIO: 'Participações societárias',
   FISCAL: 'Fiscal',
+  ENCERRAMENTO: 'Encerramento do caso',
   OUTROS: 'Outros',
 };
 
@@ -140,6 +142,30 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
     titulo: 'Última declaração de IR do falecido',
     descricao: 'O mapa do patrimônio: confere se nenhum bem ficou fora das declarações.',
   },
+  // ENCERRAMENTO: o produto final do caso volta para o cofre — traslado
+  // (extrajudicial) OU formal de partilha (judicial), e as matrículas já com
+  // os registros das partilhas. É o que fecha o controle documental do caso.
+  {
+    id: 'traslado-escritura',
+    grupo: 'ENCERRAMENTO',
+    titulo: 'Traslado da escritura de inventário e partilha',
+    descricao:
+      'Via extrajudicial: o traslado lavrado pelo Tabelionato — o título que vai a registro.',
+  },
+  {
+    id: 'formal-partilha',
+    grupo: 'ENCERRAMENTO',
+    titulo: 'Formal de partilha (ou carta de adjudicação)',
+    descricao:
+      'Via judicial: o formal expedido após o trânsito em julgado — o título que vai a registro.',
+  },
+  {
+    id: 'matriculas-registradas',
+    grupo: 'ENCERRAMENTO',
+    titulo: 'Matrículas com os registros das partilhas',
+    descricao:
+      'Após a finalização: a certidão atualizada de cada matrícula já com o registro da partilha — comprova a transmissão concluída em todos os imóveis.',
+  },
   {
     id: 'outros',
     grupo: 'OUTROS',
@@ -156,6 +182,8 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
  * vem antes. O que não casa vai para "outros" — nunca para um item errado.
  */
 const REGRAS_CLASSIFICACAO: Array<[RegExp, string]> = [
+  [/TRASLADO|ESCRITURA DE INVENTARIO/, 'traslado-escritura'],
+  [/FORMAL DE PARTILHA|CARTA DE ADJUDICACAO|CARTA DE SENTENCA/, 'formal-partilha'],
   [/OBITO/, 'certidao-obito'],
   [/TESTAMENTO|CENSEC|RCTO/, 'certidao-testamento'],
   [/CONTRATO SOCIAL|ALTERACAO CONTRATUAL|JUCESP|\bCNPJ\b|SOCIETARI/, 'contrato-social'],

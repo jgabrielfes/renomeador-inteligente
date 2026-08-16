@@ -24,7 +24,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import type { AvaliacaoBemSucessao, Bem, TipoBem } from '@/lib/partilha/types';
+import type { AvaliacaoBemSucessao, Bem, Herdeiro, TipoBem } from '@/lib/partilha/types';
+import type { Colacao } from '@/lib/partilha/colacao';
 import { TIPOS_BEM_ITCMD, tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
 import type { SucessaoCumulada } from './itcmd-view';
 import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
@@ -132,6 +133,9 @@ export function AcervoView({
   setBens,
   dividas,
   setDividas,
+  herdeiros = [],
+  colacoes = [],
+  setColacoes,
   sociedades = [],
   sucessoes = [],
   voltar,
@@ -141,6 +145,11 @@ export function AcervoView({
   setBens: (b: Bem[]) => void;
   dividas: string;
   setDividas: (v: string) => void;
+  /** Herdeiros do item I — donatários possíveis da colação. */
+  herdeiros?: Herdeiro[];
+  /** Bens levados à COLAÇÃO (CC 2.002): abatem o quinhão do donatário. */
+  colacoes?: Colacao[];
+  setColacoes?: (c: Colacao[]) => void;
   sociedades?: ResumoSociedade[];
   /** Sucessões cumuladas do caso: abrem a avaliação POR SUCESSÃO em cada bem. */
   sucessoes?: SucessaoCumulada[];
@@ -371,6 +380,10 @@ export function AcervoView({
         base do ITCMD.
       </p>
 
+      {setColacoes && (
+        <EditorColacoes herdeiros={herdeiros} colacoes={colacoes} setColacoes={setColacoes} />
+      )}
+
       <div className="rodape-acoes">
         <Button variant="outline" onClick={voltar}>
           Voltar à família
@@ -380,6 +393,159 @@ export function AcervoView({
         </Button>
       </div>
     </section>
+  );
+}
+
+/* ---------- bens levados à COLAÇÃO (CC, arts. 2.002–2.012) ---------- */
+
+const esquemaColacao = z.object({
+  herdeiroId: z.string().min(1, 'Escolha o(a) herdeiro(a) que recebeu a doação.'),
+  descricao: z.string().trim().min(1, 'Descreva o bem doado em vida.'),
+  valor: z
+    .string()
+    .trim()
+    .min(1, 'Informe o valor de colação.')
+    .regex(VALOR_PTBR, 'Valor inválido — use 1.234,56.'),
+});
+
+type NovaColacao = z.infer<typeof esquemaColacao>;
+
+/**
+ * Bens doados em vida a herdeiros que voltam à massa de CÁLCULO (colação):
+ * o valor soma ao monte fictício e ABATE do quinhão do donatário na partilha
+ * — a lista abre por herdeiro, com o bem e o valor a abater.
+ */
+function EditorColacoes({
+  herdeiros,
+  colacoes,
+  setColacoes,
+}: {
+  herdeiros: Herdeiro[];
+  colacoes: Colacao[];
+  setColacoes: (c: Colacao[]) => void;
+}) {
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<NovaColacao>({
+    resolver: zodResolver(esquemaColacao),
+    defaultValues: { herdeiroId: '', descricao: '', valor: '' },
+  });
+
+  const nomeDo = (id: string) => herdeiros.find((h) => h.id === id)?.nome ?? '(herdeiro removido)';
+
+  const lancar = (dados: NovaColacao) => {
+    const decimal = Number(dados.valor.replace(/\./g, '').replace(',', '.'));
+    setColacoes([
+      ...colacoes,
+      {
+        id: uid('col'),
+        herdeiroId: dados.herdeiroId,
+        descricao: dados.descricao.trim(),
+        valor: (Number.isFinite(decimal) ? decimal : 0).toFixed(2),
+      },
+    ]);
+    reset();
+  };
+
+  return (
+    <>
+      <h2>Bens levados à colação</h2>
+      <p className="subtitulo" style={{ marginBottom: 10 }}>
+        Doações em vida a descendentes voltam à massa de CÁLCULO para igualar as legítimas
+        (CC, art. 2.002): o valor soma ao monte fictício e ABATE do quinhão de quem já
+        recebeu — o espelho do item III mostra o quadro ajustado. Lance por herdeiro o bem
+        doado e o valor de colação (CC, art. 2.004).
+      </p>
+      <div className="cartao">
+        {colacoes.map((c) => (
+          <div key={c.id} className="linha-item">
+            <span>
+              <strong>{nomeDo(c.herdeiroId)}</strong>
+              <span className="fracao">
+                {' '}
+                · {c.descricao} ·{' '}
+                <span className="num">{brl(c.valor)}</span> a abater na partilha
+              </span>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={() => setColacoes(colacoes.filter((x) => x.id !== c.id))}
+            >
+              remover
+            </Button>
+          </div>
+        ))}
+
+        {herdeiros.length === 0 ? (
+          <p className="fund">Lance os herdeiros no item I para registrar colações.</p>
+        ) : (
+          <form noValidate onSubmit={handleSubmit(lancar)}>
+            <div className="grade c3" style={{ marginTop: colacoes.length > 0 ? 12 : 0 }}>
+              <Field data-invalid={Boolean(errors.herdeiroId)}>
+                <FieldLabel>Herdeiro(a) donatário(a)</FieldLabel>
+                <Controller
+                  control={control}
+                  name="herdeiroId"
+                  render={({ field }) => (
+                    <Select value={field.value || null} onValueChange={(v) => v && field.onChange(String(v))}>
+                      <SelectTrigger aria-invalid={Boolean(errors.herdeiroId)}>
+                        <SelectValue placeholder="Quem recebeu a doação" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {herdeiros.map((h) => (
+                          <SelectItem key={h.id} value={h.id}>
+                            {h.nome || '(sem nome)'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <FieldError errors={[errors.herdeiroId]} />
+              </Field>
+              <Field data-invalid={Boolean(errors.descricao)}>
+                <FieldLabel htmlFor="colacao-descricao">Bem doado em vida</FieldLabel>
+                <Input
+                  id="colacao-descricao"
+                  aria-invalid={Boolean(errors.descricao)}
+                  {...register('descricao')}
+                />
+                <FieldError errors={[errors.descricao]} />
+              </Field>
+              <Field data-invalid={Boolean(errors.valor)}>
+                <FieldLabel htmlFor="colacao-valor">Valor de colação (R$)</FieldLabel>
+                <Controller
+                  control={control}
+                  name="valor"
+                  render={({ field }) => (
+                    <CurrencyInput
+                      id="colacao-valor"
+                      aria-invalid={Boolean(errors.valor)}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
+                />
+                <FieldError errors={[errors.valor]} />
+              </Field>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Button type="submit" variant="outline">
+                Adicionar colação
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </>
   );
 }
 

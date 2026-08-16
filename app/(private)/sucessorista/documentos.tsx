@@ -79,6 +79,7 @@ export function DocumentosView({
   setAnexos,
   nomeCaso,
   temSobrevivente = true,
+  rito = null,
   convites = {},
   onMontado,
 }: {
@@ -87,6 +88,9 @@ export function DocumentosView({
   nomeCaso: string;
   /** false esconde o grupo do cônjuge supérstite — sucessão sem essa parte. */
   temSobrevivente?: boolean;
+  /** Rito provável do caso: decide o título de ENCERRAMENTO que aparece —
+   *  traslado da escritura (extrajudicial) × formal de partilha (judicial). */
+  rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
   /** Convites do cofre: o que cada herdeiro enviou aparece no card certo. */
   convites?: Record<string, ConviteHerdeiro>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
@@ -115,9 +119,14 @@ export function DocumentosView({
     }
   }
 
-  const catalogoDoCasoTopo = CATALOGO_DOCUMENTOS.filter(
-    (doc) => temSobrevivente || doc.grupo !== 'SOBREVIVENTE',
-  );
+  const catalogoDoCasoTopo = CATALOGO_DOCUMENTOS.filter((doc) => {
+    if (!temSobrevivente && doc.grupo === 'SOBREVIVENTE') return false;
+    // Encerramento pelo rito: extrajudicial junta o TRASLADO; judicial, o
+    // FORMAL — o outro título não aparece (rito indefinido mostra os dois).
+    if (doc.id === 'traslado-escritura' && rito === 'JUDICIAL') return false;
+    if (doc.id === 'formal-partilha' && rito === 'EXTRAJUDICIAL') return false;
+    return true;
+  });
   const totalAnexos = Object.values(anexos).reduce((acc, fs) => acc + fs.length, 0);
   const itensComAnexo = catalogoDoCasoTopo.filter((d) => (anexos[d.id] ?? []).length > 0).length;
 

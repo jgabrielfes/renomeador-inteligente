@@ -14,24 +14,45 @@
 import { AccessTracker } from "@/components/access-tracker";
 import { UserMenu } from "@/components/user-menu";
 import { APP, IDENTIDADE } from "@/lib/app";
-import { requireSession } from "@/lib/auth";
+import { isMaster, requireSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 import { carregarLicoes } from "./renomeador/licoes-actions";
 
 export default async function Home() {
-  await requireSession("/");
+  const session = await requireSession("/");
   // Regras + correções da conta, já no primeiro render (sem flash de vazio).
   // Valem nos dois sites: o cofre do Sucessorista embute o Renomeador inteiro.
   const licoes = await carregarLicoes();
 
   if (APP === "SUCESSORISTA") {
+    // Perfil de uso VINCULADO À CONTA (null = primeiro acesso pergunta).
+    // Falha de banco (ou migração ainda não aplicada) degrada para null.
+    let perfilConta: "ADVOGADO" | "ESCREVENTE" | null = null;
+    try {
+      const usuario = session?.user?.id
+        ? await prisma.user.findUnique({
+            where: { id: session.user.id },
+            select: { perfilSucessorista: true },
+          })
+        : null;
+      perfilConta = usuario?.perfilSucessorista ?? null;
+    } catch {
+      perfilConta = null;
+    }
+
     const { default: SucessoristaClient } = await import(
       "./sucessorista/sucessorista-client"
     );
     return (
       <>
         <AccessTracker modulo={IDENTIDADE.modulo} />
-        <SucessoristaClient licoesRenomeador={licoes} menu={<UserMenu />} />
+        <SucessoristaClient
+          licoesRenomeador={licoes}
+          menu={<UserMenu />}
+          perfilConta={perfilConta}
+          ehMaster={isMaster(session)}
+        />
       </>
     );
   }

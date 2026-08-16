@@ -9,6 +9,7 @@
  */
 
 import { useMemo } from 'react';
+import { Textarea } from '@/components/ui/textarea';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
 import {
@@ -48,6 +49,8 @@ export function PainelCaso({
   custos = null,
   impostoSucessoes = 0,
   alertasLeitura = [],
+  notas = '',
+  setNotas,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -65,6 +68,9 @@ export function PainelCaso({
   impostoSucessoes?: number;
   /** Alertas da leitura (herdeiros declarados sem lançamento, frações ideais). */
   alertasLeitura?: string[];
+  /** Bloco de notas do caso — anotações livres, salvas com o snapshot. */
+  notas?: string;
+  setNotas?: (v: string) => void;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -90,7 +96,6 @@ export function PainelCaso({
   }, [resultado, provisao, isencoes, faixas]);
 
   const incapaz = herdeiros.some((h) => h.menorOuIncapaz);
-  const extrajudicial = resultado ? resultado.elegivelExtrajudicial : !incapaz;
 
   const travas: string[] = [];
   if (incapaz)
@@ -315,18 +320,17 @@ export function PainelCaso({
         )}
       </div>
 
+      {/* Bloco de notas do caso (no lugar do antigo "Rito provável" — o rito
+          segue visível nas abas). Anotações livres, salvas com o caso. */}
       <div className="metrica">
-        <div className="k">Rito provável</div>
-        <div className={`v sm ${extrajudicial ? '' : 'lacre'}`}>
-          {extrajudicial ? 'Extrajudicial' : 'Judicial'}
-        </div>
-        <p className="rodape">
-          {extrajudicial
-            ? incapaz
-              ? 'Com herdeiro incapaz, a escritura exige parecer favorável do Ministério Público (Res. CNJ 571/2024).'
-              : 'Herdeiros capazes e consenso permitem escritura em qualquer tabelionato.'
-            : 'Há bloqueio apontado pelo motor — ver pontos de atenção.'}
-        </p>
+        <div className="k">Bloco de notas</div>
+        <Textarea
+          value={notas}
+          rows={4}
+          placeholder="Anotações do caso — pendências, recados, o que combinar com a família…"
+          onChange={(e) => setNotas?.(e.target.value)}
+          style={{ marginTop: 6, fontSize: 12.5, background: 'var(--papel-alto, transparent)' }}
+        />
       </div>
 
       {comparativo && (

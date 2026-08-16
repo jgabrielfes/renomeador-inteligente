@@ -85,6 +85,7 @@ const CASO_VAZIO: CasoExtraido = {
   sociedades: [],
   outrosFalecidos: [],
   herdeirosNoObito: [],
+  certidoesCivis: [],
   arquivos: [],
 };
 
