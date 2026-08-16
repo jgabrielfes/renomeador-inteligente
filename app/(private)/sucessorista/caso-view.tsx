@@ -49,6 +49,7 @@ import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib
 import { filesFromDataTransfer } from '@/lib/fs';
 import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
+import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { comprimirImagem } from '@/lib/envio-imagens';
 import { registrarLeituraDoCofre } from './actions';
 
@@ -118,6 +119,122 @@ const NOVIDADES: { titulo: string; descricao: string }[] = [
       'O herdeiro confirma o envio e os documentos do cofre aparecem no card correlato da aba Documentos.',
   },
 ];
+
+/** Uma chegada pelo link do cofre (portal do herdeiro), já achatada. */
+interface NotificacaoCofre {
+  herdeiro: string;
+  texto: string;
+  status: 'aguardando conferência' | 'aprovado' | 'devolvido para reenvio' | 'informação';
+  quando: string | null;
+}
+
+/**
+ * Notificações do COFRE DE DOCUMENTOS (portal do herdeiro): o que as partes
+ * enviaram pelo link — documentos e qualificação — com o botão que leva à
+ * aba Documentos, onde cada envio aparece no card correlato com a lupa de
+ * pré-visualização. Os ARQUIVOS ficam no navegador do herdeiro (fronteira
+ * de dados): aqui chegam nome proposto, tipo e status.
+ */
+function NotificacoesCofreCard({
+  convites,
+  irParaDocumentos,
+}: {
+  convites: Record<string, ConviteHerdeiro>;
+  irParaDocumentos: () => void;
+}) {
+  const notificacoes: NotificacaoCofre[] = [];
+  for (const c of Object.values(convites)) {
+    if (c.qualificacaoEnviadaEm) {
+      notificacoes.push({
+        herdeiro: c.nomeHerdeiro,
+        texto: 'Preencheu a própria qualificação no portal',
+        status: 'informação',
+        quando: c.qualificacaoEnviadaEm,
+      });
+    }
+    for (const d of c.documentos) {
+      if (d.status === 'PENDENTE' || !d.nomeArquivo) continue;
+      notificacoes.push({
+        herdeiro: c.nomeHerdeiro,
+        texto: `${d.titulo}: ${d.nomeArquivo}`,
+        status:
+          d.status === 'APROVADO'
+            ? 'aprovado'
+            : d.status === 'REJEITADO'
+              ? 'devolvido para reenvio'
+              : 'aguardando conferência',
+        quando: d.enviadoEm ?? null,
+      });
+    }
+  }
+  // Mais recentes primeiro (sem data vai para o fim, ordem estável).
+  notificacoes.sort((a, b) => (b.quando ?? '').localeCompare(a.quando ?? ''));
+
+  const aConferir = notificacoes.filter((n) => n.status === 'aguardando conferência').length;
+  const visiveis = notificacoes.slice(0, 6);
+
+  const dataCurta = (iso: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  return (
+    <div className="cartao">
+      <span className="eyebrow">
+        Notificações do cofre
+        {aConferir > 0 && (
+          <span style={{ color: 'var(--lacre)', marginLeft: 6 }}>
+            · {aConferir} a conferir
+          </span>
+        )}
+      </span>
+      {notificacoes.length === 0 ? (
+        <p className="fund" style={{ margin: '6px 0 0' }}>
+          Nada recebido pelo link do cofre ainda — gere os convites na aba Documentos e as
+          chegadas das partes (documentos e qualificação) aparecem aqui.
+        </p>
+      ) : (
+        <>
+          {visiveis.map((n, i) => (
+            <div key={i} className="novidade">
+              <h4>{n.herdeiro}</h4>
+              <p>
+                {n.texto}
+                <span
+                  style={{
+                    marginLeft: 6,
+                    color:
+                      n.status === 'devolvido para reenvio'
+                        ? 'var(--lacre)'
+                        : n.status === 'aprovado'
+                          ? 'var(--verde-registro)'
+                          : 'var(--bronze)',
+                  }}
+                >
+                  · {n.status}
+                </span>
+                {n.quando && <span className="num"> · {dataCurta(n.quando)}</span>}
+              </p>
+            </div>
+          ))}
+          {notificacoes.length > visiveis.length && (
+            <p className="fund" style={{ margin: '6px 0 0' }}>
+              … e mais {notificacoes.length - visiveis.length} notificação(ões).
+            </p>
+          )}
+        </>
+      )}
+      <div style={{ marginTop: 10 }}>
+        <Button type="button" variant="outline" size="sm" onClick={irParaDocumentos}>
+          Ver documentos e informações recebidos
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** Relógio vivo do dashboard — monta só no cliente (nada de hidratação). */
 function RelogioCard() {
@@ -200,6 +317,8 @@ export function CasoView({
   tema,
   setTema,
   licoesRenomeador = null,
+  convites = {},
+  irParaDocumentos,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -220,6 +339,10 @@ export function CasoView({
   setTema: (t: 'claro' | 'escuro') => void;
   /** Regras + correções do renomeador da conta — abrem junto do overlay. */
   licoesRenomeador?: import('@/lib/lessons').LessonsState | null;
+  /** Convites do cofre: o que as partes enviaram vira notificação aqui. */
+  convites?: Record<string, ConviteHerdeiro>;
+  /** Leva à aba Documentos (envios no card correlato + lupa de preview). */
+  irParaDocumentos?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -570,9 +693,12 @@ export function CasoView({
       </div>
 
       <div className="dash-grade">
-        {/* coluna esquerda: relógio + novidades, como uma intranet */}
+        {/* coluna esquerda: relógio + notificações do cofre + novidades */}
         <div className="dash-coluna">
           <RelogioCard />
+          {irParaDocumentos && (
+            <NotificacoesCofreCard convites={convites} irParaDocumentos={irParaDocumentos} />
+          )}
           <div className="cartao">
             <span className="eyebrow">Novidades da plataforma</span>
             {NOVIDADES.map((n) => (
