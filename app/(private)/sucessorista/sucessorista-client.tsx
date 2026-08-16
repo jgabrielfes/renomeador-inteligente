@@ -43,6 +43,7 @@ import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFale
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
+import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import {
   avaliarQuotas,
@@ -946,6 +947,22 @@ export default function SucessoristaClient({
       mapa[q.herdeiroId] = (mapa[q.herdeiroId] ?? 0) + Number(q.valor);
     return mapa;
   }, [resultado]);
+
+  /** Pendências da minuta: o que ainda vira lacuna na escritura/petição. */
+  const pendenciasMinuta = useMemo(
+    () =>
+      pendenciasDaMinuta({
+        falecido,
+        qualificacaoFalecido: familia.qualificacoes['__falecido__'],
+        temSobrevivente,
+        nomeSobrev,
+        qualificacaoSobrevivente: familia.qualificacoes['__sobrevivente__'],
+        herdeiros,
+        qualificacoes: familia.qualificacoes,
+        bens,
+      }),
+    [falecido, familia.qualificacoes, temSobrevivente, nomeSobrev, herdeiros, bens],
+  );
 
   /** Herdeiros com quinhão e CPF — alimenta a Declaração Final (módulo fiscal). */
   const herdeirosQuinhao = useMemo(() => {
@@ -2550,11 +2567,12 @@ export default function SucessoristaClient({
           <MinutasView
             onGerarPeticao={gerarPeticao}
             onGerarPeticaoJudicial={gerarPeticaoJudicial}
+            pendencias={pendenciasMinuta}
           />
         )}
 
         {abaProc === 'escritura' && perfil === 'ESCREVENTE' && (
-          <EscrituraView onGerarEscritura={gerarEscritura} />
+          <EscrituraView onGerarEscritura={gerarEscritura} pendencias={pendenciasMinuta} />
         )}
 
         {abaProc === 'matricula' && (
