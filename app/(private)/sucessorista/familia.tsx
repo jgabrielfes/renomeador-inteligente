@@ -42,6 +42,7 @@ import {
   type PerguntasItcmd,
   type Qualificacao,
 } from '@/lib/partilha/familia';
+import type { CertidaoCivilLida, DivergenciaConferencia } from '@/lib/partilha/conferencia';
 import type { SucessaoCumulada } from './itcmd-view';
 
 // Aleatório (não sequencial): o caso volta do sessionStorage e um contador
@@ -70,6 +71,9 @@ export interface EstadoFamilia {
   inventarianteId: string | null;
   /** Filhos/herdeiros DECLARADOS na certidão de óbito (para alertar falta). */
   herdeirosDeclarados?: string[];
+  /** Certidões do registro civil LIDAS pelo cofre — alimentam o conferidor
+   *  de qualificação cruzada (divergências viram alerta vermelho). */
+  certidoesCivis?: CertidaoCivilLida[];
 }
 
 /** Pílula de escolha (Sim/Não, vínculo, regime) sobre o Button do shadcn. */
@@ -103,6 +107,7 @@ export function FamiliaView({
   sucessoes,
   setSucessoes,
   basesSucessoes = {},
+  divergencias = [],
 }: {
   estado: EstadoFamilia;
   onChange: (e: EstadoFamilia) => void;
@@ -113,6 +118,8 @@ export function FamiliaView({
   setSucessoes: (s: SucessaoCumulada[]) => void;
   /** Monte partível apurado por sucessão (id → R$), para exibir na lista. */
   basesSucessoes?: Record<string, number>;
+  /** Divergências do conferidor de qualificação cruzada (folha × certidões). */
+  divergencias?: DivergenciaConferencia[];
 }) {
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = estado;
   const composicao = composicaoFamiliar(falecido, temSobrevivente, vinculo, regime, herdeiros);
@@ -129,6 +136,32 @@ export function FamiliaView({
         preenchido move um número no painel ao lado na hora; a qualificação alimenta a
         escritura, o espelho do ITCMD e o cofre de documentos.
       </p>
+
+      {/* Conferidor de qualificação cruzada: folha × certidões do registro
+          civil lidas pelo cofre. Divergência ALTA (vermelho) trava a
+          escritura — pedir a correção antes de seguir. */}
+      {divergencias.length > 0 && (
+        <div className="nota exigencia" style={{ marginBottom: 14 }}>
+          <span className="eyebrow" style={{ color: 'var(--lacre)' }}>
+            Conferência com as certidões: {divergencias.length} divergência(s)
+          </span>
+          {divergencias.map((d, i) => (
+            <p
+              key={i}
+              style={{
+                margin: '6px 0 0',
+                color: d.nivel === 'ALTA' ? 'var(--lacre)' : undefined,
+              }}
+            >
+              <strong>
+                {d.nivel === 'ALTA' ? '● ' : '○ '}
+                {d.pessoa}:
+              </strong>{' '}
+              {d.mensagem} <span className="fund">{d.acao}</span>
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Sucessões cumuladas ABREM o módulo: é a primeira decisão do caso
           (um óbito ou vários no mesmo inventário) e muda o monte, a legítima
@@ -851,6 +884,10 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
   },
 ];
 
+/** Estados civis da escolha fechada — união estável NÃO entra (não é estado
+ *  civil; ela é a caixa própria ao lado, e o convivente mantém o seu). */
+const ESTADOS_CIVIS = ['solteiro(a)', 'casado(a)', 'divorciado(a)', 'viúvo(a)'] as const;
+
 /** Só para herdeiros — o viúvo(a) não tem "cônjuge do cônjuge". */
 const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
   rotulo: 'Cônjuge do herdeiro (se casado) e casamento',
@@ -889,7 +926,31 @@ export function QualificacaoEditor({
   /** false para o(a) sobrevivente: cônjuge do cônjuge não existe. */
   comConjuge?: boolean;
 }) {
-  const grupos = comConjuge ? [...GRUPOS_QUALIFICACAO, GRUPO_CONJUGE] : GRUPOS_QUALIFICACAO;
+  const casado = (valor.estadoCivil ?? '').toLowerCase().includes('casad');
+  const convivente = valor.uniaoEstavel === true;
+  // O bloco do cônjuge/convivente só abre quando existe um: casado OU em
+  // união estável — pedido do escritório (e o rótulo acompanha o vínculo).
+  const grupos =
+    comConjuge && (casado || convivente)
+      ? [
+          ...GRUPOS_QUALIFICACAO,
+          {
+            ...GRUPO_CONJUGE,
+            rotulo: casado
+              ? 'Cônjuge do herdeiro e casamento'
+              : 'Convivente (união estável) — o(a) convivente mantém o próprio estado civil',
+          },
+        ]
+      : GRUPOS_QUALIFICACAO;
+
+  const rotuloConjuge = (rotulo: string) =>
+    casado
+      ? rotulo
+      : rotulo
+          .replace('Data do casamento', 'Data do início da união')
+          .replace('Regime de bens', 'Regime de bens (contrato/escritura da união)')
+          .replace('Certidão de casamento (matrícula/ORCPN)', 'Escritura/registro da união estável');
+
   return (
     <div style={{ marginTop: 14 }}>
       {titulo && <span className="eyebrow">{titulo}</span>}
@@ -899,15 +960,35 @@ export function QualificacaoEditor({
           <div className="grade q-grid">
             {grupo.campos.map(({ campo, rotulo }) => (
               <label className="campo" key={campo}>
-                {rotulo}
-                {CAMPOS_DE_DATA.has(campo) ? (
+                {grupo === GRUPOS_QUALIFICACAO[0] || casado ? rotulo : rotuloConjuge(rotulo)}
+                {campo === 'estadoCivil' ? (
+                  // Escolha FECHADA (pedido do escritório): solteiro · casado ·
+                  // divorciado · viúvo. Valor legado fora da lista vira opção
+                  // extra para não sumir da ficha.
+                  <select
+                    className="seletor"
+                    value={valor.estadoCivil}
+                    onChange={(e) => onChange({ ...valor, estadoCivil: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    {ESTADOS_CIVIS.map((ec) => (
+                      <option key={ec} value={ec}>
+                        {ec}
+                      </option>
+                    ))}
+                    {valor.estadoCivil &&
+                      !(ESTADOS_CIVIS as readonly string[]).includes(valor.estadoCivil) && (
+                        <option value={valor.estadoCivil}>{valor.estadoCivil}</option>
+                      )}
+                  </select>
+                ) : CAMPOS_DE_DATA.has(campo) ? (
                   <DateInput
-                    value={valor[campo]}
+                    value={valor[campo] as string}
                     onChange={(iso) => onChange({ ...valor, [campo]: iso })}
                   />
                 ) : (
                   <Input
-                    value={valor[campo]}
+                    value={valor[campo] as string}
                     inputMode={campo === 'cpf' || campo === 'conjugeCpf' ? 'numeric' : undefined}
                     onChange={(e) =>
                       onChange({
@@ -922,6 +1003,15 @@ export function QualificacaoEditor({
                 )}
               </label>
             ))}
+            {grupo === GRUPOS_QUALIFICACAO[0] && (
+              <label className="marcar" style={{ margin: 0, fontWeight: 400, alignSelf: 'end' }}>
+                <Checkbox
+                  checked={convivente}
+                  onCheckedChange={(v) => onChange({ ...valor, uniaoEstavel: v === true })}
+                />
+                Convive em união estável
+              </label>
+            )}
           </div>
         </div>
       ))}

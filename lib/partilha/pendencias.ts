@@ -47,15 +47,23 @@ function pendenciasQualificacao(q: Qualificacao | undefined, grupo: string): Pen
   falta(vazio(q?.profissao), 'Profissão');
   falta(vazio(q?.estadoCivil), 'Estado civil');
   falta(vazio(q?.endereco) || (vazio(q?.cidade) && vazio(q?.uf)), 'Endereço completo');
-  // Herdeiro/sobrevivente casado: o cônjuge e o casamento também qualificam.
+  // Herdeiro/sobrevivente casado OU em união estável: o cônjuge/convivente
+  // e o vínculo também qualificam (união estável não é estado civil, mas o
+  // convivente entra no ato do mesmo jeito).
   const casado =
-    Boolean(q?.conjugeNome?.trim()) || (q?.estadoCivil ?? '').toLowerCase().includes('casad');
+    Boolean(q?.conjugeNome?.trim()) ||
+    (q?.estadoCivil ?? '').toLowerCase().includes('casad') ||
+    q?.uniaoEstavel === true;
   if (casado) {
-    falta(vazio(q?.conjugeNome), 'Nome do cônjuge');
-    falta(vazio(q?.conjugeCpf), 'CPF do cônjuge');
-    falta(vazio(q?.casamentoData), 'Data do casamento');
+    const uniao = q?.uniaoEstavel === true && !(q?.estadoCivil ?? '').toLowerCase().includes('casad');
+    falta(vazio(q?.conjugeNome), uniao ? 'Nome do(a) convivente' : 'Nome do cônjuge');
+    falta(vazio(q?.conjugeCpf), uniao ? 'CPF do(a) convivente' : 'CPF do cônjuge');
+    falta(vazio(q?.casamentoData), uniao ? 'Data do início da união' : 'Data do casamento');
     falta(vazio(q?.casamentoRegime), 'Regime de bens');
-    falta(vazio(q?.casamentoCertidao), 'Certidão de casamento');
+    falta(
+      vazio(q?.casamentoCertidao),
+      uniao ? 'Escritura/registro da união estável' : 'Certidão de casamento',
+    );
   }
   return p;
 }

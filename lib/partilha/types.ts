@@ -50,6 +50,12 @@ export interface DetalhesImovel {
   descricaoMatricula?: string;
   /** Registro/averbação da aquisição pelo falecido (ex.: "R.4"). */
   aquisicao?: string;
+  /**
+   * COMO os proprietários constam na matrícula (nome e estado civil no
+   * registro aquisitivo, ex.: "João da Silva, solteiro") — alimenta o
+   * antecipador de qualificação registral (especialidade subjetiva).
+   */
+  proprietariosMatricula?: string;
   matricula?: string;
   /** Ex.: "1º Registro de Imóveis de Guarulhos/SP". */
   registroImoveis?: string;

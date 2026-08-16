@@ -24,6 +24,13 @@ enum Plataforma {
   SUCESSORISTA
 }
 
+// Perfil de uso do Sucessorista, VINCULADO à conta: escolhido uma única vez
+// no primeiro acesso; usuário comum não circula pelos dois (só MASTER).
+enum PerfilSucessorista {
+  ADVOGADO
+  ESCREVENTE
+}
+
 model User {
   id           String    @id @default(cuid())
   name         String
@@ -39,6 +46,8 @@ model User {
   // Null = conta criada via Google (entra só pelo OAuth, sem senha).
   passwordHash String?
   role         Role      @default(USER)
+  // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
+  perfilSucessorista PerfilSucessorista?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
