@@ -20,6 +20,7 @@ import './sucessorista.css';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Table,
   TableBody,
@@ -446,6 +447,10 @@ export default function SucessoristaClient({
   /* --- passo 2 da partilha: matriz bem × participante (% de cada bem) --- */
   const [matriz, setMatriz] = useState<Record<string, Record<string, string>>>({});
   const [titulo, setTitulo] = useState<TituloCessao>('GRATUITO');
+  /* Rótulos pequenos sob cada célula da matriz (ex.: "usufruto vitalício",
+     "50% da nua-propriedade") — hint efêmero preenchido pelo redesenho do
+     usufruto; some ao editar a célula ou limpar a matriz. */
+  const [anotacoesMatriz, setAnotacoesMatriz] = useState<Record<string, Record<string, string>>>({});
 
   /* --- VI: honorários do caso (perfil do escritório fica na própria view) --- */
   const [condicoesHonorarios, setCondicoesHonorarios] =
@@ -1078,10 +1083,13 @@ export default function SucessoristaClient({
   const basesSucessoes = useMemo(() => {
     const mapa: Record<string, number> = {};
     for (const su of fiscal.sucessoes ?? []) {
+      // Bens particulares: a base sai SÓ dos bens exclusivos desta sucessão.
+      const soBensProprios = su.mesmosBens === false;
       let temColuna = false;
       let soma = 0;
       for (const b of bens) {
         if (b.sucessaoExclusiva && b.sucessaoExclusiva !== su.id) continue;
+        if (soBensProprios && b.sucessaoExclusiva !== su.id) continue;
         const av = b.sucessoes?.[su.id];
         if (av?.valor || av?.fracaoPct || b.sucessaoExclusiva === su.id) temColuna = true;
         const valor = Number(av?.valor ?? b.valor) || 0;
@@ -1320,56 +1328,102 @@ export default function SucessoristaClient({
   };
 
   /**
-   * Sugestão do usufruto aceita: imóveis vão aos HERDEIROS (na proporção dos
-   * quinhões entre si — a nua-propriedade deles) e o(a) sobrevivente é
-   * compensado(a) com os demais bens até a meação/quinhão, minimizando a
-   * torna. A reserva do usufruto vitalício entra como cláusula na minuta.
+   * Sugestão do usufruto aceita: cada imóvel é dividido pelos COEFICIENTES
+   * fiscais do RITCMD-SP — o(a) sobrevivente reserva o USUFRUTO VITALÍCIO
+   * (1/3) e os herdeiros ficam com a NUA-PROPRIEDADE (2/3, rateada pela
+   * proporção do direito entre si). O(a) sobrevivente é ainda compensado(a)
+   * com os bens não-imóveis até o seu quinhão, minimizando a torna. O espelho
+   * recebe os rótulos "usufruto vitalício" e "% da nua-propriedade" sob cada
+   * célula, e a reserva entra como cláusula na minuta.
    */
   const redesenharComUsufruto = () => {
     if (!resultado || resultado.bloqueios.length > 0) return;
+    const sobrev = participantes.find((p) => p.id === '__sobrevivente__');
     const herdeirosPart = participantes.filter((p) => p.id !== '__sobrevivente__');
     const dirHerdeiros = herdeirosPart.map((p) => direitoPorParticipante[p.id] ?? 0);
     const somaHerd = dirHerdeiros.reduce((a, v) => a + v, 0);
     if (somaHerd <= 0) return;
-    const linhaHerdeiros = fecharLinha(
-      Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
-    );
+
     const nova: Record<string, Record<string, string>> = {};
-    for (const b of bens) if (b.tipo === 'IMOVEL') nova[b.id] = { ...linhaHerdeiros };
-    // Compensação do(a) sobrevivente com os bens não-imóveis, do maior para
-    // o menor — o que não fechar vira torna, apontada pelo próprio espelho.
-    let alvoSobrev = direitoPorParticipante['__sobrevivente__'] ?? 0;
-    const naoImoveis = bens
-      .filter((b) => b.tipo !== 'IMOVEL')
-      .sort((a, b) => Number(b.valor) - Number(a.valor));
-    for (const b of naoImoveis) {
-      const v = Number(b.valor);
-      if (v <= 0) continue;
-      if (alvoSobrev <= 0) {
-        nova[b.id] = { ...linhaHerdeiros };
-        continue;
+    const anot: Record<string, Record<string, string>> = {};
+    const PCT_USUFRUTO = 100 / 3; // coeficiente fiscal do usufruto (1/3)
+    const fmtPct = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+    for (const b of bens) {
+      if (b.tipo !== 'IMOVEL') continue;
+      if (sobrev) {
+        // Usufruto (1/3) ao sobrevivente + nua-propriedade (2/3) rateada.
+        nova[b.id] = fecharLinha({
+          [sobrev.id]: PCT_USUFRUTO,
+          ...Object.fromEntries(
+            herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * (100 - PCT_USUFRUTO)]),
+          ),
+        });
+        anot[b.id] = {
+          [sobrev.id]: 'usufruto vitalício',
+          ...Object.fromEntries(
+            herdeirosPart.map((p, i) => [
+              p.id,
+              `${fmtPct((dirHerdeiros[i] / somaHerd) * 100)}% da nua-propriedade`,
+            ]),
+          ),
+        };
+      } else {
+        // Sem sobrevivente: herdeiros em plena propriedade, pela proporção.
+        nova[b.id] = fecharLinha(
+          Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
+        );
       }
-      const pctSobrev = Math.min(100, (alvoSobrev / v) * 100);
-      alvoSobrev = Math.max(0, alvoSobrev - v);
-      const resto = 100 - pctSobrev;
-      nova[b.id] = fecharLinha({
-        __sobrevivente__: pctSobrev,
-        ...Object.fromEntries(
-          herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * resto]),
-        ),
-      });
     }
+
+    // Compensação do(a) sobrevivente: o usufruto (1/3 dos imóveis) já cobre
+    // parte do quinhão; o restante é buscado nos bens não-imóveis, do maior
+    // para o menor — o que sobrar vira a torna, apontada pelo espelho.
+    if (sobrev) {
+      const valorUsufrutoImoveis = bens
+        .filter((b) => b.tipo === 'IMOVEL')
+        .reduce((a, b) => a + Number(b.valor) / 3, 0);
+      let alvoSobrev = Math.max(
+        0,
+        (direitoPorParticipante['__sobrevivente__'] ?? 0) - valorUsufrutoImoveis,
+      );
+      const naoImoveis = bens
+        .filter((b) => b.tipo !== 'IMOVEL')
+        .sort((a, b) => Number(b.valor) - Number(a.valor));
+      for (const b of naoImoveis) {
+        const v = Number(b.valor);
+        if (v <= 0) continue;
+        if (alvoSobrev <= 0) {
+          nova[b.id] = fecharLinha(
+            Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
+          );
+          continue;
+        }
+        const pctSobrev = Math.min(100, (alvoSobrev / v) * 100);
+        alvoSobrev = Math.max(0, alvoSobrev - v);
+        const resto = 100 - pctSobrev;
+        nova[b.id] = fecharLinha({
+          __sobrevivente__: pctSobrev,
+          ...Object.fromEntries(
+            herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * resto]),
+          ),
+        });
+      }
+    }
+
     setMatriz(nova);
+    setAnotacoesMatriz(anot);
     setPasso(2);
-    toast.success('Partilha redesenhada com a nua-propriedade nos herdeiros', {
+    toast.success('Partilha redesenhada com usufruto (1/3) e nua-propriedade (2/3)', {
       description:
-        'Imóveis atribuídos aos herdeiros e sobrevivente compensado(a) com os demais bens. Inclua a RESERVA DE USUFRUTO VITALÍCIO na minuta (campo de instruções à IA ou cláusula própria) e confira o espelho antes de gerar documentos.',
+        'Cada imóvel foi dividido pelos coeficientes fiscais: 33,33% de usufruto vitalício ao(à) sobrevivente e 66,67% de nua-propriedade aos herdeiros. Inclua a RESERVA DE USUFRUTO na minuta e confira a torna e as custas extra no card antes de gerar.',
     });
   };
 
   /** Sugestão aceita: partilha na proporção exata do direito — sem torna. */
   const redesenharSemTorna = () => {
     setMatriz({});
+    setAnotacoesMatriz({});
     setPasso(2);
     toast.success('Partilha redesenhada na proporção do direito', {
       description:
@@ -1416,6 +1470,7 @@ export default function SucessoristaClient({
       qtdHerdeiros: herdeiros.filter((h) => h.status !== 'RENUNCIANTE').length,
       extrajudicial: resultado.elegivelExtrajudicial,
       transferencias,
+      issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
   }, [
     resultado,
@@ -1427,6 +1482,7 @@ export default function SucessoristaClient({
     herdeiros,
     provisao,
     fiscal.inventarioAberto,
+    fiscal.issPct,
     isencoes,
   ]);
 
@@ -2169,6 +2225,7 @@ export default function SucessoristaClient({
             avancar={() => irPara('acervo')}
             sucessoes={fiscal.sucessoes ?? []}
             setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
+            basesSucessoes={basesSucessoes}
           />
         )}
 
@@ -2246,6 +2303,7 @@ export default function SucessoristaClient({
 
                 {resultado && resultado.bloqueios.length === 0 && participantes.length > 0 && (
                   <>
+                    <ScrollArea className="matriz-scroll" orientation="vertical">
                     <Table className="matriz-partilha">
                       <TableHeader>
                         <TableRow>
@@ -2287,10 +2345,20 @@ export default function SucessoristaClient({
                                           ...prev,
                                           [b.id]: { ...(prev[b.id] ?? {}), [p.id]: v },
                                         }));
+                                        // Edição manual invalida o rótulo do redesenho.
+                                        setAnotacoesMatriz((prev) => {
+                                          if (!prev[b.id]?.[p.id]) return prev;
+                                          const linhaAnot = { ...prev[b.id] };
+                                          delete linhaAnot[p.id];
+                                          return { ...prev, [b.id]: linhaAnot };
+                                        });
                                       }}
                                     />
                                     <span aria-hidden="true">%</span>
                                   </span>
+                                  {anotacoesMatriz[b.id]?.[p.id] && (
+                                    <span className="pct-rotulo">{anotacoesMatriz[b.id][p.id]}</span>
+                                  )}
                                 </TableCell>
                               ))}
                               <TableCell className={`col-total num ${fecha ? '' : 'nao-fecha'}`}>
@@ -2350,6 +2418,7 @@ export default function SucessoristaClient({
                         </TableRow>
                       </TableFooter>
                     </Table>
+                    </ScrollArea>
                     <p className="fund" style={{ marginTop: 6 }}>
                       Diferença positiva = recebe além do quinhão (provisiona a torna e o
                       imposto da cessão); negativa = deixa de receber (torna a receber).

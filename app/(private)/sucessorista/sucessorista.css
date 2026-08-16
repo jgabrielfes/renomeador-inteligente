@@ -424,15 +424,38 @@
 /* Matriz da partilha diferenciada (bem × participante, % por célula). O
    container do Table do shadcn já é ScrollArea horizontal — colunas a mais
    (muitos herdeiros) rolam com a barra estilizada. */
+/* Quadro da partilha diferenciada com altura própria e rolagem vertical
+   dedicada — evita o bloco apertado quando há muitos bens. O ScrollArea
+   externo (vertical) rola as linhas; o interno da Table rola as colunas. */
+.sucessorista .matriz-scroll {
+  max-height: 56vh;
+  min-height: 240px;
+  border: 1px solid var(--fio);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--papel) 60%, transparent);
+  margin-top: 12px;
+}
+
 .sucessorista .matriz-partilha {
   /* Quadro maior (pedido do escritório): fonte, células e campos cresceram —
      com a folha de 1080px o scroll horizontal só aparece com MUITAS partes. */
-  margin-top: 12px;
   font-size: 14px;
 }
 
 .sucessorista .matriz-partilha th,
-.sucessorista .matriz-partilha td { padding: 10px 10px; }
+.sucessorista .matriz-partilha td { padding: 12px 12px; }
+
+/* Rótulo pequeno sob a célula (ex.: "usufruto vitalício", "50% da
+   nua-propriedade") — hint do redesenho do usufruto no espelho. */
+.sucessorista .matriz-partilha .pct-rotulo {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--bronze);
+  text-align: right;
+  max-width: 104px;
+}
 
 .sucessorista .matriz-partilha .col-bem {
   min-width: 260px;

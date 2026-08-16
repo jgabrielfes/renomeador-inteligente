@@ -82,6 +82,14 @@ export interface SucessaoCumulada {
   /** true = partilha desta sucessão com os MESMOS herdeiros do inventário
    *  principal — o item III mostra uma partilha própria para ela. */
   mesmosHerdeiros?: boolean;
+  /**
+   * true (padrão) = os MESMOS bens do 1º falecimento transitam nesta
+   * sucessão, cada um com o valor de avaliação PRÓPRIO desta data de óbito
+   * (as colunas por sucessão do acervo). false = esta sucessão tem BENS
+   * PARTICULARES, lançados à parte e marcados como exclusivos dela — a base
+   * (monte partível) sai só desses bens próprios.
+   */
+  mesmosBens?: boolean;
 }
 
 export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
