@@ -68,6 +68,14 @@ const PERCENTUAL_POR_NIVEL: Record<NivelComplexidade, number> = {
 /** Piso sugerido quando o percentual sobre o monte fica abaixo dele. */
 export const PISO_SUGERIDO = 3500;
 
+/**
+ * Teto de pontos para NORMALIZAR o gráfico de complexidade (0–1). Não é a
+ * soma bruta de todos os fatores (vários são mutuamente exclusivos): é o
+ * ponto em que o caso já é seguramente "muito alta" — o ponteiro enche perto
+ * dele. O nível MUITO_ALTA começa em 9 pontos.
+ */
+export const PONTOS_MAX = 16;
+
 export function avaliarComplexidade(e: EntradaComplexidade): AvaliacaoComplexidade {
   const fatores: FatorComplexidade[] = [];
   const add = (cond: boolean, rotulo: string, pontos: number) => {

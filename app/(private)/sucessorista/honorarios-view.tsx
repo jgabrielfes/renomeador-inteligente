@@ -28,6 +28,8 @@ import {
   sugerirHonorarios,
   valorContratado,
   ROTULO_NIVEL,
+  PONTOS_MAX,
+  type AvaliacaoComplexidade,
   type CondicoesHonorarios,
 } from '@/lib/partilha/honorarios';
 import { ESCRITORIO_VAZIO, type DadosEscritorio, type SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -466,7 +468,12 @@ export function HonorariosView({
       </div>
 
       <h2>Complexidade do caso</h2>
-      <div className="nota">
+      <div className="complexidade-grade">
+        <GraficoComplexidade
+          avaliacao={avaliacao}
+          percentual={sugestao ? sugestao.percentual : avaliacao.percentualSugerido}
+        />
+        <div className="nota" style={{ margin: 0 }}>
         <span className="eyebrow">Avaliação automática da folha</span>
         <h3>
           Complexidade {ROTULO_NIVEL[avaliacao.nivel]} · <span className="num">{avaliacao.pontos}</span> ponto(s)
@@ -512,6 +519,7 @@ export function HonorariosView({
             Usar a sugestão
           </Button>
         )}
+        </div>
       </div>
 
       <h2>Honorários e condições</h2>
@@ -685,5 +693,70 @@ function ModeloLinha({
         }}
       />
     </p>
+  );
+}
+
+/* ---------- gráfico redondo de complexidade ---------- */
+
+const COR_NIVEL: Record<AvaliacaoComplexidade['nivel'], string> = {
+  BAIXA: 'var(--verde-registro)',
+  MEDIA: 'var(--bronze)',
+  ALTA: '#c26a1f',
+  MUITO_ALTA: 'var(--lacre)',
+};
+
+const ROTULO_CURTO: Record<AvaliacaoComplexidade['nivel'], string> = {
+  BAIXA: 'Baixa',
+  MEDIA: 'Média',
+  ALTA: 'Alta',
+  MUITO_ALTA: 'Muito alta',
+};
+
+/**
+ * Ponteiro radial (donut) do grau de complexidade: o arco enche conforme os
+ * pontos da avaliação (normalizados por PONTOS_MAX) e a cor acompanha o
+ * nível. No centro, o nível e o percentual de honorários sugerido — a leitura
+ * de venda para o advogado.
+ */
+function GraficoComplexidade({
+  avaliacao,
+  percentual,
+}: {
+  avaliacao: AvaliacaoComplexidade;
+  percentual: number;
+}) {
+  const fracao = Math.max(0, Math.min(1, avaliacao.pontos / PONTOS_MAX));
+  const raio = 52;
+  const circ = 2 * Math.PI * raio;
+  const cor = COR_NIVEL[avaliacao.nivel];
+  return (
+    <div className="grafico-complexidade">
+      <svg viewBox="0 0 130 130" width="140" height="140" role="img"
+        aria-label={`Complexidade ${ROTULO_CURTO[avaliacao.nivel]}, ${avaliacao.pontos} pontos`}>
+        <circle cx="65" cy="65" r={raio} fill="none" stroke="var(--fio)" strokeWidth="12" />
+        <circle
+          cx="65"
+          cy="65"
+          r={raio}
+          fill="none"
+          stroke={cor}
+          strokeWidth="12"
+          strokeLinecap="round"
+          strokeDasharray={`${circ * fracao} ${circ}`}
+          transform="rotate(-90 65 65)"
+          style={{ transition: 'stroke-dasharray 0.4s ease' }}
+        />
+        <text x="65" y="58" textAnchor="middle" fontFamily="var(--display)" fontSize="18" fontWeight="600" fill="var(--tinta)">
+          {ROTULO_CURTO[avaliacao.nivel]}
+        </text>
+        <text x="65" y="78" textAnchor="middle" fontFamily="var(--texto)" fontSize="13" fill={cor} fontWeight="600">
+          {avaliacao.pontos} pts
+        </text>
+      </svg>
+      <div className="legenda">
+        <span className="honor-pct num" style={{ color: cor }}>{percentual}%</span>
+        <span className="fund">honorários sugeridos sobre o monte-mor</span>
+      </div>
+    </div>
   );
 }

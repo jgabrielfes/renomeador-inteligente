@@ -43,6 +43,8 @@ import {
   type ResultadoIsencoes,
 } from '@/lib/partilha/itcmd';
 import { Pilula } from './familia';
+import { montarIcs, linkGoogleAgenda, prazosDoItcmd } from '@/lib/partilha/calendario';
+import { baixarBlob } from '@/lib/partilha/xlsx';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -657,6 +659,8 @@ export function ItcmdView({
           </div>
         </>
       )}
+
+      {!faltaObito && <CalendarioPrazos falecido={falecido} />}
     </section>
   );
 }
@@ -665,4 +669,52 @@ function sumDias(data: string, dias: number): string {
   const [a, m, d] = data.split('-').map(Number);
   const t = new Date(Date.UTC(a, m - 1, d) + dias * 86_400_000);
   return t.toISOString().slice(0, 10);
+}
+
+/* ---------- vincular prazos do ITCMD ao calendário (item 4) ---------- */
+
+function CalendarioPrazos({ falecido }: { falecido: DadosFalecido }) {
+  const prazos = prazosDoItcmd(
+    falecido.dataObito,
+    falecido.nome ? `Espólio de ${falecido.nome}` : '',
+  );
+  const baixarIcs = () => {
+    const ics = montarIcs(prazos, new Date().toISOString());
+    baixarBlob(
+      new Blob([ics], { type: 'text/calendar;charset=utf-8' }),
+      `Prazos ITCMD${falecido.nome ? ` - ${falecido.nome}` : ''}.ics`,
+    );
+  };
+  return (
+    <>
+      <h2>Prazos no seu calendário</h2>
+      <p className="subtitulo" style={{ marginBottom: 10 }}>
+        Leve os vencimentos do ITCMD para o celular: baixe o arquivo .ics (abre no Google
+        Agenda, Apple e Outlook, com lembrete de 7 dias antes) ou adicione cada prazo
+        direto no Google Agenda.
+      </p>
+      <div className="check">
+        {prazos.map((p) => (
+          <div className="check-item" key={p.id}>
+            <span className="prio">·</span>
+            <div>
+              <h4>{p.titulo}</h4>
+              <p className="num">{p.data.split('-').reverse().join('/')}</p>
+              <p>{p.descricao}</p>
+            </div>
+            <a href={linkGoogleAgenda(p)} target="_blank" rel="noopener noreferrer">
+              <Button type="button" variant="ghost" size="sm" render={<span />} nativeButton={false}>
+                + Google Agenda
+              </Button>
+            </a>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Button type="button" variant="outline" onClick={baixarIcs}>
+          Baixar todos os prazos (.ics)
+        </Button>
+      </div>
+    </>
+  );
 }
