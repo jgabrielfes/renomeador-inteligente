@@ -1,10 +1,12 @@
 import { auth } from '@/lib/auth';
 import {
-  store,
   gerarToken,
   DOCUMENTOS_PADRAO_HERDEIRO,
   type ConviteHerdeiro,
 } from '@/lib/portal/store';
+// Store PERSISTENTE (Postgres): o convite não expira e os envios sobrevivem
+// aos cold starts — a memória era o que fazia o link "morrer".
+import { store } from '@/lib/portal/store-prisma';
 import { foraDaPlataforma } from '@/lib/app';
 
 export const runtime = 'nodejs';

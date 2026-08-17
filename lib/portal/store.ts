@@ -116,7 +116,11 @@ export const memoryStore: PortalStore = {
   },
 };
 
-/** Troque aqui pela implementação persistente em produção. */
+/**
+ * As rotas de API usam o store PERSISTENTE (`./store-prisma`) — este módulo
+ * fica importável pelo CLIENTE (só tipos e constantes) e o memoryStore vira
+ * o fallback de banco fora. Não voltar as rotas para cá.
+ */
 export const store: PortalStore = memoryStore;
 
 export const DOCUMENTOS_PADRAO_HERDEIRO: Omit<DocumentoPedido, 'status'>[] = [

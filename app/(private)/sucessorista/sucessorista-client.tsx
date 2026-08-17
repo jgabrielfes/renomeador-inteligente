@@ -2302,6 +2302,63 @@ export default function SucessoristaClient({
   };
 
   /**
+   * NOTIFICAÇÕES AO VIVO: os convites emitidos são REVALIDADOS no servidor
+   * (a cada 60s e ao focar a janela) — documento anexado ou qualificação
+   * preenchida pelo herdeiro chega ao card "Notificações do cofre" do
+   * dashboard sem precisar abrir a aba Documentos, com um toast avisando.
+   */
+  const convitesRef = useRef(convites);
+  useEffect(() => {
+    convitesRef.current = convites;
+  }, [convites]);
+  // A chave só muda quando a LISTA de convites muda (emitir/remover) — o
+  // conteúdo atualizado pelo próprio polling não recria o intervalo.
+  const chaveConvites = Object.values(convites)
+    .map((c) => c.token)
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (!chaveConvites) return;
+    let ativo = true;
+    const revalidar = async () => {
+      const atuais = convitesRef.current;
+      const proximos: Record<string, ConviteHerdeiro> = { ...atuais };
+      const chegadas: string[] = [];
+      for (const [herdeiroId, convite] of Object.entries(atuais)) {
+        try {
+          const r = await fetch(`/api/portal/${convite.token}`);
+          if (!r.ok) continue;
+          const novo = (await r.json()) as ConviteHerdeiro;
+          if (JSON.stringify(novo) !== JSON.stringify(convite)) {
+            proximos[herdeiroId] = novo;
+            chegadas.push(novo.nomeHerdeiro || 'herdeiro');
+          }
+        } catch {
+          // rede fora — tenta no próximo ciclo
+        }
+      }
+      if (!ativo || chegadas.length === 0) return;
+      setConvites(proximos);
+      toast.info(
+        chegadas.length === 1
+          ? `Novidade no cofre: ${chegadas[0]} enviou documentos ou informações`
+          : `Novidades no cofre: ${chegadas.join(', ')} enviaram documentos ou informações`,
+        { description: 'Veja no card "Notificações do cofre" ou na aba Documentos.' },
+      );
+    };
+    const t0 = setTimeout(() => void revalidar(), 1500);
+    const intervalo = setInterval(() => void revalidar(), 60_000);
+    const aoFocar = () => void revalidar();
+    window.addEventListener('focus', aoFocar);
+    return () => {
+      ativo = false;
+      clearTimeout(t0);
+      clearInterval(intervalo);
+      window.removeEventListener('focus', aoFocar);
+    };
+  }, [chaveConvites]);
+
+  /**
    * As qualificações recebidas pelo LINK DO COFRE caem SOZINHAS no item I
    * (A família): a cada atualização dos convites, a ficha do herdeiro
    * correspondente ganha os campos que estiverem vazios — digitação do

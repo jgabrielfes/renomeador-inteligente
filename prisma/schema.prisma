@@ -31,6 +31,23 @@ enum PerfilSucessorista {
   ESCREVENTE
 }
 
+// Convite do PORTAL DO HERDEIRO — PERSISTIDO (o memoryStore zerava a cada
+// cold start da Vercel: link "expirando" e envios sumindo). O token é a
+// credencial (o herdeiro não tem login) e o convite NÃO expira. `dados` é o
+// ConviteHerdeiro inteiro (lib/portal/store.ts): pedidos, status, nome
+// proposto dos arquivos e a qualificação preenchida — os ARQUIVOS continuam
+// no navegador do herdeiro (fronteira de dados), aqui nunca entra conteúdo
+// de documento.
+model PortalConvite {
+  token     String   @id
+  casoId    String
+  dados     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("portal_convites")
+}
+
 model User {
   id           String    @id @default(cuid())
   name         String
