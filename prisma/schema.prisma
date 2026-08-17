@@ -42,6 +42,7 @@ enum PapelEquipe {
 // convite do chefe (advogado ou escrevente). O compartilhamento dos CASOS é
 // operacional — a mesma pasta-raiz no Drive/OneDrive, com a guarda de
 // conflito arbitrando; a equipe governa o vínculo de pessoas e o perfil.
+// Convite com `acessoCasos` abre também a NUVEM DA EQUIPE (EquipeCaso).
 model Equipe {
   id        String   @id @default(cuid())
   nome      String
@@ -51,21 +52,45 @@ model Equipe {
 
   membros  User[]
   convites EquipeConvite[]
+  casos    EquipeCaso[]
 
   @@map("equipes")
 }
 
 // Convite de equipe: CÓDIGO de uso único gerado pelo chefe — o membro entra
-// com a própria conta e cola o código (sem rota pública nova).
+// com a própria conta e cola o código (sem rota pública nova). `acessoCasos`
+// marca o convite de ACESSO TOTAL: quem entra com ele enxerga todos os casos
+// do chefe pela nuvem da equipe (como se o chefe autorizasse o próprio
+// acervo), continuando sem poder gerir a equipe.
 model EquipeConvite {
-  token      String    @id
-  equipeId   String
-  equipe     Equipe    @relation(fields: [equipeId], references: [id], onDelete: Cascade)
-  criadoEm   DateTime  @default(now())
-  usadoEm    DateTime?
-  usadoPorId String?
+  token       String    @id
+  equipeId    String
+  equipe      Equipe    @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  acessoCasos Boolean   @default(false)
+  criadoEm    DateTime  @default(now())
+  usadoEm     DateTime?
+  usadoPorId  String?
 
   @@map("equipe_convites")
+}
+
+// NUVEM DA EQUIPE: espelho do `caso.json` (folha do caso, SEM os documentos
+// — arquivos nunca sobem, fronteira de dados) para o chefe compartilhar
+// todos os casos com quem entrou por convite de acesso total. `cabecalho` é
+// coluna própria para a listagem não carregar o arquivo inteiro. Dado do
+// PRÓPRIO escritório, como renamer_lessons: NUNCA exibir em /admin.
+model EquipeCaso {
+  id            String   @id // caseId aleatório gerado no cliente
+  equipeId      String
+  equipe        Equipe   @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  cabecalho     Json
+  arquivo       Json
+  atualizadoEm  DateTime
+  atualizadoPor String
+  criadoEm      DateTime @default(now())
+
+  @@index([equipeId])
+  @@map("equipe_casos")
 }
 
 // Convite do PORTAL DO HERDEIRO — PERSISTIDO (o memoryStore zerava a cada
@@ -106,6 +131,9 @@ model User {
   equipeId    String?
   equipe      Equipe?      @relation(fields: [equipeId], references: [id], onDelete: SetNull)
   papelEquipe PapelEquipe?
+  // true = entrou por convite de ACESSO TOTAL: enxerga a nuvem de casos da
+  // equipe (o chefe sempre enxerga, independentemente desta flag).
+  acessoCasosEquipe Boolean @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

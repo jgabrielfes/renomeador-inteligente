@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,8 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
   const [nomeNova, setNomeNova] = useState('');
   const [codigo, setCodigo] = useState('');
   const [ocupado, setOcupado] = useState<string | null>(null);
-  const [codigoGerado, setCodigoGerado] = useState<string | null>(null);
+  const [codigoGerado, setCodigoGerado] = useState<{ codigo: string; acessoCasos: boolean } | null>(null);
+  const [conviteAcessoTotal, setConviteAcessoTotal] = useState(false);
   const [removendo, setRemovendo] = useState<MembroEquipe | null>(null);
   const [confirmandoFim, setConfirmandoFim] = useState<'excluir' | 'sair' | null>(null);
 
@@ -66,9 +68,10 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
         <>
           <p className="fund" style={{ margin: '4px 0 10px' }}>
             Trabalhe o MESMO caso em equipe, cada um com o próprio login: o(a) chefe cria a
-            equipe e convida por código; os casos ficam na MESMA pasta-raiz compartilhada no
-            Google Drive/OneDrive (cada membro escolhe essa pasta no painel Meus Casos) — a
-            guarda de conflito arbitra edições simultâneas.
+            equipe e convida por código. Convite comum compartilha os casos pela MESMA
+            pasta-raiz no Google Drive/OneDrive (cada membro escolhe essa pasta no painel Meus
+            Casos); convite de ACESSO TOTAL abre todos os casos do(a) chefe direto pela nuvem
+            da equipe — em qualquer máquina, sem configurar pasta.
           </p>
           <label className="campo" style={{ maxWidth: 320 }}>
             Criar a minha equipe
@@ -120,14 +123,19 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
           <h3 style={{ margin: '4px 0 2px' }}>{equipe.nome}</h3>
           <p className="fund" style={{ margin: '0 0 8px' }}>
             Você é {equipe.papel === 'CHEFE' ? 'o(a) CHEFE' : 'MEMBRO'} ·{' '}
-            {equipe.membros.length} pessoa(s). Casos compartilhados pela MESMA pasta-raiz no
-            Drive/OneDrive (escolhida no painel Meus Casos).
+            {equipe.membros.length} pessoa(s).{' '}
+            {equipe.papel !== 'CHEFE' && equipe.meuAcessoCasos
+              ? 'Você tem ACESSO TOTAL: os casos da nuvem da equipe aparecem no seu painel Meus Casos.'
+              : 'Casos compartilhados pela MESMA pasta-raiz no Drive/OneDrive (escolhida no painel Meus Casos) ou pela nuvem da equipe (convite de acesso total).'}
           </p>
           {equipe.membros.map((m) => (
             <div key={m.id} className="linha-item" style={{ padding: '4px 0' }}>
               <span>
                 <strong>{m.nome}</strong>
-                <span className="fund"> · {m.email} · {m.papel === 'CHEFE' ? 'chefe' : 'membro'}</span>
+                <span className="fund">
+                  {' '}· {m.email} · {m.papel === 'CHEFE' ? 'chefe' : 'membro'}
+                  {m.papel !== 'CHEFE' && m.acessoCasos ? ' · acesso total aos casos' : ''}
+                </span>
               </span>
               {equipe.papel === 'CHEFE' && m.papel !== 'CHEFE' && (
                 <Button
@@ -144,13 +152,28 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
 
           {equipe.papel === 'CHEFE' ? (
             <>
-              <div className="escolha" style={{ marginTop: 10 }}>
+              <label className="marcar" style={{ marginTop: 10 }}>
+                <Checkbox
+                  checked={conviteAcessoTotal}
+                  onCheckedChange={(v) => setConviteAcessoTotal(v === true)}
+                />
+                <span>
+                  Convite com <strong>acesso a TODOS os meus casos</strong>{' '}
+                  <span className="dica">
+                    — como se você autorizasse o seu acervo: quem entrar enxerga e trabalha todos
+                    os casos da nuvem da equipe, sem poder gerir a equipe
+                  </span>
+                </span>
+              </label>
+              <div className="escolha" style={{ marginTop: 8 }}>
                 <Button
                   size="sm"
                   variant="outline"
                   loading={ocupado === 'convite'}
                   onClick={() =>
-                    void rodar('convite', gerarConviteEquipe, ({ codigo: c }) => setCodigoGerado(c))
+                    void rodar('convite', () => gerarConviteEquipe(conviteAcessoTotal), (dados) =>
+                      setCodigoGerado(dados),
+                    )
                   }
                 >
                   Gerar código de convite
@@ -168,13 +191,20 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
               </div>
               {codigoGerado && (
                 <div className="nota registro" style={{ marginTop: 8 }}>
-                  <span className="eyebrow">Código de convite (uso único)</span>
+                  <span className="eyebrow">
+                    {codigoGerado.acessoCasos
+                      ? 'Código de convite — ACESSO TOTAL aos casos (uso único)'
+                      : 'Código de convite (uso único)'}
+                  </span>
                   <p className="num" style={{ fontSize: 16, letterSpacing: '0.06em', margin: '4px 0' }}>
-                    {codigoGerado}
+                    {codigoGerado.codigo}
                   </p>
                   <p className="fund" style={{ margin: 0 }}>
                     Envie ao membro: ele entra com a PRÓPRIA conta e cola este código aqui no
                     card. Cada código vale UMA entrada — gere outro para a próxima pessoa.
+                    {codigoGerado.acessoCasos
+                      ? ' Quem entrar com este código vê todos os casos da nuvem da equipe no painel Meus Casos.'
+                      : ''}
                   </p>
                   <div className="escolha" style={{ marginTop: 6 }}>
                     <Button
@@ -182,7 +212,7 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
                       variant="outline"
                       onClick={() => {
                         void navigator.clipboard
-                          .writeText(codigoGerado)
+                          .writeText(codigoGerado.codigo)
                           .then(() => toast.success('Código copiado.'))
                           .catch(() => toast.error('Não consegui copiar — selecione o texto.'));
                       }}
