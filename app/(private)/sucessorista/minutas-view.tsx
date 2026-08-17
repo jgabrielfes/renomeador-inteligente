@@ -9,7 +9,8 @@
  *   videoconferência e-Notariado · híbrida).
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -140,6 +141,140 @@ export function AntecipadorSection({
   );
 }
 
+/** Modelo próprio carregado (nome do arquivo + texto extraído). */
+interface ModeloProprio {
+  nome: string;
+  texto: string;
+}
+
+/**
+ * Anexo do MODELO PRÓPRIO do(a) profissional (padrão da serventia/escritório):
+ * .docx, .pdf ou .txt lidos AQUI no navegador (o arquivo não sai da máquina —
+ * só o texto extraído segue para a redação, que passa a seguir a estrutura e
+ * o estilo do modelo). Persistido no navegador (localStorage), como os
+ * modelos de honorários — vale para os próximos casos até ser trocado.
+ */
+function ModeloProprioAnexo({
+  chave,
+  rotulo,
+  dica,
+  modelo,
+  setModelo,
+}: {
+  /** Chave do localStorage (um modelo por tipo de peça). */
+  chave: string;
+  rotulo: string;
+  dica: string;
+  modelo: ModeloProprio | null;
+  setModelo: (m: ModeloProprio | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [lendo, setLendo] = useState(false);
+
+  const carregar = async (file: File) => {
+    setLendo(true);
+    try {
+      let texto = '';
+      if (/\.docx$/i.test(file.name)) {
+        const { extrairTextoOffice } = await import('@/lib/office-texto');
+        texto = await extrairTextoOffice(file);
+      } else if (/\.txt$/i.test(file.name)) {
+        texto = await file.text();
+      } else if (/\.pdf$/i.test(file.name)) {
+        const { readDocument } = await import('@/lib/ocr');
+        texto = await readDocument(file);
+      } else {
+        toast.error('Modelo em .docx, .pdf ou .txt.');
+        return;
+      }
+      texto = texto.trim().slice(0, 40_000);
+      if (texto.length < 200) {
+        toast.warning('O modelo ficou com pouco texto legível — a redação pode não conseguir segui-lo.');
+      }
+      const novo = { nome: file.name, texto };
+      setModelo(novo);
+      try {
+        localStorage.setItem(chave, JSON.stringify(novo));
+      } catch {
+        // modo restrito / cota: o modelo vale nesta sessão
+      }
+      toast.success('Modelo carregado — a minuta sai no SEU padrão.');
+    } catch {
+      toast.error('Não foi possível ler o modelo.');
+    } finally {
+      setLendo(false);
+    }
+  };
+
+  const remover = () => {
+    setModelo(null);
+    try {
+      localStorage.removeItem(chave);
+    } catch {
+      // modo restrito
+    }
+  };
+
+  return (
+    <div className="nota" style={{ marginTop: 12 }}>
+      <span className="eyebrow">{rotulo}</span>
+      <p style={{ margin: '4px 0 8px' }}>{dica}</p>
+      {modelo ? (
+        <p style={{ margin: '0 0 8px' }}>
+          <strong>{modelo.nome}</strong>{' '}
+          <span className="fund">— a próxima geração segue este padrão.</span>
+        </p>
+      ) : null}
+      <div className="escolha">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          loading={lendo}
+          onClick={() => inputRef.current?.click()}
+        >
+          {modelo ? 'Trocar o modelo' : '+ Anexar meu modelo (.docx, .pdf ou .txt)'}
+        </Button>
+        {modelo && (
+          <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={remover}>
+            remover (voltar ao padrão do sistema)
+          </Button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".docx,.pdf,.txt"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void carregar(f);
+          e.target.value = '';
+        }}
+      />
+    </div>
+  );
+}
+
+/** Restaura o modelo salvo no navegador (efeito diferido — hidratação). */
+function useModeloSalvo(chave: string): [ModeloProprio | null, (m: ModeloProprio | null) => void] {
+  const [modelo, setModelo] = useState<ModeloProprio | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const bruto = localStorage.getItem(chave);
+        if (!bruto) return;
+        const salvo = JSON.parse(bruto) as ModeloProprio;
+        if (salvo?.nome && salvo?.texto) setModelo(salvo);
+      } catch {
+        // modo restrito / JSON inválido
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [chave]);
+  return [modelo, setModelo];
+}
+
 /** Campo de prompt à IA — instruções livres antes de gerar o DOCX. */
 function CampoInstrucoes({
   valor,
@@ -171,7 +306,8 @@ export function MinutasView({
   onAntecipadorPdf,
 }: {
   onGerarPeticao: (instrucoes: string) => Promise<void>;
-  onGerarPeticaoJudicial: (instrucoes: string) => Promise<void>;
+  /** Recebe também o texto do MODELO PRÓPRIO do escritório (null = padrão). */
+  onGerarPeticaoJudicial: (instrucoes: string, modeloTexto: string | null) => Promise<void>;
   /** Campos que ainda faltam para a minuta sair completa (checklist). */
   pendencias?: Pendencia[];
   /** Antecipador de qualificação registral (confronto com as matrículas). */
@@ -182,6 +318,8 @@ export function MinutasView({
   const [gerando, setGerando] = useState<'tabelionato' | 'judicial' | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [instrucoes, setInstrucoes] = useState('');
+  // Modelo PRÓPRIO da petição inicial do escritório — a redação o segue.
+  const [modeloPeticao, setModeloPeticao] = useModeloSalvo('sucessorista-modelo-peticao');
 
   const executar = async (qual: 'tabelionato' | 'judicial', fn: () => Promise<void>) => {
     setGerando(qual);
@@ -207,6 +345,14 @@ export function MinutasView({
       <ChecklistPendencias pendencias={pendencias} />
 
       <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
+
+      <ModeloProprioAnexo
+        chave="sucessorista-modelo-peticao"
+        rotulo="Padrão do escritório — petição inicial"
+        dica="Anexe a SUA petição inicial de inventário (um caso antigo serve): a redação por IA passa a seguir a estrutura, a ordem das seções e o estilo do seu modelo, preenchendo com os dados deste caso. O arquivo é lido aqui no navegador; sem modelo, sai a redação padrão do sistema."
+        modelo={modeloPeticao}
+        setModelo={setModeloPeticao}
+      />
 
       <CampoInstrucoes
         valor={instrucoes}
@@ -249,7 +395,11 @@ export function MinutasView({
                 variant="outline"
                 disabled={gerando !== null}
                 loading={gerando === 'judicial'}
-                onClick={() => executar('judicial', () => onGerarPeticaoJudicial(instrucoes))}
+                onClick={() =>
+                  executar('judicial', () =>
+                    onGerarPeticaoJudicial(instrucoes, modeloPeticao?.texto ?? null),
+                  )
+                }
               >
                 Gerar petição inicial (DOCX, IA)
               </Button>
@@ -274,6 +424,8 @@ export function EscrituraView({
     modalidade: ModalidadeEscritura,
     partesRemotas: string,
     instrucoes: string,
+    /** Texto do MODELO DA SERVENTIA (null = modelo padrão do sistema). */
+    modeloTexto: string | null,
   ) => Promise<void>;
   /** Campos que ainda faltam para a escritura sair completa (checklist). */
   pendencias?: Pendencia[];
@@ -287,6 +439,8 @@ export function EscrituraView({
   const [instrucoes, setInstrucoes] = useState('');
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Modelo PRÓPRIO da serventia — a minuta sai na estrutura e no estilo dele.
+  const [modeloEscritura, setModeloEscritura] = useModeloSalvo('sucessorista-modelo-escritura');
 
   return (
     <section>
@@ -324,6 +478,14 @@ export function EscrituraView({
 
       <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
 
+      <ModeloProprioAnexo
+        chave="sucessorista-modelo-escritura"
+        rotulo="Padrão da serventia — minuta da escritura"
+        dica="Anexe a MINUTA-PADRÃO do seu balcão (uma escritura antiga de inventário serve): a geração passa a seguir a estrutura, a ordem das cláusulas e o estilo de redação DELA, preenchida com os dados deste caso pela redação por IA — e se a IA falhar, sai o modelo padrão do sistema, nunca vazia. O arquivo é lido aqui no navegador."
+        modelo={modeloEscritura}
+        setModelo={setModeloEscritura}
+      />
+
       <CampoInstrucoes
         valor={instrucoes}
         onChange={setInstrucoes}
@@ -336,7 +498,12 @@ export function EscrituraView({
             setGerando(true);
             setErro(null);
             try {
-              await onGerarEscritura(modalidade, partesRemotas, instrucoes);
+              await onGerarEscritura(
+                modalidade,
+                partesRemotas,
+                instrucoes,
+                modeloEscritura?.texto ?? null,
+              );
             } catch (e) {
               setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da escritura.');
             } finally {

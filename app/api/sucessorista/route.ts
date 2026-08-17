@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       corpo.tipo === "CONTRATO" ||
       corpo.tipo === "PROPOSTA" ||
       corpo.tipo === "PETICAO_JUDICIAL" ||
+      corpo.tipo === "ESCRITURA" ||
       corpo.tipo === "CLAUSULAS"
         ? corpo.tipo
         : null;
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
         : null;
     if (!tipo || !contexto) {
       return Response.json(
-        { error: "Informe tipo (PROPOSTA|CONTRATO|PETICAO_JUDICIAL|CLAUSULAS) e contexto." },
+        { error: "Informe tipo (PROPOSTA|CONTRATO|PETICAO_JUDICIAL|ESCRITURA|CLAUSULAS) e contexto." },
         { status: 400 }
       );
     }

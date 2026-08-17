@@ -2191,7 +2191,7 @@ export default function SucessoristaClient({
   };
 
   /** Minuta de petição INICIAL de inventário judicial (IA + fallback local). */
-  const gerarPeticaoJudicial = async (instrucoes = '') => {
+  const gerarPeticaoJudicial = async (instrucoes = '', modeloTexto: string | null = null) => {
     let secoes: SecaoRedigida[] | null = null;
     try {
       const r = await fetch('/api/sucessorista', {
@@ -2200,7 +2200,8 @@ export default function SucessoristaClient({
         body: JSON.stringify({
           tipo: 'PETICAO_JUDICIAL',
           contexto: contextoDoCaso(),
-          modeloEscritorio: null,
+          // Padrão do PRÓPRIO escritório, quando anexado — a redação o segue.
+          modeloEscritorio: modeloTexto,
           instrucoes: instrucoes.trim() || null,
         }),
       });
@@ -2238,12 +2239,59 @@ export default function SucessoristaClient({
     });
   };
 
-  /** Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo. */
+  /**
+   * Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo do
+   * balcão. Com o MODELO DA SERVENTIA anexado, a redação por IA preenche o
+   * padrão PRÓPRIO do escrevente com os dados do caso; se a IA falhar, sai o
+   * modelo padrão do sistema — nunca vazia.
+   */
   const gerarEscritura = async (
     modalidade: ModalidadeEscritura,
     partesRemotas: string,
     instrucoes = '',
+    modeloTexto: string | null = null,
   ) => {
+    // Caminho do MODELO PRÓPRIO: a IA redige a escritura inteira seguindo a
+    // estrutura/estilo do modelo da serventia, com os dados do caso.
+    if (modeloTexto) {
+      try {
+        const r = await fetch('/api/sucessorista', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            tipo: 'ESCRITURA',
+            contexto: `${contextoDoCaso()}\nModalidade do ato: ${modalidade === 'PRESENCIAL' ? 'presencial' : modalidade === 'VIDEOCONFERENCIA' ? 'por videoconferência (e-Notariado)' : `híbrida (por videoconferência: ${partesRemotas || '______'})`}.`,
+            modeloEscritorio: modeloTexto,
+            instrucoes: instrucoes.trim() || null,
+          }),
+        });
+        const corpo = (await r.json().catch(() => null)) as { secoes?: SecaoRedigida[]; error?: string } | null;
+        if (r.ok && corpo?.secoes?.length) {
+          // DOCX na formatação do balcão (Tahoma, títulos centralizados).
+          const { montarDocxRico } = await import('@/lib/partilha/docx');
+          const blob = await montarDocxRico(
+            corpo.secoes.flatMap((s) => [
+              { tipo: 'p' as const, texto: s.titulo.toUpperCase(), titulo: true, negrito: true },
+              ...s.paragrafos.map((p) => ({ tipo: 'p' as const, texto: p })),
+            ]),
+            { estilo: { fonte: 'Tahoma', tamanho: 22, tituloCentrado: true } },
+          );
+          baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
+          registrarDoc('ESCRITURA', {
+            comIa: true,
+            comInstrucoes: instrucoes.trim().length > 0,
+            modalidade,
+          });
+          return;
+        }
+        throw new Error(corpo?.error ?? `HTTP ${r.status}`);
+      } catch (e) {
+        toast.warning('Redação pelo SEU modelo indisponível — saiu o modelo padrão do sistema.', {
+          description: e instanceof Error ? e.message : undefined,
+        });
+      }
+    }
+
     const clausulasExtras = instrucoes.trim()
       ? await redigirClausulas('escritura pública de inventário e partilha de bens (estilo notarial, cláusulas com título em caixa alta)', instrucoes)
       : null;
