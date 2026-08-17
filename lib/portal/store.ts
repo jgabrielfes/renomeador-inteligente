@@ -20,7 +20,10 @@ export interface DocumentoPedido {
   enviadoEm?: string;
 }
 
-/** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso). */
+/** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso).
+ *  `uniaoEstavel` trafega como texto ('sim' | '') — união estável NÃO é
+ *  estado civil; os campos de cônjuge/casamento qualificam o cônjuge OU o(a)
+ *  convivente, conforme o vínculo. */
 export const CAMPOS_QUALIFICACAO_HERDEIRO = [
   'rg',
   'cpf',
@@ -28,6 +31,7 @@ export const CAMPOS_QUALIFICACAO_HERDEIRO = [
   'filiacao',
   'profissao',
   'estadoCivil',
+  'uniaoEstavel',
   'email',
   'endereco',
   'complemento',
@@ -35,6 +39,13 @@ export const CAMPOS_QUALIFICACAO_HERDEIRO = [
   'cidade',
   'uf',
   'cep',
+  'conjugeNome',
+  'conjugeCpf',
+  'conjugeRg',
+  'conjugeDataNascimento',
+  'conjugeProfissao',
+  'casamentoData',
+  'casamentoRegime',
 ] as const;
 
 export type QualificacaoHerdeiro = Partial<
@@ -112,7 +123,9 @@ export const DOCUMENTOS_PADRAO_HERDEIRO: Omit<DocumentoPedido, 'status'>[] = [
   { id: 'rg-cpf', titulo: 'RG e CPF (ou CNH)', descricao: 'Documento de identidade com CPF, frente e verso, legível.' },
   { id: 'certidao-estado-civil', titulo: 'Certidão de nascimento ou casamento', descricao: 'Atualizada (emitida há menos de 90 dias). Se casado, com o regime de bens legível; se houver pacto, o pacto registrado.' },
   { id: 'comprovante-endereco', titulo: 'Comprovante de endereço', descricao: 'Conta de consumo ou correspondência bancária recente, no seu nome.' },
-  { id: 'profissao', titulo: 'Profissão e dados de qualificação', descricao: 'Informe profissão, nacionalidade e e-mail — entram na qualificação da escritura.' },
+  // "Outros documentos" no lugar do antigo pedido de profissão (que não
+  // tinha arquivo a anexar — a profissão entra no formulário de dados).
+  { id: 'outros-documentos', titulo: 'Outros documentos', descricao: 'O que o seu caso pedir: procuração, declarações, escritura de união estável, documentos do cônjuge/convivente…' },
 ];
 
 export function gerarToken(): string {

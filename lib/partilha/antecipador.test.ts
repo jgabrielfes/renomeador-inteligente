@@ -86,9 +86,10 @@ const semMatricula = anteciparQualificacaoRegistral({
 });
 eq('sem matrícula: certidão atualizada', semMatricula.imoveis[0].apontamentos.some((a) => a.texto.includes('inteiro teor')), true);
 
-// Itens gerais sempre presentes (guia ITCMD + validades + venal).
+// Itens gerais: SÓ a guia do ITCMD (validades de certidão e conferência do
+// venal são do tabelião ao lavrar, não do RI — excluídos de propósito).
 eq('gerais: guia do ITCMD', r.gerais.some((a) => a.texto.includes('ITCMD')), true);
-eq('gerais: validade das certidões', r.gerais.some((a) => a.texto.includes('PRENOTAÇÃO')), true);
+eq('gerais: sem validade de certidões nem venal', r.gerais.length, 1);
 
 // Bem de sobrepartilha e não-imóvel ficam fora.
 const fora = anteciparQualificacaoRegistral({

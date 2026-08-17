@@ -131,10 +131,11 @@ export function FiscalView({
         tabela versionada (isenções, faixas, 500 OTN).
       </p>
 
-      <RadarSecao estado={estado} set={set} aliquotaItcmd={aliquotaItcmd} />
-      <AlvaraSecao estado={estado} set={set} bens={bens} />
-      <DeclaracaoFinalSecao estado={estado} set={set} herdeiros={herdeiros} dataObito={dataObito} hoje={hoje} />
+      {/* Na ordem dos módulos (1 → 4), como o escritório trabalha. */}
       <GanhoCapitalSecao estado={estado} set={set} bens={bens} hoje={hoje} />
+      <DeclaracaoFinalSecao estado={estado} set={set} herdeiros={herdeiros} dataObito={dataObito} hoje={hoje} />
+      <AlvaraSecao estado={estado} set={set} bens={bens} />
+      <RadarSecao estado={estado} set={set} aliquotaItcmd={aliquotaItcmd} />
     </section>
   );
 }

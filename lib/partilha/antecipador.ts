@@ -153,21 +153,14 @@ export function anteciparQualificacaoRegistral(e: EntradaAntecipador): Relatorio
     });
   }
 
+  // Itens de praxe: só o que o RI de fato confere no título. Validade de
+  // certidões/matrículas e conferência do venal são do TABELIÃO ao lavrar
+  // (não do registro) — ficaram FORA de propósito, a pedido do escritório.
   const gerais: ApontamentoRegistral[] = [
     {
       nivel: 'EXIGENCIA',
       texto: `Guia do ITCMD PAGA (ou o reconhecimento formal da isenção) acompanha o ${tituloRegistro} — o RI confere o recolhimento antes de registrar.`,
       fundamento: 'Lei 10.705/2000, art. 25; fiscalização pelo registrador (CTN, art. 192)',
-    },
-    {
-      nivel: 'CONFERIR',
-      texto: 'Certidões e matrículas com validade NA DATA DA PRENOTAÇÃO (matrícula ~30 dias; certidões de estado civil ~90 dias) — prazos vencidos são a exigência mais fácil de evitar.',
-      fundamento: 'Praxe das serventias (Normas de Serviço da CGJ-SP, Cap. XX)',
-    },
-    {
-      nivel: 'CONFERIR',
-      texto: 'Valor venal de referência e a base usada no ato conferidos — divergência entre o valor do ato e o venal gera exigência de complementação de custas.',
-      fundamento: 'Lei 11.331/2002, art. 7º (base dos emolumentos)',
     },
   ];
 

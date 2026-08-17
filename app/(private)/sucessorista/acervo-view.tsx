@@ -8,7 +8,7 @@
  */
 
 import { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -91,18 +91,40 @@ function rotuloDoBem(bem: Bem): string {
   return ROTULO_TIPO_BEM[bem.tipo ?? 'OUTRO'];
 }
 
-const esquemaBem = z.object({
-  descricao: z.string().trim().min(1, 'Descreva o bem — ex.: "Imóvel mat. 12.345 — Guarulhos/SP".'),
-  valor: z
-    .string()
-    .trim()
-    .min(1, 'Informe o valor na data do óbito.')
-    .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
-  codigo: z.string().min(1, 'Escolha o tipo na lista da declaração do ITCMD-SP.'),
-  natureza: z.enum(['COMUM', 'PARTICULAR']),
-  valorVenal: z.string().trim().refine((v) => v === '' || VALOR_PTBR.test(v), 'Valor inválido.'),
-  valorAvaliacao: z.string().trim().refine((v) => v === '' || VALOR_PTBR.test(v), 'Valor inválido.'),
-});
+/**
+ * Valores do bem por classe (pedido do escritório — NÃO são opcionais):
+ * IMÓVEL lança TRÊS valores (venal na data do óbito, venal do exercício
+ * corrente e avaliação); os demais bens lançam DOIS (venal na data do óbito
+ * e avaliação). O ITCMD sai pelo MAIOR entre venal do óbito e avaliação; as
+ * custas notariais/registrais, pelo MAIOR dos três (Enunciado 7 do CNB/SP).
+ */
+const esquemaBem = z
+  .object({
+    descricao: z.string().trim().min(1, 'Descreva o bem — ex.: "Imóvel mat. 12.345 — Guarulhos/SP".'),
+    valor: z
+      .string()
+      .trim()
+      .min(1, 'Informe o valor venal na data do óbito.')
+      .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
+    codigo: z.string().min(1, 'Escolha o tipo na lista da declaração do ITCMD-SP.'),
+    natureza: z.enum(['COMUM', 'PARTICULAR']),
+    valorVenal: z.string().trim().refine((v) => v === '' || VALOR_PTBR.test(v), 'Valor inválido.'),
+    valorAvaliacao: z
+      .string()
+      .trim()
+      .min(1, 'Informe o valor de avaliação.')
+      .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
+  })
+  .superRefine((dados, ctx) => {
+    // O venal do exercício corrente é campo de IMÓVEL — e lá é obrigatório.
+    if (tipoBemItcmd(dados.codigo)?.tipo === 'IMOVEL' && !dados.valorVenal.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['valorVenal'],
+        message: 'Informe o valor venal do exercício corrente.',
+      });
+    }
+  });
 
 type NovoBem = z.infer<typeof esquemaBem>;
 
@@ -166,6 +188,9 @@ export function AcervoView({
     resolver: zodResolver(esquemaBem),
     defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '' },
   });
+  // O tipo escolhido decide os campos de valor: imóvel = 3, demais = 2.
+  const codigoEscolhido = useWatch({ control, name: 'codigo' });
+  const ehImovel = tipoBemItcmd(codigoEscolhido)?.tipo === 'IMOVEL';
 
   const lancar = (dados: NovoBem) => {
     setBens([
@@ -206,7 +231,7 @@ export function AcervoView({
             <FieldError errors={[errors.descricao]} />
           </Field>
           <Field data-invalid={Boolean(errors.valor)}>
-            <FieldLabel htmlFor="bem-valor">Valor (R$)</FieldLabel>
+            <FieldLabel htmlFor="bem-valor">Valor venal na data do óbito (R$)</FieldLabel>
             <Controller
               control={control}
               name="valor"
@@ -255,32 +280,49 @@ export function AcervoView({
               )}
             />
           </Field>
-          <Field data-invalid={Boolean(errors.valorVenal)}>
-            <FieldLabel htmlFor="bem-venal">Valor venal (R$) — opcional</FieldLabel>
-            <Controller
-              control={control}
-              name="valorVenal"
-              render={({ field }) => (
-                <CurrencyInput id="bem-venal" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
-              )}
-            />
-            <FieldError errors={[errors.valorVenal]} />
-          </Field>
+          {/* Venal do exercício corrente: campo de IMÓVEL (códigos 1xx da
+              lista) — abre conforme o tipo escolhido, e lá é obrigatório. */}
+          {ehImovel && (
+            <Field data-invalid={Boolean(errors.valorVenal)}>
+              <FieldLabel htmlFor="bem-venal">Valor venal do exercício corrente (R$)</FieldLabel>
+              <Controller
+                control={control}
+                name="valorVenal"
+                render={({ field }) => (
+                  <CurrencyInput
+                    id="bem-venal"
+                    aria-invalid={Boolean(errors.valorVenal)}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
+              />
+              <FieldError errors={[errors.valorVenal]} />
+            </Field>
+          )}
           <Field data-invalid={Boolean(errors.valorAvaliacao)}>
-            <FieldLabel htmlFor="bem-avaliacao">Valor de avaliação (R$) — opcional</FieldLabel>
+            <FieldLabel htmlFor="bem-avaliacao">Valor de avaliação (R$)</FieldLabel>
             <Controller
               control={control}
               name="valorAvaliacao"
               render={({ field }) => (
-                <CurrencyInput id="bem-avaliacao" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                <CurrencyInput
+                  id="bem-avaliacao"
+                  aria-invalid={Boolean(errors.valorAvaliacao)}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
               )}
             />
             <FieldError errors={[errors.valorAvaliacao]} />
           </Field>
         </div>
         <p className="fund" style={{ marginTop: 6 }}>
-          As custas de escritura e registro recaem sobre o MAIOR entre o valor atribuído, o
-          venal e a avaliação (Enunciado 7 do CNB/SP) — informe quando forem diferentes.
+          O ITCMD é calculado sobre o MAIOR entre o valor venal na data do óbito e o valor
+          de avaliação; as custas notariais e registrais, sobre o MAIOR entre venal do
+          óbito, venal do exercício corrente e avaliação (Enunciado 7 do CNB/SP).
         </p>
         <div style={{ marginTop: 12 }}>
           <Button type="submit" variant="outline">
