@@ -129,6 +129,24 @@ export function PainelCaso({
           : 'Comece pela data do óbito — só isso já move três números aqui.'}
       </p>
 
+      {/* Bloco de notas do caso — no TOPO do painel (acima do prazo), maior:
+          anotações livres, salvas com o caso. */}
+      <div className="metrica">
+        <div className="k">Bloco de notas</div>
+        <Textarea
+          value={notas}
+          rows={7}
+          placeholder="Anotações do caso — pendências, recados, o que combinar com a família…"
+          onChange={(e) => setNotas?.(e.target.value)}
+          style={{
+            marginTop: 6,
+            fontSize: 12.5,
+            minHeight: 120,
+            background: 'var(--papel-alto, transparent)',
+          }}
+        />
+      </div>
+
       {temObito && (
         <div className="metrica">
           <div className="k">Prazo do art. 611 do CPC</div>
@@ -318,19 +336,6 @@ export function PainelCaso({
         ) : (
           <p className="rodape">Lance os bens no item II.</p>
         )}
-      </div>
-
-      {/* Bloco de notas do caso (no lugar do antigo "Rito provável" — o rito
-          segue visível nas abas). Anotações livres, salvas com o caso. */}
-      <div className="metrica">
-        <div className="k">Bloco de notas</div>
-        <Textarea
-          value={notas}
-          rows={4}
-          placeholder="Anotações do caso — pendências, recados, o que combinar com a família…"
-          onChange={(e) => setNotas?.(e.target.value)}
-          style={{ marginTop: 6, fontSize: 12.5, background: 'var(--papel-alto, transparent)' }}
-        />
       </div>
 
       {comparativo && (

@@ -7,7 +7,7 @@
  * lista de arquivos. Nada daqui trafega para servidor.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -93,6 +93,39 @@ export function CasosView({
   const [dialogoNovo, setDialogoNovo] = useState(false);
   const [arquivando, setArquivando] = useState<ResumoCaso | null>(null);
   const [nomeDisp, setNomeDisp] = useState(dispositivo || 'Meu computador');
+  // Visualização (cards × lista) e ordenação — preferências do navegador.
+  // Restauradas num efeito diferido (não no initializer) para o HTML do
+  // servidor e o primeiro render do cliente coincidirem (hidratação).
+  const [visual, setVisual] = useState<'cards' | 'lista'>('cards');
+  const [ordem, setOrdem] = useState<'prazo' | 'alfabetica' | 'atualizacao' | 'custo'>('prazo');
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (localStorage.getItem('sucessorista-casos-visual') === 'lista') setVisual('lista');
+        const v = localStorage.getItem('sucessorista-casos-ordem');
+        if (v === 'alfabetica' || v === 'atualizacao' || v === 'custo') setOrdem(v);
+      } catch {
+        // modo restrito
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  const mudarVisual = (v: 'cards' | 'lista') => {
+    setVisual(v);
+    try {
+      localStorage.setItem('sucessorista-casos-visual', v);
+    } catch {
+      // modo restrito
+    }
+  };
+  const mudarOrdem = (v: typeof ordem) => {
+    setOrdem(v);
+    try {
+      localStorage.setItem('sucessorista-casos-ordem', v);
+    } catch {
+      // modo restrito
+    }
+  };
   const {
     register,
     handleSubmit,
@@ -104,9 +137,23 @@ export function CasosView({
   });
 
   const ordenados = [...(resumos ?? [])].sort((a, b) => {
-    const da = diasDesde(a.cabecalho.dataObito) ?? -1;
-    const db = diasDesde(b.cabecalho.dataObito) ?? -1;
-    return db - da; // urgência: mais dias desde o óbito primeiro
+    switch (ordem) {
+      case 'alfabetica': {
+        const na = a.cabecalho.titulo || a.cabecalho.autorDaHeranca || '';
+        const nb = b.cabecalho.titulo || b.cabecalho.autorDaHeranca || '';
+        return na.localeCompare(nb, 'pt-BR', { sensitivity: 'base' });
+      }
+      case 'atualizacao':
+        return (b.cabecalho.atualizadoEm ?? '').localeCompare(a.cabecalho.atualizadoEm ?? '');
+      case 'custo':
+        return (b.cabecalho.custoProjetado ?? -1) - (a.cabecalho.custoProjetado ?? -1);
+      default: {
+        // urgência do art. 611: mais dias desde o óbito primeiro
+        const da = diasDesde(a.cabecalho.dataObito) ?? -1;
+        const db = diasDesde(b.cabecalho.dataObito) ?? -1;
+        return db - da;
+      }
+    }
   });
 
   return (
@@ -183,7 +230,45 @@ export function CasosView({
         <p className="vazio">Nenhum caso ainda — comece pelo botão “Novo caso”.</p>
       )}
 
-      <div className="casos-grade">
+      {ordenados.length > 1 && (
+        <div className="casos-controles">
+          <label className="campo" style={{ maxWidth: 260 }}>
+            <span>Ordenar por</span>
+            <select
+              className="seletor"
+              value={ordem}
+              onChange={(e) => mudarOrdem(e.target.value as typeof ordem)}
+            >
+              <option value="prazo">Prioridade de prazo (art. 611)</option>
+              <option value="alfabetica">Ordem alfabética (A–Z)</option>
+              <option value="atualizacao">Alterados recentemente</option>
+              <option value="custo">Maior custo projetado</option>
+            </select>
+          </label>
+          <div className="tema-alternador" role="radiogroup" aria-label="Visualização dos casos">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={visual === 'cards'}
+              className={visual === 'cards' ? 'ativo' : ''}
+              onClick={() => mudarVisual('cards')}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={visual === 'lista'}
+              className={visual === 'lista' ? 'ativo' : ''}
+              onClick={() => mudarVisual('lista')}
+            >
+              Lista
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className={`casos-grade${visual === 'lista' ? ' lista' : ''}`}>
         {ordenados.map((r) => {
           const dias = diasDesde(r.cabecalho.dataObito);
           const faixa = dias === null ? '' : dias > 180 ? 'tarde' : dias > 60 ? 'meio' : 'ok';

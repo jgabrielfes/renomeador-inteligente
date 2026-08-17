@@ -453,7 +453,21 @@ export default function SucessoristaClient({
   const provisao = useMemo(() => {
     if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;
     const herancaBruta = Number(resultado.heranca.total);
-    const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
+    // ITCMD pelo MAIOR entre o venal na data do óbito (bem.valor, que monta
+    // o espelho) e o valor de AVALIAÇÃO — apurado bem a bem e aplicado como
+    // fator de escala sobre a herança (mesmo desenho do Enunciado 7 nas
+    // custas; o venal do exercício corrente NÃO entra no imposto).
+    const somaObito = bens.reduce((a, b) => a + Math.max(0, Number(b.valor) || 0), 0);
+    const somaMaior = bens.reduce(
+      (a, b) =>
+        a + Math.max(Math.max(0, Number(b.valor) || 0), Number(b.valorAvaliacao) || 0),
+      0,
+    );
+    const fatorAvaliacao = somaObito > 0 && somaMaior > somaObito ? somaMaior / somaObito : 1;
+    const baseLiquida = Math.max(
+      0,
+      herancaBruta * fatorAvaliacao - (isencoes?.valorIsento ?? 0),
+    );
     const fator = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
     return provisionarItcmd({
       dataObito: falecido.dataObito,
@@ -464,7 +478,7 @@ export default function SucessoristaClient({
       faixasProgressivas: fiscal.faixas,
       vigenciaProgressiva: fiscal.vigencia,
     });
-  }, [falecido.dataObito, resultado, hoje, isencoes, fiscal]);
+  }, [falecido.dataObito, resultado, bens, hoje, isencoes, fiscal]);
 
   /* --- passo 2 da partilha: matriz bem × participante (% de cada bem) --- */
   const [matriz, setMatriz] = useState<Record<string, Record<string, string>>>({});
@@ -2207,19 +2221,66 @@ export default function SucessoristaClient({
     });
   };
 
-  const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
-    const atual = familia.qualificacoes[herdeiroId] ?? QUALIFICACAO_VAZIA;
+  /** Mescla a qualificação vinda do PORTAL numa ficha (campo vazio primeiro;
+   *  uniaoEstavel trafega como 'sim'/'' e vira a caixinha booleana). */
+  const mesclarQualificacaoDoPortal = (
+    atual: Qualificacao,
+    q: QualificacaoHerdeiro,
+  ): Qualificacao => {
     const mesclada: Qualificacao = { ...atual };
     for (const campo of Object.keys(q) as (keyof QualificacaoHerdeiro)[]) {
       const v = q[campo];
-      if (v) mesclada[campo] = v;
+      if (!v) continue;
+      if (campo === 'uniaoEstavel') {
+        if (mesclada.uniaoEstavel === undefined) mesclada.uniaoEstavel = v === 'sim';
+        continue;
+      }
+      if (!(mesclada as unknown as Record<string, string>)[campo])
+        (mesclada as unknown as Record<string, string>)[campo] = v;
     }
+    return mesclada;
+  };
+
+  const importarQualificacao = (herdeiroId: string, q: QualificacaoHerdeiro) => {
     setFamilia({
       ...familia,
-      qualificacoes: { ...familia.qualificacoes, [herdeiroId]: mesclada },
+      qualificacoes: {
+        ...familia.qualificacoes,
+        [herdeiroId]: mesclarQualificacaoDoPortal(
+          familia.qualificacoes[herdeiroId] ?? QUALIFICACAO_VAZIA,
+          q,
+        ),
+      },
     });
     irPara('familia');
   };
+
+  /**
+   * As qualificações recebidas pelo LINK DO COFRE caem SOZINHAS no item I
+   * (A família): a cada atualização dos convites, a ficha do herdeiro
+   * correspondente ganha os campos que estiverem vazios — digitação do
+   * advogado nunca é sobrescrita, e o botão manual do cofre segue valendo.
+   */
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFamilia((prev) => {
+        let mudou = false;
+        const qualificacoes = { ...prev.qualificacoes };
+        for (const c of Object.values(convites)) {
+          if (!c.qualificacao || !c.herdeiroId) continue;
+          if (!prev.herdeiros.some((h) => h.id === c.herdeiroId)) continue;
+          const atual = qualificacoes[c.herdeiroId] ?? QUALIFICACAO_VAZIA;
+          const mesclada = mesclarQualificacaoDoPortal(atual, c.qualificacao);
+          if (JSON.stringify(mesclada) !== JSON.stringify(atual)) {
+            qualificacoes[c.herdeiroId] = mesclada;
+            mudou = true;
+          }
+        }
+        return mudou ? { ...prev, qualificacoes } : prev;
+      });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [convites]);
 
   /* ---------- render ---------- */
 

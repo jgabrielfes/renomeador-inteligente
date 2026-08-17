@@ -553,6 +553,53 @@
   gap: 14px;
 }
 
+/* Barra de ordenação + alternador cards × lista do painel "Meus casos". */
+.sucessorista .casos-controles {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+/* Visualização em LISTA: cada caso vira uma linha compacta — conteúdo à
+   esquerda, ações à direita, sem a borda-lombada dos cards. */
+.sucessorista .casos-grade.lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sucessorista .casos-grade.lista .caso-cartao {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sucessorista .casos-grade.lista .caso-cartao .abrir {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 10px 14px;
+}
+
+.sucessorista .casos-grade.lista .caso-cartao h3 { font-size: 15px; margin: 0; }
+.sucessorista .casos-grade.lista .caso-cartao .autor,
+.sucessorista .casos-grade.lista .caso-cartao .prazo,
+.sucessorista .casos-grade.lista .caso-cartao .linha { margin: 0; }
+
+.sucessorista .casos-grade.lista .caso-cartao .acoes {
+  border-top: none;
+  margin: 0;
+  padding: 4px 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
 .sucessorista .caso-cartao {
   border: 1px solid var(--fio-forte);
   border-left: 3px solid var(--bronze);

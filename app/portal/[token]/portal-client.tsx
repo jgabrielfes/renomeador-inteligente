@@ -10,7 +10,7 @@
  */
 
 import { use, useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import '../../(private)/sucessorista/sucessorista.css';
@@ -28,24 +28,48 @@ const ROTULO: Record<string, string> = {
   REJEITADO: 'Precisa reenviar',
 };
 
-const esquemaQualificacao = z.object({
-  cpf: z
-    .string()
-    .trim()
-    .min(1, 'Informe seu CPF.')
-    .regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, 'CPF inválido — use 000.000.000-00.'),
-  rg: z.string().trim(),
-  dataNascimento: z.string().min(1, 'Informe sua data de nascimento.'),
-  profissao: z.string().trim().min(1, 'Informe sua profissão.'),
-  estadoCivil: z.string().min(1, 'Informe seu estado civil.'),
-  email: z.string().trim().min(1, 'Informe seu e-mail.').pipe(z.email('E-mail inválido.')),
-  endereco: z.string().trim().min(1, 'Informe seu endereço (rua e número).'),
-  complemento: z.string().trim(),
-  bairro: z.string().trim(),
-  cidade: z.string().trim().min(1, 'Informe a cidade.'),
-  uf: z.string().trim().min(2, 'Informe o estado (UF).'),
-  cep: z.string().trim().min(1, 'Informe o CEP.'),
-});
+/** União estável NÃO é estado civil: a escolha é fechada e a união é a
+ *  caixinha própria — marcada (ou casado), abre a qualificação do cônjuge/
+ *  convivente e a juntada dos documentos dele em "Outros documentos". */
+const esquemaQualificacao = z
+  .object({
+    cpf: z
+      .string()
+      .trim()
+      .min(1, 'Informe seu CPF.')
+      .regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, 'CPF inválido — use 000.000.000-00.'),
+    rg: z.string().trim(),
+    dataNascimento: z.string().min(1, 'Informe sua data de nascimento.'),
+    profissao: z.string().trim().min(1, 'Informe sua profissão.'),
+    estadoCivil: z.string().min(1, 'Informe seu estado civil.'),
+    uniaoEstavel: z.boolean(),
+    email: z.string().trim().min(1, 'Informe seu e-mail.').pipe(z.email('E-mail inválido.')),
+    endereco: z.string().trim().min(1, 'Informe seu endereço (rua e número).'),
+    complemento: z.string().trim(),
+    bairro: z.string().trim(),
+    cidade: z.string().trim().min(1, 'Informe a cidade.'),
+    uf: z.string().trim().min(2, 'Informe o estado (UF).'),
+    cep: z.string().trim().min(1, 'Informe o CEP.'),
+    conjugeNome: z.string().trim(),
+    conjugeCpf: z.string().trim(),
+    conjugeRg: z.string().trim(),
+    conjugeDataNascimento: z.string().trim(),
+    conjugeProfissao: z.string().trim(),
+    casamentoData: z.string().trim(),
+    casamentoRegime: z.string().trim(),
+  })
+  .superRefine((dados, ctx) => {
+    const temVinculo = dados.estadoCivil === 'Casado(a)' || dados.uniaoEstavel;
+    if (temVinculo && !dados.conjugeNome.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['conjugeNome'],
+        message: dados.uniaoEstavel && dados.estadoCivil !== 'Casado(a)'
+          ? 'Informe o nome do(a) convivente.'
+          : 'Informe o nome do(a) cônjuge.',
+      });
+    }
+  });
 
 type Qualificacao = z.infer<typeof esquemaQualificacao>;
 
@@ -70,20 +94,32 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<Qualificacao>({
     resolver: zodResolver(esquemaQualificacao),
     defaultValues: {
-      cpf: '', rg: '', dataNascimento: '', profissao: '', estadoCivil: '',
+      cpf: '', rg: '', dataNascimento: '', profissao: '', estadoCivil: '', uniaoEstavel: false,
       email: '', endereco: '', complemento: '', bairro: '', cidade: '', uf: '', cep: '',
+      conjugeNome: '', conjugeCpf: '', conjugeRg: '', conjugeDataNascimento: '',
+      conjugeProfissao: '', casamentoData: '', casamentoRegime: '',
     },
   });
+  // Casado(a) OU convivente em união estável: abre o bloco do cônjuge.
+  const estadoCivilAtual = useWatch({ control, name: 'estadoCivil' });
+  const convivente = useWatch({ control, name: 'uniaoEstavel' });
+  const temVinculo = estadoCivilAtual === 'Casado(a)' || convivente;
+  const rotuloParceiro = estadoCivilAtual === 'Casado(a)' ? 'cônjuge' : 'convivente';
 
   const enviarQualificacao = async (dados: Qualificacao) => {
     const r = await fetch(`/api/portal/${token}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ qualificacao: dados }),
+      // uniaoEstavel vai como texto ('sim' | '') — o transporte do portal é
+      // todo de strings; a folha do advogado converte para a caixinha.
+      body: JSON.stringify({
+        qualificacao: { ...dados, uniaoEstavel: dados.uniaoEstavel ? 'sim' : '' },
+      }),
     });
     if (r.ok) setConvite(await r.json());
   };
@@ -199,11 +235,11 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             <input type="text" aria-invalid={!!errors.profissao} {...register('profissao')} />
           </Campo>
           <Campo rotulo="Estado civil" erro={errors.estadoCivil?.message}>
+            {/* União estável NÃO é estado civil — ela é a caixinha abaixo. */}
             <select aria-invalid={!!errors.estadoCivil} {...register('estadoCivil')}>
               <option value="">Selecione…</option>
               <option>Solteiro(a)</option>
               <option>Casado(a)</option>
-              <option>União estável</option>
               <option>Divorciado(a)</option>
               <option>Viúvo(a)</option>
             </select>
@@ -230,6 +266,70 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             <input type="text" inputMode="numeric" aria-invalid={!!errors.cep} {...register('cep')} />
           </Campo>
         </div>
+
+        <label className="marcar" style={{ marginTop: 10, fontWeight: 400 }}>
+          <input type="checkbox" {...register('uniaoEstavel')} />
+          Convivo em união estável (união estável não é estado civil — mantenha o seu acima)
+        </label>
+
+        {/* Casado(a) ou em união estável: o ato também qualifica o(a)
+            cônjuge/convivente — e os documentos dele(a) podem ser anexados
+            em "Outros documentos", na lista abaixo. */}
+        {temVinculo && (
+          <>
+            <h3 style={{ marginTop: 16 }}>
+              Dados do(a) {rotuloParceiro}
+            </h3>
+            <p className="fund" style={{ margin: '2px 0 6px' }}>
+              {estadoCivilAtual === 'Casado(a)'
+                ? 'A escritura qualifica também o seu cônjuge e o casamento.'
+                : 'O(a) convivente mantém o próprio estado civil; a união entra pela declaração/escritura.'}{' '}
+              Os documentos dele(a) (RG/CPF{estadoCivilAtual === 'Casado(a)' ? ', certidão de casamento' : ', escritura/declaração da união'}) podem ser anexados em “Outros documentos”.
+            </p>
+            <div className="grade q-grid">
+              <Campo rotulo={`Nome completo do(a) ${rotuloParceiro}`} erro={errors.conjugeNome?.message}>
+                <input type="text" aria-invalid={!!errors.conjugeNome} {...register('conjugeNome')} />
+              </Campo>
+              <Campo rotulo="CPF (opcional)" erro={errors.conjugeCpf?.message}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  {...register('conjugeCpf', {
+                    onChange: (e: { target: { value: string } }) => {
+                      e.target.value = mascararCpf(e.target.value);
+                    },
+                  })}
+                />
+              </Campo>
+              <Campo rotulo="RG (opcional)" erro={errors.conjugeRg?.message}>
+                <input type="text" {...register('conjugeRg')} />
+              </Campo>
+              <Campo rotulo="Data de nascimento (opcional)" erro={errors.conjugeDataNascimento?.message}>
+                <input type="date" {...register('conjugeDataNascimento')} />
+              </Campo>
+              <Campo rotulo="Profissão (opcional)" erro={errors.conjugeProfissao?.message}>
+                <input type="text" {...register('conjugeProfissao')} />
+              </Campo>
+              <Campo
+                rotulo={estadoCivilAtual === 'Casado(a)' ? 'Data do casamento (opcional)' : 'Início da união (opcional)'}
+                erro={errors.casamentoData?.message}
+              >
+                <input type="date" {...register('casamentoData')} />
+              </Campo>
+              <Campo rotulo="Regime de bens (opcional)" erro={errors.casamentoRegime?.message}>
+                <select {...register('casamentoRegime')}>
+                  <option value="">Selecione…</option>
+                  <option>Comunhão parcial de bens</option>
+                  <option>Comunhão universal de bens</option>
+                  <option>Separação convencional de bens</option>
+                  <option>Separação obrigatória de bens</option>
+                  <option>Participação final nos aquestos</option>
+                </select>
+              </Campo>
+            </div>
+          </>
+        )}
+
         <div style={{ marginTop: 14 }}>
           <button className="acao" type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Enviando…' : convite.qualificacao ? 'Reenviar meus dados' : 'Enviar meus dados'}

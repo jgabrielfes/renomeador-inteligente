@@ -30,6 +30,8 @@ const CATALOGO_DO_PEDIDO_PORTAL: Record<string, string> = {
   'rg-cpf': 'docs-herdeiros',
   'certidao-estado-civil': 'certidoes-herdeiros',
   'comprovante-endereco': 'comprovantes-endereco',
+  'outros-documentos': 'outros',
+  // Convites antigos ainda carregam o pedido de profissão.
   profissao: 'docs-herdeiros',
 };
 
