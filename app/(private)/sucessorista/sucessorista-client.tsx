@@ -923,12 +923,30 @@ export default function SucessoristaClient({
   }, [perfil]);
 
   /** Primeiro acesso: a conta ainda não escolheu o perfil — escolha
-   *  obrigatória (dialog), gravada no banco pela server action. */
+   *  obrigatória (dialog). Se o navegador JÁ guarda uma escolha (era do
+   *  localStorage, ou gravação anterior que falhou), não pergunta de novo:
+   *  aplica e tenta ressincronizar com o banco em silêncio. */
   useEffect(() => {
-    if (perfilConta === null) {
-      const t = setTimeout(() => setEscolhendoPerfil(true), 0);
-      return () => clearTimeout(t);
-    }
+    if (perfilConta !== null) return;
+    const t = setTimeout(() => {
+      let guardado: string | null = null;
+      try {
+        guardado = localStorage.getItem(CHAVE_PERFIL);
+      } catch {
+        // modo restrito
+      }
+      if (guardado === 'ADVOGADO' || guardado === 'ESCREVENTE') {
+        setPerfil(guardado);
+        // Ressincronização silenciosa: quando o banco voltar (ou a migração
+        // rodar), a escolha do navegador vira a da conta — sem toast.
+        void import('./perfil-actions').then(({ salvarPerfilConta }) =>
+          salvarPerfilConta(guardado).catch(() => undefined),
+        );
+      } else {
+        setEscolhendoPerfil(true);
+      }
+    }, 0);
+    return () => clearTimeout(t);
   }, [perfilConta]);
 
   const escolherPerfilConta = async (p: Perfil) => {
@@ -937,9 +955,22 @@ export default function SucessoristaClient({
     try {
       const { salvarPerfilConta } = await import('./perfil-actions');
       const r = await salvarPerfilConta(p);
-      if (!r.ok) {
-        toast.error('Não foi possível gravar o perfil na conta', {
-          description: 'A escolha vale nesta sessão; tente de novo mais tarde.',
+      if (!r.ok && r.motivo === 'ja-escolhido') {
+        toast.error('O perfil desta conta já foi definido', {
+          description:
+            'Trocar de perfil é ato de administração — fale com o(a) responsável pela plataforma.',
+        });
+      } else if (!r.ok && r.motivo === 'sem-sessao') {
+        toast.error('Sessão expirada', {
+          description: 'Entre de novo para gravar o perfil na conta.',
+        });
+      } else if (!r.ok) {
+        // Banco fora (ou migração perfil_sucessorista_por_conta pendente):
+        // a escolha fica no navegador e o sistema ressincroniza sozinho no
+        // próximo acesso — sem pedir nada de novo.
+        toast.info('Perfil guardado neste navegador', {
+          description:
+            'Não deu para gravar na conta agora (banco indisponível). Sua escolha já vale e será sincronizada automaticamente no próximo acesso.',
         });
       }
     } catch {
@@ -1411,7 +1442,7 @@ export default function SucessoristaClient({
   };
 
   /** Salva o caso aberto no store ativo, com a guarda de conflito. */
-  const salvarAgora = async (forcar = false): Promise<void> => {
+  const executarSalvamento = async (forcar = false): Promise<void> => {
     const s = storeRef.current;
     if (!s || !casoAbertoRef.current) return;
     const arquivo = await montarArquivoCasoAtual();
@@ -1435,6 +1466,19 @@ export default function SucessoristaClient({
         erro: r.erro,
       });
     }
+  };
+  /**
+   * Salvamentos SERIALIZADOS (fila de um): o flush de blur/aba escondida
+   * dispara junto do debounce, e dois salvamentos em paralelo faziam o
+   * segundo ler a base antiga e enxergar a PRÓPRIA gravação anterior como
+   * "conflito de outro computador". Encadeando, cada salvamento parte da
+   * base já atualizada pelo anterior.
+   */
+  const filaSalvamentoRef = useRef<Promise<void>>(Promise.resolve());
+  const salvarAgora = (forcar = false): Promise<void> => {
+    const proximo = filaSalvamentoRef.current.then(() => executarSalvamento(forcar));
+    filaSalvamentoRef.current = proximo.catch(() => undefined);
+    return proximo;
   };
   const salvarAgoraRef = useRef(salvarAgora);
   useEffect(() => {
