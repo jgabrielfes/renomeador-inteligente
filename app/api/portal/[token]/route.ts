@@ -1,8 +1,10 @@
 import {
-  store,
   CAMPOS_QUALIFICACAO_HERDEIRO,
   type QualificacaoHerdeiro,
 } from '@/lib/portal/store';
+// Store PERSISTENTE (Postgres): o convite não expira e os envios sobrevivem
+// aos cold starts — a memória era o que fazia o link "morrer".
+import { store } from '@/lib/portal/store-prisma';
 import { registrarPortal } from '@/app/(private)/sucessorista/actions';
 import { foraDaPlataforma } from '@/lib/app';
 

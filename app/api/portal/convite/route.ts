@@ -1,10 +1,12 @@
 import { auth } from '@/lib/auth';
 import {
-  store,
   gerarToken,
   DOCUMENTOS_PADRAO_HERDEIRO,
   type ConviteHerdeiro,
 } from '@/lib/portal/store';
+// Store PERSISTENTE (Postgres): o convite não expira e os envios sobrevivem
+// aos cold starts — a memória era o que fazia o link "morrer".
+import { store } from '@/lib/portal/store-prisma';
 import { foraDaPlataforma } from '@/lib/app';
 
 export const runtime = 'nodejs';
@@ -40,8 +42,20 @@ export async function POST(req: Request) {
     return Response.json({ erro: 'casoId e nomeHerdeiro são obrigatórios' }, { status: 422 });
   }
 
+  // O link leva o PRIMEIRO NOME do herdeiro (ex.: /portal/maria-8f3a…):
+  // fica claro para quem é o convite ao compartilhar no WhatsApp/e-mail. A
+  // credencial continua sendo a parte ALEATÓRIA — o nome é só legibilidade.
+  const primeiroNome = body.nomeHerdeiro
+    .trim()
+    .split(/\s+/)[0]
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 24);
+
   const convite: ConviteHerdeiro = {
-    token: gerarToken(),
+    token: primeiroNome ? `${primeiroNome}-${gerarToken()}` : gerarToken(),
     casoId: body.casoId,
     herdeiroId: body.herdeiroId,
     nomeHerdeiro: body.nomeHerdeiro,

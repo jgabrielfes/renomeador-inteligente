@@ -29,6 +29,7 @@ export function CustosView({
   irParaFamilia,
   irParaAcervo,
   avancar,
+  rito = null,
 }: {
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
@@ -40,6 +41,8 @@ export function CustosView({
   irParaAcervo: () => void;
   /** Avança para o próximo item da esteira (Documentos). */
   avancar: () => void;
+  /** Rito EFETIVO do caso (escolha do dashboard, ou o motor em automático). */
+  rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
 }) {
   const temTaxaJudicial = custos?.parcelas.some((p) => p.id === 'taxa-judiciaria') ?? false;
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
@@ -47,14 +50,30 @@ export function CustosView({
   return (
     <section>
       <h1>Custos do inventário</h1>
-      <p className="subtitulo">
-        A planilha completa além do imposto (tabelas paulistas de 2026, Lei 11.331/2002,
-        com o ISS ajustável abaixo — o padrão é 5%, o maior do estado): a escritura é UM
-        ato pela LEGÍTIMA (herança descontada a meação), qualquer que seja a quantidade
-        de bens, herdeiros ou pagamentos; renúncia entra como ato sem valor declarado por
-        renunciante; torna/cessão de direitos hereditários é ato próprio pela base do
-        valor da torna, além do imposto inter vivos, se o caso.
-      </p>
+      {rito && (
+        <p className="eyebrow" style={{ marginBottom: 4 }}>
+          Rito {rito === 'EXTRAJUDICIAL' ? 'extrajudicial' : 'judicial'} — escolha no
+          dashboard &quot;O Caso&quot;
+        </p>
+      )}
+      {rito === 'JUDICIAL' ? (
+        <p className="subtitulo">
+          A planilha completa além do imposto, no RITO JUDICIAL: a taxa judiciária entra
+          por faixas FIXAS de UFESPs sobre o monte-mor (Lei 11.608/2003, art. 4º, §7º, na
+          redação da Lei 17.785/2023) no lugar da escritura; os registros das partilhas
+          nos imóveis (o formal também vai a registro) e as certidões seguem valendo.
+          Diligências, editais, perícias e custas recursais não entram — variam por caso.
+        </p>
+      ) : (
+        <p className="subtitulo">
+          A planilha completa além do imposto (tabelas paulistas de 2026, Lei 11.331/2002,
+          com o ISS ajustável abaixo — o padrão é 5%, o maior do estado): a escritura é UM
+          ato pela LEGÍTIMA (herança descontada a meação), qualquer que seja a quantidade
+          de bens, herdeiros ou pagamentos; renúncia entra como ato sem valor declarado por
+          renunciante; torna/cessão de direitos hereditários é ato próprio pela base do
+          valor da torna, além do imposto inter vivos, se o caso.
+        </p>
+      )}
 
       {!custos && (
         <p className="mono-alerta">

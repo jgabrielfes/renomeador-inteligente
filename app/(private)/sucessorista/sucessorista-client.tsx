@@ -1212,9 +1212,24 @@ export default function SucessoristaClient({
   }, [fiscal.sucessoes, bens]);
 
   /**
+   * RITO EFETIVO do caso: a escolha do dashboard "O Caso" manda
+   * (fiscal.rito EXTRAJUDICIAL/JUDICIAL); em AUTO, segue o motor de
+   * elegibilidade. Decide a projeção de custas (escritura × taxa
+   * judiciária), o encerramento do cofre e o antecipador registral.
+   */
+  const ritoMotor: 'EXTRAJUDICIAL' | 'JUDICIAL' | null =
+    resultado && resultado.bloqueios.length === 0
+      ? resultado.elegivelExtrajudicial
+        ? 'EXTRAJUDICIAL'
+        : 'JUDICIAL'
+      : null;
+  const ritoEfetivo: 'EXTRAJUDICIAL' | 'JUDICIAL' | null =
+    fiscal.rito === 'EXTRAJUDICIAL' || fiscal.rito === 'JUDICIAL' ? fiscal.rito : ritoMotor;
+
+  /**
    * Projeção de custos além do imposto: escritura/atos notariais, registros
    * por imóvel (com atos extras na partilha diferenciada), certidões e a
-   * taxa judiciária quando o rito provável é o judicial.
+   * taxa judiciária quando o rito é o judicial.
    */
   const custos = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0) return null;
@@ -1255,7 +1270,13 @@ export default function SucessoristaClient({
             Number(b.valorAvaliacao) || 0,
           ),
         })),
-      rito: resultado.elegivelExtrajudicial ? 'EXTRAJUDICIAL' : 'JUDICIAL',
+      // A escolha do dashboard manda; AUTO segue o motor de elegibilidade.
+      rito:
+        fiscal.rito === 'EXTRAJUDICIAL' || fiscal.rito === 'JUDICIAL'
+          ? fiscal.rito
+          : resultado.elegivelExtrajudicial
+            ? 'EXTRAJUDICIAL'
+            : 'JUDICIAL',
       // Certidões do registro civil: provisiona pelo MAIOR entre os herdeiros
       // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
       qtdHerdeiros: Math.max(herdeiros.length, (familia.herdeirosDeclarados ?? []).length),
@@ -1264,7 +1285,7 @@ export default function SucessoristaClient({
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito]);
 
 
   /**
@@ -1405,10 +1426,15 @@ export default function SucessoristaClient({
       temSobrevivente,
       nomeSobrev,
       regime,
-      extrajudicial: resultado ? resultado.elegivelExtrajudicial : true,
+      extrajudicial:
+        fiscal.rito === 'EXTRAJUDICIAL' || fiscal.rito === 'JUDICIAL'
+          ? fiscal.rito === 'EXTRAJUDICIAL'
+          : resultado
+            ? resultado.elegivelExtrajudicial
+            : true,
       bens,
     });
-  }, [bens, falecido.nome, familia.qualificacoes, temSobrevivente, nomeSobrev, regime, resultado]);
+  }, [bens, falecido.nome, familia.qualificacoes, temSobrevivente, nomeSobrev, regime, resultado, fiscal.rito]);
 
   /**
    * Monta o caso.json atual: cabeçalho vivo (autor, óbito, nº de documentos
@@ -1671,7 +1697,10 @@ export default function SucessoristaClient({
       ufespReferencia: provisao?.ufespReferencia ?? null,
       // Donatários da torna da reserva: os herdeiros que efetivamente herdam.
       qtdHerdeiros: herdeiros.filter((h) => h.status !== 'RENUNCIANTE').length,
-      extrajudicial: resultado.elegivelExtrajudicial,
+      extrajudicial:
+        fiscal.rito === 'EXTRAJUDICIAL' || fiscal.rito === 'JUDICIAL'
+          ? fiscal.rito === 'EXTRAJUDICIAL'
+          : resultado.elegivelExtrajudicial,
       transferencias,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
@@ -1686,6 +1715,7 @@ export default function SucessoristaClient({
     provisao,
     fiscal.inventarioAberto,
     fiscal.issPct,
+    fiscal.rito,
     isencoes,
   ]);
 
@@ -2302,6 +2332,63 @@ export default function SucessoristaClient({
   };
 
   /**
+   * NOTIFICAÇÕES AO VIVO: os convites emitidos são REVALIDADOS no servidor
+   * (a cada 60s e ao focar a janela) — documento anexado ou qualificação
+   * preenchida pelo herdeiro chega ao card "Notificações do cofre" do
+   * dashboard sem precisar abrir a aba Documentos, com um toast avisando.
+   */
+  const convitesRef = useRef(convites);
+  useEffect(() => {
+    convitesRef.current = convites;
+  }, [convites]);
+  // A chave só muda quando a LISTA de convites muda (emitir/remover) — o
+  // conteúdo atualizado pelo próprio polling não recria o intervalo.
+  const chaveConvites = Object.values(convites)
+    .map((c) => c.token)
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (!chaveConvites) return;
+    let ativo = true;
+    const revalidar = async () => {
+      const atuais = convitesRef.current;
+      const proximos: Record<string, ConviteHerdeiro> = { ...atuais };
+      const chegadas: string[] = [];
+      for (const [herdeiroId, convite] of Object.entries(atuais)) {
+        try {
+          const r = await fetch(`/api/portal/${convite.token}`);
+          if (!r.ok) continue;
+          const novo = (await r.json()) as ConviteHerdeiro;
+          if (JSON.stringify(novo) !== JSON.stringify(convite)) {
+            proximos[herdeiroId] = novo;
+            chegadas.push(novo.nomeHerdeiro || 'herdeiro');
+          }
+        } catch {
+          // rede fora — tenta no próximo ciclo
+        }
+      }
+      if (!ativo || chegadas.length === 0) return;
+      setConvites(proximos);
+      toast.info(
+        chegadas.length === 1
+          ? `Novidade no cofre: ${chegadas[0]} enviou documentos ou informações`
+          : `Novidades no cofre: ${chegadas.join(', ')} enviaram documentos ou informações`,
+        { description: 'Veja no card "Notificações do cofre" ou na aba Documentos.' },
+      );
+    };
+    const t0 = setTimeout(() => void revalidar(), 1500);
+    const intervalo = setInterval(() => void revalidar(), 60_000);
+    const aoFocar = () => void revalidar();
+    window.addEventListener('focus', aoFocar);
+    return () => {
+      ativo = false;
+      clearTimeout(t0);
+      clearInterval(intervalo);
+      window.removeEventListener('focus', aoFocar);
+    };
+  }, [chaveConvites]);
+
+  /**
    * As qualificações recebidas pelo LINK DO COFRE caem SOZINHAS no item I
    * (A família): a cada atualização dos convites, a ficha do herdeiro
    * correspondente ganha os campos que estiverem vazios — digitação do
@@ -2490,6 +2577,9 @@ export default function SucessoristaClient({
             licoesRenomeador={licoesRenomeador}
             convites={convites}
             irParaDocumentos={() => irPara('documentos')}
+            rito={fiscal.rito ?? 'AUTO'}
+            setRito={(r) => setFiscal({ ...fiscal, rito: r })}
+            ritoMotor={ritoMotor}
           />
         )}
 
@@ -2842,13 +2932,7 @@ export default function SucessoristaClient({
               setAnexos={setAnexosProcesso}
               nomeCaso={falecido.nome}
               temSobrevivente={temSobrevivente}
-              rito={
-                resultado && resultado.bloqueios.length === 0
-                  ? resultado.elegivelExtrajudicial
-                    ? 'EXTRAJUDICIAL'
-                    : 'JUDICIAL'
-                  : null
-              }
+              rito={ritoEfetivo}
               convites={convites}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
@@ -2894,6 +2978,7 @@ export default function SucessoristaClient({
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
             avancar={() => irPara('documentos')}
+            rito={ritoEfetivo}
           />
         )}
 

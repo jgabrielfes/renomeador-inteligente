@@ -50,6 +50,7 @@ import { filesFromDataTransfer } from '@/lib/fs';
 import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
+import { Pilula } from './familia';
 import { comprimirImagem } from '@/lib/envio-imagens';
 import { registrarLeituraDoCofre } from './actions';
 
@@ -319,6 +320,9 @@ export function CasoView({
   licoesRenomeador = null,
   convites = {},
   irParaDocumentos,
+  rito = 'AUTO',
+  setRito,
+  ritoMotor = null,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -343,6 +347,10 @@ export function CasoView({
   convites?: Record<string, ConviteHerdeiro>;
   /** Leva à aba Documentos (envios no card correlato + lupa de preview). */
   irParaDocumentos?: () => void;
+  /** Rito escolhido (AUTO segue o motor) + o que o motor aponta. */
+  rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
+  setRito?: (r: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL') => void;
+  ritoMotor?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -699,6 +707,46 @@ export function CasoView({
           {irParaDocumentos && (
             <NotificacoesCofreCard convites={convites} irParaDocumentos={irParaDocumentos} />
           )}
+
+          {/* Escolha do RITO: decide a projeção de custas (escritura e atos
+              notariais × taxa judiciária), o título de encerramento do cofre
+              (traslado × formal) e o antecipador registral. AUTO segue o
+              motor de elegibilidade. */}
+          {setRito && (
+            <div className="cartao">
+              <span className="eyebrow">Rito do inventário</span>
+              <p className="fund" style={{ margin: '4px 0 8px' }}>
+                Decide a projeção de custas do item V — extrajudicial: escritura e atos
+                notariais (Tabela de Notas); judicial: taxa judiciária (Lei 11.608/2003) —
+                além do título de encerramento no cofre (traslado × formal).
+              </p>
+              <div className="escolha">
+                <Pilula ativo={rito === 'AUTO'} onClick={() => setRito('AUTO')}>
+                  Automático{ritoMotor ? ` (${ritoMotor === 'EXTRAJUDICIAL' ? 'extrajudicial' : 'judicial'})` : ''}
+                </Pilula>
+                <Pilula ativo={rito === 'EXTRAJUDICIAL'} onClick={() => setRito('EXTRAJUDICIAL')}>
+                  Extrajudicial
+                </Pilula>
+                <Pilula ativo={rito === 'JUDICIAL'} onClick={() => setRito('JUDICIAL')}>
+                  Judicial
+                </Pilula>
+              </div>
+              {rito === 'EXTRAJUDICIAL' && ritoMotor === 'JUDICIAL' && (
+                <p className="mono-alerta" style={{ marginTop: 8 }}>
+                  O motor aponta rito JUDICIAL para este caso (incapaz sem parecer do MP,
+                  testamento ou litígio — ver pontos de atenção do painel). A via
+                  extrajudicial pode não ser admitida; a projeção segue a sua escolha.
+                </p>
+              )}
+              {rito === 'JUDICIAL' && ritoMotor === 'EXTRAJUDICIAL' && (
+                <p className="fund" style={{ marginTop: 8 }}>
+                  O caso é elegível ao extrajudicial — a via judicial segue possível, e a
+                  projeção usa a taxa judiciária no lugar da escritura.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="cartao">
             <span className="eyebrow">Novidades da plataforma</span>
             {NOVIDADES.map((n) => (

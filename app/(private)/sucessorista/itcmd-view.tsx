@@ -68,6 +68,13 @@ export interface EstadoFiscal {
    * fato gerador, base e atos próprios — impacta ITCMD, escritura e registro.
    */
   sucessoes?: SucessaoCumulada[];
+  /**
+   * RITO escolhido pelo profissional no dashboard "O Caso": AUTO (padrão)
+   * segue o motor de elegibilidade; EXTRAJUDICIAL/JUDICIAL travam a projeção
+   * de custas (escritura × taxa judiciária), o cofre de encerramento e o
+   * antecipador naquele rito.
+   */
+  rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
 }
 
 export interface SucessaoCumulada {
@@ -100,6 +107,7 @@ export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
   dataProtocolo: '',
   issPct: '5',
   sucessoes: [],
+  rito: 'AUTO',
 };
 
 export function ItcmdView({
