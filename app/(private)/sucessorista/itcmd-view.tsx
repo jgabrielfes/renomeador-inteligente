@@ -427,7 +427,9 @@ export function ItcmdView({
             </div>
             <div className="fund">
               {provisao.baseEmUfesps.toFixed(2)} UFESPs (UFESP do óbito {brl(provisao.ufespObito)} →
-              atual {brl(provisao.ufespReferencia)}) · alíquota de {ALIQUOTA_ITCMD_SP * 100}% (art. 16).
+              {' '}{brl(provisao.ufespAtualizacao)} do exercício do vencimento, {provisao.anoAtualizacao}) ·
+              alíquota de {ALIQUOTA_ITCMD_SP * 100}% (art. 16). A UFESP atualiza SÓ até o vencimento;
+              depois a recomposição é dos juros Selic (art. 20).
             </div>
             {provisao.parcelas.map((p) => (
               <div key={p.id}>

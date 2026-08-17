@@ -57,29 +57,58 @@ eq('multa de 10% presente', tardio10.parcelas.find((p) => p.id === 'multa-abertu
 eq('sem desconto após 90 dias', tardio10.parcelas.some((p) => p.id === 'desconto'), false);
 eq('sem mora antes do vencimento', tardio10.parcelas.some((p) => p.id === 'multa-moratoria'), false);
 
-// Atualização pela UFESP entre anos: óbito 2024, referência 2026.
+// Atualização pela UFESP: óbito out/2024, vencimento cai em 2025 — a base
+// atualiza para a UFESP de 2025 e PARA ALI (art. 15, parte final), mesmo com
+// a referência lá em 2026: depois do vencimento quem corrige é a Selic.
 const atualizada = provisionarItcmd({
-  dataObito: '2024-03-01',
+  dataObito: '2024-10-01',
   dataReferencia: '2026-08-11',
   baseCalculo: 353_600, // 10.000 UFESPs de 2024
-  dataProtocolo: '2024-04-15', // 45 dias — sem multa de abertura
+  dataProtocolo: '2024-11-10', // 40 dias — sem multa de abertura
 });
 aprox('10.000 UFESPs', atualizada.baseEmUfesps, 10_000);
-aprox('base atualizada para UFESP 2026', atualizada.baseAtualizada, 384_200);
-aprox('imposto sobre a base atualizada', atualizada.imposto, 15_368);
-eq('sem multa de abertura (45 dias)', atualizada.parcelas.some((p) => p.id === 'multa-abertura'), false);
+eq('UFESP de atualização = exercício do vencimento (2025)', [atualizada.anoAtualizacao, atualizada.ufespAtualizacao], [2025, 37.02]);
+aprox('base atualizada até o vencimento, não até hoje', atualizada.baseAtualizada, 370_200);
+aprox('imposto sobre a base atualizada até o vencimento', atualizada.imposto, 14_808);
+eq('sem multa de abertura (40 dias)', atualizada.parcelas.some((p) => p.id === 'multa-abertura'), false);
 // Discriminação do art. 15: imposto histórico + atualização = 4% da base atualizada.
 aprox('parcela do imposto histórico', atualizada.parcelas.find((p) => p.id === 'imposto')!.valor, 14_144);
-aprox('parcela de atualização monetária', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.valor, 1_224);
+aprox('parcela de atualização monetária', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.valor, 664);
 eq('atualização fundamentada no art. 15', atualizada.parcelas.find((p) => p.id === 'atualizacao')!.fundamento.includes('art. 15'), true);
 
-// Mora: óbito em 2024-03-01 → vencimento 2024-08-28; referência 2026-08-11.
-eq('vencimento', atualizada.vencimento, '2024-08-28');
-eq('dias de atraso > 700', atualizada.diasDeAtraso > 700, true);
+// Mora: óbito em 2024-10-01 → vencimento 2025-03-30; referência 2026-08-11.
+eq('vencimento', atualizada.vencimento, '2025-03-30');
+eq('dias de atraso > 400', atualizada.diasDeAtraso > 400, true);
 const moratoria = atualizada.parcelas.find((p) => p.id === 'multa-moratoria')!;
-aprox('multa moratória capada em 20%', moratoria.valor, atualizada.imposto * 0.2);
+aprox('multa moratória capada em 20% do imposto ATUALIZADO', moratoria.valor, atualizada.imposto * 0.2);
 const juros = atualizada.parcelas.find((p) => p.id === 'juros')!;
 eq('juros presentes', juros.valor > 0, true);
+
+// ---------- regressão: demonstrativo oficial da Sefaz-SP ----------
+// Conta fiscal nº 97348994 (emitida 17/08/2026): óbito 05/10/2016, legítima
+// de R$ 100.466,01 transmitida a 3 herdeiros. O demonstrativo cobra, no
+// total das 3 contas: tributo 4.018,63 · atualização monetária 259,38
+// (UFESP 2016 23,55 → 2017 25,07, ano do vencimento 03/04/2017) · multa de
+// mora 855,61 · multa de protocolização 855,61 — as duas multas de 20% sobre
+// o imposto ATUALIZADO (tributo + atualização) · juros de 116,56% também
+// sobre o atualizado (Selic efetiva; aqui estimada pela meta, ±1%).
+const oficial = provisionarItcmd({
+  dataObito: '2016-10-05',
+  dataReferencia: '2026-08-17',
+  baseCalculo: 100_466.01,
+});
+eq('demonstrativo: vencimento 03/04/2017', oficial.vencimento, '2017-04-03');
+eq('demonstrativo: UFESP de atualização é a de 2017', [oficial.anoAtualizacao, oficial.ufespAtualizacao], [2017, 25.07]);
+aprox('demonstrativo: tributo 4%', oficial.parcelas.find((p) => p.id === 'imposto')!.valor, 4_018.64);
+aprox('demonstrativo: atualização monetária', oficial.parcelas.find((p) => p.id === 'atualizacao')!.valor, 259.38);
+aprox('demonstrativo: multa de protocolização (art. 21, I)', oficial.parcelas.find((p) => p.id === 'multa-abertura')!.valor, 855.61, 0.05);
+aprox('demonstrativo: multa moratória (art. 19)', oficial.parcelas.find((p) => p.id === 'multa-moratoria')!.valor, 855.61, 0.05);
+// Juros oficiais: 4.986,44 (116,56% do atualizado). A Selic aqui é estimada
+// pela meta do Copom — aceita ±2% do percentual oficial.
+const jurosOficial = oficial.parcelas.find((p) => p.id === 'juros')!;
+aprox('demonstrativo: juros de mora perto do oficial', jurosOficial.valor, 4_986.44, 100);
+// Saldo oficial: 10.975,67 (3.658,63 + 3.658,52 + 3.658,52).
+aprox('demonstrativo: saldo total devido', oficial.total, 10_975.67, 110);
 
 // jurosArt20: piso de 1% por fração no mês do pagamento.
 const j1 = jurosArt20('2026-07-01', '2026-07-20');
