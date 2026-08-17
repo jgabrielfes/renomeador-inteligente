@@ -4,8 +4,12 @@
  * processo (File System Access) e portátil (IndexedDB + arquivo .json).
  * O wizard consome SÓ esta interface e não sabe qual modo está ativo.
  *
- * Princípio inegociável do módulo: NENHUM dado de caso trafega para
- * servidor — tudo aqui roda e permanece na máquina do usuário.
+ * Princípio do módulo: dado de caso NÃO trafega para servidor — tudo aqui
+ * roda e permanece na máquina do usuário. ÚNICA exceção, opt-in: a NUVEM DA
+ * EQUIPE (convite de acesso total gerado pelo chefe) espelha o `caso.json`
+ * — folha e manifesto de METADADOS — no banco para a equipe enxergar os
+ * mesmos casos de máquinas diferentes; os DOCUMENTOS (arquivos) continuam
+ * jamais saindo da máquina. Ver `app/(private)/sucessorista/nuvem-actions.ts`.
  */
 
 import type { DiffManifesto, EntradaManifesto, InfoArquivoDisco } from './manifesto';
@@ -13,7 +17,8 @@ import type { DiffManifesto, EntradaManifesto, InfoArquivoDisco } from './manife
 export const SCHEMA_VERSION = 1;
 export const APP_VERSION = '0.1.0'; // acompanhar package.json
 
-export type ModoStore = 'pasta' | 'portatil';
+/** 'nuvem' aparece só em ResumoCaso (card do painel) — não é um CaseStore. */
+export type ModoStore = 'pasta' | 'portatil' | 'nuvem';
 
 /** Cabeçalho do caso — PRIMEIRA chave do caso.json (leitura barata no painel). */
 export interface CabecalhoCaso {

@@ -4,7 +4,9 @@
  * Pinta primeiro do cache de resumos (nunca tela vazia esperando I/O) e
  * revalida em segundo plano. Ordenação por URGÊNCIA do prazo do art. 611
  * (dias desde o óbito, decrescente) — é o que diferencia o painel de uma
- * lista de arquivos. Nada daqui trafega para servidor.
+ * lista de arquivos. Nada daqui trafega para servidor — exceto, opt-in, a
+ * NUVEM DA EQUIPE: cards com modo 'nuvem' vêm do espelho compartilhado
+ * (folha do caso; documentos nunca sobem).
  */
 
 import { useEffect, useState } from 'react';
@@ -61,6 +63,8 @@ const esquemaNovo = z.object({
 export function CasosView({
   estado,
   resumos,
+  comNuvem = false,
+  onEnviarNuvem = null,
   dispositivo,
   temRascunhoLegado,
   onEscolherPasta,
@@ -77,6 +81,10 @@ export function CasosView({
   estado: EstadoPainel;
   /** null = cache ainda não pintou. */
   resumos: ResumoCaso[] | null;
+  /** Nuvem da equipe ativa (o subtítulo deixa de prometer "nada sai da máquina"). */
+  comNuvem?: boolean;
+  /** Chefe com nuvem ativa: envia os casos locais para a nuvem de uma vez. */
+  onEnviarNuvem?: (() => Promise<void>) | null;
   dispositivo: string;
   temRascunhoLegado: boolean;
   onEscolherPasta: (nomeDispositivo: string) => void;
@@ -91,6 +99,7 @@ export function CasosView({
   onMigrarRascunho: () => void;
 }) {
   const [dialogoNovo, setDialogoNovo] = useState(false);
+  const [enviandoNuvem, setEnviandoNuvem] = useState(false);
   const [arquivando, setArquivando] = useState<ResumoCaso | null>(null);
   const [nomeDisp, setNomeDisp] = useState(dispositivo || 'Meu computador');
   // Visualização (cards × lista) e ordenação — preferências do navegador.
@@ -162,11 +171,27 @@ export function CasosView({
         <div>
           <h1>Meus casos</h1>
           <p className="subtitulo" style={{ marginBottom: 0 }}>
-            Seus inventários, direto da pasta do processo — nada sai desta máquina.
+            {comNuvem
+              ? 'Seus inventários e os casos da nuvem da equipe — os documentos nunca saem desta máquina.'
+              : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
           </p>
         </div>
         {(estado === 'pasta' || estado === 'portatil') && (
-          <Button onClick={() => setDialogoNovo(true)}>Novo caso</Button>
+          <div className="escolha">
+            {onEnviarNuvem && (
+              <Button
+                variant="outline"
+                loading={enviandoNuvem}
+                onClick={() => {
+                  setEnviandoNuvem(true);
+                  void onEnviarNuvem().finally(() => setEnviandoNuvem(false));
+                }}
+              >
+                Enviar casos para a equipe
+              </Button>
+            )}
+            <Button onClick={() => setDialogoNovo(true)}>Novo caso</Button>
+          </div>
         )}
       </header>
 
@@ -292,16 +317,24 @@ export function CasosView({
                 <p className="linha fund">
                   Alterado {alteradoHa(r.cabecalho.atualizadoEm)}
                   {r.cabecalho.atualizadoPor ? ` por ${r.cabecalho.atualizadoPor}` : ''}
-                  {r.caminhoPasta ? ` · pasta: ${r.caminhoPasta}` : ' · neste navegador'}
+                  {r.modo === 'nuvem'
+                    ? ' · nuvem da equipe'
+                    : r.caminhoPasta
+                      ? ` · pasta: ${r.caminhoPasta}`
+                      : ' · neste navegador'}
                 </p>
               </button>
               <div className="acoes">
-                <Button size="sm" variant="ghost" onClick={() => onDuplicar(r.cabecalho.caseId)}>
-                  duplicar
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onExportar(r.cabecalho.caseId)}>
-                  exportar .json
-                </Button>
+                {r.modo !== 'nuvem' && (
+                  <Button size="sm" variant="ghost" onClick={() => onDuplicar(r.cabecalho.caseId)}>
+                    duplicar
+                  </Button>
+                )}
+                {r.modo !== 'nuvem' && (
+                  <Button size="sm" variant="ghost" onClick={() => onExportar(r.cabecalho.caseId)}>
+                    exportar .json
+                  </Button>
+                )}
                 {r.modo === 'pasta' && (
                   <Button size="sm" variant="ghost" onClick={() => onRestaurarBackup(r.cabecalho.caseId)}>
                     restaurar backup

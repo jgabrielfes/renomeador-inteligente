@@ -78,6 +78,7 @@ import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { FontesView } from './fontes-view';
 import {
+  migrarArquivoCaso,
   montarArquivoCaso,
   type ArquivoCaso,
   type CabecalhoCaso,
@@ -85,6 +86,13 @@ import {
   type ConflitoSalvamento,
   type ResumoCaso,
 } from '@/lib/partilha/caso-store';
+import {
+  abrirCasoNuvem,
+  listarCasosNuvem,
+  removerCasoNuvem,
+  salvarCasoNuvem,
+  type CabecalhoNuvem,
+} from './nuvem-actions';
 import { casarManifesto, resumoDoDiff, type EntradaManifesto, type InfoArquivoDisco } from '@/lib/partilha/manifesto';
 import { sha256DeBlob } from '@/lib/partilha/sha256';
 import { PortableCaseStore } from '@/lib/partilha/store-portatil';
@@ -507,6 +515,17 @@ export default function SucessoristaClient({
   const [estadoPainel, setEstadoPainel] = useState<EstadoPainel>('carregando');
   const [store, setStore] = useState<CaseStore | null>(null);
   const [resumos, setResumos] = useState<ResumoCaso[] | null>(null);
+  /* --- nuvem da equipe: espelho do caso.json no servidor (opt-in) ---
+     Ativa para o CHEFE e para o membro que entrou por convite de ACESSO
+     TOTAL. Os documentos nunca sobem — só a folha (fronteira de dados). */
+  const nuvemAtiva = equipe !== null && equipe !== undefined && equipe.meuAcessoCasos;
+  const [resumosNuvem, setResumosNuvem] = useState<CabecalhoNuvem[]>([]);
+  /** true = o caso aberto veio da nuvem (não existe no store local): salva na nuvem. */
+  const origemNuvemRef = useRef(false);
+  /** Guarda de conflito da nuvem: atualizadoEm de quando o caso foi aberto lá. */
+  const baseNuvemRef = useRef<string | null>(null);
+  /** Dedupe do aviso "espelho ficou para trás" (um por caso aberto). */
+  const avisoNuvemRef = useRef(false);
   const [dispositivo, setDispositivo] = useState('');
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
@@ -714,12 +733,20 @@ export default function SucessoristaClient({
           setEstadoPainel('portatil');
           void s.listarCasos().then(setResumos);
         }
+
+        // Nuvem da equipe: os casos compartilhados entram no painel junto
+        // dos locais (melhor-esforço — sem acesso/erro, lista vazia).
+        if (nuvemAtiva) {
+          void listarCasosNuvem().then((lista) => {
+            if (lista) setResumosNuvem(lista);
+          });
+        }
       })();
     }, 0);
     return () => clearTimeout(t);
-    // perfilConta é prop do servidor, estável na sessão — o efeito continua
-    // rodando uma vez só.
-  }, [perfilConta]);
+    // perfilConta e nuvemAtiva vêm de props do servidor, estáveis na sessão —
+    // o efeito continua rodando uma vez só.
+  }, [perfilConta, nuvemAtiva]);
 
 
   /* --- ações do painel "Meus casos" --- */
@@ -790,19 +817,56 @@ export default function SucessoristaClient({
   };
 
   const abrirCasoDoPainel = async (caseId: string) => {
+    // Sem store local (membro só com a nuvem, pasta não configurada) o caso
+    // ainda abre — direto da nuvem da equipe.
     const s = storeRef.current;
-    if (!s) return;
-    const caso = await s.abrirCaso(caseId);
+    let caso = s ? await s.abrirCaso(caseId) : null;
+    origemNuvemRef.current = false;
+    baseNuvemRef.current = null;
+    avisoNuvemRef.current = false;
+    // Guarda do DISCO local: sempre o atualizadoEm do arquivo que está lá —
+    // mesmo quando os dados adotados vêm da nuvem (mais novos).
+    const baseDisco = caso?.cabecalho.atualizadoEm ?? null;
+
+    if (caso && nuvemAtiva) {
+      // O espelho da nuvem pode estar MAIS NOVO (editado por outro membro):
+      // a versão mais recente vence — o autosave regrava no disco local.
+      const daNuvem = migrarArquivoCaso(await abrirCasoNuvem(caseId));
+      if (daNuvem && daNuvem.cabecalho.atualizadoEm > caso.cabecalho.atualizadoEm) {
+        caso = { ...daNuvem, cabecalho: { ...daNuvem.cabecalho } };
+        baseNuvemRef.current = daNuvem.cabecalho.atualizadoEm;
+        toast.info(
+          `Carregada a versão mais recente da nuvem da equipe (por ${daNuvem.cabecalho.atualizadoPor || 'outro membro'}).`,
+        );
+      } else if (daNuvem) {
+        baseNuvemRef.current = daNuvem.cabecalho.atualizadoEm;
+      }
+    } else if (!caso && nuvemAtiva) {
+      // Caso que só existe na nuvem (compartilhado pelo chefe): abre de lá e
+      // continua salvando lá — os DOCUMENTOS ficam na máquina de quem os tem.
+      const daNuvem = migrarArquivoCaso(await abrirCasoNuvem(caseId));
+      if (daNuvem) {
+        origemNuvemRef.current = true;
+        baseNuvemRef.current = daNuvem.cabecalho.atualizadoEm;
+        if (daNuvem.dados) aplicarSnapshot(daNuvem.dados as CasoSalvo);
+        manifestoRef.current = daNuvem.manifesto;
+        baseAtualizadoEmRef.current = daNuvem.cabecalho.atualizadoEm;
+        setCasoAberto({ cabecalho: daNuvem.cabecalho });
+        setSalvamento({ estado: 'salvo', quando: daNuvem.cabecalho.atualizadoEm });
+        return;
+      }
+    }
+
     if (!caso) {
       toast.error('Não consegui abrir o caso — a pasta foi movida?');
       return;
     }
     if (caso.dados) aplicarSnapshot(caso.dados as CasoSalvo);
     manifestoRef.current = caso.manifesto;
-    baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
+    baseAtualizadoEmRef.current = baseDisco ?? caso.cabecalho.atualizadoEm;
     setCasoAberto({ cabecalho: caso.cabecalho });
     setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
-    void religarDocumentos(s, caso);
+    if (s) void religarDocumentos(s, caso);
   };
 
   const criarCasoDoPainel = async (tituloNovo: string) => {
@@ -810,6 +874,9 @@ export default function SucessoristaClient({
     if (!s) return;
     try {
       // O painel só aparece com a folha pristina — o snapshot atual É o vazio.
+      origemNuvemRef.current = false;
+      baseNuvemRef.current = null;
+      avisoNuvemRef.current = false;
       const caso = await s.criarCaso(tituloNovo, montarSnapshot());
       manifestoRef.current = [];
       baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
@@ -851,6 +918,12 @@ export default function SucessoristaClient({
     if (ok) {
       toast.success('Caso arquivado em _Arquivados/.');
       setResumos(await s.listarCasos());
+      // O espelho sai da nuvem junto — arquivado não circula na equipe.
+      if (nuvemAtiva) {
+        void removerCasoNuvem(caseId).then((removido) => {
+          if (removido) setResumosNuvem((prev) => prev.filter((c) => c.caseId !== caseId));
+        });
+      }
     } else {
       toast.error('Não consegui arquivar — nada foi movido.');
     }
@@ -901,6 +974,34 @@ export default function SucessoristaClient({
     } catch {
       toast.error('Não consegui guardar o rascunho como caso.');
     }
+  };
+
+  /**
+   * Chefe: envia TODOS os casos locais para a nuvem da equipe de uma vez
+   * (os salvamentos seguintes mantêm o espelho sozinhos). O servidor recusa
+   * o que faria versão mais nova regredir — contagem informada no toast.
+   */
+  const enviarCasosParaNuvem = async () => {
+    const s = storeRef.current;
+    if (!s || !nuvemAtiva) return;
+    const lista = await s.listarCasos();
+    let enviados = 0;
+    let mantidos = 0;
+    for (const r of lista) {
+      const caso = await s.abrirCaso(r.cabecalho.caseId);
+      if (!caso) continue;
+      const res = await salvarCasoNuvem(caso, { baseAtualizadoEm: null, espelho: true });
+      if (res.ok) enviados += 1;
+      else if (res.desatualizado) mantidos += 1;
+    }
+    const atualizados = await listarCasosNuvem();
+    if (atualizados) setResumosNuvem(atualizados);
+    if (enviados > 0)
+      toast.success(
+        `${enviados} caso(s) enviados para a nuvem da equipe${mantidos > 0 ? ` (${mantidos} já estavam mais novos lá)` : ''}.`,
+      );
+    else if (mantidos > 0) toast.info('A nuvem já tem versões mais novas de todos os casos.');
+    else toast.info('Nenhum caso local para enviar.');
   };
 
   const voltarAoPainel = () => {
@@ -1470,12 +1571,74 @@ export default function SucessoristaClient({
     });
   };
 
+  /**
+   * Espelha o arquivo salvo na nuvem da equipe (melhor-esforço). O servidor
+   * recusa espelho que andaria PARA TRÁS (nuvem mais nova) — nesse caso um
+   * aviso único sugere reabrir o caso para puxar a versão da equipe.
+   */
+  const espelharNaNuvem = async (arquivo: ArquivoCaso) => {
+    try {
+      const r = await salvarCasoNuvem(arquivo, { baseAtualizadoEm: null, espelho: true });
+      if (r.ok && r.salvoEm) {
+        baseNuvemRef.current = r.salvoEm;
+      } else if (r.desatualizado && !avisoNuvemRef.current) {
+        avisoNuvemRef.current = true;
+        toast.info(
+          `A nuvem da equipe tem uma versão MAIS NOVA deste caso (por ${r.desatualizado.atualizadoPor || 'outro membro'}). Volte ao painel e reabra o caso para carregá-la — suas alterações continuam salvas na sua pasta.`,
+        );
+      }
+    } catch {
+      // espelho é melhor-esforço: o salvamento local já garantiu o caso
+    }
+  };
+
   /** Salva o caso aberto no store ativo, com a guarda de conflito. */
   const executarSalvamento = async (forcar = false): Promise<void> => {
     const s = storeRef.current;
-    if (!s || !casoAbertoRef.current) return;
+    if (!casoAbertoRef.current) return;
     const arquivo = await montarArquivoCasoAtual();
     if (!arquivo) return;
+
+    // Caso aberto DA NUVEM (não existe no store local): grava direto lá,
+    // com a mesma guarda de conflito de três saídas.
+    if (origemNuvemRef.current) {
+      setSalvamento((v) => (v.estado === 'somente-leitura' ? v : { ...v, estado: 'salvando' }));
+      const agora = new Date().toISOString();
+      const arquivoNuvem: ArquivoCaso = {
+        ...arquivo,
+        cabecalho: {
+          ...arquivo.cabecalho,
+          atualizadoEm: agora,
+          atualizadoPor: dispositivo || 'Membro da equipe',
+        },
+      };
+      const r = await salvarCasoNuvem(arquivoNuvem, {
+        baseAtualizadoEm: baseNuvemRef.current,
+        forcar,
+      });
+      if (r.ok && r.salvoEm) {
+        baseNuvemRef.current = r.salvoEm;
+        baseAtualizadoEmRef.current = r.salvoEm;
+        setConflito(null);
+        setSalvamento({ estado: 'salvo', quando: r.salvoEm });
+        setRascunhoSalvoEm(r.salvoEm);
+      } else if (r.conflito) {
+        const arquivoNoDisco = migrarArquivoCaso(r.conflito.arquivo);
+        if (arquivoNoDisco) {
+          setConflito({
+            atualizadoEm: r.conflito.atualizadoEm,
+            atualizadoPor: r.conflito.atualizadoPor,
+            arquivoNoDisco,
+          });
+        }
+        setSalvamento({ estado: 'erro', erro: 'conflito' });
+      } else {
+        setSalvamento({ estado: 'erro', erro: r.erro ?? 'Falha ao salvar na nuvem.' });
+      }
+      return;
+    }
+
+    if (!s) return;
     setSalvamento((v) => (v.estado === 'somente-leitura' ? v : { ...v, estado: 'salvando' }));
     const r = await s.salvarCaso(arquivo, {
       baseAtualizadoEm: baseAtualizadoEmRef.current,
@@ -1486,6 +1649,18 @@ export default function SucessoristaClient({
       setConflito(null);
       setSalvamento({ estado: 'salvo', quando: r.salvoEm });
       setRascunhoSalvoEm(r.salvoEm);
+      // Nuvem da equipe ativa: todo salvamento local espelha a folha lá
+      // (documentos nunca sobem) — é o que compartilha o caso com a equipe.
+      if (nuvemAtiva) {
+        void espelharNaNuvem({
+          ...arquivo,
+          cabecalho: {
+            ...arquivo.cabecalho,
+            atualizadoEm: r.salvoEm,
+            atualizadoPor: dispositivo || arquivo.cabecalho.atualizadoPor,
+          },
+        });
+      }
     } else if (r.conflito) {
       setConflito(r.conflito);
       setSalvamento({ estado: 'erro', erro: 'conflito' });
@@ -2478,7 +2653,23 @@ export default function SucessoristaClient({
         {menu}
         <CasosView
           estado={estadoPainel}
-          resumos={resumos}
+          resumos={(() => {
+            // Nuvem da equipe entra no painel junto dos casos locais; caso
+            // que existe nos dois lugares aparece UMA vez (o card local —
+            // a adoção da versão mais nova acontece ao abrir).
+            if (!nuvemAtiva || resumosNuvem.length === 0) return resumos;
+            const locais = new Set((resumos ?? []).map((r) => r.cabecalho.caseId));
+            const daNuvem: ResumoCaso[] = resumosNuvem
+              .filter((c) => !locais.has(c.caseId))
+              .map((c) => ({ cabecalho: c, modo: 'nuvem' }));
+            return [...(resumos ?? []), ...daNuvem];
+          })()}
+          comNuvem={nuvemAtiva}
+          onEnviarNuvem={
+            nuvemAtiva && equipe?.papel === 'CHEFE' && (resumos?.length ?? 0) > 0
+              ? enviarCasosParaNuvem
+              : null
+          }
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
@@ -3175,13 +3366,18 @@ export default function SucessoristaClient({
               if (disco.dados) aplicarSnapshot(disco.dados as CasoSalvo);
               manifestoRef.current = disco.manifesto;
               baseAtualizadoEmRef.current = disco.cabecalho.atualizadoEm;
+              if (origemNuvemRef.current) baseNuvemRef.current = disco.cabecalho.atualizadoEm;
               setCasoAberto({ cabecalho: disco.cabecalho });
               setConflito(null);
               setSalvamento({ estado: 'salvo', quando: disco.cabecalho.atualizadoEm });
-              toast.info('Recarregado do disco — as SUAS alterações não salvas foram descartadas.');
+              toast.info(
+                origemNuvemRef.current
+                  ? 'Recarregado da nuvem da equipe — as SUAS alterações não salvas foram descartadas.'
+                  : 'Recarregado do disco — as SUAS alterações não salvas foram descartadas.',
+              );
             }}
           >
-            Recarregar do disco
+            {'Recarregar a versão salva'}
           </Button>
           <Button
             variant="outline"
@@ -3189,6 +3385,17 @@ export default function SucessoristaClient({
               void (async () => {
                 const s = storeRef.current;
                 const arquivo = await montarArquivoCasoAtual();
+                if (origemNuvemRef.current && s && arquivo) {
+                  // Caso da nuvem: a cópia vira um caso LOCAL seu.
+                  try {
+                    await s.criarCaso(`${arquivo.cabecalho.titulo} (cópia)`, arquivo.dados);
+                    setResumos(await s.listarCasos());
+                    toast.success('Sua versão foi salva como um caso local ("(cópia)").');
+                  } catch {
+                    toast.error('Não consegui salvar a cópia.');
+                  }
+                  return;
+                }
                 if (s instanceof FolderCaseStore && arquivo && (await s.salvarComoConflito(arquivo))) {
                   toast.success('Sua versão foi salva como caso.conflito.<data>.json na pasta.');
                 } else {
