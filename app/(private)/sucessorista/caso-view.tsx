@@ -51,6 +51,8 @@ import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { Pilula } from './familia';
+import { EquipeCard } from './equipe-card';
+import type { InfoEquipe } from './equipe-actions';
 import { comprimirImagem } from '@/lib/envio-imagens';
 import { registrarLeituraDoCofre } from './actions';
 
@@ -323,6 +325,7 @@ export function CasoView({
   rito = 'AUTO',
   setRito,
   ritoMotor = null,
+  equipe = null,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -351,6 +354,8 @@ export function CasoView({
   rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
   setRito?: (r: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL') => void;
   ritoMotor?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
+  /** Equipe da conta (card "Minha equipe") — null sem equipe. */
+  equipe?: InfoEquipe | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -746,6 +751,10 @@ export function CasoView({
               )}
             </div>
           )}
+
+          {/* Equipe: contas individuais vinculadas por convite do chefe —
+              membro faz tudo no módulo, gerir a equipe é só do chefe. */}
+          <EquipeCard inicial={equipe} />
 
           <div className="cartao">
             <span className="eyebrow">Novidades da plataforma</span>

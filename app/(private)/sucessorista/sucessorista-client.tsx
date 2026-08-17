@@ -271,6 +271,7 @@ export default function SucessoristaClient({
   menu,
   perfilConta = null,
   ehMaster = false,
+  equipe = null,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -284,6 +285,8 @@ export default function SucessoristaClient({
   /** MASTER circula pelos dois perfis (alternador na lombada); conta comum
    *  fica travada no perfil escolhido no primeiro acesso. */
   ehMaster?: boolean;
+  /** Equipe da conta (card "Minha equipe" do dashboard) — null sem equipe. */
+  equipe?: import('./equipe-actions').InfoEquipe | null;
 }) {
   // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
   // compartilhável. A troca usa history.replaceState — atualização rasa, sem
@@ -2628,6 +2631,7 @@ export default function SucessoristaClient({
             rito={fiscal.rito ?? 'AUTO'}
             setRito={(r) => setFiscal({ ...fiscal, rito: r })}
             ritoMotor={ritoMotor}
+            equipe={equipe}
           />
         )}
 

@@ -10,7 +10,14 @@
  *    a arbitramento pelo Fisco — art. 11 (ver notificações de lançamento da
  *    Sefaz-SP com o Método Comparativo Direto de Dados de Mercado).
  *  - Atualização monetária: a base é considerada na data do óbito e
- *    atualizada pela variação da UFESP até o recolhimento — art. 15.
+ *    atualizada pela variação da UFESP SÓ ATÉ a data prevista para o
+ *    recolhimento (o vencimento de 180 dias) — art. 15, parte final. Depois
+ *    do vencimento quem recompõe a moeda é a Selic dos juros (art. 20);
+ *    atualizar a base pela UFESP até o pagamento corrigiria DUAS vezes.
+ *    Conferido por cálculo inverso com demonstrativo oficial da Sefaz-SP
+ *    (conta fiscal nº 97348994: óbito 2016, emissão 2026 — a atualização
+ *    monetária cobrada foi exatamente UFESP 2016 → UFESP 2017, e multas e
+ *    juros incidiram sobre o imposto ATUALIZADO até o vencimento).
  *  - Alíquota: 4% — art. 16, na redação da Lei 10.992/2001 (desde 01/01/2002).
  *  - Prazo: recolhimento nunca superior a 180 dias da abertura da sucessão,
  *    sob pena de juros e penalidades — art. 17, §1º. Desconto de 5% se
@@ -417,9 +424,17 @@ export interface ParcelaItcmd {
 
 export interface ProvisaoItcmd {
   ufespObito: number;
+  /** UFESP do ano da data de referência (para tetos/faixas em valores de hoje). */
   ufespReferencia: number;
+  /** UFESP que atualizou a base: a do exercício do VENCIMENTO (art. 15). */
+  ufespAtualizacao: number;
+  /** Ano-exercício da UFESP de atualização (o do vencimento, ou o do pagamento se anterior). */
+  anoAtualizacao: number;
   baseEmUfesps: number;
-  /** Base atualizada pela UFESP até a data de referência (art. 15). */
+  /**
+   * Base atualizada pela UFESP até o VENCIMENTO (art. 15, parte final) — não
+   * até hoje: após o vencimento a recomposição é dos juros Selic (art. 20).
+   */
   baseAtualizada: number;
   imposto: number;
   vencimento: string; // óbito + 180 dias (art. 17, §1º)
@@ -532,16 +547,25 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   const anoRef = Number(dataReferencia.slice(0, 4));
   const uO = ufespDoAno(anoObito);
   const uR = ufespDoAno(anoRef);
-  if (uO.estimado || uR.estimado) {
+
+  // Art. 15, parte final: a base é atualizada pela UFESP "até a data prevista
+  // na legislação tributária para o recolhimento do imposto" — o VENCIMENTO
+  // de 180 dias, nunca além (dali em diante a Selic do art. 20 assume a
+  // recomposição; recolhendo antes do vencimento, vale a data do pagamento).
+  // Mecânica conferida por cálculo inverso com o demonstrativo oficial.
+  const vencimento = somarDias(dataObito, 180);
+  const dataAtualizacao = utc(dataReferencia) <= utc(vencimento) ? dataReferencia : vencimento;
+  const anoAtualizacao = Number(dataAtualizacao.slice(0, 4));
+  const uA = ufespDoAno(anoAtualizacao);
+  if (uO.estimado || uA.estimado || uR.estimado) {
     estimativa = true;
     avisos.push(
       'Ano fora da tabela de UFESPs embarcada — a atualização monetária usou o valor conhecido mais próximo. Confira a UFESP vigente na Sefaz-SP.',
     );
   }
 
-  // Art. 15: base considerada na data do óbito, atualizada pela UFESP.
   const baseEmUfesps = baseCalculo / uO.valor;
-  const baseAtualizada = centavos(baseEmUfesps * uR.valor);
+  const baseAtualizada = centavos(baseEmUfesps * uA.valor);
 
   // Regra de ouro: vale a lei da DATA DO ÓBITO. A tabela progressiva só entra
   // se o fato gerador for posterior à vigência informada para a lei estadual.
@@ -596,14 +620,13 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
         rotulo: 'Atualização monetária da base (variação da UFESP)',
         valor: atualizacao,
         fundamento: 'Lei 10.705/2000, art. 15',
-        detalhe: `${baseEmUfesps.toFixed(2)} UFESPs: ${fmt(uO.valor)} (${anoObito}) → ${fmt(uR.valor)} (${anoRef}) atualiza a base para ${fmt(baseAtualizada)}; sobre a diferença incide o 4%.`,
+        detalhe: `${baseEmUfesps.toFixed(2)} UFESPs: ${fmt(uO.valor)} (${anoObito}) → ${fmt(uA.valor)} (${anoAtualizacao}, exercício do vencimento) atualiza a base para ${fmt(baseAtualizada)}; sobre a diferença incide o 4%. A UFESP corrige SÓ até o vencimento (art. 15, parte final) — depois, a recomposição é dos juros Selic.`,
       });
     }
   }
 
   const parcelas: ParcelaItcmd[] = [parcelaImposto, ...parcelasExtras];
 
-  const vencimento = somarDias(dataObito, 180);
   const diasDesdeObito = diffDias(dataObito, dataReferencia);
   const diasDeAtraso = Math.max(0, diffDias(vencimento, dataReferencia));
 
@@ -673,6 +696,8 @@ export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   return {
     ufespObito: uO.valor,
     ufespReferencia: uR.valor,
+    ufespAtualizacao: uA.valor,
+    anoAtualizacao,
     baseEmUfesps,
     baseAtualizada,
     imposto,
