@@ -124,6 +124,12 @@ export function FamiliaView({
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = estado;
   const composicao = composicaoFamiliar(falecido, temSobrevivente, vinculo, regime, herdeiros);
 
+  // O bloco das sucessões cumuladas fica ESCONDIDO atrás da pergunta —
+  // responder "Sim" abre o formulário; com sucessão já lançada, fica aberto
+  // (há dado dentro — remova as sucessões para fechar).
+  const [maisDeUmObito, setMaisDeUmObito] = useState(false);
+  const sucessoesAbertas = sucessoes.length > 0 || maisDeUmObito;
+
   const set = (patch: Partial<EstadoFamilia>) => onChange({ ...estado, ...patch });
   const setFalecido = (patch: Partial<DadosFalecido>) =>
     set({ falecido: { ...falecido, ...patch } });
@@ -163,28 +169,50 @@ export function FamiliaView({
         </div>
       )}
 
-      {/* Sucessões cumuladas ABREM o módulo: é a primeira decisão do caso
-          (um óbito ou vários no mesmo inventário) e muda o monte, a legítima
-          e os prazos de cada fato gerador. */}
+      {/* Sucessões cumuladas ABREM o módulo, mas o formulário fica atrás da
+          pergunta: só quem responde "Sim" vê o bloco de preenchimento. */}
       <div className="cartao">
-        <span className="eyebrow">Há mais de um falecimento neste inventário?</span>
-        <h2 style={{ marginTop: 6 }}>Sucessões cumuladas (CPC, art. 672)</h2>
-        <p className="subtitulo" style={{ marginBottom: 10 }}>
-          Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…): cada sucessão
-          tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da data do óbito
-          respectiva, atos próprios de escritura e registro. Como os óbitos costumam ser de
-          anos diferentes, cada sucessão tem seu MONTE PARTÍVEL e sua LEGÍTIMA. Escolha, em
-          cada uma, se usa os MESMOS bens do 1º falecimento (com o valor de avaliação
-          próprio daquela data, lançado no acervo) ou se ela tem BENS PARTICULARES. Com
-          &quot;mesmos herdeiros&quot;, o item III mostra uma partilha para CADA sucessão.
-          Deixe vazio se houver um só falecimento.
+        <h2 style={{ marginTop: 0 }}>Há mais de um falecimento neste inventário?</h2>
+        <p className="subtitulo" style={{ marginBottom: 8 }}>
+          Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…) na forma do
+          art. 672 do CPC — cada sucessão tem o próprio fato gerador, monte partível e
+          legítima.
         </p>
-        <EditorSucessoes
-          herdeiros={herdeiros}
-          sucessoes={sucessoes}
-          setSucessoes={setSucessoes}
-          basesSucessoes={basesSucessoes}
-        />
+        <div className="escolha">
+          <Pilula ativo={sucessoesAbertas} onClick={() => setMaisDeUmObito(true)}>
+            Sim
+          </Pilula>
+          <Pilula
+            ativo={!sucessoesAbertas}
+            onClick={() => {
+              // Com sucessão já lançada o bloco não fecha — remova-as antes.
+              if (sucessoes.length === 0) setMaisDeUmObito(false);
+            }}
+          >
+            Não
+          </Pilula>
+        </div>
+
+        {sucessoesAbertas && (
+          <div style={{ marginTop: 12 }}>
+            <span className="eyebrow">Sucessões cumuladas (CPC, art. 672)</span>
+            <p className="subtitulo" style={{ margin: '4px 0 10px' }}>
+              Cada sucessão tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da
+              data do óbito respectiva, atos próprios de escritura e registro. Como os
+              óbitos costumam ser de anos diferentes, cada sucessão tem seu MONTE PARTÍVEL
+              e sua LEGÍTIMA. Escolha, em cada uma, se usa os MESMOS bens do 1º falecimento
+              (com o valor de avaliação próprio daquela data, lançado no acervo) ou se ela
+              tem BENS PARTICULARES. Com &quot;mesmos herdeiros&quot;, o item III mostra uma
+              partilha para CADA sucessão.
+            </p>
+            <EditorSucessoes
+              herdeiros={herdeiros}
+              sucessoes={sucessoes}
+              setSucessoes={setSucessoes}
+              basesSucessoes={basesSucessoes}
+            />
+          </div>
+        )}
       </div>
 
       <div className="cartao">

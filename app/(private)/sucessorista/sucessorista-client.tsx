@@ -905,8 +905,9 @@ export default function SucessoristaClient({
     // wizard é extenso demais para reset campo a campo com segurança).
     void salvarAgoraRef.current().finally(() => {
       // Recarga proposital: zera a folha para o painel abrir pristino.
+      // A raiz É o módulo neste site (a rota /sucessorista não existe mais).
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = '/sucessorista';
+      window.location.href = '/';
     });
   };
 
@@ -2080,8 +2081,9 @@ export default function SucessoristaClient({
     }
     // Recomeçar do zero exige RELOAD de verdade (navegação client-side
     // preservaria os estados preenchidos) — exceção consciente à regra.
+    // A raiz É o módulo neste site (a rota /sucessorista não existe mais).
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = '/sucessorista';
+    window.location.href = '/';
   };
 
   /** Contexto textual do caso para a redação por IA (nunca os documentos). */
