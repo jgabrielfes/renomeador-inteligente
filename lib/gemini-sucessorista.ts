@@ -476,7 +476,12 @@ function sanitizarVeiculo(q: unknown): VeiculoExtraido | null {
 
 /* ---------- redação de peças (honorários e petição judicial) ---------- */
 
-export type TipoPecaRedigida = "PROPOSTA" | "CONTRATO" | "PETICAO_JUDICIAL" | "CLAUSULAS";
+export type TipoPecaRedigida =
+  | "PROPOSTA"
+  | "CONTRATO"
+  | "PETICAO_JUDICIAL"
+  | "ESCRITURA"
+  | "CLAUSULAS";
 
 export interface EntradaRedacaoHonorarios {
   tipo: TipoPecaRedigida;
@@ -520,7 +525,9 @@ function promptHonorarios(e: EntradaRedacaoHonorarios): string {
       ? "um CONTRATO de prestação de serviços advocatícios e honorários (cláusulas numeradas: objeto, obrigações do contratado, obrigações dos contratantes, honorários e forma de pagamento com base no art. 22 da Lei 8.906/1994, despesas e custas por conta dos contratantes, rescisão com honorários proporcionais, foro)"
       : e.tipo === "PETICAO_JUDICIAL"
         ? "uma PETIÇÃO INICIAL de abertura de inventário JUDICIAL, completa e robusta (seções numeradas: dos fatos — óbito, último domicílio e competência do art. 48 do CPC, estado civil/regime e herdeiros, saisine do art. 1.784 do CC; do cabimento da via judicial e do procedimento dos arts. 610 e seguintes do CPC, com o prazo do art. 611; da nomeação do inventariante na ordem do art. 617 e compromisso do art. 620; do acervo como primeiras declarações, bem a bem, com valores; do esboço de partilha com meação, frações e fundamentos legais de cada quinhão; do ITCMD com a base e o valor apurados; dos pedidos — abertura, nomeação, citações do art. 626 incluindo Fazenda Estadual e Ministério Público quando cabível, avaliação, homologação do cálculo e da partilha com formal e alvarás, provas; e o valor da causa pelo monte-mor)"
-        : e.tipo === "CLAUSULAS"
+        : e.tipo === "ESCRITURA"
+          ? "uma ESCRITURA PÚBLICA de inventário e partilha COMPLETA, em estilo NOTARIAL, seguindo a estrutura do MODELO DA SERVENTIA anexado (a ordem das cláusulas, os títulos e o estilo de redação são os DELE): abertura ('SAIBAM…'), qualificação completa dos comparecentes com os dados do contexto, nomeação do(a) inventariante, autor(a) da herança e óbito, rol de bens com valores, partilha/pagamentos com as frações, ITCMD, declarações fiscais e legais, e encerramento. Tabelionato, livro, folhas, escrevente e tabelião SEMPRE em lacunas '______' — a minuta serve a qualquer serventia"
+          : e.tipo === "CLAUSULAS"
           ? "APENAS a(s) cláusula(s)/seção(ões) ADICIONAIS pedidas nas instruções do(a) profissional, para inserir no documento-alvo descrito no contexto (escritura pública de inventário ou petição), no estilo notarial/forense correspondente — títulos curtos em CAIXA ALTA no padrão do documento (ex.: 'DA CESSÃO DE DIREITOS HEREDITÁRIOS'); NÃO reescreva o documento inteiro nem repita cláusulas que ele já tem"
           : "uma PROPOSTA de honorários advocatícios (seções: objeto, escopo dos serviços, honorários propostos com a justificativa de complexidade, o que não está incluído, condições de pagamento, validade de 30 dias e aceite)";
   return `Você é advogado(a) redator(a) experiente em direito sucessório no Brasil. Redija ${e.tipo === "CLAUSULAS" ? "" : "o CORPO de "}${doc} para o inventário descrito no contexto abaixo, em português do Brasil, texto objetivo e eficiente de escritório de primeira linha.
@@ -534,7 +541,7 @@ ${e.contexto}
 REGRAS INEGOCIÁVEIS:
 - Use SOMENTE os dados do contexto; dado ausente vira a lacuna "______" — nunca invente nome, valor, data ou percentual.
 - Os VALORES de honorários, percentuais e condições de pagamento são EXATAMENTE os do contexto (o sistema ainda anexa um quadro-resumo determinístico — não contradiga os números).
-- NÃO redija cabeçalho/logotipo, qualificação das partes nem bloco de assinaturas: o sistema monta essas partes com os dados oficiais da folha.
+${e.tipo === "ESCRITURA" ? '- A escritura é o documento INTEIRO: inclua a qualificação das partes com os dados do contexto (campo ausente = lacuna "______") e o bloco final de assinaturas em lacunas.' : "- NÃO redija cabeçalho/logotipo, qualificação das partes nem bloco de assinaturas: o sistema monta essas partes com os dados oficiais da folha."}
 - Devolva apenas o JSON: secoes = lista de { titulo (curto, em CAIXA ALTA), paragrafos (parágrafos completos, sem markdown) }.`;
 }
 

@@ -553,6 +553,104 @@
   gap: 14px;
 }
 
+/* ---------- "Meus modelos de minuta" (biblioteca de padrões) ---------- */
+
+.sucessorista .modelos-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sucessorista .modelo-cartao {
+  position: relative;
+  appearance: none;
+  text-align: left;
+  border: 1px solid var(--fio-forte);
+  border-left: 3px solid var(--bronze);
+  border-radius: 8px;
+  background: var(--papel-alto);
+  color: var(--tinta);
+  padding: 12px 14px 30px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.sucessorista .modelo-cartao:hover {
+  border-color: var(--bronze);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--tinta) 14%, transparent);
+  transform: translateY(-2px);
+}
+
+.sucessorista .modelo-cartao.ativo {
+  border-color: var(--verde-registro);
+  border-left-color: var(--verde-registro);
+}
+
+.sucessorista .modelo-cartao h4 {
+  font-family: var(--display);
+  font-size: 15px;
+  margin: 0 0 2px;
+  transition: color 0.15s ease;
+}
+
+.sucessorista .modelo-cartao:hover h4 { color: var(--bronze); }
+
+.sucessorista .modelo-cartao p {
+  font-size: 12px;
+  color: var(--tinta-media);
+  margin: 0 0 4px;
+}
+
+.sucessorista .modelo-cartao .em-uso {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--verde-registro);
+  border: 1px solid var(--verde-registro);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* Ações do card (visualizar/editar/excluir) — aparecem no hover, como na
+   referência de biblioteca de minutas. */
+.sucessorista .modelo-cartao .acoes-modelo {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sucessorista .modelo-cartao:hover .acoes-modelo,
+.sucessorista .modelo-cartao:focus-within .acoes-modelo { opacity: 1; }
+
+.sucessorista .modelo-cartao .acoes-modelo button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--tinta-media);
+}
+
+.sucessorista .modelo-cartao .acoes-modelo button:hover {
+  background: color-mix(in srgb, var(--bronze) 14%, transparent);
+  color: var(--tinta);
+}
+
+.sucessorista .modelo-cartao.novo {
+  border-style: dashed;
+  border-left-width: 1px;
+  background: transparent;
+}
+
 /* Barra de ordenação + alternador cards × lista do painel "Meus casos". */
 .sucessorista .casos-controles {
   display: flex;

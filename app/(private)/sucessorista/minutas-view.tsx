@@ -19,6 +19,7 @@ import { agruparPendencias, type Pendencia } from '@/lib/partilha/pendencias';
 import type { RelatorioAntecipador } from '@/lib/partilha/antecipador';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { Pilula } from './familia';
+import { MeusModelosMinuta, registrarUsoModelo, type ModeloMinuta } from './modelos-minuta';
 
 /**
  * Checklist do que ainda vira LACUNA (______) na minuta — o profissional
@@ -171,7 +172,8 @@ export function MinutasView({
   onAntecipadorPdf,
 }: {
   onGerarPeticao: (instrucoes: string) => Promise<void>;
-  onGerarPeticaoJudicial: (instrucoes: string) => Promise<void>;
+  /** Recebe também o texto do MODELO PRÓPRIO do escritório (null = padrão). */
+  onGerarPeticaoJudicial: (instrucoes: string, modeloTexto: string | null) => Promise<void>;
   /** Campos que ainda faltam para a minuta sair completa (checklist). */
   pendencias?: Pendencia[];
   /** Antecipador de qualificação registral (confronto com as matrículas). */
@@ -182,6 +184,8 @@ export function MinutasView({
   const [gerando, setGerando] = useState<'tabelionato' | 'judicial' | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [instrucoes, setInstrucoes] = useState('');
+  // Modelo ATIVO da biblioteca "Meus modelos de minuta" (null = padrão).
+  const [modeloPeticao, setModeloPeticao] = useState<ModeloMinuta | null>(null);
 
   const executar = async (qual: 'tabelionato' | 'judicial', fn: () => Promise<void>) => {
     setGerando(qual);
@@ -207,6 +211,12 @@ export function MinutasView({
       <ChecklistPendencias pendencias={pendencias} />
 
       <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
+
+      <MeusModelosMinuta
+        tipo="PETICAO"
+        dica="Cadastre previamente a petição-padrão do escritório (um caso antigo serve) e ela fica pronta para os próximos inventários: a redação por IA segue a estrutura, a ordem das seções e o estilo do modelo EM USO, preenchendo com os dados deste caso — sem modelo, sai a redação padrão do sistema (que nunca falha)."
+        onAtivo={setModeloPeticao}
+      />
 
       <CampoInstrucoes
         valor={instrucoes}
@@ -249,7 +259,12 @@ export function MinutasView({
                 variant="outline"
                 disabled={gerando !== null}
                 loading={gerando === 'judicial'}
-                onClick={() => executar('judicial', () => onGerarPeticaoJudicial(instrucoes))}
+                onClick={() =>
+                  executar('judicial', async () => {
+                    if (modeloPeticao) registrarUsoModelo(modeloPeticao.id);
+                    await onGerarPeticaoJudicial(instrucoes, modeloPeticao?.texto ?? null);
+                  })
+                }
               >
                 Gerar petição inicial (DOCX, IA)
               </Button>
@@ -274,6 +289,8 @@ export function EscrituraView({
     modalidade: ModalidadeEscritura,
     partesRemotas: string,
     instrucoes: string,
+    /** Texto do MODELO DA SERVENTIA (null = modelo padrão do sistema). */
+    modeloTexto: string | null,
   ) => Promise<void>;
   /** Campos que ainda faltam para a escritura sair completa (checklist). */
   pendencias?: Pendencia[];
@@ -287,6 +304,8 @@ export function EscrituraView({
   const [instrucoes, setInstrucoes] = useState('');
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Modelo ATIVO da biblioteca "Meus modelos de minuta" (null = padrão).
+  const [modeloEscritura, setModeloEscritura] = useState<ModeloMinuta | null>(null);
 
   return (
     <section>
@@ -324,6 +343,12 @@ export function EscrituraView({
 
       <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
 
+      <MeusModelosMinuta
+        tipo="ESCRITURA"
+        dica="Cadastre previamente a(s) minuta(s)-padrão do seu balcão (uma escritura antiga de inventário serve) e escolha num clique a que vale para este caso: a geração segue a estrutura, a ordem das cláusulas e o estilo do modelo EM USO, preenchida com os dados do caso — e se a redação falhar, sai o modelo padrão do sistema, nunca vazia."
+        onAtivo={setModeloEscritura}
+      />
+
       <CampoInstrucoes
         valor={instrucoes}
         onChange={setInstrucoes}
@@ -336,7 +361,13 @@ export function EscrituraView({
             setGerando(true);
             setErro(null);
             try {
-              await onGerarEscritura(modalidade, partesRemotas, instrucoes);
+              if (modeloEscritura) registrarUsoModelo(modeloEscritura.id);
+              await onGerarEscritura(
+                modalidade,
+                partesRemotas,
+                instrucoes,
+                modeloEscritura?.texto ?? null,
+              );
             } catch (e) {
               setErro(e instanceof Error ? e.message : 'Falha ao gerar a minuta da escritura.');
             } finally {
