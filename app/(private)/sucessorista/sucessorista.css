@@ -607,7 +607,20 @@
   background: var(--papel-alto);
   display: flex;
   flex-direction: column;
+  /* Interação de hover: o card "levanta" e a lombada bronze acende. */
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
+
+.sucessorista .caso-cartao:hover {
+  border-color: var(--bronze);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--tinta) 14%, transparent);
+  transform: translateY(-2px);
+}
+
+.sucessorista .caso-cartao:hover h3 { color: var(--bronze); }
+
+/* Na LISTA o card é uma linha: sobe menos para não "pular" da fileira. */
+.sucessorista .casos-grade.lista .caso-cartao:hover { transform: translateY(-1px); }
 
 .sucessorista .caso-cartao .abrir {
   appearance: none;
@@ -622,6 +635,7 @@
   font-family: var(--display);
   font-size: 17px;
   margin: 0 0 2px;
+  transition: color 0.15s ease;
 }
 
 .sucessorista .caso-cartao .autor { font-size: 12.5px; color: var(--tinta-media); margin: 0 0 6px; }
@@ -1073,6 +1087,19 @@
 
 .sucessorista .dash-coluna { display: grid; gap: 16px; }
 .sucessorista .dash-grade .cartao { margin: 0; }
+
+/* Interação de hover nos cards do dashboard "O Caso" (só ali — os cartões
+   de formulário das outras abas não reagem): leve elevação + fio bronze.
+   Mesma linguagem dos cards de Meus Casos. */
+.sucessorista .dash-grade .cartao {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.sucessorista .dash-grade .cartao:hover {
+  border-color: var(--bronze);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--tinta) 12%, transparent);
+  transform: translateY(-2px);
+}
 
 /* Card do relógio: dia da semana, hora grande e data por extenso. */
 .sucessorista .relogio { text-align: center; padding: 28px 18px 24px; }
