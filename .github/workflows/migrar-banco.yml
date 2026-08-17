@@ -1,0 +1,106 @@
+# Aplica as migrações do banco a cada push na `develop`.
+#
+# Por que existe: já aconteceu de o código subir antes do schema — o
+# `schema.prisma` declarava uma coluna que o Postgres ainda não tinha, e TODO
+# login novo passou a falhar (o Prisma pede a coluna inexistente, o callback do
+# NextAuth estoura e o usuário recebe "Access Denied"). Com esta action, quem
+# faz merge na `develop` não precisa lembrar de rodar migração nenhuma.
+#
+# ‼️ POR QUE NÃO `yarn db:migrate` AQUI
+#
+# `yarn db:migrate` é `prisma migrate dev`, o comando de DESENVOLVIMENTO: ele é
+# interativo, CRIA migrações novas a partir do schema e, ao detectar qualquer
+# divergência entre o histórico e o banco, RESETA o banco — apagando todos os
+# dados. Nada disso pode acontecer sem um humano olhando.
+# O comando de automação é `prisma migrate deploy` (`yarn db:deploy`): não é
+# interativo, aplica apenas os arquivos de migração que já existem no
+# repositório e nunca apaga nada. `migrate dev` continua sendo o comando da sua
+# máquina, para CRIAR a migração; esta action só APLICA o que você criou.
+#
+# ‼️ O BANCO É UM SÓ
+#
+# `develop` e `main` compartilham o mesmo Postgres do Supabase (é a coluna
+# `app` que separa os dois sites, não o ambiente). Então uma migração aplicada
+# por esta action JÁ VALE PARA PRODUÇÃO. Na prática é o que se quer — o schema
+# precisa estar pronto antes de a `main` subir —, mas migração destrutiva
+# (DROP de coluna, mudança de tipo) tem efeito imediato no site no ar: quebre
+# em duas etapas (primeiro adiciona, depois remove, cada uma num deploy).
+# Se um dia houver banco separado de homologação, basta trocar o valor do
+# secret abaixo.
+#
+# Secret necessário em Settings → Secrets and variables → Actions:
+#   DIRECT_URL — conexão DIRETA do Supabase (porta 5432), a mesma do .env.
+#                O pooler de transação (6543) não executa DDL direito.
+#                É o `prisma.config.ts` que faz a CLI usar esta variável.
+
+name: Migrar o banco
+
+on:
+  push:
+    branches: [develop]
+  # Permite reaplicar pelo botão "Run workflow", sem precisar de commit novo.
+  workflow_dispatch: {}
+
+# Uma migração por vez, e NUNCA cancelar uma que já começou: interromper um
+# `migrate deploy` no meio deixa o histórico do Prisma num estado que exige
+# conserto manual (`migrate resolve`).
+concurrency:
+  group: migrar-banco
+  cancel-in-progress: false
+
+jobs:
+  migrar:
+    name: Aplicar migrações pendentes
+    runs-on: ubuntu-latest
+    env:
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Conferir o secret
+        # Sem a URL, a CLI tentaria conectar em vazio e o erro sairia lá na
+        # frente, disfarçado de falha de conexão.
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "::error::Secret DIRECT_URL não configurado (conexão direta do Supabase, porta 5432)."
+            exit 1
+          fi
+
+      - name: Instalar dependências
+        # O postinstall roda `prisma generate` — só precisa do schema, não do banco.
+        run: yarn install --frozen-lockfile
+
+      - name: Estado antes
+        # Informativo: `migrate status` sai com código != 0 quando há migração
+        # pendente, que é justamente o caso normal aqui.
+        run: yarn db:status || true
+
+      - name: Aplicar migrações
+        run: yarn db:deploy
+
+      - name: Conferir se o schema bate com o banco
+        # Guarda contra o erro que originou esta action: alguém altera o
+        # `schema.prisma` e esquece de gerar a migração. O deploy acima não
+        # perceberia (ele só aplica arquivos existentes), e o app quebraria em
+        # produção. Aqui o banco REAL é comparado com o schema; qualquer
+        # diferença sai com código 2 e derruba o job.
+        run: |
+          if ! npx prisma migrate diff \
+                --from-config-datasource \
+                --to-schema prisma/schema.prisma \
+                --exit-code; then
+            echo "::error::O schema.prisma tem mudanças sem migração correspondente. Rode 'yarn db:migrate' na sua máquina, comite a migração gerada e faça push."
+            exit 1
+          fi
+
+      - name: Resumo
+        run: |
+          echo "### Banco migrado" >> "$GITHUB_STEP_SUMMARY"
+          yarn db:status >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
