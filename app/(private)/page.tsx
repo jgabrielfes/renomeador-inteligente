@@ -41,6 +41,10 @@ export default async function Home() {
       perfilConta = null;
     }
 
+    // Equipe da conta (card "Minha equipe" do dashboard) — melhor-esforço.
+    const { minhaEquipe } = await import("./sucessorista/equipe-actions");
+    const equipe = await minhaEquipe();
+
     const { default: SucessoristaClient } = await import(
       "./sucessorista/sucessorista-client"
     );
@@ -52,6 +56,7 @@ export default async function Home() {
           menu={<UserMenu />}
           perfilConta={perfilConta}
           ehMaster={isMaster(session)}
+          equipe={equipe}
         />
       </>
     );

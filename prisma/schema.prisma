@@ -31,6 +31,43 @@ enum PerfilSucessorista {
   ESCREVENTE
 }
 
+// Papel dentro da EQUIPE: o chefe gere (convida/remove membros); o membro
+// faz tudo no módulo, exceto gerir a equipe.
+enum PapelEquipe {
+  CHEFE
+  MEMBRO
+}
+
+// EQUIPE de trabalho do Sucessorista: contas INDIVIDUAIS vinculadas por
+// convite do chefe (advogado ou escrevente). O compartilhamento dos CASOS é
+// operacional — a mesma pasta-raiz no Drive/OneDrive, com a guarda de
+// conflito arbitrando; a equipe governa o vínculo de pessoas e o perfil.
+model Equipe {
+  id        String   @id @default(cuid())
+  nome      String
+  app       Plataforma
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  membros  User[]
+  convites EquipeConvite[]
+
+  @@map("equipes")
+}
+
+// Convite de equipe: CÓDIGO de uso único gerado pelo chefe — o membro entra
+// com a própria conta e cola o código (sem rota pública nova).
+model EquipeConvite {
+  token      String    @id
+  equipeId   String
+  equipe     Equipe    @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  criadoEm   DateTime  @default(now())
+  usadoEm    DateTime?
+  usadoPorId String?
+
+  @@map("equipe_convites")
+}
+
 // Convite do PORTAL DO HERDEIRO — PERSISTIDO (o memoryStore zerava a cada
 // cold start da Vercel: link "expirando" e envios sumindo). O token é a
 // credencial (o herdeiro não tem login) e o convite NÃO expira. `dados` é o
@@ -65,6 +102,10 @@ model User {
   role         Role      @default(USER)
   // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
   perfilSucessorista PerfilSucessorista?
+  // Equipe de trabalho (null = sem equipe). O papel decide quem GERE.
+  equipeId    String?
+  equipe      Equipe?      @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  papelEquipe PapelEquipe?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
