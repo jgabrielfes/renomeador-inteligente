@@ -58,6 +58,24 @@ export interface RelatorioAntecipador {
   totalExigencias: number;
 }
 
+/**
+ * O bem entra no confronto registral? A marcação interna `tipo` pode faltar
+ * (bem lido pelo cofre sem tipo detectado, caso antigo restaurado, código não
+ * escolhido) — então o imóvel é reconhecido também pelo CÓDIGO da declaração
+ * do ITCMD-SP (1xx) ou pela presença de dados registrais/venais na ficha.
+ * Sem isso o antecipador "sumia" de casos com imóvel de verdade.
+ */
+export function ehImovelDeRegistro(b: Bem): boolean {
+  if (b.sobrepartilha) return false;
+  if (b.tipo === 'IMOVEL') return true;
+  if (b.tipo && b.tipo !== 'OUTRO') return false;
+  if ((b.codigoItcmd ?? '').startsWith('1')) return true;
+  const im = b.imovel;
+  return Boolean(
+    im && (im.matricula || im.registroImoveis || im.inscricaoCadastral || im.valorVenalObito),
+  );
+}
+
 const semAcento = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
@@ -74,7 +92,7 @@ export function anteciparQualificacaoRegistral(e: EntradaAntecipador): Relatorio
   const casadoNoObito = estadoAtual.includes('casad') || e.temSobrevivente;
 
   for (const b of e.bens) {
-    if (b.tipo !== 'IMOVEL' || b.sobrepartilha) continue;
+    if (!ehImovelDeRegistro(b)) continue;
     const im = b.imovel ?? {};
     const ap: ApontamentoRegistral[] = [];
     const exigencia = (texto: string, fundamento: string) =>

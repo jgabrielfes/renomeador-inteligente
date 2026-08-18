@@ -101,5 +101,18 @@ const fora = anteciparQualificacaoRegistral({
 });
 eq('sobrepartilha/não-imóvel fora do relatório', fora.imoveis.length, 0);
 
+// Reconhecimento SEM a marcação interna `tipo` (bem lido pelo cofre sem tipo
+// detectado ou caso antigo): o imóvel entra pelo código 1xx da declaração ou
+// pelos dados registrais da ficha — o antecipador não pode sumir por isso.
+const semTipo = anteciparQualificacaoRegistral({
+  ...base,
+  bens: [
+    { ...imovel(), tipo: undefined },
+    { id: 'b3', descricao: 'Casa', valor: '100000.00', natureza: 'COMUM', codigoItcmd: '102' },
+    { id: 'b4', descricao: 'Moto', valor: '15000.00', natureza: 'COMUM', tipo: 'VEICULO' },
+  ],
+});
+eq('sem tipo: reconhece pela ficha e pelo código 1xx', semTipo.imoveis.length, 2);
+
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

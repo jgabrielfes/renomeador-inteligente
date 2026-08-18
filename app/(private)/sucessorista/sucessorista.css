@@ -1117,6 +1117,89 @@
    registro (nome proposto, tipo e status) no card correlato do catálogo. */
 .sucessorista .anexo-linha.cofre { color: var(--verde-registro); }
 
+/* Miniaturas dos anexos da aba Documentos — cards no desenho do organizador
+   de páginas do Acrobat: capa (1ª página do PDF ou a imagem), nome embaixo
+   e o ✕ de remover no canto, aparecendo no hover. */
+.sucessorista .doc-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+.sucessorista .doc-card {
+  position: relative;
+  width: 118px;
+  margin: 0;
+}
+.sucessorista .doc-card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 118px;
+  height: 150px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--fio-forte);
+  border-radius: 6px;
+  background: var(--papel-alto);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sucessorista .doc-card-thumb:hover {
+  border-color: var(--bronze);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.18);
+}
+.sucessorista .doc-card-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+.sucessorista .doc-card-ext {
+  font: 600 12px/1 var(--texto);
+  letter-spacing: 0.08em;
+  color: var(--tinta-media);
+}
+.sucessorista .doc-card-nome {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--tinta-media);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sucessorista .doc-card-remover {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 50%;
+  background: var(--papel-alto);
+  color: var(--lacre);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+.sucessorista .doc-card:hover .doc-card-remover,
+.sucessorista .doc-card-remover:focus-visible {
+  display: flex;
+}
+/* No toque não há hover — o ✕ fica sempre visível no celular. */
+@media (max-width: 860px) {
+  .sucessorista .doc-card-remover {
+    display: flex;
+  }
+}
+
 /* Botão de ação do PORTAL DO HERDEIRO (página pública sem shadcn montado):
    tinta sobre papel, mesmo desenho dos botões do módulo. */
 .sucessorista button.acao {
