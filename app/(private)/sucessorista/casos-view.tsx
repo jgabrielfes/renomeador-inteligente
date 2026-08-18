@@ -68,6 +68,7 @@ export function CasosView({
   dispositivo,
   temRascunhoLegado,
   onEscolherPasta,
+  onTrocarPasta = null,
   onDesbloquear,
   onAbrir,
   onCriar,
@@ -88,6 +89,8 @@ export function CasosView({
   dispositivo: string;
   temRascunhoLegado: boolean;
   onEscolherPasta: (nomeDispositivo: string) => void;
+  /** Troca a pasta-raiz DEPOIS de configurada (cada conta tem a sua). */
+  onTrocarPasta?: (() => void) | null;
   onDesbloquear: () => void;
   onAbrir: (caseId: string) => void;
   onCriar: (titulo: string) => void;
@@ -178,6 +181,11 @@ export function CasosView({
         </div>
         {(estado === 'pasta' || estado === 'portatil') && (
           <div className="escolha">
+            {estado === 'pasta' && onTrocarPasta && (
+              <Button variant="ghost" onClick={onTrocarPasta}>
+                Trocar pasta dos casos
+              </Button>
+            )}
             {onEnviarNuvem && (
               <Button
                 variant="outline"
@@ -247,6 +255,11 @@ export function CasosView({
           </p>
           <div className="escolha" style={{ marginTop: 10 }}>
             <Button onClick={onDesbloquear}>Abrir meus casos</Button>
+            {onTrocarPasta && (
+              <Button variant="outline" onClick={onTrocarPasta}>
+                Escolher outra pasta
+              </Button>
+            )}
           </div>
         </div>
       )}

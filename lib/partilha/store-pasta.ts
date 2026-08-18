@@ -28,11 +28,24 @@ import {
 } from './caso-store';
 import { casarManifesto, type DiffManifesto, type InfoArquivoDisco } from './manifesto';
 import { sha256DeBlob } from './sha256';
-import { idbGet, idbPut, STORES } from './idb';
+import { idbDelete, idbGet, idbPut, STORES } from './idb';
 
 const CHAVE_RAIZ = 'raizCasos';
 const CHAVE_DISPOSITIVO = 'dispositivo';
 const CHAVE_CACHE = 'cache-resumos';
+
+/**
+ * PASTA-RAIZ É POR CONTA, não por navegador: dois logins no mesmo computador
+ * guardam raízes (e caches) separados — o client chama `definirContaAtiva`
+ * com o id do usuário logado ANTES de qualquer leitura. A chave legada (sem
+ * conta) migra para a PRIMEIRA conta que abrir o painel e é apagada. O nome
+ * do dispositivo continua por máquina (é da máquina, não da pessoa).
+ */
+let contaAtiva = '';
+export function definirContaAtiva(id: string | null | undefined): void {
+  contaAtiva = id ?? '';
+}
+const chaveDaConta = (base: string) => (contaAtiva ? `${base}:${contaAtiva}` : base);
 const ARQUIVO_CASO = 'caso.json';
 const PASTA_APP = '.sucessorista';
 const PASTA_ARQUIVADOS = '_Arquivados';
@@ -49,7 +62,16 @@ export function pastaDisponivel(): boolean {
 }
 
 export async function raizSalva(): Promise<FileSystemDirectoryHandle | null> {
-  return idbGet<FileSystemDirectoryHandle>(STORES.config, CHAVE_RAIZ);
+  const propria = await idbGet<FileSystemDirectoryHandle>(STORES.config, chaveDaConta(CHAVE_RAIZ));
+  if (propria || !contaAtiva) return propria;
+  // Migração da era "uma raiz por navegador": a chave antiga vira da
+  // primeira conta que abrir o painel — as demais começam sem raiz.
+  const legada = await idbGet<FileSystemDirectoryHandle>(STORES.config, CHAVE_RAIZ);
+  if (legada) {
+    await idbPut(STORES.config, chaveDaConta(CHAVE_RAIZ), legada);
+    await idbDelete(STORES.config, CHAVE_RAIZ);
+  }
+  return legada;
 }
 
 export async function dispositivoSalvo(): Promise<string | null> {
@@ -60,13 +82,13 @@ export async function salvarDispositivo(nome: string): Promise<void> {
   await idbPut(STORES.config, CHAVE_DISPOSITIVO, nome);
 }
 
-/** Cache dos cabeçalhos para o painel pintar instantaneamente. */
+/** Cache dos cabeçalhos para o painel pintar instantaneamente (por conta). */
 export async function cacheDeResumos(): Promise<ResumoCaso[]> {
-  return (await idbGet<ResumoCaso[]>(STORES.config, CHAVE_CACHE)) ?? [];
+  return (await idbGet<ResumoCaso[]>(STORES.config, chaveDaConta(CHAVE_CACHE))) ?? [];
 }
 
 async function gravarCacheDeResumos(resumos: ResumoCaso[]): Promise<void> {
-  await idbPut(STORES.config, CHAVE_CACHE, resumos);
+  await idbPut(STORES.config, chaveDaConta(CHAVE_CACHE), resumos);
 }
 
 /** Pede a pasta-raiz ao usuário (exige gesto). null = cancelou (AbortError). */
@@ -78,7 +100,7 @@ export async function escolherRaiz(): Promise<FileSystemDirectoryHandle | null> 
       }
     ).showDirectoryPicker;
     const handle = await picker({ id: 'sucessorista-raiz', mode: 'readwrite', startIn: 'documents' });
-    await idbPut(STORES.config, CHAVE_RAIZ, handle);
+    await idbPut(STORES.config, chaveDaConta(CHAVE_RAIZ), handle);
     // Sem persist() o navegador pode despejar o IndexedDB — e o handle junto.
     try {
       await navigator.storage?.persist?.();
