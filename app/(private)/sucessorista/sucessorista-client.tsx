@@ -2203,6 +2203,7 @@ export default function SucessoristaClient({
             ...bem,
             imovel: preencherDetalhes(bem.imovel, lidoB.imovel) as typeof bem.imovel,
             veiculo: preencherDetalhes(bem.veiculo, lidoB.veiculo) as typeof bem.veiculo,
+            financeiro: preencherDetalhes(bem.financeiro, lidoB.financeiro) as typeof bem.financeiro,
           });
         });
         const novos = bensLidos
@@ -2225,6 +2226,9 @@ export default function SucessoristaClient({
                 : {}),
               ...(b.veiculo
                 ? { veiculo: Object.fromEntries(Object.entries(b.veiculo).filter(([, v]) => v !== null)) }
+                : {}),
+              ...(b.financeiro
+                ? { financeiro: Object.fromEntries(Object.entries(b.financeiro).filter(([, v]) => v !== null)) }
                 : {}),
             }),
           );
