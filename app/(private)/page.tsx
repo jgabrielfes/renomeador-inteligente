@@ -57,6 +57,7 @@ export default async function Home() {
           perfilConta={perfilConta}
           ehMaster={isMaster(session)}
           equipe={equipe}
+          contaId={session?.user?.id ?? null}
         />
       </>
     );

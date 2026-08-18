@@ -100,6 +100,7 @@ import { PortableCaseStore } from '@/lib/partilha/store-portatil';
 import {
   FolderCaseStore,
   cacheDeResumos,
+  definirContaAtiva,
   dispositivoSalvo,
   escolherRaiz,
   estadoDaRaiz,
@@ -284,6 +285,7 @@ export default function SucessoristaClient({
   perfilConta = null,
   ehMaster = false,
   equipe = null,
+  contaId = null,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -299,6 +301,8 @@ export default function SucessoristaClient({
   ehMaster?: boolean;
   /** Equipe da conta (card "Minha equipe" do dashboard) — null sem equipe. */
   equipe?: import('./equipe-actions').InfoEquipe | null;
+  /** Id do usuário logado — escopa a pasta-raiz e o cache POR CONTA. */
+  contaId?: string | null;
 }) {
   // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
   // compartilhável. A troca usa history.replaceState — atualização rasa, sem
@@ -537,6 +541,8 @@ export default function SucessoristaClient({
   /** Dedupe do aviso "espelho ficou para trás" (um por caso aberto). */
   const avisoNuvemRef = useRef(false);
   const [dispositivo, setDispositivo] = useState('');
+  /** Nome da pasta-raiz ativa — mostrado no seletor do painel Meus Casos. */
+  const [nomeRaiz, setNomeRaiz] = useState('');
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
   const [salvamento, setSalvamento] = useState<{
@@ -717,7 +723,9 @@ export default function SucessoristaClient({
         restauradoRef.current = true;
 
         /* painel "Meus casos": decide o modo de persistência e pinta do
-           cache antes da varredura (nunca tela vazia esperando I/O). */
+           cache antes da varredura (nunca tela vazia esperando I/O). A
+           pasta-raiz é POR CONTA: o escopo entra antes de qualquer leitura. */
+        definirContaAtiva(contaId);
         const nomeDisp = (await dispositivoSalvo()) ?? '';
         setDispositivo(nomeDisp);
         const rascunho = await carregarRascunho();
@@ -730,6 +738,7 @@ export default function SucessoristaClient({
           if (estado === 'granted' && raiz) {
             const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
             setStore(s);
+            setNomeRaiz(raiz.name);
             setEstadoPainel('pasta');
             setResumos(await cacheDeResumos());
             void s.listarCasos().then(setResumos);
@@ -757,9 +766,9 @@ export default function SucessoristaClient({
       })();
     }, 0);
     return () => clearTimeout(t);
-    // perfilConta e nuvemAtiva vêm de props do servidor, estáveis na sessão —
-    // o efeito continua rodando uma vez só.
-  }, [perfilConta, nuvemAtiva]);
+    // perfilConta, nuvemAtiva e contaId vêm de props do servidor, estáveis
+    // na sessão — o efeito continua rodando uma vez só.
+  }, [perfilConta, nuvemAtiva, contaId]);
 
 
   /* --- ações do painel "Meus casos" --- */
@@ -767,6 +776,7 @@ export default function SucessoristaClient({
   const ativarPasta = async (raiz: FileSystemDirectoryHandle, nomeDisp: string) => {
     const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
     setStore(s);
+    setNomeRaiz(raiz.name);
     setEstadoPainel('pasta');
     setResumos(await cacheDeResumos());
     setResumos(await s.listarCasos());
@@ -2753,6 +2763,8 @@ export default function SucessoristaClient({
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
+          onTrocarPasta={() => void escolherPastaRaiz(dispositivo || 'Meu computador')}
+          pastaAtual={nomeRaiz}
           onDesbloquear={() => void desbloquearPasta()}
           onAbrir={(id) => void abrirCasoDoPainel(id)}
           onCriar={(t) => void criarCasoDoPainel(t)}
