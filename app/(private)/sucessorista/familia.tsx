@@ -10,7 +10,7 @@
  * entra onde há SUBMISSÃO com validação — o formulário de adicionar herdeiro.
  */
 
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -427,12 +427,53 @@ function formatarDataCurta(iso: string): string {
 
 /* ---------- herdeiros ---------- */
 
-const esquemaHerdeiro = z.object({
-  nome: z.string().trim().min(1, 'Informe o nome do herdeiro.'),
-  status: z.enum(['ATIVO', 'PRE_MORTO', 'RENUNCIANTE']),
-  comum: z.boolean(),
-  incapaz: z.boolean(),
-});
+/**
+ * Parentescos lançáveis — destravam TODOS os incisos do art. 1.829 que o
+ * motor já calcula: sem descendentes a herança vai aos ASCENDENTES (inciso
+ * II, em concorrência com o cônjuge — art. 1.837), sem ascendentes ao
+ * cônjuge sozinho (III) e, por fim, aos COLATERAIS até o 4º grau (IV).
+ * Grau mais próximo exclui o mais remoto (art. 1.836, §1º); avós dividem
+ * por LINHAS paterna/materna (art. 1.836, §2º) — por isso a linha é pedida.
+ */
+const PARENTESCOS = [
+  { v: 'FILHO', t: 'Filho(a)', classe: 'DESCENDENTE', grau: 1 },
+  { v: 'NETO', t: 'Neto(a)', classe: 'DESCENDENTE', grau: 2 },
+  { v: 'PAI_MAE', t: 'Pai/Mãe', classe: 'ASCENDENTE', grau: 1 },
+  { v: 'AVO', t: 'Avô/Avó', classe: 'ASCENDENTE', grau: 2 },
+  { v: 'IRMAO', t: 'Irmão/Irmã', classe: 'COLATERAL', grau: 2 },
+  { v: 'SOBRINHO', t: 'Sobrinho(a)', classe: 'COLATERAL', grau: 3 },
+  { v: 'TIO', t: 'Tio(a)', classe: 'COLATERAL', grau: 3 },
+  { v: 'PRIMO', t: 'Primo(a)', classe: 'COLATERAL', grau: 4 },
+] as const;
+
+type ParentescoId = (typeof PARENTESCOS)[number]['v'];
+
+/** Rótulo do parentesco de um herdeiro já lançado (classe + grau + linha). */
+export function rotuloParentesco(h: Herdeiro): string {
+  if (h.classe === 'DESCENDENTE') return h.grau >= 2 ? 'neto(a)' : 'filho(a)';
+  if (h.classe === 'ASCENDENTE') {
+    const linha = h.linha === 'PATERNA' ? ' (linha paterna)' : h.linha === 'MATERNA' ? ' (linha materna)' : '';
+    return h.grau >= 2 ? `avô/avó${linha}` : 'pai/mãe';
+  }
+  if (h.grau === 2) return h.vinculoIrmao === 'UNILATERAL' ? 'irmão/irmã unilateral' : 'irmão/irmã';
+  if (h.grau === 4) return 'primo(a)';
+  return 'sobrinho(a)/tio(a)';
+}
+
+const esquemaHerdeiro = z
+  .object({
+    nome: z.string().trim().min(1, 'Informe o nome do herdeiro.'),
+    parentesco: z.enum(PARENTESCOS.map((p) => p.v) as [ParentescoId, ...ParentescoId[]]),
+    linha: z.enum(['', 'PATERNA', 'MATERNA']),
+    vinculoIrmao: z.enum(['BILATERAL', 'UNILATERAL']),
+    status: z.enum(['ATIVO', 'PRE_MORTO', 'RENUNCIANTE']),
+    comum: z.boolean(),
+    incapaz: z.boolean(),
+  })
+  .refine((d) => d.parentesco !== 'AVO' || d.linha !== '', {
+    path: ['linha'],
+    message: 'Para avô/avó, informe a linha (paterna × materna) — art. 1.836, §2º.',
+  });
 
 type NovoHerdeiro = z.infer<typeof esquemaHerdeiro>;
 
@@ -454,17 +495,31 @@ function EditorHerdeiros({
     formState: { errors },
   } = useForm<NovoHerdeiro>({
     resolver: zodResolver(esquemaHerdeiro),
-    defaultValues: { nome: '', status: 'ATIVO', comum: true, incapaz: false },
+    defaultValues: {
+      nome: '',
+      parentesco: 'FILHO',
+      linha: '',
+      vinculoIrmao: 'BILATERAL',
+      status: 'ATIVO',
+      comum: true,
+      incapaz: false,
+    },
   });
+  const parentescoEscolhido = useWatch({ control, name: 'parentesco' });
 
   const adicionar = (dados: NovoHerdeiro) => {
+    const p = PARENTESCOS.find((x) => x.v === dados.parentesco) ?? PARENTESCOS[0];
     const novo: Herdeiro = {
       id: uid('h'),
       nome: nomeProprio(dados.nome),
-      classe: 'DESCENDENTE',
-      grau: 1,
+      classe: p.classe,
+      grau: p.grau,
       status: dados.status,
-      filhoDoSobrevivente: dados.comum,
+      // Linha das avós/avôs (divisão por linhas — art. 1.836, §2º).
+      ...(p.v === 'AVO' && dados.linha ? { linha: dados.linha as 'PATERNA' | 'MATERNA' } : {}),
+      // Irmão bilateral × unilateral (quota dobrada — art. 1.841).
+      ...(p.v === 'IRMAO' ? { vinculoIrmao: dados.vinculoIrmao } : {}),
+      ...(p.classe === 'DESCENDENTE' ? { filhoDoSobrevivente: dados.comum } : {}),
       menorOuIncapaz: dados.incapaz,
     };
     onChange({
@@ -511,6 +566,30 @@ function EditorHerdeiros({
             <FieldError errors={[errors.nome]} />
           </Field>
           <Field>
+            <FieldLabel>Parentesco</FieldLabel>
+            <Controller
+              control={control}
+              name="parentesco"
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={(v) => v && field.onChange(String(v))}
+                >
+                  <SelectTrigger aria-label="Parentesco com o(a) falecido(a)">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARENTESCOS.map((p) => (
+                      <SelectItem key={p.v} value={p.v}>
+                        {p.t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+          <Field>
             <FieldLabel>Situação</FieldLabel>
             <Controller
               control={control}
@@ -532,10 +611,57 @@ function EditorHerdeiros({
               )}
             />
           </Field>
+          {parentescoEscolhido === 'AVO' && (
+            <Field data-invalid={Boolean(errors.linha)}>
+              <FieldLabel>Linha (art. 1.836, §2º)</FieldLabel>
+              <Controller
+                control={control}
+                name="linha"
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => v && field.onChange(String(v))}
+                  >
+                    <SelectTrigger aria-label="Linha paterna ou materna">
+                      <SelectValue placeholder="Paterna × materna" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PATERNA">Linha paterna</SelectItem>
+                      <SelectItem value="MATERNA">Linha materna</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <FieldError errors={[errors.linha]} />
+            </Field>
+          )}
+          {parentescoEscolhido === 'IRMAO' && (
+            <Field>
+              <FieldLabel>Vínculo (art. 1.841)</FieldLabel>
+              <Controller
+                control={control}
+                name="vinculoIrmao"
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => v && field.onChange(String(v))}
+                  >
+                    <SelectTrigger aria-label="Irmão bilateral ou unilateral">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BILATERAL">Bilateral (mesmo pai e mãe)</SelectItem>
+                      <SelectItem value="UNILATERAL">Unilateral (só pai OU só mãe)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Field>
+          )}
           <Field>
             <FieldLabel>Condições</FieldLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
-              {temSobrevivente && (
+              {temSobrevivente && (parentescoEscolhido === 'FILHO' || parentescoEscolhido === 'NETO') && (
                 <Controller
                   control={control}
                   name="comum"
@@ -580,8 +706,9 @@ function EditorHerdeiros({
               <strong>{h.nome}</strong>
               <span className="fracao">
                 {' '}
-                · {h.status === 'ATIVO' ? 'vivo(a)' : h.status === 'PRE_MORTO' ? 'pré-morto(a)' : 'renunciante'}
-                {h.filhoDoSobrevivente === false ? ' · de outro relacionamento' : ''}
+                · {rotuloParentesco(h)}
+                {' '}· {h.status === 'ATIVO' ? 'vivo(a)' : h.status === 'PRE_MORTO' ? 'pré-morto(a)' : 'renunciante'}
+                {h.classe === 'DESCENDENTE' && h.filhoDoSobrevivente === false ? ' · de outro relacionamento' : ''}
                 {h.menorOuIncapaz ? ' · menor/incapaz' : ''}
               </span>
               {estado.inventarianteId === h.id && (
@@ -590,7 +717,21 @@ function EditorHerdeiros({
                 </span>
               )}
             </span>
-            <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Renúncia ABDICATIVA (pura e simples): a quota acresce aos
+                  demais da classe e o item V soma UM ato sem valor declarado
+                  por renunciante (Tabela de Notas, item 6.2). */}
+              {h.status !== 'PRE_MORTO' && (
+                <label className="marcar" style={{ margin: 0, fontWeight: 400, fontSize: 12 }}>
+                  <Checkbox
+                    checked={h.status === 'RENUNCIANTE'}
+                    onCheckedChange={(v) =>
+                      patchHerdeiro(h.id, { status: v === true ? 'RENUNCIANTE' : 'ATIVO' })
+                    }
+                  />
+                  renúncia abdicativa
+                </label>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -681,8 +822,12 @@ function EditorHerdeiros({
         </div>
       ))}
       <p className="fund" style={{ marginTop: 10 }}>
-        Representação de pré-morto por netos, ascendentes e colaterais: disponíveis no motor —
-        nesta tela simplificada, casos com essas classes seguem pelo caso completo.
+        Sem descendentes, lance os ASCENDENTES (pai/mãe; mortos os dois, avós por linha) e o
+        motor segue os incisos do art. 1.829 — grau mais próximo exclui o mais remoto, o
+        cônjuge concorre com os ascendentes (art. 1.837) e, sem ascendentes, herda sozinho;
+        por fim os colaterais até o 4º grau. Ascendente já falecido: lance com a situação
+        &quot;pré-morto(a)&quot; (na linha ascendente NÃO há representação — art. 1.852) ou
+        simplesmente lance só quem está vivo.
       </p>
     </>
   );
