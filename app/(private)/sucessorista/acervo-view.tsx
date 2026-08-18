@@ -114,6 +114,15 @@ const esquemaBem = z
       .trim()
       .min(1, 'Informe o valor de avaliação.')
       .regex(VALOR_PTBR, 'Valor inválido — use o formato 900.000,00.'),
+    // Campos da DECLARAÇÃO do ITCMD-SP por tipo (opcionais no lançamento —
+    // a leitura do cofre também os preenche): imóvel × ativo financeiro.
+    municipio: z.string().trim(),
+    inscricaoCadastral: z.string().trim(),
+    matricula: z.string().trim(),
+    registroImoveis: z.string().trim(),
+    instituicao: z.string().trim(),
+    agencia: z.string().trim(),
+    conta: z.string().trim(),
   })
   .superRefine((dados, ctx) => {
     // O venal do exercício corrente é campo de IMÓVEL — e lá é obrigatório.
@@ -186,13 +195,38 @@ export function AcervoView({
     formState: { errors },
   } = useForm<NovoBem>({
     resolver: zodResolver(esquemaBem),
-    defaultValues: { descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '' },
+    defaultValues: {
+      descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '',
+      municipio: '', inscricaoCadastral: '', matricula: '', registroImoveis: '',
+      instituicao: '', agencia: '', conta: '',
+    },
   });
-  // O tipo escolhido decide os campos de valor: imóvel = 3, demais = 2.
+  // O TIPO é a primeira lacuna: decide os campos de valor (imóvel = 3,
+  // demais = 2) e os campos da declaração que abrem (imóvel × financeiro).
   const codigoEscolhido = useWatch({ control, name: 'codigo' });
   const ehImovel = tipoBemItcmd(codigoEscolhido)?.tipo === 'IMOVEL';
+  const ehFinanceiro = tipoBemItcmd(codigoEscolhido)?.tipo === 'FINANCEIRO';
 
   const lancar = (dados: NovoBem) => {
+    const imovel = ehImovel
+      ? Object.fromEntries(
+          Object.entries({
+            municipio: dados.municipio,
+            inscricaoCadastral: dados.inscricaoCadastral,
+            matricula: dados.matricula,
+            registroImoveis: dados.registroImoveis,
+          }).filter(([, v]) => v !== ''),
+        )
+      : {};
+    const financeiro = ehFinanceiro
+      ? Object.fromEntries(
+          Object.entries({
+            instituicao: dados.instituicao,
+            agencia: dados.agencia,
+            conta: dados.conta,
+          }).filter(([, v]) => v !== ''),
+        )
+      : {};
     setBens([
       ...bens,
       {
@@ -204,9 +238,15 @@ export function AcervoView({
         codigoItcmd: dados.codigo,
         ...(dados.valorVenal.trim() ? { valorVenal: paraDecimal(dados.valorVenal) } : {}),
         ...(dados.valorAvaliacao.trim() ? { valorAvaliacao: paraDecimal(dados.valorAvaliacao) } : {}),
+        ...(Object.keys(imovel).length > 0 ? { imovel } : {}),
+        ...(Object.keys(financeiro).length > 0 ? { financeiro } : {}),
       },
     ]);
-    reset({ descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza, valorVenal: '', valorAvaliacao: '' });
+    reset({
+      descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza,
+      valorVenal: '', valorAvaliacao: '', municipio: '', inscricaoCadastral: '',
+      matricula: '', registroImoveis: '', instituicao: '', agencia: '', conta: '',
+    });
   };
 
   return (
@@ -221,6 +261,23 @@ export function AcervoView({
       <h2 style={{ marginTop: 0 }}>Bens</h2>
       <form noValidate onSubmit={handleSubmit(lancar)}>
         <div className="grade c2">
+          {/* O TIPO abre o lançamento (pedido do escritório): a escolha na
+              lista oficial decide quais campos da declaração aparecem. */}
+          <Field data-invalid={Boolean(errors.codigo)}>
+            <FieldLabel>Tipo do bem (declaração do ITCMD-SP)</FieldLabel>
+            <Controller
+              control={control}
+              name="codigo"
+              render={({ field }) => (
+                <SeletorTipoItcmd
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalido={Boolean(errors.codigo)}
+                />
+              )}
+            />
+            <FieldError errors={[errors.codigo]} />
+          </Field>
           <Field data-invalid={Boolean(errors.descricao)}>
             <FieldLabel htmlFor="bem-descricao">Descrição</FieldLabel>
             <Input
@@ -230,6 +287,45 @@ export function AcervoView({
             />
             <FieldError errors={[errors.descricao]} />
           </Field>
+          {/* Campos da DECLARAÇÃO por tipo — imóvel: identificação registral
+              e municipal; financeiro: instituição/agência/conta. A leitura
+              do cofre preenche os mesmos campos automaticamente. */}
+          {ehImovel && (
+            <>
+              <Field>
+                <FieldLabel htmlFor="bem-municipio">Município do imóvel</FieldLabel>
+                <Input id="bem-municipio" placeholder="ex.: Guarulhos/SP" {...register('municipio')} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bem-inscricao">Inscrição cadastral (nº do contribuinte)</FieldLabel>
+                <Input id="bem-inscricao" placeholder="ex.: 084.33.20.0048.01.000" {...register('inscricaoCadastral')} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bem-matricula">Matrícula</FieldLabel>
+                <Input id="bem-matricula" placeholder="ex.: 12.345" {...register('matricula')} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bem-ri">Registro de Imóveis (cartório)</FieldLabel>
+                <Input id="bem-ri" placeholder="ex.: 1º RI de Guarulhos/SP" {...register('registroImoveis')} />
+              </Field>
+            </>
+          )}
+          {ehFinanceiro && (
+            <>
+              <Field>
+                <FieldLabel htmlFor="bem-banco">Instituição financeira</FieldLabel>
+                <Input id="bem-banco" placeholder="ex.: Banco do Brasil S.A." {...register('instituicao')} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bem-agencia">Agência</FieldLabel>
+                <Input id="bem-agencia" placeholder="ex.: 1234-5" {...register('agencia')} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="bem-conta">Conta (com dígito)</FieldLabel>
+                <Input id="bem-conta" placeholder="ex.: 45.678-9" {...register('conta')} />
+              </Field>
+            </>
+          )}
           <Field data-invalid={Boolean(errors.valor)}>
             <FieldLabel htmlFor="bem-valor">Valor venal na data do óbito (R$)</FieldLabel>
             <Controller
@@ -246,21 +342,6 @@ export function AcervoView({
               )}
             />
             <FieldError errors={[errors.valor]} />
-          </Field>
-          <Field data-invalid={Boolean(errors.codigo)}>
-            <FieldLabel>Tipo do bem (declaração do ITCMD-SP)</FieldLabel>
-            <Controller
-              control={control}
-              name="codigo"
-              render={({ field }) => (
-                <SeletorTipoItcmd
-                  value={field.value}
-                  onChange={field.onChange}
-                  invalido={Boolean(errors.codigo)}
-                />
-              )}
-            />
-            <FieldError errors={[errors.codigo]} />
           </Field>
           <Field>
             <FieldLabel>Natureza</FieldLabel>
@@ -621,6 +702,14 @@ function LinhaBem({
   const [natureza, setNatureza] = useState<Bem['natureza']>(bem.natureza);
   const [venal, setVenal] = useState('');
   const [avaliacao, setAvaliacao] = useState('');
+  // Campos da declaração por tipo (imóvel × financeiro).
+  const [municipio, setMunicipio] = useState('');
+  const [inscricao, setInscricao] = useState('');
+  const [matricula, setMatricula] = useState('');
+  const [registroRI, setRegistroRI] = useState('');
+  const [instituicao, setInstituicao] = useState('');
+  const [agencia, setAgencia] = useState('');
+  const [conta, setConta] = useState('');
   const [erro, setErro] = useState<string | null>(null);
 
   const abrir = () => {
@@ -630,6 +719,13 @@ function LinhaBem({
     setNatureza(bem.natureza);
     setVenal(bem.valorVenal ? paraMascara(bem.valorVenal) : '');
     setAvaliacao(bem.valorAvaliacao ? paraMascara(bem.valorAvaliacao) : '');
+    setMunicipio(bem.imovel?.municipio ?? '');
+    setInscricao(bem.imovel?.inscricaoCadastral ?? '');
+    setMatricula(bem.imovel?.matricula ?? '');
+    setRegistroRI(bem.imovel?.registroImoveis ?? '');
+    setInstituicao(bem.financeiro?.instituicao ?? '');
+    setAgencia(bem.financeiro?.agencia ?? '');
+    setConta(bem.financeiro?.conta ?? '');
     setErro(null);
     setEditando(true);
   };
@@ -645,15 +741,33 @@ function LinhaBem({
     }
     // Bem lido/antigo pode não ter código — sem escolha, o tipo interno fica como está.
     const oficial = tipoBemItcmd(codigo);
+    const tipoFinal = oficial ? oficial.tipo : bem.tipo;
+    const limpo = (v: string) => (v.trim() ? v.trim() : undefined);
+    const imovel =
+      tipoFinal === 'IMOVEL'
+        ? {
+            ...bem.imovel,
+            municipio: limpo(municipio),
+            inscricaoCadastral: limpo(inscricao),
+            matricula: limpo(matricula),
+            registroImoveis: limpo(registroRI),
+          }
+        : bem.imovel;
+    const financeiro =
+      tipoFinal === 'FINANCEIRO'
+        ? { instituicao: limpo(instituicao), agencia: limpo(agencia), conta: limpo(conta) }
+        : bem.financeiro;
     onSalvar({
       ...bem,
       descricao: descricao.trim(),
       valor: paraDecimal(valor),
-      tipo: oficial ? oficial.tipo : bem.tipo,
+      tipo: tipoFinal,
       codigoItcmd: oficial ? codigo : bem.codigoItcmd,
       natureza,
       valorVenal: venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined,
       valorAvaliacao: avaliacao.trim() && VALOR_PTBR.test(avaliacao.trim()) ? paraDecimal(avaliacao) : undefined,
+      imovel,
+      financeiro,
     });
     setEditando(false);
   };
@@ -675,6 +789,22 @@ function LinhaBem({
               Base das custas (maior valor): {brl(baseDeCustaMaior(bem).toFixed(2))}
               {bem.valorVenal ? ` · venal ${brl(bem.valorVenal)}` : ''}
               {bem.valorAvaliacao ? ` · avaliação ${brl(bem.valorAvaliacao)}` : ''}
+            </span>
+          )}
+          {/* Identificação da declaração (preenchida pela leitura ou à mão). */}
+          {(bem.imovel?.matricula || bem.imovel?.inscricaoCadastral) && (
+            <span className="fund" style={{ display: 'block' }}>
+              {bem.imovel?.matricula ? `Matrícula ${bem.imovel.matricula}` : ''}
+              {bem.imovel?.registroImoveis ? ` — ${bem.imovel.registroImoveis}` : ''}
+              {bem.imovel?.inscricaoCadastral ? ` · inscrição ${bem.imovel.inscricaoCadastral}` : ''}
+              {bem.imovel?.municipio ? ` · ${bem.imovel.municipio}` : ''}
+            </span>
+          )}
+          {(bem.financeiro?.instituicao || bem.financeiro?.conta) && (
+            <span className="fund" style={{ display: 'block' }}>
+              {bem.financeiro?.instituicao ?? ''}
+              {bem.financeiro?.agencia ? ` · ag. ${bem.financeiro.agencia}` : ''}
+              {bem.financeiro?.conta ? ` · conta ${bem.financeiro.conta}` : ''}
             </span>
           )}
         </span>
@@ -765,6 +895,43 @@ function LinhaBem({
           Valor de avaliação (R$) — opcional
           <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
         </label>
+        {/* Campos da declaração do ITCMD-SP conforme o tipo em edição. */}
+        {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
+          <>
+            <label className="campo">
+              Município do imóvel
+              <Input value={municipio} onChange={(e) => setMunicipio(e.target.value)} />
+            </label>
+            <label className="campo">
+              Inscrição cadastral (nº do contribuinte)
+              <Input value={inscricao} onChange={(e) => setInscricao(e.target.value)} />
+            </label>
+            <label className="campo">
+              Matrícula
+              <Input value={matricula} onChange={(e) => setMatricula(e.target.value)} />
+            </label>
+            <label className="campo">
+              Registro de Imóveis (cartório)
+              <Input value={registroRI} onChange={(e) => setRegistroRI(e.target.value)} />
+            </label>
+          </>
+        )}
+        {tipoBemItcmd(codigo)?.tipo === 'FINANCEIRO' && (
+          <>
+            <label className="campo">
+              Instituição financeira
+              <Input value={instituicao} onChange={(e) => setInstituicao(e.target.value)} />
+            </label>
+            <label className="campo">
+              Agência
+              <Input value={agencia} onChange={(e) => setAgencia(e.target.value)} />
+            </label>
+            <label className="campo">
+              Conta (com dígito)
+              <Input value={conta} onChange={(e) => setConta(e.target.value)} />
+            </label>
+          </>
+        )}
       </div>
       {erro && <p className="mono-alerta">{erro}</p>}
       <div className="escolha" style={{ marginTop: 12 }}>

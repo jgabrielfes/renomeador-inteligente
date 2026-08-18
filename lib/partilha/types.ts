@@ -70,6 +70,18 @@ export interface DetalhesImovel {
   exercicioAtual?: string;
 }
 
+/**
+ * Dados do ativo FINANCEIRO — os campos da declaração do ITCMD-SP para
+ * depósitos/aplicações (extrato bancário na data do óbito).
+ */
+export interface DetalhesFinanceiro {
+  /** Instituição financeira (banco/corretora), como na declaração. */
+  instituicao?: string;
+  agencia?: string;
+  /** Conta com dígito (corrente/poupança/aplicação — o código ITCMD tipifica). */
+  conta?: string;
+}
+
 /** Dados do CRLV — alimentam a escritura e a Carta de Anuência. */
 export interface DetalhesVeiculo {
   marcaModelo?: string;
@@ -110,6 +122,7 @@ export interface Bem {
   valorAvaliacao?: string;
   imovel?: DetalhesImovel;
   veiculo?: DetalhesVeiculo;
+  financeiro?: DetalhesFinanceiro;
   /** Avaliação por sucessão cumulada (chave = id da sucessão do estado fiscal). */
   sucessoes?: Record<string, AvaliacaoBemSucessao>;
   /**
