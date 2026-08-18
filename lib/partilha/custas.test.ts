@@ -160,6 +160,20 @@ eq('torna vira ato próprio pela base da torna', idsDif.includes('escritura-torn
 eq('ato da torna pela faixa do valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.valor, 2_728.61);
 eq('torna: fundamento base = total cedido', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.fundamento.includes('total cedido'), true);
 eq('SEM ato de registro adicional na diferenciada', idsDif.includes('registro-atos-extras'), false);
+
+/* usufruto × nua-propriedade (sugestão de economia aceita): o registro do
+   imóvel vira DOIS atos — 1/3 (usufruto, Nota 1.5) e 2/3 (nua). Exemplo da
+   calibração: imóvel de 250.000 → atos por 83.333,33 e 166.666,67. */
+const comUsufruto = projetarCustos({
+  ...BASE,
+  imoveis: [{ descricao: 'Casa', valor: 250_000, valorTransmitido: 125_000, usufrutoNua: true }],
+});
+const idsUsu = comUsufruto.parcelas.map((p) => p.id);
+eq('usufruto: dois atos de registro', [idsUsu.includes('registro-usufruto-0'), idsUsu.includes('registro-nua-0')], [true, true]);
+eq('usufruto: sem o ato único da partilha', idsUsu.includes('registro-0'), false);
+eq('usufruto: ato por 1/3 do valor', comUsufruto.parcelas.find((p) => p.id === 'registro-usufruto-0')!.valor, emolumentoRegistro(83_333.33));
+eq('nua-propriedade: ato por 2/3 do valor', comUsufruto.parcelas.find((p) => p.id === 'registro-nua-0')!.valor, emolumentoRegistro(166_666.67));
+eq('usufruto: fundamento cita a Nota 1.5', comUsufruto.parcelas.find((p) => p.id === 'registro-usufruto-0')!.fundamento.includes('1.5'), true);
 eq('aviso cita o usufruto acessório (1/4 sobre 1/3)', diferenciada.avisos.some((a) => a.includes('1/3')), true);
 
 // Caso real do escritório: viúva cede a meação, TRÊS herdeiros recebem

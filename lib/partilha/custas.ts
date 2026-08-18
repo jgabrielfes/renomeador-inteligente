@@ -79,8 +79,11 @@ export interface EntradaCustos {
    * que a partilha efetivamente transmite, EXCLUÍDA a meação (a metade do
    * meeiro já era dele: não é transmissão e não entra na base, exatamente
    * como no ato da escritura). Ausente, vale o valor cheio (sem meeiro).
+   * `usufrutoNua` marca o imóvel dividido em usufruto (sobrevivente) ×
+   * nua-propriedade (herdeiros): o registro vira DOIS atos — um por 1/3 e
+   * um por 2/3 do valor do bem (Nota 1.5 da Tabela de Registro).
    */
-  imoveis: { descricao: string; valor: number; valorTransmitido?: number }[];
+  imoveis: { descricao: string; valor: number; valorTransmitido?: number; usufrutoNua?: boolean }[];
   rito: 'EXTRAJUDICIAL' | 'JUDICIAL';
   qtdHerdeiros: number;
   /** Havia cônjuge/companheiro(a) — certidão de casamento entra na conta. */
@@ -383,8 +386,33 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
 
   /* registros dos imóveis — sempre (o formal de partilha judicial também
      registra). A base do ato é a fração TRANSMITIDA (excluída a meação),
-     como no ato da escritura — a metade do meeiro não é transmissão. */
+     como no ato da escritura — a metade do meeiro não é transmissão.
+     EXCEÇÃO: imóvel dividido em usufruto × nua-propriedade são DOIS atos
+     na matrícula — um pela base de 1/3 (usufruto, Nota 1.5) e um pela base
+     de 2/3 (nua-propriedade) do valor do bem. */
   for (const [i, im] of imoveis.entries()) {
+    if (im.usufrutoNua === true) {
+      const nome = im.descricao || `imóvel ${i + 1}`;
+      parcelas.push({
+        id: `registro-usufruto-${i}`,
+        rotulo: `Registro do usufruto vitalício — ${nome}`,
+        valor: emolumentoRegistro(r2(im.valor / 3), iss),
+        quantidade: 1,
+        fundamento: 'Tabela de Registro 2026, item 1 + Nota 1.5 (usufruto: 1/3 do valor)',
+        detalhe: `Faixa por 1/3 do valor do bem: ${fmt(r2(im.valor / 3))} (valor do bem: ${fmt(im.valor)}).`,
+        aproximado: false,
+      });
+      parcelas.push({
+        id: `registro-nua-${i}`,
+        rotulo: `Registro da nua-propriedade — ${nome}`,
+        valor: emolumentoRegistro(r2((im.valor * 2) / 3), iss),
+        quantidade: 1,
+        fundamento: 'Tabela de Registro 2026, item 1 (nua-propriedade: 2/3 do valor)',
+        detalhe: `Faixa por 2/3 do valor do bem: ${fmt(r2((im.valor * 2) / 3))} — ato próprio, na mesma matrícula do usufruto.`,
+        aproximado: false,
+      });
+      continue;
+    }
     const baseAto = im.valorTransmitido ?? im.valor;
     parcelas.push({
       id: `registro-${i}`,
@@ -399,10 +427,9 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       aproximado: false,
     });
   }
-  /* Partilha diferenciada NÃO gera ato de registro adicional (calibração do
-     escritório): o registro segue UM ato por imóvel pela fração transmitida.
-     A divisão usufruto × nua-propriedade, essa sim, tem atos próprios — e é
-     provisionada pelo mapeador de economia quando a sugestão é aceita. */
+  /* Fora o usufruto × nua-propriedade (acima), a partilha diferenciada NÃO
+     gera ato de registro adicional (calibração do escritório): o registro
+     segue UM ato por imóvel pela fração transmitida. */
 
   /* sucessões cumuladas: atos de registro próprios nos imóveis envolvidos */
   for (const [i, su] of e.sucessoes.entries()) {

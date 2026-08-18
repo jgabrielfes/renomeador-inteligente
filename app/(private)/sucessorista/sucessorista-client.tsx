@@ -260,6 +260,9 @@ interface CasoSalvo {
   atribuicoes?: Record<string, string>;
   /** Partilha diferenciada: bemId → { participanteId → % do bem (texto) }. */
   atribuicoesPct?: Record<string, Record<string, string>>;
+  /** Rótulos da matriz (ex.: "usufruto vitalício") — marcam o redesenho por
+   *  usufruto × nua-propriedade, que muda os atos de registro (1/3 + 2/3). */
+  anotacoesMatriz?: Record<string, Record<string, string>>;
   titulo: TituloCessao;
   /** Condições de honorários do caso (o perfil do escritório é do navegador). */
   honorarios?: CondicoesHonorarios;
@@ -647,6 +650,8 @@ export default function SucessoristaClient({
     if (salvo.sociedades && typeof salvo.sociedades === 'object') setSociedades(salvo.sociedades);
     if (salvo.fiscal) setFiscal(salvo.fiscal);
     if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
+    if (salvo.anotacoesMatriz && typeof salvo.anotacoesMatriz === 'object')
+      setAnotacoesMatriz(salvo.anotacoesMatriz);
     if (salvo.atribuicoesPct && typeof salvo.atribuicoesPct === 'object') {
       setMatriz(salvo.atribuicoesPct);
     } else if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object') {
@@ -682,6 +687,7 @@ export default function SucessoristaClient({
       fiscal,
       passo,
       atribuicoesPct: matriz,
+      anotacoesMatriz,
       titulo,
       honorarios: condicoesHonorarios,
       casoId,
@@ -1399,6 +1405,10 @@ export default function SucessoristaClient({
             descricao: b.descricao,
             valor: maior,
             valorTransmitido: Math.round(maior * fracaoTransmitida * 100) / 100,
+            // Redesenho por usufruto aceito (rótulo da matriz): o registro
+            // deste imóvel vira DOIS atos — 1/3 (usufruto) e 2/3 (nua).
+            usufrutoNua:
+              anotacoesMatriz[b.id]?.['__sobrevivente__'] === 'usufruto vitalício',
           };
         }),
       // A escolha do dashboard manda; AUTO segue o motor de elegibilidade.
@@ -1422,7 +1432,7 @@ export default function SucessoristaClient({
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, participantes]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, anotacoesMatriz, participantes]);
 
 
   /**
@@ -1729,7 +1739,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
