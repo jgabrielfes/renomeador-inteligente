@@ -69,6 +69,7 @@ export function CasosView({
   temRascunhoLegado,
   onEscolherPasta,
   onTrocarPasta = null,
+  pastaAtual = '',
   onDesbloquear,
   onAbrir,
   onCriar,
@@ -91,6 +92,8 @@ export function CasosView({
   onEscolherPasta: (nomeDispositivo: string) => void;
   /** Troca a pasta-raiz DEPOIS de configurada (cada conta tem a sua). */
   onTrocarPasta?: (() => void) | null;
+  /** Nome da pasta-raiz ativa — aparece no seletor do topo do painel. */
+  pastaAtual?: string;
   onDesbloquear: () => void;
   onAbrir: (caseId: string) => void;
   onCriar: (titulo: string) => void;
@@ -181,11 +184,6 @@ export function CasosView({
         </div>
         {(estado === 'pasta' || estado === 'portatil') && (
           <div className="escolha">
-            {estado === 'pasta' && onTrocarPasta && (
-              <Button variant="ghost" onClick={onTrocarPasta}>
-                Trocar pasta dos casos
-              </Button>
-            )}
             {onEnviarNuvem && (
               <Button
                 variant="outline"
@@ -202,6 +200,22 @@ export function CasosView({
           </div>
         )}
       </header>
+
+      {/* SELETOR DA PASTA DOS CASOS — sempre visível antes de entrar em
+          qualquer caso: mostra a pasta-raiz ATIVA desta conta e troca num
+          clique (cada login tem a própria pasta; trocar não apaga nada — os
+          casos continuam nas pastas, o painel só passa a olhar a nova). */}
+      {estado === 'pasta' && onTrocarPasta && (
+        <div className="seletor-pasta">
+          <span>
+            📁 Pasta dos casos desta conta:{' '}
+            <strong>{pastaAtual || 'pasta escolhida'}</strong>
+          </span>
+          <Button size="sm" variant="outline" onClick={onTrocarPasta}>
+            Trocar pasta
+          </Button>
+        </div>
+      )}
 
       {temRascunhoLegado && estado !== 'carregando' && (
         <div className="nota" style={{ marginBottom: 14 }}>

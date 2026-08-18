@@ -541,6 +541,8 @@ export default function SucessoristaClient({
   /** Dedupe do aviso "espelho ficou para trás" (um por caso aberto). */
   const avisoNuvemRef = useRef(false);
   const [dispositivo, setDispositivo] = useState('');
+  /** Nome da pasta-raiz ativa — mostrado no seletor do painel Meus Casos. */
+  const [nomeRaiz, setNomeRaiz] = useState('');
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
   const [salvamento, setSalvamento] = useState<{
@@ -736,6 +738,7 @@ export default function SucessoristaClient({
           if (estado === 'granted' && raiz) {
             const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
             setStore(s);
+            setNomeRaiz(raiz.name);
             setEstadoPainel('pasta');
             setResumos(await cacheDeResumos());
             void s.listarCasos().then(setResumos);
@@ -773,6 +776,7 @@ export default function SucessoristaClient({
   const ativarPasta = async (raiz: FileSystemDirectoryHandle, nomeDisp: string) => {
     const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
     setStore(s);
+    setNomeRaiz(raiz.name);
     setEstadoPainel('pasta');
     setResumos(await cacheDeResumos());
     setResumos(await s.listarCasos());
@@ -2760,6 +2764,7 @@ export default function SucessoristaClient({
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
           onTrocarPasta={() => void escolherPastaRaiz(dispositivo || 'Meu computador')}
+          pastaAtual={nomeRaiz}
           onDesbloquear={() => void desbloquearPasta()}
           onAbrir={(id) => void abrirCasoDoPainel(id)}
           onCriar={(t) => void criarCasoDoPainel(t)}
