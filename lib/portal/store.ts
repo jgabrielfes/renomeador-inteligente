@@ -18,6 +18,13 @@ export interface DocumentoPedido {
   /** Tipo detectado pelo renomeador local no navegador do herdeiro. */
   tipoDetectado?: string;
   enviadoEm?: string;
+  /**
+   * ARQUIVO real recebido pelo portal (tabela `portal_arquivos`): id para o
+   * advogado baixar/anexar ao caso. Ausente = só o registro chegou (arquivo
+   * grande demais ou falha no envio — o herdeiro entrega por outro canal).
+   */
+  arquivoId?: string;
+  arquivoTamanho?: number;
 }
 
 /** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso).

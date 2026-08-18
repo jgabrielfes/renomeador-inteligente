@@ -125,13 +125,41 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   };
 
   /**
-   * Envio de documento: o renomeador LOCAL lê o arquivo aqui no navegador
-   * (OCR quando preciso), detecta o tipo e propõe o nome padronizado.
-   * Só o NOME segue para o advogado — o arquivo não é transmitido.
+   * Foto de celular passa fácil de 4 MB (teto do envio): reduz no navegador
+   * para caber — o documento continua legível para o cartório. PDF grande não
+   * é reduzido (viraria outro documento); cai no registro sem arquivo.
    */
-  const enviarDocumento = async (docId: string, file: File) => {
+  const MAX_ENVIO = 4 * 1024 * 1024;
+  const reduzirImagem = async (file: File): Promise<File> => {
+    if (!/^image\//.test(file.type) || file.size <= MAX_ENVIO) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const escala = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * escala);
+      canvas.height = Math.round(bitmap.height * escala);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
+      if (!blob || blob.size >= file.size) return file;
+      return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    } catch {
+      return file;
+    }
+  };
+
+  /**
+   * Envio de documento: o renomeador LOCAL lê o arquivo aqui no navegador
+   * (OCR quando preciso), detecta o tipo e propõe o nome padronizado — e o
+   * ARQUIVO segue com segurança para o escritório (rota do portal, teto de
+   * 4 MB). Se o envio do arquivo falhar, o registro (nome/tipo) vai mesmo
+   * assim e a página avisa para entregar por outro canal.
+   */
+  const enviarDocumento = async (docId: string, original: File) => {
     setAnalisando(docId);
     setDicaQualidade(null);
+    const file = await reduzirImagem(original);
     setArquivos((a) => ({ ...a, [docId]: file }));
     let nome = file.name;
     let tipo: string | undefined;
@@ -152,6 +180,30 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     } catch {
       // Sem leitura local (formato não suportado etc.): segue com o nome original.
     }
+
+    // 1º: o arquivo em si, pela rota de upload do portal.
+    if (file.size <= MAX_ENVIO) {
+      try {
+        const form = new FormData();
+        form.set('docId', docId);
+        form.set('arquivo', file);
+        form.set('nomeArquivo', nome);
+        if (tipo) form.set('tipoDetectado', tipo);
+        const r = await fetch(`/api/portal/${token}/arquivo`, { method: 'POST', body: form });
+        if (r.ok) {
+          setConvite(await r.json());
+          setAnalisando(null);
+          return;
+        }
+      } catch {
+        // rede caiu no meio — cai no registro sem arquivo, abaixo
+      }
+    }
+
+    // Fallback: só o registro (nome/tipo), como era antes do upload real.
+    setDicaQualidade(
+      'O arquivo não pôde ser transmitido (tamanho acima de 4 MB ou falha momentânea). O registro foi enviado — entregue este documento ao escritório por outro canal, como WhatsApp ou e-mail.',
+    );
     const r = await fetch(`/api/portal/${token}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -343,8 +395,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         {feitos} de {convite.documentos.length} documentos aprovados
       </p>
       <p className="fund" style={{ marginBottom: 8 }}>
-        Ao anexar, o documento é lido aqui no seu navegador e renomeado automaticamente no
-        padrão do cartório. Prefira PDF ou foto nítida, inteira e sem sombra.
+        Ao anexar, o documento é lido aqui no seu navegador, renomeado automaticamente no
+        padrão do cartório e enviado com segurança ao escritório. Prefira PDF ou foto
+        nítida, inteira e sem sombra.
       </p>
       {dicaQualidade && <p className="mono-alerta">{dicaQualidade}</p>}
 

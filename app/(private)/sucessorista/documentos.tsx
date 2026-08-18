@@ -45,6 +45,87 @@ interface EnvioDoCofre {
   nomeArquivo: string;
   tipoDetectado?: string;
   status: string;
+  /** Arquivo REAL guardado pelo portal — habilita baixar/anexar ao caso. */
+  arquivoId?: string;
+  arquivoTamanho?: number;
+}
+
+function tamanhoLegivel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * Ações do envio REAL do cofre: baixar o arquivo do herdeiro ou puxá-lo
+ * direto para o card do processo (vira anexo com miniatura, como se tivesse
+ * sido arrastado). A rota de download exige a sessão do escritório.
+ */
+function AcoesEnvioCofre({
+  envio,
+  onAnexar,
+}: {
+  envio: EnvioDoCofre;
+  onAnexar: (file: File) => void;
+}) {
+  const [agindo, setAgindo] = useState<'baixar' | 'anexar' | null>(null);
+  const [erro, setErro] = useState(false);
+  const [anexado, setAnexado] = useState(false);
+  if (!envio.arquivoId) return null;
+
+  const buscar = async (): Promise<File | null> => {
+    const r = await fetch(`/api/portal/arquivo/${envio.arquivoId}`);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    return new File([blob], envio.nomeArquivo, { type: blob.type });
+  };
+
+  const agir = async (acao: 'baixar' | 'anexar') => {
+    setAgindo(acao);
+    setErro(false);
+    try {
+      const file = await buscar();
+      if (!file) {
+        setErro(true);
+        return;
+      }
+      if (acao === 'baixar') {
+        baixarBlob(file, envio.nomeArquivo);
+      } else {
+        onAnexar(file);
+        setAnexado(true);
+      }
+    } catch {
+      setErro(true);
+    } finally {
+      setAgindo(null);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={agindo === 'baixar'}
+        disabled={agindo !== null}
+        onClick={() => void agir('baixar')}
+      >
+        baixar
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={agindo === 'anexar'}
+        disabled={agindo !== null || anexado}
+        onClick={() => void agir('anexar')}
+      >
+        {anexado ? 'anexado \u2713' : 'anexar ao caso'}
+      </Button>
+      {erro && <span className="mono-alerta">falha ao buscar o arquivo</span>}
+    </>
+  );
 }
 
 /**
@@ -199,10 +280,10 @@ export function DocumentosView({
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Envios do PORTAL agrupados pelo item do catálogo em que se encaixam. O
-  // ARQUIVO fica no navegador do herdeiro (fronteira de dados) — aqui entram
-  // o nome proposto, o tipo detectado e o status, para o advogado cobrar ou
-  // anexar o original recebido por outro canal.
+  // Envios do PORTAL agrupados pelo item do catálogo em que se encaixam.
+  // Com upload real (portal_arquivos), a linha ganha "baixar" e "anexar ao
+  // caso"; sem arquivo guardado (envio antigo, >4 MB ou falha), fica só o
+  // registro — o advogado cobra o original por outro canal.
   const enviosDoCofre: Record<string, EnvioDoCofre[]> = {};
   for (const convite of Object.values(convites)) {
     for (const d of convite.documentos) {
@@ -213,6 +294,8 @@ export function DocumentosView({
         nomeArquivo: d.nomeArquivo,
         tipoDetectado: d.tipoDetectado,
         status: d.status,
+        arquivoId: d.arquivoId,
+        arquivoTamanho: d.arquivoTamanho,
       });
     }
   }
@@ -228,7 +311,7 @@ export function DocumentosView({
   const totalAnexos = Object.values(anexos).reduce((acc, fs) => acc + fs.length, 0);
   const itensComAnexo = catalogoDoCasoTopo.filter((d) => (anexos[d.id] ?? []).length > 0).length;
 
-  const anexar = (docId: string, lista: FileList) => {
+  const anexar = (docId: string, lista: FileList | File[]) => {
     setAnexos({ ...anexos, [docId]: [...(anexos[docId] ?? []), ...Array.from(lista)] });
   };
 
@@ -315,7 +398,16 @@ export function DocumentosView({
                           <span className="num">{envio.nomeArquivo}</span>
                           {envio.tipoDetectado ? ` · lido como ${envio.tipoDetectado}` : ''} ·{' '}
                           {ROTULO_STATUS_PORTAL[envio.status] ?? envio.status}
+                          {envio.arquivoTamanho ? (
+                            <span className="num"> · {tamanhoLegivel(envio.arquivoTamanho)}</span>
+                          ) : (
+                            ' · arquivo com o herdeiro (peça por outro canal)'
+                          )}
                         </span>
+                        <AcoesEnvioCofre
+                          envio={envio}
+                          onAnexar={(file) => anexar(doc.id, [file])}
+                        />
                       </p>
                     ))}
                     {arquivos.length > 0 && (
