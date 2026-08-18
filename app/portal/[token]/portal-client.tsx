@@ -125,13 +125,20 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   };
 
   /**
-   * Foto de celular passa fácil de 4 MB (teto do envio): reduz no navegador
-   * para caber — o documento continua legível para o cartório. PDF grande não
-   * é reduzido (viraria outro documento); cai no registro sem arquivo.
+   * Envio com teto de 25 MB: até ~3,5 MB o arquivo vai inteiro numa chamada;
+   * acima disso o navegador corta em FATIAS de 3,5 MB (o limite de corpo por
+   * requisição na Vercel é ~4,5 MB) e a última remonta no servidor.
    */
-  const MAX_ENVIO = 4 * 1024 * 1024;
+  const FATIA_ENVIO = 3.5 * 1024 * 1024;
+  const MAX_ENVIO = 25 * 1024 * 1024;
+
+  /**
+   * Foto de celular passa fácil de 4 MB: reduz no navegador — o documento
+   * continua legível para o cartório e o envio fica leve. PDF não é reduzido
+   * (viraria outro documento); grande demais cai no registro sem arquivo.
+   */
   const reduzirImagem = async (file: File): Promise<File> => {
-    if (!/^image\//.test(file.type) || file.size <= MAX_ENVIO) return file;
+    if (!/^image\//.test(file.type) || file.size <= FATIA_ENVIO) return file;
     try {
       const bitmap = await createImageBitmap(file);
       const escala = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
@@ -181,17 +188,31 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       // Sem leitura local (formato não suportado etc.): segue com o nome original.
     }
 
-    // 1º: o arquivo em si, pela rota de upload do portal.
+    // 1º: o arquivo em si, pela rota de upload do portal — inteiro numa
+    // chamada ou em fatias sequenciais (a última devolve o convite).
     if (file.size <= MAX_ENVIO) {
       try {
-        const form = new FormData();
-        form.set('docId', docId);
-        form.set('arquivo', file);
-        form.set('nomeArquivo', nome);
-        if (tipo) form.set('tipoDetectado', tipo);
-        const r = await fetch(`/api/portal/${token}/arquivo`, { method: 'POST', body: form });
-        if (r.ok) {
-          setConvite(await r.json());
+        const total = Math.max(1, Math.ceil(file.size / FATIA_ENVIO));
+        const envioId = crypto.randomUUID();
+        let resposta: Response | null = null;
+        for (let i = 0; i < total; i += 1) {
+          const form = new FormData();
+          form.set('docId', docId);
+          form.set('arquivo', file.slice(i * FATIA_ENVIO, (i + 1) * FATIA_ENVIO));
+          form.set('nome', file.name);
+          form.set('mime', file.type || 'application/octet-stream');
+          form.set('nomeArquivo', nome);
+          if (tipo) form.set('tipoDetectado', tipo);
+          if (total > 1) {
+            form.set('envioId', envioId);
+            form.set('indice', String(i));
+            form.set('total', String(total));
+          }
+          resposta = await fetch(`/api/portal/${token}/arquivo`, { method: 'POST', body: form });
+          if (!resposta.ok) break;
+        }
+        if (resposta?.ok) {
+          setConvite(await resposta.json());
           setAnalisando(null);
           return;
         }
@@ -202,7 +223,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
 
     // Fallback: só o registro (nome/tipo), como era antes do upload real.
     setDicaQualidade(
-      'O arquivo não pôde ser transmitido (tamanho acima de 4 MB ou falha momentânea). O registro foi enviado — entregue este documento ao escritório por outro canal, como WhatsApp ou e-mail.',
+      'O arquivo não pôde ser transmitido (tamanho acima de 25 MB ou falha momentânea). O registro foi enviado — entregue este documento ao escritório por outro canal, como WhatsApp ou e-mail.',
     );
     const r = await fetch(`/api/portal/${token}`, {
       method: 'PATCH',

@@ -135,7 +135,8 @@ model PortalConvite {
 // do escritório) à fronteira de dados: o documento repousa no banco até o
 // advogado baixá-lo/anexá-lo ao caso. UM arquivo por pedido do convite
 // (reenvio SUBSTITUI o anterior); excluir o convite apaga os arquivos em
-// cascata. Teto de 4 MB por arquivo (limite de corpo das funções da Vercel).
+// cascata. Teto de 25 MB por arquivo — acima de ~3,5 MB o navegador do
+// herdeiro envia em FATIAS (PortalArquivoParte) e a última remonta aqui.
 // NUNCA exibir em /admin — conteúdo de documento não é telemetria.
 model PortalArquivo {
   id        String        @id @default(cuid())
@@ -152,6 +153,21 @@ model PortalArquivo {
 
   @@unique([token, docId])
   @@map("portal_arquivos")
+}
+
+// Fatia TEMPORÁRIA de um upload fatiado do portal (arquivo acima do limite
+// de ~4,5 MB por requisição da Vercel): cada requisição grava uma fatia e a
+// última remonta o arquivo em portal_arquivos e apaga as fatias. `envioId` é
+// aleatório do navegador do herdeiro; fatias órfãs (envio abandonado) são
+// varridas por melhor-esforço a cada upload novo (criadoEm > 24h).
+model PortalArquivoParte {
+  envioId  String
+  indice   Int
+  dados    Bytes
+  criadoEm DateTime @default(now())
+
+  @@id([envioId, indice])
+  @@map("portal_arquivo_partes")
 }
 
 model User {

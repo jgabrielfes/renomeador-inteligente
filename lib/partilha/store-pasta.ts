@@ -14,7 +14,12 @@
  * sobrescrever.
  */
 
-import { overwriteFile } from '@/lib/fs';
+import {
+  existingNames,
+  getSubfolder,
+  overwriteFile,
+  writeNewFile,
+} from '@/lib/fs';
 import {
   migrarArquivoCaso,
   montarArquivoCaso,
@@ -150,6 +155,32 @@ export class FolderCaseStore implements CaseStore {
     private raiz: FileSystemDirectoryHandle,
     private atualizadoPor: string,
   ) {}
+
+  /**
+   * Documento RECEBIDO pelo cofre do herdeiro: grava em "Recebidos do
+   * cofre/" dentro da pasta do caso (exceção pontual à regra "só caso.json e
+   * .sucessorista/**" — arquivo NOVO, por clique do usuário, sem tocar
+   * documento existente; nome repetido ganha sufixo, nunca sobrescreve).
+   */
+  async salvarDocumentoRecebido(caseId: string, file: File): Promise<boolean> {
+    try {
+      const pasta = await this.pastaDoCaso(caseId);
+      if (!pasta) return false;
+      const destino = await getSubfolder(pasta, 'Recebidos do cofre');
+      const nomes = await existingNames(destino);
+      let nome = file.name;
+      if (nomes.has(nome.toLowerCase())) {
+        const ponto = nome.lastIndexOf('.');
+        const base = ponto > 0 ? nome.slice(0, ponto) : nome;
+        const ext = ponto > 0 ? nome.slice(ponto) : '';
+        for (let n = 2; nomes.has(nome.toLowerCase()); n += 1) nome = `${base} (${n})${ext}`;
+      }
+      await writeNewFile(destino, nome, file);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   private async pastaDoCaso(caseId: string): Promise<FileSystemDirectoryHandle | null> {
     const nome = this.pastas.get(caseId);

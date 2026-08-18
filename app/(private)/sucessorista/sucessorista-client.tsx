@@ -3308,6 +3308,14 @@ export default function SucessoristaClient({
               temSobrevivente={temSobrevivente}
               rito={ritoEfetivo}
               convites={convites}
+              onSalvarNaPasta={async (file) => {
+                // Modo pasta: o envio do cofre também vai ao DISCO, em
+                // "Recebidos do cofre/" do caso (o manifesto religa sozinho).
+                const s = storeRef.current;
+                const aberto = casoAbertoRef.current;
+                if (!s?.salvarDocumentoRecebido || !aberto) return false;
+                return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
+              }}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
           </section>
