@@ -47,7 +47,7 @@ import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/cus
 import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
 import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
 import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
-import { anteciparQualificacaoRegistral } from '@/lib/partilha/antecipador';
+import { anteciparQualificacaoRegistral, ehImovelDeRegistro } from '@/lib/partilha/antecipador';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import {
   avaliarQuotas,
@@ -1574,7 +1574,10 @@ export default function SucessoristaClient({
    * as matrículas — o que o RI vai exigir junto ao traslado/formal.
    */
   const relatorioAntecipador = useMemo(() => {
-    if (!bens.some((b) => b.tipo === 'IMOVEL' && !b.sobrepartilha)) return null;
+    // Mesmo reconhecimento de imóvel do motor: por tipo, código 1xx da
+    // declaração ou dados registrais na ficha — o antecipador não pode sumir
+    // só porque a marcação interna `tipo` faltou num bem lido/antigo.
+    if (!bens.some(ehImovelDeRegistro)) return null;
     return anteciparQualificacaoRegistral({
       falecido: {
         nome: falecido.nome,
@@ -3263,18 +3266,11 @@ export default function SucessoristaClient({
           <section>
             <h1>Documentos</h1>
             <p className="subtitulo">
-              O que o caso exige, cruzado com o que já está na pasta — e o cofre de convites
-              para os herdeiros mandarem o que falta.
+              O cofre de convites para os herdeiros mandarem o que falta — e o que o caso
+              exige, cruzado com o que já está na pasta.
             </p>
-            <DocumentosView
-              anexos={anexosProcesso}
-              setAnexos={setAnexosProcesso}
-              nomeCaso={falecido.nome}
-              temSobrevivente={temSobrevivente}
-              rito={ritoEfetivo}
-              convites={convites}
-              onMontado={(formato, itens) => registrarDoc(formato, { itens })}
-            />
+            {/* O cofre de convites ABRE a aba (pedido do escritório): gerar os
+                links aos herdeiros vem antes do catálogo do processo. */}
             <CofreView
               herdeiros={herdeiros}
               nomeFalecido={falecido.nome}
@@ -3283,6 +3279,15 @@ export default function SucessoristaClient({
               setConvites={setConvites}
               onImportarQualificacao={importarQualificacao}
               irParaFamilia={() => irPara('familia')}
+            />
+            <DocumentosView
+              anexos={anexosProcesso}
+              setAnexos={setAnexosProcesso}
+              nomeCaso={falecido.nome}
+              temSobrevivente={temSobrevivente}
+              rito={ritoEfetivo}
+              convites={convites}
+              onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
           </section>
         )}

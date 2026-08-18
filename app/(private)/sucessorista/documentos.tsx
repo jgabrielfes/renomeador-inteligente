@@ -6,8 +6,7 @@
  * da etapa 0 chegam aqui já classificados.
  */
 
-import { useRef, useState } from 'react';
-import { ZoomIn } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +45,103 @@ interface EnvioDoCofre {
   nomeArquivo: string;
   tipoDetectado?: string;
   status: string;
+}
+
+/**
+ * Miniatura do anexo (estilo organizador de páginas do Acrobat): imagem sai
+ * direto do arquivo; PDF renderiza a PRIMEIRA página no navegador (pdfjs via
+ * loadPdfjs); DOCX/XLSX ganham o selo da extensão. O cache por File evita
+ * re-renderizar a cada troca de estado da aba — nada sai da máquina.
+ */
+const cacheMiniaturas = new WeakMap<File, Promise<string | null>>();
+
+function gerarMiniatura(file: File): Promise<string | null> {
+  const pendente = cacheMiniaturas.get(file);
+  if (pendente) return pendente;
+  const tarefa = (async () => {
+    try {
+      const nome = file.name.toLowerCase();
+      if (/\.(png|jpe?g|webp|bmp)$/.test(nome)) return URL.createObjectURL(file);
+      if (!nome.endsWith('.pdf')) return null;
+      const { loadPdfjs } = await import('@/lib/ocr');
+      const pdfjs = await loadPdfjs();
+      const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+      const doc = await loadingTask.promise;
+      try {
+        const page = await doc.getPage(1);
+        const vp1 = page.getViewport({ scale: 1 });
+        // ~2× a largura do card, nítido também em tela retina.
+        const viewport = page.getViewport({ scale: 260 / vp1.width });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+        return canvas.toDataURL('image/jpeg', 0.8);
+      } finally {
+        await loadingTask.destroy();
+      }
+    } catch {
+      return null;
+    }
+  })();
+  cacheMiniaturas.set(file, tarefa);
+  return tarefa;
+}
+
+function MiniaturaCard({
+  file,
+  onAbrir,
+  onRemover,
+}: {
+  file: File;
+  onAbrir: () => void;
+  onRemover: () => void;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [pronto, setPronto] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    void gerarMiniatura(file).then((s) => {
+      if (!vivo) return;
+      setSrc(s);
+      setPronto(true);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [file]);
+  const ext = (file.name.split('.').pop() ?? 'DOC').toUpperCase();
+  return (
+    <figure className="doc-card">
+      <button
+        type="button"
+        className="doc-card-thumb"
+        title={`Pré-visualizar ${file.name}`}
+        onClick={onAbrir}
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- miniatura local (data/blob URL); next/image não se aplica
+          <img src={src} alt="" />
+        ) : (
+          <span className="doc-card-ext">{pronto ? ext : '…'}</span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="doc-card-remover"
+        title={`Remover ${file.name}`}
+        aria-label={`Remover ${file.name}`}
+        onClick={onRemover}
+      >
+        ✕
+      </button>
+      <figcaption className="doc-card-nome num" title={file.name}>
+        {file.name}
+      </figcaption>
+    </figure>
+  );
 }
 
 function BotaoAnexar({ onFiles }: { onFiles: (lista: FileList) => void }) {
@@ -222,30 +318,18 @@ export function DocumentosView({
                         </span>
                       </p>
                     ))}
-                    {arquivos.map((f, i) => (
-                      <p className="anexo-linha" key={`${f.name}-${i}`}>
-                        <span className="num">{f.name}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          title={`Pré-visualizar ${f.name}`}
-                          aria-label={`Pré-visualizar ${f.name}`}
-                          onClick={() => setPreview(f)}
-                        >
-                          <ZoomIn className="size-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          onClick={() => remover(doc.id, i)}
-                        >
-                          remover
-                        </Button>
-                      </p>
-                    ))}
+                    {arquivos.length > 0 && (
+                      <div className="doc-cards">
+                        {arquivos.map((f, i) => (
+                          <MiniaturaCard
+                            key={`${f.name}-${i}`}
+                            file={f}
+                            onAbrir={() => setPreview(f)}
+                            onRemover={() => remover(doc.id, i)}
+                          />
+                        ))}
+                      </div>
+                    )}
                     <BotaoAnexar onFiles={(lista) => anexar(doc.id, lista)} />
                   </div>
                   <span />
