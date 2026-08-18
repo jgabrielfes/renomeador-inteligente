@@ -85,6 +85,11 @@ export interface EntradaCustos {
   qtdHerdeiros: number;
   /** Havia cônjuge/companheiro(a) — certidão de casamento entra na conta. */
   temSobrevivente: boolean;
+  /**
+   * União estável a RECONHECER dentro do próprio inventário (sem escritura
+   * anterior): soma UM ato sem valor declarado no rito extrajudicial.
+   */
+  reconhecerUniaoEstavel?: boolean;
   /** Acertos da partilha diferenciada (atos inter vivos embutidos). */
   transferencias: { valor: number; tributo: 'ITCMD_DOACAO' | 'ITBI' }[];
   /** UFESP vigente (converte as faixas da taxa judiciária). */
@@ -285,6 +290,20 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
         quantidade: 1,
         fundamento: 'Tabela de Notas 2026, item 1 (Lei 11.331/2002); Enunciado nº 7 do CNB/SP',
         detalhe: `Faixa pela LEGÍTIMA de ${fmt(e.baseEscritura)} — o MAIOR entre o valor atribuído pelas partes e o venal na data do ato (Enunciado 7: o critério temporal dos emolumentos é a lavratura, art. 7º da Lei 11.331/2002), excluída a meação. UM ato pelo TOTAL, qualquer que seja a quantidade de bens, herdeiros ou pagamentos. ISS de ${iss}%.`,
+        aproximado: false,
+      });
+    }
+
+    /* união estável a reconhecer no PRÓPRIO inventário: um ato sem valor
+       declarado (com escritura anterior de união estável, nada entra) */
+    if (e.reconhecerUniaoEstavel === true) {
+      parcelas.push({
+        id: 'reconhecimento-uniao-estavel',
+        rotulo: 'Reconhecimento de união estável na escritura — ato sem valor declarado',
+        valor: comIss(ESCRITURA_SEM_VALOR_2026, iss),
+        quantidade: 1,
+        fundamento: 'Tabela de Notas 2026, item 6.2 (escritura sem valor declarado)',
+        detalhe: `Reconhecimento post mortem da união estável dentro do próprio inventário, com a anuência de todos os herdeiros — ${fmt(comIss(ESCRITURA_SEM_VALOR_2026, iss))} com ISS de ${iss}%. Já havendo escritura/contrato de união estável, este ato não existe.`,
         aproximado: false,
       });
     }

@@ -1412,11 +1412,17 @@ export default function SucessoristaClient({
       // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
       qtdHerdeiros: Math.max(herdeiros.length, (familia.herdeirosDeclarados ?? []).length),
       temSobrevivente,
+      // União estável a RECONHECER no próprio inventário (escolha do item I):
+      // soma um ato sem valor declarado na escritura.
+      reconhecerUniaoEstavel:
+        temSobrevivente &&
+        vinculo === 'UNIAO_ESTAVEL' &&
+        familia.uniaoEstavelFormalizada === 'RECONHECER',
       transferencias,
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, participantes]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, participantes]);
 
 
   /**

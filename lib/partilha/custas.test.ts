@@ -77,6 +77,15 @@ const renuncias = comRenuncia.parcelas.find((p) => p.id === 'renuncias')!;
 eq('renúncia: 2 atos sem valor declarado', renuncias.valor, 2 * ESCRITURA_SEM_VALOR_2026.total);
 eq('renúncia: item 6.2 da tabela', renuncias.fundamento.includes('6.2'), true);
 
+/* união estável a RECONHECER no próprio inventário: UM ato sem valor
+   declarado; já formalizada (flag ausente/false), nada entra */
+const comReconhecimento = projetarCustos({ ...BASE, reconhecerUniaoEstavel: true });
+const reconhecimento = comReconhecimento.parcelas.find((p) => p.id === 'reconhecimento-uniao-estavel')!;
+eq('união estável a reconhecer: um ato sem valor declarado', reconhecimento.valor, ESCRITURA_SEM_VALOR_2026.total);
+eq('reconhecimento: item 6.2 da tabela', reconhecimento.fundamento.includes('6.2'), true);
+eq('união estável já formalizada: sem ato',
+  projetarCustos({ ...BASE }).parcelas.some((p) => p.id === 'reconhecimento-uniao-estavel'), false);
+
 /* ISS editável: tabela publicada com 5%; alíquota menor desconta a
    diferença sobre a parcela do Tabelião/Oficial */
 eq('ISS 5% = valor publicado', emolumentoEscritura(500_000, 5), 5_519.9);
