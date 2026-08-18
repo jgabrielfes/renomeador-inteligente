@@ -915,11 +915,11 @@ function LinhaBem({
           </Select>
         </label>
         <label className="campo">
-          Valor venal (R$) — opcional
+          Valor venal (R$)
           <CurrencyInput value={venal} onChange={setVenal} />
         </label>
         <label className="campo">
-          Valor de avaliação (R$) — opcional
+          Valor de avaliação (R$)
           <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
         </label>
         {/* Campos da declaração do ITCMD-SP conforme o tipo em edição. */}
