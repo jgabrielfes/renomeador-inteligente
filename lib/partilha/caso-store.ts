@@ -88,6 +88,13 @@ export interface CaseStore {
    * no portátil recebe os arquivos arrastados pelo usuário.
    */
   varrerDocumentos(caso: ArquivoCaso, arquivos?: InfoArquivoDisco[]): Promise<DiffManifesto>;
+  /**
+   * Grava um documento RECEBIDO (cofre do herdeiro) na subpasta
+   * "Recebidos do cofre" do caso — só no modo pasta (exceção pontual, por
+   * clique do usuário, à regra "o app não escreve documento": arquivo NOVO,
+   * em subpasta própria, sem tocar documento existente). false = sem pasta.
+   */
+  salvarDocumentoRecebido?(caseId: string, file: File): Promise<boolean>;
 }
 
 /* ---------------- serialização estável + hash de integridade ---------------- */

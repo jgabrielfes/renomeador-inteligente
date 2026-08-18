@@ -50,6 +50,7 @@ export function PainelCaso({
   economias = [],
   custos = null,
   impostoSucessoes = 0,
+  custosAdicionais = 0,
   alertasLeitura = [],
   notas = '',
   setNotas,
@@ -70,6 +71,8 @@ export function PainelCaso({
   faixas: FaixaProgressiva[];
   economias?: OportunidadeEconomia[];
   custos?: ProjecaoCustos | null;
+  /** Soma dos custos adicionais lançados à mão na aba V. */
+  custosAdicionais?: number;
   /** ITCMD das sucessões cumuladas (fatos geradores próprios). */
   impostoSucessoes?: number;
   /** Alertas da leitura (herdeiros declarados sem lançamento, frações ideais). */
@@ -291,7 +294,7 @@ export function PainelCaso({
       <div className="metrica">
         <div className="k">Custo projetado do inventário</div>
         <div className="v num">
-          {provisao ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes) : '—'}
+          {provisao ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes + custosAdicionais) : '—'}
         </div>
         {provisao ? (
           <div className="pilha num">
@@ -302,6 +305,12 @@ export function PainelCaso({
               <span className="rotulo">ITCMD (imposto + encargos)</span>
               <span>{brl(provisao.total)}</span>
             </div>
+            {custosAdicionais > 0 && (
+              <div>
+                <span className="rotulo">Custos adicionais (lançados no item V)</span>
+                <span>{brl(custosAdicionais)}</span>
+              </div>
+            )}
             {impostoSucessoes > 0 && (
               <div>
                 <span className="rotulo">ITCMD — sucessões cumuladas</span>
@@ -339,12 +348,6 @@ export function PainelCaso({
                           .reduce((a, p) => a + p.valor, 0),
                       )}
                     </span>
-                  </div>
-                )}
-                {impostoSucessoes > 0 && (
-                  <div>
-                    <span className="rotulo">ITCMD — sucessões cumuladas</span>
-                    <span>{brl(impostoSucessoes)}</span>
                   </div>
                 )}
                 <div>

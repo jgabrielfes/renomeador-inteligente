@@ -63,13 +63,17 @@ function tamanhoLegivel(bytes: number): string {
 function AcoesEnvioCofre({
   envio,
   onAnexar,
+  onSalvarNaPasta,
 }: {
   envio: EnvioDoCofre;
   onAnexar: (file: File) => void;
+  /** Modo pasta: grava o arquivo em "Recebidos do cofre/" no caso (Explorer). */
+  onSalvarNaPasta?: (file: File) => Promise<boolean>;
 }) {
   const [agindo, setAgindo] = useState<'baixar' | 'anexar' | null>(null);
   const [erro, setErro] = useState(false);
   const [anexado, setAnexado] = useState(false);
+  const [naPasta, setNaPasta] = useState(false);
   if (!envio.arquivoId) return null;
 
   const buscar = async (): Promise<File | null> => {
@@ -93,6 +97,9 @@ function AcoesEnvioCofre({
       } else {
         onAnexar(file);
         setAnexado(true);
+        // Modo pasta: o arquivo também vai para o disco, na subpasta
+        // "Recebidos do cofre" do caso — aí o manifesto religa sozinho.
+        if (onSalvarNaPasta) setNaPasta(await onSalvarNaPasta(file));
       }
     } catch {
       setErro(true);
@@ -123,6 +130,7 @@ function AcoesEnvioCofre({
       >
         {anexado ? 'anexado \u2713' : 'anexar ao caso'}
       </Button>
+      {naPasta && <span className="fund">salvo na pasta do caso</span>}
       {erro && <span className="mono-alerta">falha ao buscar o arquivo</span>}
     </>
   );
@@ -260,6 +268,7 @@ export function DocumentosView({
   temSobrevivente = true,
   rito = null,
   convites = {},
+  onSalvarNaPasta,
   onMontado,
 }: {
   anexos: AnexosProcesso;
@@ -272,6 +281,8 @@ export function DocumentosView({
   rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
   /** Convites do cofre: o que cada herdeiro enviou aparece no card certo. */
   convites?: Record<string, ConviteHerdeiro>;
+  /** Modo pasta: grava o envio do cofre em "Recebidos do cofre/" do caso. */
+  onSalvarNaPasta?: (file: File) => Promise<boolean>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
 }) {
@@ -407,6 +418,7 @@ export function DocumentosView({
                         <AcoesEnvioCofre
                           envio={envio}
                           onAnexar={(file) => anexar(doc.id, [file])}
+                          onSalvarNaPasta={onSalvarNaPasta}
                         />
                       </p>
                     ))}

@@ -69,6 +69,7 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumulada } from './itcmd-view';
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
+import { somaAdicionais, type DespesaAdicional } from '@/lib/partilha/orcamento';
 import {
   FiscalView,
   ESTADO_MODULOS_FISCAIS_INICIAL,
@@ -277,6 +278,8 @@ interface CasoSalvo {
   notas?: string;
   /** Bens levados à colação (CC 2.002) — abatem na partilha. */
   colacoes?: Colacao[];
+  /** Custos adicionais lançados à mão na aba V (retrocompatível). */
+  custosAdicionais?: DespesaAdicional[];
 }
 
 export default function SucessoristaClient({
@@ -347,6 +350,8 @@ export default function SucessoristaClient({
   const [dividasEspolio, setDividasEspolio] = useState('');
   /** Bens levados à COLAÇÃO (CC 2.002): doações em vida que abatem o quinhão. */
   const [colacoes, setColacoes] = useState<Colacao[]>([]);
+  // Custos ADICIONAIS lançados à mão na aba V — persistem no caso.
+  const [custosAdicionais, setCustosAdicionais] = useState<DespesaAdicional[]>([]);
   /** Bloco de notas do painel do caso — anotações livres, salvas no caso. */
   const [notasCaso, setNotasCaso] = useState('');
   const [checklistAcervo, setChecklistAcervo] = useState(montarChecklistAcervo());
@@ -529,10 +534,12 @@ export default function SucessoristaClient({
   const [estadoPainel, setEstadoPainel] = useState<EstadoPainel>('carregando');
   const [store, setStore] = useState<CaseStore | null>(null);
   const [resumos, setResumos] = useState<ResumoCaso[] | null>(null);
-  /* --- nuvem da equipe: espelho do caso.json no servidor (opt-in) ---
-     Ativa para o CHEFE e para o membro que entrou por convite de ACESSO
-     TOTAL. Os documentos nunca sobem — só a folha (fronteira de dados). */
-  const nuvemAtiva = equipe !== null && equipe !== undefined && equipe.meuAcessoCasos;
+  /* --- nuvem de casos: espelho do caso.json no servidor ---
+     SEMPRE ativa: a nuvem da CONTA cobre qualquer usuário logado (é o que
+     faz o login puxar os casos em outro computador); chefe/membro com
+     acesso usam a da EQUIPE — o servidor decide o escopo, o client não
+     sabe qual é. Os documentos nunca sobem — só a folha (fronteira). */
+  const nuvemAtiva = true;
   const [resumosNuvem, setResumosNuvem] = useState<CabecalhoNuvem[]>([]);
   /** true = o caso aberto veio da nuvem (não existe no store local): salva na nuvem. */
   const origemNuvemRef = useRef(false);
@@ -678,6 +685,7 @@ export default function SucessoristaClient({
     if (typeof salvo.sobrepartilhaAberta === 'boolean') setSobrepartilhaAberta(salvo.sobrepartilhaAberta);
     if (typeof salvo.notas === 'string') setNotasCaso(salvo.notas);
     if (Array.isArray(salvo.colacoes)) setColacoes(salvo.colacoes);
+    if (Array.isArray(salvo.custosAdicionais)) setCustosAdicionais(salvo.custosAdicionais);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -702,6 +710,7 @@ export default function SucessoristaClient({
       sobrepartilhaAberta,
       notas: notasCaso,
       colacoes,
+      custosAdicionais,
     };
   };
 
@@ -756,8 +765,8 @@ export default function SucessoristaClient({
           void s.listarCasos().then(setResumos);
         }
 
-        // Nuvem da equipe: os casos compartilhados entram no painel junto
-        // dos locais (melhor-esforço — sem acesso/erro, lista vazia).
+        // Nuvem (conta ou equipe): os casos espelhados entram no painel
+        // junto dos locais (melhor-esforço — falha vira lista vazia).
         if (nuvemAtiva) {
           void listarCasosNuvem().then((lista) => {
             if (lista) setResumosNuvem(lista);
@@ -840,8 +849,8 @@ export default function SucessoristaClient({
   };
 
   const abrirCasoDoPainel = async (caseId: string) => {
-    // Sem store local (membro só com a nuvem, pasta não configurada) o caso
-    // ainda abre — direto da nuvem da equipe.
+    // Sem store local (outra máquina, pasta não configurada) o caso ainda
+    // abre — direto da nuvem.
     const s = storeRef.current;
     let caso = s ? await s.abrirCaso(caseId) : null;
     origemNuvemRef.current = false;
@@ -859,13 +868,13 @@ export default function SucessoristaClient({
         caso = { ...daNuvem, cabecalho: { ...daNuvem.cabecalho } };
         baseNuvemRef.current = daNuvem.cabecalho.atualizadoEm;
         toast.info(
-          `Carregada a versão mais recente da nuvem da equipe (por ${daNuvem.cabecalho.atualizadoPor || 'outro membro'}).`,
+          `Carregada a versão mais recente da nuvem (por ${daNuvem.cabecalho.atualizadoPor || 'outro dispositivo'}).`,
         );
       } else if (daNuvem) {
         baseNuvemRef.current = daNuvem.cabecalho.atualizadoEm;
       }
     } else if (!caso && nuvemAtiva) {
-      // Caso que só existe na nuvem (compartilhado pelo chefe): abre de lá e
+      // Caso que só existe na nuvem (outra máquina ou chefe): abre de lá e
       // continua salvando lá — os DOCUMENTOS ficam na máquina de quem os tem.
       const daNuvem = migrarArquivoCaso(await abrirCasoNuvem(caseId));
       if (daNuvem) {
@@ -941,7 +950,7 @@ export default function SucessoristaClient({
     if (ok) {
       toast.success('Caso arquivado em _Arquivados/.');
       setResumos(await s.listarCasos());
-      // O espelho sai da nuvem junto — arquivado não circula na equipe.
+      // O espelho sai da nuvem junto — arquivado não circula.
       if (nuvemAtiva) {
         void removerCasoNuvem(caseId).then((removido) => {
           if (removido) setResumosNuvem((prev) => prev.filter((c) => c.caseId !== caseId));
@@ -1000,11 +1009,12 @@ export default function SucessoristaClient({
   };
 
   /**
-   * Chefe: envia TODOS os casos locais para a nuvem da equipe de uma vez
-   * (os salvamentos seguintes mantêm o espelho sozinhos). O servidor recusa
-   * o que faria versão mais nova regredir — contagem informada no toast.
+   * Envia TODOS os casos locais para a nuvem de uma vez (os salvamentos
+   * seguintes mantêm o espelho sozinhos). O servidor recusa o que faria
+   * versão mais nova regredir. `silencioso` é o espelho AUTOMÁTICO ao abrir
+   * o painel — mantém tudo na nuvem sem toasts nem clique.
    */
-  const enviarCasosParaNuvem = async () => {
+  const espelharCasosNaNuvem = async (silencioso = false) => {
     const s = storeRef.current;
     if (!s || !nuvemAtiva) return;
     const lista = await s.listarCasos();
@@ -1019,13 +1029,33 @@ export default function SucessoristaClient({
     }
     const atualizados = await listarCasosNuvem();
     if (atualizados) setResumosNuvem(atualizados);
+    if (silencioso) return;
     if (enviados > 0)
       toast.success(
-        `${enviados} caso(s) enviados para a nuvem da equipe${mantidos > 0 ? ` (${mantidos} já estavam mais novos lá)` : ''}.`,
+        `${enviados} caso(s) enviados para a nuvem${mantidos > 0 ? ` (${mantidos} já estavam mais novos lá)` : ''}.`,
       );
     else if (mantidos > 0) toast.info('A nuvem já tem versões mais novas de todos os casos.');
     else toast.info('Nenhum caso local para enviar.');
   };
+  const enviarCasosParaNuvem = () => espelharCasosNaNuvem();
+
+  /**
+   * Espelho automático: com o painel carregado num store local, sobe o que
+   * está só nesta máquina (uma vez por visita) — é a outra metade do "login
+   * puxa tudo": este PC também DEIXA tudo na nuvem para os demais.
+   */
+  const espelhoInicialRef = useRef(false);
+  useEffect(() => {
+    if (!store || espelhoInicialRef.current) return;
+    if (estadoPainel !== 'pasta' && estadoPainel !== 'portatil') return;
+    espelhoInicialRef.current = true;
+    // Diferido (mesmo padrão do carregamento do painel): o espelho roda em
+    // segundo plano, sem segurar a pintura dos cards.
+    const t = setTimeout(() => void espelharCasosNaNuvem(true), 0);
+    return () => clearTimeout(t);
+    // roda uma vez, quando o store local fica pronto
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, estadoPainel]);
 
   const voltarAoPainel = () => {
     // Flush + recarga: o painel volta com a folha pristina (o estado do
@@ -1612,8 +1642,13 @@ export default function SucessoristaClient({
       return docId ? { ...m, classificacao: docId } : m;
     });
     manifestoRef.current = manifesto;
+    const totalAdicionais = somaAdicionais(custosAdicionais);
     const custoTotal =
-      provisao && custos ? provisao.total + custos.total : provisao ? provisao.total : null;
+      provisao && custos
+        ? provisao.total + custos.total + totalAdicionais
+        : provisao
+          ? provisao.total + totalAdicionais
+          : null;
     return montarArquivoCaso({
       cabecalho: {
         ...aberto.cabecalho,
@@ -1640,7 +1675,7 @@ export default function SucessoristaClient({
       } else if (r.desatualizado && !avisoNuvemRef.current) {
         avisoNuvemRef.current = true;
         toast.info(
-          `A nuvem da equipe tem uma versão MAIS NOVA deste caso (por ${r.desatualizado.atualizadoPor || 'outro membro'}). Volte ao painel e reabra o caso para carregá-la — suas alterações continuam salvas na sua pasta.`,
+          `A nuvem tem uma versão MAIS NOVA deste caso (por ${r.desatualizado.atualizadoPor || 'outro dispositivo'}). Volte ao painel e reabra o caso para carregá-la — suas alterações continuam salvas na sua pasta.`,
         );
       }
     } catch {
@@ -1752,7 +1787,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -2753,7 +2788,7 @@ export default function SucessoristaClient({
         <CasosView
           estado={estadoPainel}
           resumos={(() => {
-            // Nuvem da equipe entra no painel junto dos casos locais; caso
+            // A nuvem entra no painel junto dos casos locais; caso
             // que existe nos dois lugares aparece UMA vez (o card local —
             // a adoção da versão mais nova acontece ao abrir).
             if (!nuvemAtiva || resumosNuvem.length === 0) return resumos;
@@ -2765,9 +2800,7 @@ export default function SucessoristaClient({
           })()}
           comNuvem={nuvemAtiva}
           onEnviarNuvem={
-            nuvemAtiva && equipe?.papel === 'CHEFE' && (resumos?.length ?? 0) > 0
-              ? enviarCasosParaNuvem
-              : null
+            nuvemAtiva && (resumos?.length ?? 0) > 0 ? enviarCasosParaNuvem : null
           }
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
@@ -3287,6 +3320,14 @@ export default function SucessoristaClient({
               temSobrevivente={temSobrevivente}
               rito={ritoEfetivo}
               convites={convites}
+              onSalvarNaPasta={async (file) => {
+                // Modo pasta: o envio do cofre também vai ao DISCO, em
+                // "Recebidos do cofre/" do caso (o manifesto religa sozinho).
+                const s = storeRef.current;
+                const aberto = casoAbertoRef.current;
+                if (!s?.salvarDocumentoRecebido || !aberto) return false;
+                return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
+              }}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
           </section>
@@ -3319,6 +3360,11 @@ export default function SucessoristaClient({
             issPct={fiscal.issPct ?? '5'}
             setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
+            adicionais={custosAdicionais}
+            setAdicionais={setCustosAdicionais}
+            nomeCaso={falecido.nome}
+            dataObito={falecido.dataObito}
+            onOrcamento={(formato) => registrarDoc(formato)}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
             avancar={() => irPara('documentos')}
@@ -3411,6 +3457,7 @@ export default function SucessoristaClient({
         economias={economias}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
+        custosAdicionais={somaAdicionais(custosAdicionais)}
         alertasLeitura={[
           // Divergências ALTAS do conferidor entram como pontos de atenção
           // (alerta vermelho) — a correção é pedida no item I.

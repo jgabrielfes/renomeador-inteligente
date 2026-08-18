@@ -35,11 +35,25 @@ export async function GET(_req: Request, ctx: Ctx) {
   }
   if (!linha) return Response.json({ erro: 'Arquivo não encontrado.' }, { status: 404 });
 
+  // Resposta em STREAM de fatias de 1 MB: resposta montada de uma vez fica
+  // sob o teto de ~4,5 MB das funções da Vercel — transmitida, não fica
+  // (arquivos fatiados chegam a 25 MB).
+  const dados = new Uint8Array(linha.conteudo);
+  const FATIA = 1024 * 1024;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < dados.byteLength; i += FATIA) {
+        controller.enqueue(dados.slice(i, i + FATIA));
+      }
+      controller.close();
+    },
+  });
+
   // filename* (RFC 5987) preserva acentos do nome proposto pelo renomeador.
-  return new Response(new Uint8Array(linha.conteudo), {
+  return new Response(stream, {
     headers: {
       'content-type': linha.mime,
-      'content-length': String(linha.conteudo.byteLength),
+      'content-length': String(dados.byteLength),
       'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(linha.nome)}`,
       'cache-control': 'no-store',
     },
