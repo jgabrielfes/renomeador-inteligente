@@ -13,6 +13,7 @@ import {
   type BatchItem,
   type Lessons,
 } from "@/lib/gemini";
+import { EH_NOTAS } from "@/lib/app";
 import { auth } from "@/lib/auth";
 import { registrarErro } from "@/lib/error-log";
 
@@ -24,6 +25,10 @@ const MAX_TOTAL_BYTES = 4.3 * 1024 * 1024;
 const MAX_ITEMS = 10;
 
 export async function POST(request: Request) {
+  // O Renomeador vive no site próprio e embutido no cofre do Sucessorista —
+  // no site do Resolvedor de Notas esta rota não existe (404).
+  if (EH_NOTAS) return new Response(null, { status: 404 });
+
   // Recursos da plataforma exigem login — a rota acompanha as páginas privadas.
   const session = await auth();
   if (!session) {

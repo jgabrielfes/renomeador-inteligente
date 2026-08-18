@@ -2,9 +2,9 @@
 //
 //   yarn user:create <email> <senha> "<nome completo>" [--master] [--app=…]
 //
-// A conta é POR PLATAFORMA (o mesmo e-mail tem contas independentes no
-// Renomeador e no Sucessorista). Sem --app o usuário é criado nos DOIS sites,
-// que é o caso comum de quem administra a plataforma.
+// A conta é POR PLATAFORMA (o mesmo e-mail tem contas independentes em cada
+// site). Sem --app o usuário é criado em TODOS os sites, que é o caso comum
+// de quem administra a plataforma.
 //
 // Exemplos:
 //   yarn user:create admin@escritorio.com.br senha123 "João Ferraz" --master
@@ -22,7 +22,7 @@ const flags = args.filter((a) => a.startsWith("--"));
 const [email, password, name] = args.filter((a) => !a.startsWith("--"));
 
 const USO =
-  'Uso: yarn user:create <email> <senha> "<nome completo>" [--master] [--app=renomeador|sucessorista]';
+  'Uso: yarn user:create <email> <senha> "<nome completo>" [--master] [--app=renomeador|sucessorista|notas]';
 
 if (!email || !password || !name) {
   console.log(USO);
@@ -36,12 +36,13 @@ if (password.length < 8) {
 const PLATAFORMAS: Record<string, Plataforma> = {
   renomeador: "RENOMEADOR",
   sucessorista: "SUCESSORISTA",
+  notas: "NOTAS",
 };
 
 const flagApp = flags.find((f) => f.startsWith("--app="))?.slice("--app=".length);
 let alvos: Plataforma[];
 if (flagApp === undefined) {
-  alvos = ["RENOMEADOR", "SUCESSORISTA"];
+  alvos = ["RENOMEADOR", "SUCESSORISTA", "NOTAS"];
 } else if (PLATAFORMAS[flagApp.toLowerCase()]) {
   alvos = [PLATAFORMAS[flagApp.toLowerCase()]];
 } else {

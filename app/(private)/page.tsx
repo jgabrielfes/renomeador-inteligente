@@ -1,9 +1,10 @@
 // A RAIZ DE CADA SITE É O PRÓPRIO MÓDULO.
 //
-// O repositório publica dois sites (lib/app.ts): no deploy do Renomeador, `/`
-// é o Renomeador; no do Sucessorista, `/` é o Sucessorista. Não existe mais
-// painel de escolha de ferramenta, e as rotas `/renomeador` e `/sucessorista`
-// deixaram de existir — quem chegar nelas cai no 404 da plataforma.
+// O repositório publica três sites (lib/app.ts): no deploy do Renomeador, `/`
+// é o Renomeador; no do Sucessorista, `/` é o Sucessorista; no do Resolvedor
+// de Notas, `/` é o resolvedor. Não existe painel de escolha de ferramenta, e
+// as rotas `/renomeador`, `/sucessorista` e `/notas` não existem — quem chegar
+// nelas cai no 404 da plataforma.
 //
 // O gate é aqui (server): sem sessão, vai para o login e volta para `/`.
 //
@@ -21,6 +22,17 @@ import { carregarLicoes } from "./renomeador/licoes-actions";
 
 export default async function Home() {
   const session = await requireSession("/");
+
+  if (APP === "NOTAS") {
+    const { default: NotasClient } = await import("./notas/notas-client");
+    return (
+      <>
+        <AccessTracker modulo={IDENTIDADE.modulo} />
+        <NotasClient menu={<UserMenu />} />
+      </>
+    );
+  }
+
   // Regras + correções da conta, já no primeiro render (sem flash de vazio).
   // Valem nos dois sites: o cofre do Sucessorista embute o Renomeador inteiro.
   const licoes = await carregarLicoes();

@@ -22,6 +22,7 @@ enum Role {
 enum Plataforma {
   RENOMEADOR
   SUCESSORISTA
+  NOTAS
 }
 
 // Perfil de uso do Sucessorista, VINCULADO à conta: escolhido uma única vez

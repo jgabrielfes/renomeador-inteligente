@@ -21,6 +21,7 @@ import {
   ArrowRight,
   FileCheck2,
   Scale,
+  ScrollText,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -35,7 +36,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { filtroDeData, parsePeriodo } from "@/lib/admin";
-import { APP, EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
+import { APP, EH_NOTAS, EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
@@ -76,6 +77,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       casos,
       minutas,
       acessos,
+      notas,
     ] = await Promise.all([
       // Total de contas do site (sem recorte de data): é o que a listagem
       // mostra. O recorte do período entra como "novas no período", no rodapé
@@ -95,6 +97,12 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       }),
       prisma.moduleAccess.count({
         where: { createdAt, modulo: IDENTIDADE.modulo },
+      }),
+      // Notas triadas no período (a tabela inteira é do site do resolvedor).
+      prisma.notaEvent.aggregate({
+        _sum: { quantidade: true },
+        _count: { _all: true },
+        where: { createdAt },
       }),
     ]);
 
@@ -123,19 +131,41 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
             },
           ]
         : []),
-      {
-        href: "/admin/renomeacoes",
-        icon: FileCheck2,
-        titulo: "Renomeações",
-        valor: arquivos,
-        leitura: "arquivos analisados no período",
-        detalhes: [
-          plural(lotes, "lote enviado", "lotes enviados"),
-          EH_SUCESSORISTA
-            ? "dentro do cofre dos casos"
-            : "por conta logada ou deslogada",
-        ],
-      },
+      // No site do resolvedor a produção é a triagem de notas; o Renomeador
+      // não roda lá, então o card de renomeações sai do painel.
+      ...(EH_NOTAS
+        ? [
+            {
+              href: "/admin/notas",
+              icon: ScrollText,
+              titulo: "Notas devolutivas",
+              valor: notas._sum.quantidade ?? 0,
+              leitura: "exigências triadas no período",
+              detalhes: [
+                plural(
+                  notas._count._all,
+                  "nota devolutiva triada",
+                  "notas devolutivas triadas"
+                ),
+                "vias, precisão do classificador e minutas",
+              ],
+            },
+          ]
+        : [
+            {
+              href: "/admin/renomeacoes",
+              icon: FileCheck2,
+              titulo: "Renomeações",
+              valor: arquivos,
+              leitura: "arquivos analisados no período",
+              detalhes: [
+                plural(lotes, "lote enviado", "lotes enviados"),
+                EH_SUCESSORISTA
+                  ? "dentro do cofre dos casos"
+                  : "por conta logada ou deslogada",
+              ],
+            },
+          ]),
       {
         href: "/admin/usuarios",
         icon: Users,

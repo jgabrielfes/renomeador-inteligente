@@ -1,4 +1,4 @@
-# Deploy de PRODUÇÃO da plataforma — os DOIS sites publicados deste repositório.
+# Deploy de PRODUÇÃO da plataforma — os TRÊS sites publicados deste repositório.
 #
 # Por que existe: no plano Hobby da Vercel, o deploy de produção fica
 # "Blocked" quando o autor do commit no Git não é o dono da conta — foi o que
@@ -7,11 +7,12 @@
 # DONO da conta, então a Vercel o atribui a ele e não bloqueia, seja de quem
 # for o commit que entrou na `main`.
 #
-# São dois projetos na Vercel apontando para o MESMO repositório; o que os
+# São três projetos na Vercel apontando para o MESMO repositório; o que os
 # diferencia é a variável de ambiente APP (ver lib/app.ts), configurada no
 # painel de cada projeto:
 #   renomeador   -> APP=renomeador   -> renomeador-inteligente.vercel.app
 #   sucessorista -> APP=sucessorista -> osucessorista.vercel.app
+#   notas        -> APP=notas        -> resolvedor de notas devolutivas
 # O `vercel pull` traz as envs do projeto, então cada job compila com o APP
 # certo sem que este arquivo precise saber qual é qual.
 #
@@ -26,6 +27,7 @@
 #   VERCEL_ORG_ID                   — campo `orgId` (o mesmo nos dois)
 #   VERCEL_PROJECT_ID_RENOMEADOR    — `projectId` do projeto do Renomeador
 #   VERCEL_PROJECT_ID_SUCESSORISTA  — `projectId` do projeto do Sucessorista
+#   VERCEL_PROJECT_ID_NOTAS         — `projectId` do projeto do Resolvedor de Notas
 #
 # O token precisa ter escopo de CONTA ("Full Account"): com escopo de projeto
 # a CLI não passa do primeiro comando, porque ela lê recursos de usuário e de
@@ -57,6 +59,8 @@ jobs:
             project_id_secret: VERCEL_PROJECT_ID_RENOMEADOR
           - site: sucessorista
             project_id_secret: VERCEL_PROJECT_ID_SUCESSORISTA
+          - site: notas
+            project_id_secret: VERCEL_PROJECT_ID_NOTAS
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
