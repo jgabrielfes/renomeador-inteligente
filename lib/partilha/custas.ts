@@ -11,15 +11,18 @@
  *    partilha igualitária é UM ato pela LEGÍTIMA (herança transmitida =
  *    monte-mor descontada a meação) — não se multiplica ato por pagamento.
  *    RENÚNCIA: um ato SEM valor declarado por renunciante (item 6.2 da
- *    tabela). TORNA/cessão de direitos hereditários: um ato COM valor
- *    declarado pela base do valor da torna, além do imposto inter vivos.
- *    Reserva de usufruto é ato acessório: 1/4 dos emolumentos sobre a terça
- *    parte do valor do bem (Notas 1.3, 3.3 e 3.5).
+ *    tabela). TORNA/cessão de direitos hereditários: UM ato só, COM valor
+ *    declarado pela SOMA das diferenças POSITIVAS de quinhão (o total
+ *    cedido) — nunca um ato por beneficiário; o imposto inter vivos é
+ *    apurado à parte. Reserva de usufruto é ato acessório: 1/4 dos
+ *    emolumentos sobre a terça parte do valor do bem (Notas 1.3, 3.3 e 3.5).
  *  - REGISTRO DE IMÓVEIS (Tabela de Registro, item 1): um registro POR
- *    IMÓVEL pela faixa do valor; partilha diferenciada pode gerar ato de
- *    registro ADICIONAL na mesma matrícula (doação/cessão; usufruto tem base
- *    de 1/3 do valor do imóvel — Nota 1.5 do RI). Certidão de matrícula pelo
- *    item 11 da tabela.
+ *    IMÓVEL. Base do ato: o valor do bem EXCLUÍDO o que fica com o(a)
+ *    meeiro(a), até o limite da meação — meeiro(a) sem direito remanescente
+ *    no bem = valor total. Partilha diferenciada NÃO gera ato de registro
+ *    adicional (calibração do escritório; a divisão usufruto × nua-
+ *    propriedade, essa sim, tem atos próprios — mapeados na economia).
+ *    Certidão de matrícula pelo item 11 da tabela.
  *  - CERTIDÕES de registro civil (registrocivil.org.br) e negativa de
  *    testamento (CENSEC): custos APROXIMADOS — averbações e taxas de emissão
  *    variam.
@@ -299,20 +302,25 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       });
     }
 
-    /* torna / cessão de direitos hereditários: um ato COM valor declarado
-       pela base do valor da torna, além do imposto inter vivos, se o caso */
-    for (const [i, t] of e.transferencias.entries()) {
-      if (t.valor <= 0) continue;
+    /* torna / cessão de direitos hereditários: UM ato só, com valor
+       declarado pela SOMA das diferenças POSITIVAS de quinhão (o total que
+       sai do quinhão de quem cede) — nunca um ato por beneficiário. */
+    const totalTorna = r2(e.transferencias.reduce((a, t) => a + Math.max(0, t.valor), 0));
+    if (totalTorna > 0) {
+      const gratuita = e.transferencias.some((t) => t.valor > 0 && t.tributo === 'ITCMD_DOACAO');
+      const onerosa = e.transferencias.some((t) => t.valor > 0 && t.tributo === 'ITBI');
       parcelas.push({
-        id: `escritura-torna-${i}`,
+        id: 'escritura-torna',
         rotulo:
-          t.tributo === 'ITCMD_DOACAO'
-            ? 'Ato da torna/cessão gratuita — escritura com valor declarado pela torna'
-            : 'Ato da torna onerosa — escritura com valor declarado pela torna',
-        valor: emolumentoEscritura(t.valor, iss),
+          gratuita && !onerosa
+            ? 'Ato da torna/cessão gratuita — UM ato pela soma das tornas'
+            : onerosa && !gratuita
+              ? 'Ato da torna onerosa — UM ato pela soma das tornas'
+              : 'Ato da torna/cessão — UM ato pela soma das tornas',
+        valor: emolumentoEscritura(totalTorna, iss),
         quantidade: 1,
-        fundamento: 'Tabela de Notas 2026, item 1 — base = valor da torna',
-        detalhe: `Diferença de quinhão de ${fmt(t.valor)} enquadrada na própria faixa; o imposto inter vivos (${t.tributo === 'ITCMD_DOACAO' ? 'ITCMD de doação' : 'ITBI'}) é apurado na aba Partilha.`,
+        fundamento: 'Tabela de Notas 2026, item 1 — base = total cedido acima do quinhão',
+        detalhe: `Soma das diferenças POSITIVAS de quinhão: ${fmt(totalTorna)} — um único ato com valor declarado, qualquer que seja o número de beneficiários; o imposto inter vivos (${gratuita && !onerosa ? 'ITCMD de doação' : onerosa && !gratuita ? 'ITBI' : 'ITCMD de doação/ITBI'}) é apurado na aba Partilha.`,
         aproximado: true,
       });
     }
@@ -372,22 +380,10 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       aproximado: false,
     });
   }
-  /* partilha diferenciada: pode haver MAIS um ato de registro no mesmo imóvel */
-  if (imoveis.length > 0 && e.transferencias.length > 0) {
-    const extra = r2(
-      imoveis.reduce((a, im) => a + emolumentoRegistro(im.valorTransmitido ?? im.valor, iss), 0),
-    );
-    parcelas.push({
-      id: 'registro-atos-extras',
-      rotulo: 'Atos de registro adicionais da partilha diferenciada',
-      valor: extra,
-      quantidade: imoveis.length,
-      fundamento: 'Tabela de Registro 2026, item 1 — um emolumento POR ATO registrado',
-      detalhe:
-        'Doação/cessão do excedente e nua-propriedade são atos próprios na matrícula (usufruto: base de 1/3 do valor do imóvel — Nota 1.5). Provisionado um ato adicional por imóvel, pela faixa do valor (conservador).',
-      aproximado: true,
-    });
-  }
+  /* Partilha diferenciada NÃO gera ato de registro adicional (calibração do
+     escritório): o registro segue UM ato por imóvel pela fração transmitida.
+     A divisão usufruto × nua-propriedade, essa sim, tem atos próprios — e é
+     provisionada pelo mapeador de economia quando a sugestão é aceita. */
 
   /* sucessões cumuladas: atos de registro próprios nos imóveis envolvidos */
   for (const [i, su] of e.sucessoes.entries()) {
