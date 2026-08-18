@@ -1,5 +1,5 @@
 // /admin/erros — todos os erros registrados da plataforma (somente MASTER).
-// Hoje as rotas de IA (/api/rename, /api/sucessorista) registram as falhas; a
+// Hoje as rotas de IA (/api/rename, /api/sucessorista, /api/notas) registram as falhas; a
 // plataforma funciona deslogada, então o erro pode não ter usuário.
 
 import Link from "next/link";

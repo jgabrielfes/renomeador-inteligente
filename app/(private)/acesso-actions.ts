@@ -10,7 +10,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Modulo } from "@/lib/generated/prisma/enums";
 
-const MODULOS: Modulo[] = ["RENOMEADOR", "SUCESSORISTA"];
+const MODULOS: Modulo[] = ["RENOMEADOR", "NOTAS", "SUCESSORISTA"];
 
 export async function registrarAcesso(modulo: Modulo): Promise<void> {
   try {

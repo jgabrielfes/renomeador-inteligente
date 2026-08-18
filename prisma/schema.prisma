@@ -22,6 +22,7 @@ enum Role {
 enum Plataforma {
   RENOMEADOR
   SUCESSORISTA
+  NOTAS
 }
 
 // Perfil de uso do Sucessorista, VINCULADO à conta: escolhido uma única vez
@@ -106,8 +107,32 @@ model PortalConvite {
   dados     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  arquivos  PortalArquivo[]
 
   @@map("portal_convites")
+}
+
+// Arquivo REAL enviado pelo herdeiro pelo portal — exceção CONSCIENTE (opt-in
+// do escritório) à fronteira de dados: o documento repousa no banco até o
+// advogado baixá-lo/anexá-lo ao caso. UM arquivo por pedido do convite
+// (reenvio SUBSTITUI o anterior); excluir o convite apaga os arquivos em
+// cascata. Teto de 4 MB por arquivo (limite de corpo das funções da Vercel).
+// NUNCA exibir em /admin — conteúdo de documento não é telemetria.
+model PortalArquivo {
+  id        String        @id @default(cuid())
+  token     String
+  convite   PortalConvite @relation(fields: [token], references: [token], onDelete: Cascade)
+  // Pedido do convite a que o arquivo responde (DocumentoPedido.id).
+  docId     String
+  nome      String
+  mime      String
+  tamanho   Int
+  conteudo  Bytes
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([token, docId])
+  @@map("portal_arquivos")
 }
 
 model User {

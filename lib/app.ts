@@ -1,10 +1,11 @@
 // QUAL PLATAFORMA ESTE DEPLOY É.
 //
-// O repositório é um só, mas publica DOIS sites independentes na Vercel — um
+// O repositório é um só, mas publica TRÊS sites independentes na Vercel — um
 // por módulo. A variável de ambiente `APP` é o que os diferencia:
 //
 //   APP=renomeador    → renomeador-inteligente.vercel.app
 //   APP=sucessorista  → osucessorista.vercel.app
+//   APP=notas         → resolvedor de notas devolutivas (projeto próprio)
 //
 // Tudo que é "só de um dos lados" pergunta a este módulo: qual módulo mora na
 // raiz `/`, quais telas de administração existem, de qual plataforma são as
@@ -17,23 +18,24 @@
 
 import type { Modulo } from "@/lib/generated/prisma/enums";
 
-export type Plataforma = "RENOMEADOR" | "SUCESSORISTA";
+export type Plataforma = "RENOMEADOR" | "SUCESSORISTA" | "NOTAS";
 
 const VALORES: Record<string, Plataforma> = {
   renomeador: "RENOMEADOR",
   sucessorista: "SUCESSORISTA",
+  notas: "NOTAS",
 };
 
 function lerPlataforma(): Plataforma {
   const bruto = (process.env.APP ?? "").trim().toLowerCase();
   const valor = VALORES[bruto];
   if (!valor) {
-    // Falha explícita em vez de assumir um dos dois: publicar o Sucessorista
-    // achando que é o Renomeador (ou o contrário) seria pior que não subir.
+    // Falha explícita em vez de assumir um dos sites: publicar um achando
+    // que é o outro seria pior que não subir.
     throw new Error(
       `Variável de ambiente APP ausente ou inválida (recebido: ${JSON.stringify(
         process.env.APP ?? null
-      )}). Defina APP=renomeador ou APP=sucessorista — veja .env.example.`
+      )}). Defina APP=renomeador, APP=sucessorista ou APP=notas — veja .env.example.`
     );
   }
   return valor;
@@ -44,6 +46,7 @@ export const APP: Plataforma = lerPlataforma();
 
 export const EH_RENOMEADOR = APP === "RENOMEADOR";
 export const EH_SUCESSORISTA = APP === "SUCESSORISTA";
+export const EH_NOTAS = APP === "NOTAS";
 
 export interface IdentidadeDaPlataforma {
   /** Nome por extenso — título da aba, cabeçalho do admin. */
@@ -69,6 +72,13 @@ export const IDENTIDADES: Record<Plataforma, IdentidadeDaPlataforma> = {
     descricao:
       "Folha de trabalho do inventário: composição familiar, acervo, quinhões com fundamento legal, cofre de documentos e espelho do ITCMD-SP. Cálculo de apoio — a revisão do advogado responsável é obrigatória.",
     modulo: "SUCESSORISTA",
+  },
+  NOTAS: {
+    nome: "Resolvedor de Notas Devolutivas",
+    nomeCurto: "Resolvedor de Notas",
+    descricao:
+      "Envie a pasta do caso: a nota devolutiva é decomposta em exigências, cada uma cai numa via de resolução e a minuta da peça já sai montada. A saída é sempre rascunho para a sua revisão.",
+    modulo: "NOTAS",
   },
 };
 

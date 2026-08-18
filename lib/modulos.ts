@@ -3,12 +3,10 @@
 
 import type { Modulo } from "@/lib/generated/prisma/enums";
 
-// NOTAS saiu da plataforma (módulo descontinuado); o valor permanece no enum
-// do banco pelos acessos históricos, mas não é mais listado nem registrado.
-export const MODULOS: readonly Modulo[] = ["RENOMEADOR", "SUCESSORISTA"];
+export const MODULOS: readonly Modulo[] = ["RENOMEADOR", "NOTAS", "SUCESSORISTA"];
 
 export const ROTULO_MODULO: Record<Modulo, string> = {
   RENOMEADOR: "Renomeador",
-  NOTAS: "Resolvedor de notas (descontinuado)",
+  NOTAS: "Resolvedor de notas",
   SUCESSORISTA: "O Sucessorista",
 };
