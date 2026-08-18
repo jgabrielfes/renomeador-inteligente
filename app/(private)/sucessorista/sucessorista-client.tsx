@@ -303,8 +303,14 @@ export default function SucessoristaClient({
   const searchParams = useSearchParams();
   const [abaProc, setAbaProc] = useState<Aba>(() => abaValida(searchParams.get('etapa')));
 
+  // Celular: o painel do caso vira uma GAVETA sobre a folha (botão
+  // flutuante abre/fecha). Em tela larga o estado é inócuo — o painel é a
+  // coluna fixa de sempre e o botão nem aparece (CSS).
+  const [painelAberto, setPainelAberto] = useState(false);
+
   const irPara = (aba: Aba) => {
     setAbaProc(aba);
+    setPainelAberto(false);
     const url = new URL(window.location.href);
     url.searchParams.set('etapa', aba);
     window.history.replaceState(null, '', url);
@@ -3329,7 +3335,24 @@ export default function SucessoristaClient({
         setNotas={setNotasCaso}
         convites={convites}
         onVerCofre={() => irPara('documentos')}
+        aberto={painelAberto}
+        onFechar={() => setPainelAberto(false)}
       />
+
+      {/* Celular: fundo escurecido + botão flutuante que abre o painel. */}
+      <div
+        className={`painel-fundo${painelAberto ? ' aberto' : ''}`}
+        aria-hidden
+        onClick={() => setPainelAberto(false)}
+      />
+      <button
+        type="button"
+        className="painel-fab"
+        aria-expanded={painelAberto}
+        onClick={() => setPainelAberto((v) => !v)}
+      >
+        {painelAberto ? 'Fechar painel' : 'Painel do caso'}
+      </button>
     </div>
     )}
 

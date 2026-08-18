@@ -7,7 +7,7 @@ import { Suspense } from "react";
 import { InstallPrompt } from "@/components/install-prompt";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { Toaster } from "@/components/ui/sonner";
-import { IDENTIDADE } from "@/lib/app";
+import { EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +32,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#ffffff",
+  // A cor da moldura do navegador acompanha o site: o Sucessorista abre no
+  // papel da identidade (mesma cor do manifest), o Renomeador no branco.
+  themeColor: EH_SUCESSORISTA ? "#f6f4ee" : "#ffffff",
+  // PWA no celular: a área útil vai até o fim da tela (safe-area cuidada
+  // no CSS com env(safe-area-inset-bottom)).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

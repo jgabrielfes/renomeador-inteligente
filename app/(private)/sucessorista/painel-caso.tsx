@@ -55,6 +55,8 @@ export function PainelCaso({
   setNotas,
   convites = {},
   onVerCofre,
+  aberto = false,
+  onFechar,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -79,6 +81,9 @@ export function PainelCaso({
   convites?: Record<string, ConviteHerdeiro>;
   /** Abre a aba Documentos (onde cada envio aparece no card correlato). */
   onVerCofre?: () => void;
+  /** Celular: o painel vira gaveta — aberto/fechado pelo botão flutuante. */
+  aberto?: boolean;
+  onFechar?: () => void;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -151,7 +156,12 @@ export function PainelCaso({
   const largura = Math.min(100, Math.max(2, (dias / 240) * 100));
 
   return (
-    <aside className="painel" aria-label="Painel do caso">
+    <aside className={`painel${aberto ? ' aberto' : ''}`} aria-label="Painel do caso">
+      {onFechar && (
+        <button type="button" className="fechar-mobile" onClick={onFechar} aria-label="Fechar o painel">
+          ✕
+        </button>
+      )}
       <h2>Painel do caso</h2>
       <p className="sub">
         {temObito

@@ -1121,18 +1121,130 @@
   }
 }
 
+/* Peças mobile — escondidas por padrão em tela larga (as regras base vêm
+   ANTES da media query: mesma especificidade, a última declarada vence). */
+.sucessorista .so-mobile { display: none; }
+
+.sucessorista .painel-fab {
+  display: none;
+  position: fixed;
+  right: 14px;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  z-index: 55;
+  align-items: center;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  background: var(--tinta);
+  color: var(--papel);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 11px 16px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+}
+
+.sucessorista .painel-fundo {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--tinta) 40%, transparent);
+}
+
+.sucessorista .painel .fechar-mobile {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  background: var(--papel);
+  color: var(--tinta);
+  font-size: 14px;
+}
+
+/* Imagens e prévias nunca estouram a folha (portal do herdeiro incluso). */
+.sucessorista .folha img { max-width: 100%; height: auto; }
+
+/* ---------- celular (≤860px): app de bolso ----------
+   A lombada vira NAVEGAÇÃO INFERIOR fixa (abas roláveis na horizontal), o
+   painel do caso vira GAVETA sobre a folha (botão flutuante abre/fecha) e
+   tudo flui em coluna única. É a mesma aplicação — PWA instalável. */
 @media (max-width: 860px) {
   .sucessorista .processo { grid-template-columns: 1fr; }
-  .sucessorista .lombada { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 14px 16px; gap: 2px; }
-  .sucessorista .lombada .marca { width: 100%; margin-bottom: 8px; }
-  /* Na lombada horizontal, o alternador volta a ser lado a lado na linha toda. */
-  .sucessorista .lombada .perfil { flex-direction: row; flex: 1 1 100%; margin-right: 0; }
-  .sucessorista .lombada .selo { display: none; }
-  .sucessorista .aba { border-radius: 4px; padding: 8px 12px; }
-  .sucessorista .folha { padding: 24px 18px 80px; }
+
+  /* Navegação inferior: só o "voltar" + as abas, deslizando na horizontal. */
+  .sucessorista .lombada {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    grid-row: auto;
+    height: auto;
+    z-index: 45;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    overflow-x: auto;
+    overflow-y: hidden;
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.25);
+  }
+  .sucessorista .lombada .marca,
+  .sucessorista .lombada .perfil,
+  .sucessorista .lombada .selo,
+  .sucessorista .lombada .rascunho-info { display: none; }
+  .sucessorista .lombada .voltar { margin: 0; padding: 8px 6px; align-self: center; white-space: nowrap; }
+  .sucessorista .aba {
+    border-radius: 999px;
+    padding: 9px 13px;
+    white-space: nowrap;
+    flex: none;
+  }
+  .sucessorista .aba .indice { margin-right: 4px; }
+
+  /* A folha respira acima da barra inferior. */
+  .sucessorista .folha { padding: 20px 16px calc(110px + env(safe-area-inset-bottom)); }
   .sucessorista .grade.c2, .sucessorista .grade.c3, .sucessorista .grade.q-grid, .sucessorista .nota .cenarios { grid-template-columns: 1fr; }
   .sucessorista .espelho .cabeca, .sucessorista .espelho .lanc { grid-template-columns: 1fr 90px; }
   .sucessorista .espelho .cabeca span:nth-child(2), .sucessorista .espelho .lanc .fracao { display: none; }
+
+  /* Painel do caso = gaveta que sobe sobre a folha. */
+  .sucessorista .painel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    grid-column: auto;
+    grid-row: auto;
+    height: auto;
+    max-height: 80vh;
+    overflow-y: auto;
+    z-index: 60;
+    border-left: none;
+    border-top: 2px solid var(--fio-forte);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.3);
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    transform: translateY(105%);
+    transition: transform 0.25s ease;
+  }
+  .sucessorista .painel.aberto { transform: none; }
+  .sucessorista .painel .fechar-mobile { display: flex; }
+  .sucessorista .painel-fab { display: inline-flex; }
+  .sucessorista .painel-fundo.aberto { display: block; }
+  .sucessorista .so-mobile { display: inline-flex; }
+
+  /* Topo da Página Inicial: título, relógio e tema empilham sem espremer. */
+  .sucessorista .dash-topo { flex-wrap: wrap; }
+  .sucessorista .relogio-mini { order: 3; text-align: left; }
+  .sucessorista .casos-topo { flex-wrap: wrap; align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
