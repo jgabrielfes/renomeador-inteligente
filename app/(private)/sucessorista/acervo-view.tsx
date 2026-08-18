@@ -202,6 +202,8 @@ export function AcervoView({
     handleSubmit,
     control,
     reset,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<NovoBem>({
     resolver: zodResolver(esquemaBem),
@@ -217,6 +219,32 @@ export function AcervoView({
   const ehImovel = tipoBemItcmd(codigoEscolhido)?.tipo === 'IMOVEL';
   const ehFinanceiro = tipoBemItcmd(codigoEscolhido)?.tipo === 'FINANCEIRO';
 
+  // "% do venal": os campos de valor mostram SEMPRE o venal EFETIVO — a
+  // certidão integral da prefeitura fica guardada como base (decimal), e
+  // digitar o percentual recalcula os dois campos na hora; digitar num campo
+  // de valor ajusta a base pela conta inversa (efetivo ÷ %).
+  const [baseObitoNovo, setBaseObitoNovo] = useState('');
+  const [baseAtualNovo, setBaseAtualNovo] = useState('');
+
+  const aoDigitarValorNovo =
+    (aplicar: (texto: string) => void, setBase: (v: string) => void) => (texto: string) => {
+      aplicar(texto);
+      if (!VALOR_PTBR.test(texto.trim())) return;
+      const pct = pctEfetivo(getValues('pctVenal'));
+      const efetivo = Number(paraDecimal(texto));
+      setBase((pct !== null ? efetivo / (pct / 100) : efetivo).toFixed(2));
+    };
+
+  const aoDigitarPctNovo = (texto: string) => {
+    const pct = pctEfetivo(texto);
+    const recalcular = (base: string, campo: 'valor' | 'valorVenal') => {
+      if (!base) return;
+      setValue(campo, paraMascara(pct !== null ? ((Number(base) * pct) / 100).toFixed(2) : base));
+    };
+    recalcular(baseObitoNovo, 'valor');
+    recalcular(baseAtualNovo, 'valorVenal');
+  };
+
   const lancar = (dados: NovoBem) => {
     const imovel = ehImovel
       ? Object.fromEntries(
@@ -226,6 +254,10 @@ export function AcervoView({
             matricula: dados.matricula,
             registroImoveis: dados.registroImoveis,
             percentualVenal: dados.pctVenal,
+            // Certidão integral por trás do % — só com percentual preenchido
+            // (sem %, o campo fica livre para a leitura da certidão ocupar).
+            valorVenalObito: dados.pctVenal ? baseObitoNovo : '',
+            valorVenalAtual: dados.pctVenal ? baseAtualNovo : '',
           }).filter(([, v]) => v !== ''),
         )
       : {};
@@ -258,6 +290,8 @@ export function AcervoView({
       valorVenal: '', valorAvaliacao: '', municipio: '', inscricaoCadastral: '',
       matricula: '', registroImoveis: '', pctVenal: '', instituicao: '', agencia: '', conta: '',
     });
+    setBaseObitoNovo('');
+    setBaseAtualNovo('');
   };
 
   return (
@@ -320,13 +354,24 @@ export function AcervoView({
                 <Input id="bem-ri" placeholder="ex.: 1º RI de Guarulhos/SP" {...register('registroImoveis')} />
               </Field>
               <Field data-invalid={Boolean(errors.pctVenal)} style={{ maxWidth: 180 }}>
-                <FieldLabel htmlFor="bem-pct-venal">% do venal (área maior na prefeitura)</FieldLabel>
-                <Input
-                  id="bem-pct-venal"
-                  placeholder="ex.: 25"
-                  inputMode="decimal"
-                  aria-invalid={Boolean(errors.pctVenal)}
-                  {...register('pctVenal')}
+                <FieldLabel htmlFor="bem-pct-venal">% do venal</FieldLabel>
+                <Controller
+                  control={control}
+                  name="pctVenal"
+                  render={({ field }) => (
+                    <Input
+                      id="bem-pct-venal"
+                      placeholder="ex.: 25"
+                      inputMode="decimal"
+                      aria-invalid={Boolean(errors.pctVenal)}
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChange={(e) => {
+                        field.onChange(e.target.value);
+                        aoDigitarPctNovo(e.target.value);
+                      }}
+                    />
+                  )}
                 />
                 <FieldError errors={[errors.pctVenal]} />
               </Field>
@@ -358,7 +403,7 @@ export function AcervoView({
                   id="bem-valor"
                   aria-invalid={Boolean(errors.valor)}
                   value={field.value}
-                  onChange={field.onChange}
+                  onChange={aoDigitarValorNovo(field.onChange, setBaseObitoNovo)}
                   onBlur={field.onBlur}
                 />
               )}
@@ -396,7 +441,7 @@ export function AcervoView({
                     id="bem-venal"
                     aria-invalid={Boolean(errors.valorVenal)}
                     value={field.value}
-                    onChange={field.onChange}
+                    onChange={aoDigitarValorNovo(field.onChange, setBaseAtualNovo)}
                     onBlur={field.onBlur}
                   />
                 )}
@@ -729,8 +774,13 @@ function LinhaBem({
   const [inscricao, setInscricao] = useState('');
   const [matricula, setMatricula] = useState('');
   const [registroRI, setRegistroRI] = useState('');
-  // % do imóvel sobre o venal da prefeitura (cadastro em ÁREA MAIOR).
+  // % do imóvel sobre o venal da prefeitura (cadastro em ÁREA MAIOR). Os
+  // campos de valor mostram SEMPRE o venal EFETIVO: a certidão integral fica
+  // nas bases abaixo, o % recalcula os campos na hora e digitar num campo de
+  // valor ajusta a base pela conta inversa (efetivo ÷ %).
   const [pctVenal, setPctVenal] = useState('');
+  const [baseObito, setBaseObito] = useState('');
+  const [baseAtual, setBaseAtual] = useState('');
   const [instituicao, setInstituicao] = useState('');
   const [agencia, setAgencia] = useState('');
   const [conta, setConta] = useState('');
@@ -748,11 +798,33 @@ function LinhaBem({
     setMatricula(bem.imovel?.matricula ?? '');
     setRegistroRI(bem.imovel?.registroImoveis ?? '');
     setPctVenal(bem.imovel?.percentualVenal ?? '');
+    setBaseObito(bem.imovel?.valorVenalObito ?? '');
+    setBaseAtual(bem.imovel?.valorVenalAtual ?? '');
     setInstituicao(bem.financeiro?.instituicao ?? '');
     setAgencia(bem.financeiro?.agencia ?? '');
     setConta(bem.financeiro?.conta ?? '');
     setErro(null);
     setEditando(true);
+  };
+
+  const aoDigitarValor =
+    (setCampo: (v: string) => void, setBase: (v: string) => void) => (texto: string) => {
+      setCampo(texto);
+      if (!VALOR_PTBR.test(texto.trim())) return;
+      const pct = pctEfetivo(pctVenal);
+      const efetivo = Number(paraDecimal(texto));
+      setBase((pct !== null ? efetivo / (pct / 100) : efetivo).toFixed(2));
+    };
+
+  const aoDigitarPct = (texto: string) => {
+    setPctVenal(texto);
+    const pct = pctEfetivo(texto);
+    const recalcular = (base: string, setCampo: (v: string) => void) => {
+      if (!base) return;
+      setCampo(paraMascara(pct !== null ? ((Number(base) * pct) / 100).toFixed(2) : base));
+    };
+    recalcular(baseObito, setValor);
+    recalcular(baseAtual, setVenal);
   };
 
   const salvar = () => {
@@ -777,6 +849,10 @@ function LinhaBem({
             matricula: limpo(matricula),
             registroImoveis: limpo(registroRI),
             percentualVenal: limpo(pctVenal),
+            // Certidão integral por trás do % — só com percentual preenchido
+            // (sem %, o campo fica livre para a leitura da certidão ocupar).
+            ...(limpo(pctVenal) && baseObito ? { valorVenalObito: baseObito } : {}),
+            ...(limpo(pctVenal) && baseAtual ? { valorVenalAtual: baseAtual } : {}),
           }
         : bem.imovel;
     const financeiro =
@@ -784,30 +860,17 @@ function LinhaBem({
         ? { instituicao: limpo(instituicao), agencia: limpo(agencia), conta: limpo(conta) }
         : bem.financeiro;
 
-    // % do venal (cadastro em ÁREA MAIOR na prefeitura): com o percentual
-    // preenchido e a certidão lida, o sistema CALCULA o venal EFETIVO — na
-    // data do óbito (bem.valor) e no exercício corrente (bem.valorVenal) —
-    // por cima do que estiver nos campos de valor.
-    const pct = pctEfetivo(pctVenal);
-    const efetivoObito =
-      pct !== null && imovel?.valorVenalObito
-        ? ((Number(imovel.valorVenalObito) * pct) / 100).toFixed(2)
-        : null;
-    const efetivoAtual =
-      pct !== null && imovel?.valorVenalAtual
-        ? ((Number(imovel.valorVenalAtual) * pct) / 100).toFixed(2)
-        : null;
-
+    // Os campos de valor JÁ mostram o venal efetivo (o % recalcula na
+    // digitação) — o salvar grava o que está na tela, sem reconta.
     onSalvar({
       ...bem,
       descricao: descricao.trim(),
-      valor: efetivoObito ?? paraDecimal(valor),
+      valor: paraDecimal(valor),
       tipo: tipoFinal,
       codigoItcmd: oficial ? codigo : bem.codigoItcmd,
       natureza,
       valorVenal:
-        efetivoAtual ??
-        (venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined),
+        venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined,
       valorAvaliacao: avaliacao.trim() && VALOR_PTBR.test(avaliacao.trim()) ? paraDecimal(avaliacao) : undefined,
       imovel,
       financeiro,
@@ -932,12 +995,12 @@ function LinhaBem({
               <Input value={registroRI} onChange={(e) => setRegistroRI(e.target.value)} />
             </label>
             <label className="campo" style={{ maxWidth: 180 }}>
-              % do venal (área maior na prefeitura)
+              % do venal
               <Input
                 value={pctVenal}
                 placeholder="ex.: 25"
                 inputMode="decimal"
-                onChange={(e) => setPctVenal(e.target.value)}
+                onChange={(e) => aoDigitarPct(e.target.value)}
               />
             </label>
           </>
@@ -960,7 +1023,7 @@ function LinhaBem({
         )}
         <label className="campo">
           Valor venal na data do óbito (R$)
-          <CurrencyInput value={valor} onChange={setValor} />
+          <CurrencyInput value={valor} onChange={aoDigitarValor(setValor, setBaseObito)} />
         </label>
         <label className="campo">
           Natureza
@@ -980,7 +1043,7 @@ function LinhaBem({
         {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
           <label className="campo">
             Valor venal do exercício corrente (R$)
-            <CurrencyInput value={venal} onChange={setVenal} />
+            <CurrencyInput value={venal} onChange={aoDigitarValor(setVenal, setBaseAtual)} />
           </label>
         )}
         <label className="campo">
@@ -988,30 +1051,17 @@ function LinhaBem({
           <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
         </label>
       </div>
-      {/* Prévia do venal EFETIVO: certidão da prefeitura × % informado —
-          ao salvar, os valores do óbito e do exercício corrente recebem o
-          resultado (imóvel lançado em área maior no cadastro municipal). */}
+      {/* Os campos de valor mostram o venal EFETIVO (certidão × %) na hora —
+          esta linha lembra a base integral por trás do percentual. */}
       {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' &&
         pctEfetivo(pctVenal) !== null &&
-        (bem.imovel?.valorVenalObito || bem.imovel?.valorVenalAtual) && (
+        (baseObito || baseAtual) && (
           <p className="fund num" style={{ marginTop: 6 }}>
-            Venal efetivo ({pctEfetivo(pctVenal)!.toLocaleString('pt-BR')}% da certidão):
-            {bem.imovel?.valorVenalObito
-              ? ` óbito ${brl(((Number(bem.imovel.valorVenalObito) * pctEfetivo(pctVenal)!) / 100).toFixed(2))} (certidão ${brl(bem.imovel.valorVenalObito)})`
-              : ''}
-            {bem.imovel?.valorVenalAtual
-              ? ` · exercício atual ${brl(((Number(bem.imovel.valorVenalAtual) * pctEfetivo(pctVenal)!) / 100).toFixed(2))} (certidão ${brl(bem.imovel.valorVenalAtual)})`
-              : ''}
-            {' '}— aplicado aos campos de valor ao salvar.
-          </p>
-        )}
-      {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' &&
-        pctEfetivo(pctVenal) !== null &&
-        !bem.imovel?.valorVenalObito &&
-        !bem.imovel?.valorVenalAtual && (
-          <p className="fund" style={{ marginTop: 6 }}>
-            Sem certidão de venal lida para este bem — o % fica guardado e o cálculo
-            acontece quando a certidão entrar pelo cofre.
+            Venal integral da certidão:
+            {baseObito ? ` óbito ${brl(baseObito)}` : ''}
+            {baseObito && baseAtual ? ' ·' : ''}
+            {baseAtual ? ` exercício corrente ${brl(baseAtual)}` : ''}
+            {' '}— os campos mostram {pctEfetivo(pctVenal)!.toLocaleString('pt-BR')}% disso.
           </p>
         )}
       {erro && <p className="mono-alerta">{erro}</p>}
