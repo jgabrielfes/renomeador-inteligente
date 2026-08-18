@@ -76,6 +76,7 @@ import {
 } from './fiscal-view';
 import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
+import { GraficoQuinhoes } from './grafico-quinhoes';
 import { FontesView } from './fontes-view';
 import {
   migrarArquivoCaso,
@@ -1363,17 +1364,25 @@ export default function SucessoristaClient({
         base: basesSucessoes[su.id] ?? 0,
         qtdImoveis: su.qtdImoveis,
       })),
-      // Registro de imóveis: base pelo MAIOR entre atribuído, venal e avaliação.
+      // Registro de imóveis: base pelo MAIOR entre atribuído, venal e
+      // avaliação — sobre a fração TRANSMITIDA: com meeiro(a), a metade do
+      // bem COMUM já é dele(a) e sai da base do ato (como na escritura).
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
-        .map((b) => ({
-          descricao: b.descricao,
-          valor: Math.max(
+        .map((b) => {
+          const maior = Math.max(
             Number(b.valor) || 0,
             Number(b.valorVenal) || 0,
             Number(b.valorAvaliacao) || 0,
-          ),
-        })),
+          );
+          const fracaoTransmitida =
+            resultado.meacao && (b.natureza ?? 'COMUM') === 'COMUM' ? 0.5 : 1;
+          return {
+            descricao: b.descricao,
+            valor: maior,
+            valorTransmitido: Math.round(maior * fracaoTransmitida * 100) / 100,
+          };
+        }),
       // A escolha do dashboard manda; AUTO segue o motor de elegibilidade.
       rito:
         fiscal.rito === 'EXTRAJUDICIAL' || fiscal.rito === 'JUDICIAL'
@@ -2722,7 +2731,7 @@ export default function SucessoristaClient({
         )}
         {(
           [
-            ['caso', '0', 'O caso'],
+            ['caso', '0', 'Página Inicial'],
             ['familia', 'I', 'A família'],
             ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
@@ -2817,8 +2826,6 @@ export default function SucessoristaClient({
             tema={tema}
             setTema={setTema}
             licoesRenomeador={licoesRenomeador}
-            convites={convites}
-            irParaDocumentos={() => irPara('documentos')}
             rito={fiscal.rito ?? 'AUTO'}
             setRito={(r) => setFiscal({ ...fiscal, rito: r })}
             ritoMotor={ritoMotor}
@@ -3320,6 +3327,8 @@ export default function SucessoristaClient({
         ]}
         notas={notasCaso}
         setNotas={setNotasCaso}
+        convites={convites}
+        onVerCofre={() => irPara('documentos')}
       />
     </div>
     )}
@@ -3677,6 +3686,29 @@ function EspelhoView({
               </div>
             )}
           </div>
+
+          {/* Pizza VIVA da partilha: a divisão percentual do acervo entre
+              meação e quinhões, animada ao abrir a aba. */}
+          <span className="eyebrow">Divisão do acervo — meação e quinhões</span>
+          <GraficoQuinhoes
+            fatias={[
+              ...(resultado.meacao
+                ? [
+                    {
+                      nome: `${resultado.meacao.beneficiario} — meação`,
+                      valor: Number(resultado.meacao.valor),
+                      sub: 'não é herança',
+                    },
+                  ]
+                : []),
+              ...resultado.quinhoes.map((q) => ({
+                nome: q.nome,
+                valor: Number(q.valor),
+                sub: `${q.fracaoHeranca} da herança`,
+              })),
+            ]}
+            total={Number(resultado.acervo.massaPartilhavel)}
+          />
 
           {/* Relação de bens na MESMA numeração e ordem da listagem do acervo. */}
           <span className="eyebrow">Relação de bens partilhados</span>

@@ -70,8 +70,14 @@ export interface EntradaCustos {
   qtdRenunciantes: number;
   /** Sucessões CUMULADAS no mesmo inventário (além da principal). */
   sucessoes: SucessaoCustos[];
-  /** Imóveis do acervo (valor na data do óbito), para os registros. */
-  imoveis: { descricao: string; valor: number }[];
+  /**
+   * Imóveis do acervo, para os registros. `valor` é o valor cheio do bem
+   * (referência); a base do ATO de registro é `valorTransmitido` — a fração
+   * que a partilha efetivamente transmite, EXCLUÍDA a meação (a metade do
+   * meeiro já era dele: não é transmissão e não entra na base, exatamente
+   * como no ato da escritura). Ausente, vale o valor cheio (sem meeiro).
+   */
+  imoveis: { descricao: string; valor: number; valorTransmitido?: number }[];
   rito: 'EXTRAJUDICIAL' | 'JUDICIAL';
   qtdHerdeiros: number;
   /** Havia cônjuge/companheiro(a) — certidão de casamento entra na conta. */
@@ -348,21 +354,29 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
     );
   }
 
-  /* registros dos imóveis — sempre (o formal de partilha judicial também registra) */
+  /* registros dos imóveis — sempre (o formal de partilha judicial também
+     registra). A base do ato é a fração TRANSMITIDA (excluída a meação),
+     como no ato da escritura — a metade do meeiro não é transmissão. */
   for (const [i, im] of imoveis.entries()) {
+    const baseAto = im.valorTransmitido ?? im.valor;
     parcelas.push({
       id: `registro-${i}`,
       rotulo: `Registro da partilha — ${im.descricao || `imóvel ${i + 1}`}`,
-      valor: emolumentoRegistro(im.valor, iss),
+      valor: emolumentoRegistro(baseAto, iss),
       quantidade: 1,
       fundamento: 'Tabela de Registro 2026, item 1 (Lei 11.331/2002)',
-      detalhe: `Faixa pelo valor de ${fmt(im.valor)}.`,
+      detalhe:
+        im.valorTransmitido !== undefined && im.valorTransmitido < im.valor
+          ? `Faixa pela base TRANSMITIDA de ${fmt(baseAto)} — meação excluída do ato, como na escritura (valor do bem: ${fmt(im.valor)}).`
+          : `Faixa pelo valor de ${fmt(baseAto)}.`,
       aproximado: false,
     });
   }
   /* partilha diferenciada: pode haver MAIS um ato de registro no mesmo imóvel */
   if (imoveis.length > 0 && e.transferencias.length > 0) {
-    const extra = r2(imoveis.reduce((a, im) => a + emolumentoRegistro(im.valor, iss), 0));
+    const extra = r2(
+      imoveis.reduce((a, im) => a + emolumentoRegistro(im.valorTransmitido ?? im.valor, iss), 0),
+    );
     parcelas.push({
       id: 'registro-atos-extras',
       rotulo: 'Atos de registro adicionais da partilha diferenciada',

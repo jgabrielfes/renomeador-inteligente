@@ -9,7 +9,9 @@
  */
 
 import { useMemo } from 'react';
+import { Bell } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
 import {
@@ -51,6 +53,8 @@ export function PainelCaso({
   alertasLeitura = [],
   notas = '',
   setNotas,
+  convites = {},
+  onVerCofre,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -71,10 +75,36 @@ export function PainelCaso({
   /** Bloco de notas do caso — anotações livres, salvas com o snapshot. */
   notas?: string;
   setNotas?: (v: string) => void;
+  /** Convites do cofre (portal do herdeiro) — alimentam o sino de notificações. */
+  convites?: Record<string, ConviteHerdeiro>;
+  /** Abre a aba Documentos (onde cada envio aparece no card correlato). */
+  onVerCofre?: () => void;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
   const imposto = provisao?.imposto ?? 0;
+
+  /* Sino de notificações do cofre: cada chegada pelo link do portal
+     (documento enviado ou qualificação preenchida) conta no badge — os
+     ARQUIVOS ficam no navegador do herdeiro; aqui chegam nome/tipo/status. */
+  const notificacoesCofre = useMemo(() => {
+    let total = 0;
+    let aConferir = 0;
+    let ultima = '';
+    for (const c of Object.values(convites)) {
+      if (c.qualificacaoEnviadaEm) {
+        total += 1;
+        ultima = `${c.nomeHerdeiro} preencheu a qualificação`;
+      }
+      for (const d of c.documentos) {
+        if (d.status === 'PENDENTE' || !d.nomeArquivo) continue;
+        total += 1;
+        if (d.status === 'ENVIADO') aConferir += 1;
+        ultima = `${c.nomeHerdeiro}: ${d.titulo}`;
+      }
+    }
+    return { total, aConferir, ultima };
+  }, [convites]);
 
   /* comparativo da reforma: mesmas bases do item V (líquidas de isenção e
      atualizadas pela UFESP), faixas sobre cada quinhão */
@@ -128,6 +158,38 @@ export function PainelCaso({
           ? `${falecido.nome || 'Caso sem nome'} — óbito em ${formatarData(falecido.dataObito)}`
           : 'Comece pela data do óbito — só isso já move três números aqui.'}
       </p>
+
+      {/* Sino de notificações do cofre — pequeno, ACIMA do bloco de notas:
+          o badge sobe (1, 2, 3…) conforme as chegadas pelo link do portal;
+          o clique abre a aba Documentos, onde cada envio está no card
+          correlato. */}
+      {onVerCofre && (
+        <button type="button" className="sino-cofre" onClick={onVerCofre}>
+          <span className="sino">
+            <Bell size={18} aria-hidden />
+            {notificacoesCofre.total > 0 && (
+              <span className="badge num" aria-hidden>
+                {notificacoesCofre.total > 99 ? '99+' : notificacoesCofre.total}
+              </span>
+            )}
+          </span>
+          <span className="resumo">
+            <b>
+              Notificações do cofre
+              {notificacoesCofre.aConferir > 0 && (
+                <span style={{ color: 'var(--lacre)' }}>
+                  {' '}· {notificacoesCofre.aConferir} a conferir
+                </span>
+              )}
+            </b>
+            <span>
+              {notificacoesCofre.total === 0
+                ? 'Nada recebido pelo link ainda'
+                : notificacoesCofre.ultima}
+            </span>
+          </span>
+        </button>
+      )}
 
       {/* Bloco de notas do caso — no TOPO do painel (acima do prazo), maior:
           anotações livres, salvas com o caso. */}

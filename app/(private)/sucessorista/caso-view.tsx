@@ -1,5 +1,5 @@
 /**
- * Etapa 0 — O caso.
+ * Etapa 0 — Página Inicial.
  *
  * Porta de entrada da folha: solte a pasta do inventário e TODOS os arquivos
  * são anexados NA HORA ao processo (item V), classificados pelo nome — a
@@ -49,7 +49,6 @@ import { AI_BATCH_MAX_BYTES, AI_BATCH_MAX_ITEMS, fileEligibleForAi } from '@/lib
 import { filesFromDataTransfer } from '@/lib/fs';
 import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
-import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { Pilula } from './familia';
 import { EquipeCard } from './equipe-card';
 import type { InfoEquipe } from './equipe-actions';
@@ -123,124 +122,12 @@ const NOVIDADES: { titulo: string; descricao: string }[] = [
   },
 ];
 
-/** Uma chegada pelo link do cofre (portal do herdeiro), já achatada. */
-interface NotificacaoCofre {
-  herdeiro: string;
-  texto: string;
-  status: 'aguardando conferência' | 'aprovado' | 'devolvido para reenvio' | 'informação';
-  quando: string | null;
-}
+// As notificações do cofre saíram do dashboard: viraram o SINO com badge do
+// painel do caso (acima do bloco de notas) — ver painel-caso.tsx.
 
-/**
- * Notificações do COFRE DE DOCUMENTOS (portal do herdeiro): o que as partes
- * enviaram pelo link — documentos e qualificação — com o botão que leva à
- * aba Documentos, onde cada envio aparece no card correlato com a lupa de
- * pré-visualização. Os ARQUIVOS ficam no navegador do herdeiro (fronteira
- * de dados): aqui chegam nome proposto, tipo e status.
- */
-function NotificacoesCofreCard({
-  convites,
-  irParaDocumentos,
-}: {
-  convites: Record<string, ConviteHerdeiro>;
-  irParaDocumentos: () => void;
-}) {
-  const notificacoes: NotificacaoCofre[] = [];
-  for (const c of Object.values(convites)) {
-    if (c.qualificacaoEnviadaEm) {
-      notificacoes.push({
-        herdeiro: c.nomeHerdeiro,
-        texto: 'Preencheu a própria qualificação no portal',
-        status: 'informação',
-        quando: c.qualificacaoEnviadaEm,
-      });
-    }
-    for (const d of c.documentos) {
-      if (d.status === 'PENDENTE' || !d.nomeArquivo) continue;
-      notificacoes.push({
-        herdeiro: c.nomeHerdeiro,
-        texto: `${d.titulo}: ${d.nomeArquivo}`,
-        status:
-          d.status === 'APROVADO'
-            ? 'aprovado'
-            : d.status === 'REJEITADO'
-              ? 'devolvido para reenvio'
-              : 'aguardando conferência',
-        quando: d.enviadoEm ?? null,
-      });
-    }
-  }
-  // Mais recentes primeiro (sem data vai para o fim, ordem estável).
-  notificacoes.sort((a, b) => (b.quando ?? '').localeCompare(a.quando ?? ''));
-
-  const aConferir = notificacoes.filter((n) => n.status === 'aguardando conferência').length;
-  const visiveis = notificacoes.slice(0, 6);
-
-  const dataCurta = (iso: string | null) => {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime())
-      ? ''
-      : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  };
-
-  return (
-    <div className="cartao">
-      <span className="eyebrow">
-        Notificações do cofre
-        {aConferir > 0 && (
-          <span style={{ color: 'var(--lacre)', marginLeft: 6 }}>
-            · {aConferir} a conferir
-          </span>
-        )}
-      </span>
-      {notificacoes.length === 0 ? (
-        <p className="fund" style={{ margin: '6px 0 0' }}>
-          Nada recebido pelo link do cofre ainda — gere os convites na aba Documentos e as
-          chegadas das partes (documentos e qualificação) aparecem aqui.
-        </p>
-      ) : (
-        <>
-          {visiveis.map((n, i) => (
-            <div key={i} className="novidade">
-              <h4>{n.herdeiro}</h4>
-              <p>
-                {n.texto}
-                <span
-                  style={{
-                    marginLeft: 6,
-                    color:
-                      n.status === 'devolvido para reenvio'
-                        ? 'var(--lacre)'
-                        : n.status === 'aprovado'
-                          ? 'var(--verde-registro)'
-                          : 'var(--bronze)',
-                  }}
-                >
-                  · {n.status}
-                </span>
-                {n.quando && <span className="num"> · {dataCurta(n.quando)}</span>}
-              </p>
-            </div>
-          ))}
-          {notificacoes.length > visiveis.length && (
-            <p className="fund" style={{ margin: '6px 0 0' }}>
-              … e mais {notificacoes.length - visiveis.length} notificação(ões).
-            </p>
-          )}
-        </>
-      )}
-      <div style={{ marginTop: 10 }}>
-        <Button type="button" variant="outline" size="sm" onClick={irParaDocumentos}>
-          Ver documentos e informações recebidos
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Relógio vivo do dashboard — monta só no cliente (nada de hidratação). */
-function RelogioCard() {
+/** Relógio vivo REDUZIDO, no canto superior direito da Página Inicial —
+ *  monta só no cliente (nada de hidratação). */
+function RelogioMini() {
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => {
     // Primeiro tique diferido (setTimeout 0): setState síncrono em efeito é
@@ -253,24 +140,18 @@ function RelogioCard() {
       clearInterval(t);
     };
   }, []);
-  const dia = agora
-    ? agora.toLocaleDateString('pt-BR', { weekday: 'long' }).replace('-feira', '-feira')
-    : '';
   return (
-    <div className="cartao relogio">
-      <span className="dia">{dia || ' '}</span>
+    <div className="relogio-mini" aria-hidden>
       <span className="hora num">
         {agora
           ? agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
           : '--:--'}
-        <small className="num">
-          {agora ? String(agora.getSeconds()).padStart(2, '0') : ''}
-        </small>
+        <small className="num">{agora ? String(agora.getSeconds()).padStart(2, '0') : ''}</small>
       </span>
       <span className="data">
         {agora
-          ? agora.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
-          : ' '}
+          ? `${agora.toLocaleDateString('pt-BR', { weekday: 'long' })} · ${agora.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}`
+          : '\u00A0'}
       </span>
     </div>
   );
@@ -320,8 +201,6 @@ export function CasoView({
   tema,
   setTema,
   licoesRenomeador = null,
-  convites = {},
-  irParaDocumentos,
   rito = 'AUTO',
   setRito,
   ritoMotor = null,
@@ -346,10 +225,6 @@ export function CasoView({
   setTema: (t: 'claro' | 'escuro') => void;
   /** Regras + correções do renomeador da conta — abrem junto do overlay. */
   licoesRenomeador?: import('@/lib/lessons').LessonsState | null;
-  /** Convites do cofre: o que as partes enviaram vira notificação aqui. */
-  convites?: Record<string, ConviteHerdeiro>;
-  /** Leva à aba Documentos (envios no card correlato + lupa de preview). */
-  irParaDocumentos?: () => void;
   /** Rito escolhido (AUTO segue o motor) + o que o motor aponta. */
   rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
   setRito?: (r: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL') => void;
@@ -672,15 +547,16 @@ export function CasoView({
 
   return (
     <section>
-      {/* Topo do dashboard: título + alternador de tema claro/escuro. */}
+      {/* Topo do dashboard: título + relógio reduzido + alternador de tema. */}
       <div className="dash-topo">
         <div>
-          <h1>O caso</h1>
+          <h1>Página Inicial</h1>
           <p className="subtitulo" style={{ marginBottom: 0 }}>
             O painel de entrada do inventário: solte a pasta no cofre, acompanhe as
             novidades e comece pelo essencial — cada card abaixo é um caminho.
           </p>
         </div>
+        <RelogioMini />
         <div className="tema-alternador" role="radiogroup" aria-label="Tema do módulo">
           <button
             type="button"
@@ -705,20 +581,13 @@ export function CasoView({
         </div>
       </div>
 
-      <div className="dash-grade">
-        {/* coluna esquerda: relógio + notificações do cofre + novidades */}
-        <div className="dash-coluna">
-          <RelogioCard />
-          {irParaDocumentos && (
-            <NotificacoesCofreCard convites={convites} irParaDocumentos={irParaDocumentos} />
-          )}
-
-          {/* Escolha do RITO: decide a projeção de custas (escritura e atos
+      <div className="dash-pilha">
+        {/* Escolha do RITO: decide a projeção de custas (escritura e atos
               notariais × taxa judiciária), o título de encerramento do cofre
               (traslado × formal) e o antecipador registral. AUTO segue o
               motor de elegibilidade. */}
           {setRito && (
-            <div className="cartao">
+            <div className="cartao area-rito">
               <span className="eyebrow">Rito do inventário</span>
               <p className="fund" style={{ margin: '4px 0 8px' }}>
                 Decide a projeção de custas do item V — extrajudicial: escritura e atos
@@ -754,9 +623,11 @@ export function CasoView({
 
           {/* Equipe: contas individuais vinculadas por convite do chefe —
               membro faz tudo no módulo, gerir a equipe é só do chefe. */}
-          <EquipeCard inicial={equipe} />
+          <div className="area-equipe">
+            <EquipeCard inicial={equipe} />
+          </div>
 
-          <div className="cartao">
+          <div className="cartao area-novidades">
             <span className="eyebrow">Novidades da plataforma</span>
             {NOVIDADES.map((n) => (
               <div key={n.titulo} className="novidade">
@@ -765,11 +636,10 @@ export function CasoView({
               </div>
             ))}
           </div>
-        </div>
 
-        {/* coluna principal: cofre, arquivo do caso e início rápido */}
-        <div className="dash-coluna">
-          <div className="cartao">
+          {/* O COFRE em primeiro e MAIOR destaque — a ordem visual é do
+              grid (grid-template-areas), não do DOM. */}
+          <div className="cartao destaque-cofre area-cofre">
             <span className="eyebrow">Cofre de documentos</span>
             <p className="fund" style={{ margin: '4px 0 12px' }}>
               O cofre lê certidão de óbito, certidão de casamento, RG, CPF e matrículas — e
@@ -926,7 +796,7 @@ export function CasoView({
 
           </div>
 
-          <div className="cartao">
+          <div className="cartao area-arquivo">
       <h2>Arquivo do caso (.json)</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
         Exporte o caso inteiro num arquivo e salve na pasta do processo, junto dos
@@ -990,7 +860,7 @@ export function CasoView({
 
           </div>
 
-          <div className="cartao">
+          <div className="cartao area-inicio">
       <h2>Sem a pasta em mãos?</h2>
       <p className="subtitulo" style={{ marginBottom: 14 }}>
         Preencha só a data do óbito e um valor estimado do acervo. O painel ao lado já
@@ -1048,7 +918,6 @@ export function CasoView({
         </div>
       </form>
           </div>
-        </div>
       </div>
 
       {/* ---------- Renomeador Inteligente COMPLETO, embutido no cofre ----------
