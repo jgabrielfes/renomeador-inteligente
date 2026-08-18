@@ -234,6 +234,7 @@ export function CasoView({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
+  const inputCameraRef = useRef<HTMLInputElement>(null);
   const inputCasoRef = useRef<HTMLInputElement>(null);
   const [importando, setImportando] = useState(false);
   const [renomeadorAberto, setRenomeadorAberto] = useState(false);
@@ -720,6 +721,18 @@ export function CasoView({
               type="button"
               variant="outline"
               size="sm"
+              className="so-mobile"
+              onClick={(e) => {
+                e.stopPropagation();
+                inputCameraRef.current?.click();
+              }}
+            >
+              📷 Fotografar documento
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 setRenomeadorAberto(true);
@@ -738,6 +751,20 @@ export function CasoView({
           onChange={(e) => {
             if (e.target.files) void lerArquivos(preparar(Array.from(e.target.files)));
             e.target.value = '';
+          }}
+        />
+        {/* Celular: fotografar a certidão no balcão — a foto entra no MESMO
+            pipeline do arraste (compressão no navegador + leitura por IA). */}
+        <input
+          ref={inputCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void lerArquivos(preparar([f]));
           }}
         />
         <input

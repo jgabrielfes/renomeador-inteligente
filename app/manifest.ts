@@ -1,10 +1,12 @@
 import type { MetadataRoute } from "next";
 
-import { IDENTIDADE } from "@/lib/app";
+import { EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
 
 // Um PWA por site: quem instala o Renomeador e quem instala o Sucessorista
-// recebe nome, descrição e atalho próprios (lib/app.ts).
+// recebe nome, descrição, atalho e CORES próprios (o Sucessorista abre no
+// papel da identidade, não num flash branco).
 export default function manifest(): MetadataRoute.Manifest {
+  const cor = EH_SUCESSORISTA ? "#f6f4ee" : "#ffffff";
   return {
     name: IDENTIDADE.nome,
     short_name: IDENTIDADE.nomeCurto,
@@ -14,8 +16,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#ffffff",
-    theme_color: "#ffffff",
+    background_color: cor,
+    theme_color: cor,
     lang: "pt-BR",
     categories: ["productivity", "utilities"],
     icons: [
