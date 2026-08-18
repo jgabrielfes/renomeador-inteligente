@@ -2150,6 +2150,37 @@ export default function SucessoristaClient({
         const junto = { ...doLido, ...doAtual };
         return Object.keys(junto).length > 0 ? junto : (atual as Record<string, unknown> | undefined);
       };
+      // Certidões de valor venal preenchem os CAMPOS DE VALOR do bem pelos
+      // exercícios: venal do ano do ÓBITO → valor do fato gerador
+      // (bem.valor); venal do exercício CORRENTE → bem.valorVenal. Só campo
+      // vazio/zerado — valor já digitado nunca é sobrescrito. Certidões
+      // FRACIONADAS já chegam SOMADAS (fundirImoveisPorInscricao); fração
+      // total abaixo de 100% ganha aviso para conferir a certidão faltante.
+      const vazio = (v: string | undefined) => !v || !(Number(v) > 0);
+      const aplicarVenais = <T extends { valor: string; valorVenal?: string; imovel?: { valorVenalObito?: string; valorVenalAtual?: string; fracaoIdeal?: string } }>(bem: T): T => {
+        const det = bem.imovel;
+        if (!det) return bem;
+        const comObito =
+          vazio(bem.valor) && det.valorVenalObito && Number(det.valorVenalObito) > 0
+            ? { valor: det.valorVenalObito }
+            : {};
+        const comAtual =
+          vazio(bem.valorVenal) && det.valorVenalAtual && Number(det.valorVenalAtual) > 0
+            ? { valorVenal: det.valorVenalAtual }
+            : {};
+        return { ...bem, ...comObito, ...comAtual };
+      };
+      // Aviso das frações: certidões que não fecham o imóvel inteiro.
+      for (const b of bensLidos) {
+        const fr = Number(String(b.imovel?.fracaoIdeal ?? '').replace(',', '.'));
+        if (Number.isFinite(fr) && fr > 0 && fr < 99.99) {
+          toast.warning(`Certidões de venal somam ${fr.toLocaleString('pt-BR')}% — ${b.descricao}`, {
+            description:
+              'Se o(a) falecido(a) era dono(a) do imóvel INTEIRO, falta certidão de fração (inscrição) — os venais preenchidos estão parciais. Titularidade realmente fracionária: está correto.',
+            duration: 12000,
+          });
+        }
+      }
       setBens((prev) => {
         // Bem já lançado ganha os DETALHES lidos (matrícula, valores venais,
         // CRLV): casa por descrição igual OU pela MATRÍCULA (a matrícula lida
@@ -2168,11 +2199,11 @@ export default function SucessoristaClient({
           });
           if (!lidoB) return bem;
           casados.add(lidoB);
-          return {
+          return aplicarVenais({
             ...bem,
             imovel: preencherDetalhes(bem.imovel, lidoB.imovel) as typeof bem.imovel,
             veiculo: preencherDetalhes(bem.veiculo, lidoB.veiculo) as typeof bem.veiculo,
-          };
+          });
         });
         const novos = bensLidos
           .filter((b) => !casados.has(b))
@@ -2182,19 +2213,21 @@ export default function SucessoristaClient({
                 (x) => x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase(),
               ),
           )
-          .map((b) => ({
-            id: uid('b'),
-            descricao: b.descricao,
-            valor: b.valor ?? '0.00',
-            natureza: b.natureza ?? ('COMUM' as const),
-            tipo: b.tipo ?? ('OUTRO' as const),
-            ...(b.imovel
-              ? { imovel: Object.fromEntries(Object.entries(b.imovel).filter(([, v]) => v !== null)) }
-              : {}),
-            ...(b.veiculo
-              ? { veiculo: Object.fromEntries(Object.entries(b.veiculo).filter(([, v]) => v !== null)) }
-              : {}),
-          }));
+          .map((b) =>
+            aplicarVenais({
+              id: uid('b'),
+              descricao: b.descricao,
+              valor: b.valor ?? '0.00',
+              natureza: b.natureza ?? ('COMUM' as const),
+              tipo: b.tipo ?? ('OUTRO' as const),
+              ...(b.imovel
+                ? { imovel: Object.fromEntries(Object.entries(b.imovel).filter(([, v]) => v !== null)) as NonNullable<Bem['imovel']> }
+                : {}),
+              ...(b.veiculo
+                ? { veiculo: Object.fromEntries(Object.entries(b.veiculo).filter(([, v]) => v !== null)) }
+                : {}),
+            }),
+          );
         return [...atualizados, ...novos];
       });
     }
