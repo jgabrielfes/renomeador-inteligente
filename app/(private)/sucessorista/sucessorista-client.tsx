@@ -69,6 +69,7 @@ import { DocumentosView, type AnexosProcesso } from './documentos';
 import { ItcmdView, ESTADO_FISCAL_INICIAL, type EstadoFiscal, type SucessaoCumulada } from './itcmd-view';
 import { EconomiaView } from './economia-view';
 import { CustosView } from './custos-view';
+import { somaAdicionais, type DespesaAdicional } from '@/lib/partilha/orcamento';
 import {
   FiscalView,
   ESTADO_MODULOS_FISCAIS_INICIAL,
@@ -277,6 +278,8 @@ interface CasoSalvo {
   notas?: string;
   /** Bens levados à colação (CC 2.002) — abatem na partilha. */
   colacoes?: Colacao[];
+  /** Custos adicionais lançados à mão na aba V (retrocompatível). */
+  custosAdicionais?: DespesaAdicional[];
 }
 
 export default function SucessoristaClient({
@@ -347,6 +350,8 @@ export default function SucessoristaClient({
   const [dividasEspolio, setDividasEspolio] = useState('');
   /** Bens levados à COLAÇÃO (CC 2.002): doações em vida que abatem o quinhão. */
   const [colacoes, setColacoes] = useState<Colacao[]>([]);
+  // Custos ADICIONAIS lançados à mão na aba V — persistem no caso.
+  const [custosAdicionais, setCustosAdicionais] = useState<DespesaAdicional[]>([]);
   /** Bloco de notas do painel do caso — anotações livres, salvas no caso. */
   const [notasCaso, setNotasCaso] = useState('');
   const [checklistAcervo, setChecklistAcervo] = useState(montarChecklistAcervo());
@@ -680,6 +685,7 @@ export default function SucessoristaClient({
     if (typeof salvo.sobrepartilhaAberta === 'boolean') setSobrepartilhaAberta(salvo.sobrepartilhaAberta);
     if (typeof salvo.notas === 'string') setNotasCaso(salvo.notas);
     if (Array.isArray(salvo.colacoes)) setColacoes(salvo.colacoes);
+    if (Array.isArray(salvo.custosAdicionais)) setCustosAdicionais(salvo.custosAdicionais);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -704,6 +710,7 @@ export default function SucessoristaClient({
       sobrepartilhaAberta,
       notas: notasCaso,
       colacoes,
+      custosAdicionais,
     };
   };
 
@@ -1635,8 +1642,13 @@ export default function SucessoristaClient({
       return docId ? { ...m, classificacao: docId } : m;
     });
     manifestoRef.current = manifesto;
+    const totalAdicionais = somaAdicionais(custosAdicionais);
     const custoTotal =
-      provisao && custos ? provisao.total + custos.total : provisao ? provisao.total : null;
+      provisao && custos
+        ? provisao.total + custos.total + totalAdicionais
+        : provisao
+          ? provisao.total + totalAdicionais
+          : null;
     return montarArquivoCaso({
       cabecalho: {
         ...aberto.cabecalho,
@@ -1775,7 +1787,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -3348,6 +3360,11 @@ export default function SucessoristaClient({
             issPct={fiscal.issPct ?? '5'}
             setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
+            adicionais={custosAdicionais}
+            setAdicionais={setCustosAdicionais}
+            nomeCaso={falecido.nome}
+            dataObito={falecido.dataObito}
+            onOrcamento={(formato) => registrarDoc(formato)}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}
             avancar={() => irPara('documentos')}
@@ -3440,6 +3457,7 @@ export default function SucessoristaClient({
         economias={economias}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
+        custosAdicionais={somaAdicionais(custosAdicionais)}
         alertasLeitura={[
           // Divergências ALTAS do conferidor entram como pontos de atenção
           // (alerta vermelho) — a correção é pedida no item I.

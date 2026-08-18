@@ -10,12 +10,132 @@
  * projeção. O total fecha com a provisão do ITCMD do item IV.
  */
 
+import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
 import { Button } from '@/components/ui/button';
+import { CurrencyInput } from '@/components/currency-input';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 import type { ProvisaoItcmd } from '@/lib/partilha/itcmd';
 import { formatarData } from '@/lib/partilha/familia';
+import {
+  somaAdicionais,
+  montarDadosOrcamento,
+  type DespesaAdicional,
+} from '@/lib/partilha/orcamento';
+import { baixarBlob } from '@/lib/partilha/xlsx';
 import type { SucessaoCumulada } from './itcmd-view';
+
+const VALOR_PTBR = /^\d{1,3}(\.\d{3})*(,\d{2})?$|^\d+(,\d{2})?$/;
+const paraDecimal = (v: string) => Number(v.replace(/\./g, '').replace(',', '.')).toFixed(2);
+
+const esquemaDespesa = z.object({
+  descricao: z.string().trim().min(1, 'Descreva a despesa — ex.: "Certidões estaduais avulsas".'),
+  valor: z
+    .string()
+    .trim()
+    .min(1, 'Informe o valor da despesa.')
+    .regex(VALOR_PTBR, 'Valor inválido — use 1.234,56.'),
+});
+type NovaDespesa = z.infer<typeof esquemaDespesa>;
+
+/**
+ * CUSTOS ADICIONAIS — lançamento manual de despesas fora das tabelas
+ * (despachante, avaliador, certidões de outros estados, traduções…): entram
+ * na planilha, no total projetado e na folha de orçamento.
+ */
+function EditorDespesasAdicionais({
+  adicionais,
+  setAdicionais,
+}: {
+  adicionais: DespesaAdicional[];
+  setAdicionais: (d: DespesaAdicional[]) => void;
+}) {
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<NovaDespesa>({
+    resolver: zodResolver(esquemaDespesa),
+    defaultValues: { descricao: '', valor: '' },
+  });
+
+  const lancar = (dados: NovaDespesa) => {
+    setAdicionais([
+      ...adicionais,
+      { id: crypto.randomUUID(), descricao: dados.descricao, valor: paraDecimal(dados.valor) },
+    ]);
+    reset({ descricao: '', valor: '' });
+  };
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <span className="eyebrow">Custos adicionais</span>
+      <p className="fund" style={{ margin: '4px 0 8px' }}>
+        Despesas fora das tabelas oficiais (despachante, avaliação, certidões de outros
+        estados, traduções…) — entram no total projetado e na folha de orçamento.
+      </p>
+      <form noValidate onSubmit={handleSubmit(lancar)}>
+        <div className="grade c2" style={{ maxWidth: 640 }}>
+          <Field data-invalid={Boolean(errors.descricao)}>
+            <FieldLabel htmlFor="despesa-descricao">Descrição</FieldLabel>
+            <Input
+              id="despesa-descricao"
+              aria-invalid={Boolean(errors.descricao)}
+              {...register('descricao')}
+            />
+            <FieldError errors={[errors.descricao]} />
+          </Field>
+          <Field data-invalid={Boolean(errors.valor)}>
+            <FieldLabel htmlFor="despesa-valor">Valor (R$)</FieldLabel>
+            <Controller
+              control={control}
+              name="valor"
+              render={({ field }) => (
+                <CurrencyInput
+                  id="despesa-valor"
+                  aria-invalid={Boolean(errors.valor)}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+            <FieldError errors={[errors.valor]} />
+          </Field>
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <Button type="submit" variant="outline" size="sm">
+            Lançar despesa
+          </Button>
+        </div>
+      </form>
+      {adicionais.map((a) => (
+        <div className="linha-item" key={a.id}>
+          <span>
+            {a.descricao}{' '}
+            <span className="fracao num">· {brl(Number(a.valor) || 0)}</span>
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={() => setAdicionais(adicionais.filter((x) => x.id !== a.id))}
+          >
+            remover
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const brl = (v: number) =>
   `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -26,6 +146,11 @@ export function CustosView({
   provisoesSucessoes,
   issPct,
   setIssPct,
+  adicionais,
+  setAdicionais,
+  nomeCaso = '',
+  dataObito,
+  onOrcamento,
   irParaFamilia,
   irParaAcervo,
   avancar,
@@ -37,6 +162,14 @@ export function CustosView({
   /** Alíquota do ISS do município da serventia (%). */
   issPct: string;
   setIssPct: (v: string) => void;
+  /** Custos ADICIONAIS lançados à mão — persistem no caso. */
+  adicionais: DespesaAdicional[];
+  setAdicionais: (d: DespesaAdicional[]) => void;
+  /** Autor(a) da herança e óbito — cabeçalho da folha de orçamento. */
+  nomeCaso?: string;
+  dataObito?: string;
+  /** Telemetria: a folha de orçamento saiu (formato). */
+  onOrcamento?: (formato: 'ORCAMENTO_PDF' | 'ORCAMENTO_DOCX') => void;
   irParaFamilia: () => void;
   irParaAcervo: () => void;
   /** Avança para o próximo item da esteira (Documentos). */
@@ -44,8 +177,42 @@ export function CustosView({
   /** Rito EFETIVO do caso (escolha do dashboard, ou o motor em automático). */
   rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
 }) {
+  const [gerando, setGerando] = useState<'pdf' | 'docx' | null>(null);
   const temTaxaJudicial = custos?.parcelas.some((p) => p.id === 'taxa-judiciaria') ?? false;
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
+  const totalAdicionais = somaAdicionais(adicionais);
+
+  /** Folha de orçamento — mesma tabela do espelho, em PDF ou DOCX editável. */
+  const gerarOrcamento = async (formato: 'pdf' | 'docx') => {
+    if (!custos) return;
+    setGerando(formato);
+    try {
+      const { montarOrcamentoPdf, montarOrcamentoDocx } = await import('@/lib/partilha/orcamento');
+      const dados = montarDadosOrcamento({
+        nomeCaso,
+        dataObito,
+        rito,
+        parcelas: custos.parcelas,
+        avisos: custos.avisos,
+        provisaoTotal: provisao ? provisao.total : null,
+        sucessoes: provisoesSucessoes.map(({ sucessao, provisao: pv }) => ({
+          nome: sucessao.nome,
+          dataObito: sucessao.dataObito,
+          total: pv.total,
+        })),
+        adicionais,
+        geradoEm: new Date().toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' }),
+      });
+      const blob = formato === 'pdf' ? await montarOrcamentoPdf(dados) : await montarOrcamentoDocx(dados);
+      baixarBlob(
+        blob,
+        `Orçamento do inventário${nomeCaso ? ` - ${nomeCaso}` : ''}.${formato === 'pdf' ? 'pdf' : 'docx'}`,
+      );
+      onOrcamento?.(formato === 'pdf' ? 'ORCAMENTO_PDF' : 'ORCAMENTO_DOCX');
+    } finally {
+      setGerando(null);
+    }
+  };
 
   return (
     <section>
@@ -132,19 +299,26 @@ export function CustosView({
                 </div>
               </div>
             ))}
+            {adicionais.map((a) => (
+              <div className="lanc" key={a.id}>
+                <span className="nome">{a.descricao || 'Despesa adicional'}</span>
+                <span className="fracao">custo adicional — lançamento do escritório</span>
+                <span className="valor num" style={{ fontSize: 17 }}>{brl(Number(a.valor) || 0)}</span>
+              </div>
+            ))}
             <div className="lanc">
-              <span className="nome">Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}</span>
+              <span className="nome">Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</span>
               <span />
-              <span className="valor num" style={{ fontSize: 18 }}>{brl(custos.total + impostoSucessoes)}</span>
+              <span className="valor num" style={{ fontSize: 18 }}>{brl(custos.total + impostoSucessoes + totalAdicionais)}</span>
             </div>
             {provisao && (
               <div className="lanc">
                 <span className="nome">
-                  CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''})
+                  CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})
                 </span>
                 <span className="fracao">provisão do item IV</span>
                 <span className="valor num" style={{ fontSize: 22 }}>
-                  {brl(provisao.total + custos.total + impostoSucessoes)}
+                  {brl(provisao.total + custos.total + impostoSucessoes + totalAdicionais)}
                 </span>
               </div>
             )}
@@ -160,6 +334,37 @@ export function CustosView({
             </p>
           ))}
         </>
+      )}
+
+      <EditorDespesasAdicionais adicionais={adicionais} setAdicionais={setAdicionais} />
+
+      {custos && (
+        <div style={{ marginTop: 18 }}>
+          <span className="eyebrow">Folha de orçamento</span>
+          <p className="fund" style={{ margin: '4px 0 8px' }}>
+            A planilha acima numa folha apresentável à família, com os fundamentos de cada
+            parcela — em PDF nas cores do módulo, ou em DOCX para editar antes de entregar.
+          </p>
+          <div className="escolha">
+            <Button
+              type="button"
+              loading={gerando === 'pdf'}
+              disabled={gerando !== null}
+              onClick={() => void gerarOrcamento('pdf')}
+            >
+              Baixar orçamento (PDF)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              loading={gerando === 'docx'}
+              disabled={gerando !== null}
+              onClick={() => void gerarOrcamento('docx')}
+            >
+              Orçamento editável (DOCX)
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* O LANÇAMENTO das sucessões cumuladas fica no item I (A família) —
