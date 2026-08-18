@@ -74,6 +74,13 @@ export interface EstadoFamilia {
   /** Certidões do registro civil LIDAS pelo cofre — alimentam o conferidor
    *  de qualificação cruzada (divergências viram alerta vermelho). */
   certidoesCivis?: CertidaoCivilLida[];
+  /**
+   * União estável do(a) convivente: já FORMALIZADA (escritura/contrato
+   * anterior) ou a RECONHECER dentro do próprio inventário — o
+   * reconhecimento soma UM ato sem valor declarado nas custas.
+   * null/undefined = ainda não respondido.
+   */
+  uniaoEstavelFormalizada?: 'ESCRITURA' | 'RECONHECER' | null;
 }
 
 /** Pílula de escolha (Sim/Não, vínculo, regime) sobre o Button do shadcn. */
@@ -310,6 +317,35 @@ export function FamiliaView({
               União estável
             </Pilula>
           </div>
+
+          {/* União estável: já formalizada × reconhecer no próprio inventário
+              (o reconhecimento soma UM ato sem valor declarado no item V). */}
+          {vinculo === 'UNIAO_ESTAVEL' && (
+            <div style={{ marginTop: 10 }}>
+              <span className="eyebrow">A união estável já está formalizada?</span>
+              <div className="escolha" style={{ marginTop: 6 }}>
+                <Pilula
+                  ativo={estado.uniaoEstavelFormalizada === 'ESCRITURA'}
+                  onClick={() => set({ uniaoEstavelFormalizada: 'ESCRITURA' })}
+                >
+                  Já há escritura/contrato de união estável
+                </Pilula>
+                <Pilula
+                  ativo={estado.uniaoEstavelFormalizada === 'RECONHECER'}
+                  onClick={() => set({ uniaoEstavelFormalizada: 'RECONHECER' })}
+                >
+                  Reconhecer dentro do inventário
+                </Pilula>
+              </div>
+              <p className="fund" style={{ margin: '6px 0 0' }}>
+                {estado.uniaoEstavelFormalizada === 'RECONHECER'
+                  ? 'O reconhecimento post mortem entra na própria escritura como UM ato sem valor declarado — já somado na projeção de custos (item V). Todos os herdeiros precisam anuir.'
+                  : estado.uniaoEstavelFormalizada === 'ESCRITURA'
+                    ? 'Anexe a escritura/contrato no cofre de documentos — ela comprova o vínculo e o regime.'
+                    : 'Responda para a projeção de custos considerar (ou não) o ato de reconhecimento.'}
+              </p>
+            </div>
+          )}
           <div className="escolha" style={{ marginTop: 8 }}>
             {REGIMES.map((r) => (
               <Pilula key={r.v} ativo={regime === r.v} onClick={() => set({ regime: r.v })}>

@@ -260,6 +260,9 @@ interface CasoSalvo {
   atribuicoes?: Record<string, string>;
   /** Partilha diferenciada: bemId → { participanteId → % do bem (texto) }. */
   atribuicoesPct?: Record<string, Record<string, string>>;
+  /** Rótulos da matriz (ex.: "usufruto vitalício") — marcam o redesenho por
+   *  usufruto × nua-propriedade, que muda os atos de registro (1/3 + 2/3). */
+  anotacoesMatriz?: Record<string, Record<string, string>>;
   titulo: TituloCessao;
   /** Condições de honorários do caso (o perfil do escritório é do navegador). */
   honorarios?: CondicoesHonorarios;
@@ -647,6 +650,8 @@ export default function SucessoristaClient({
     if (salvo.sociedades && typeof salvo.sociedades === 'object') setSociedades(salvo.sociedades);
     if (salvo.fiscal) setFiscal(salvo.fiscal);
     if (Number.isInteger(salvo.passo) && salvo.passo >= 1) setPasso(salvo.passo);
+    if (salvo.anotacoesMatriz && typeof salvo.anotacoesMatriz === 'object')
+      setAnotacoesMatriz(salvo.anotacoesMatriz);
     if (salvo.atribuicoesPct && typeof salvo.atribuicoesPct === 'object') {
       setMatriz(salvo.atribuicoesPct);
     } else if (salvo.atribuicoes && typeof salvo.atribuicoes === 'object') {
@@ -682,6 +687,7 @@ export default function SucessoristaClient({
       fiscal,
       passo,
       atribuicoesPct: matriz,
+      anotacoesMatriz,
       titulo,
       honorarios: condicoesHonorarios,
       casoId,
@@ -1371,8 +1377,10 @@ export default function SucessoristaClient({
         qtdImoveis: su.qtdImoveis,
       })),
       // Registro de imóveis: base pelo MAIOR entre atribuído, venal e
-      // avaliação — sobre a fração TRANSMITIDA: com meeiro(a), a metade do
-      // bem COMUM já é dele(a) e sai da base do ato (como na escritura).
+      // avaliação — sobre a fração TRANSMITIDA. Sai da base só o que FICA
+      // com o(a) meeiro(a), ATÉ o limite da meação (50%): na partilha
+      // igualitária é a metade; na diferenciada, a linha do bem decide —
+      // meeiro(a) sem direito remanescente no bem = ato pelo valor TOTAL.
       imoveis: bens
         .filter((b) => b.tipo === 'IMOVEL')
         .map((b) => {
@@ -1381,12 +1389,26 @@ export default function SucessoristaClient({
             Number(b.valorVenal) || 0,
             Number(b.valorAvaliacao) || 0,
           );
-          const fracaoTransmitida =
-            resultado.meacao && (b.natureza ?? 'COMUM') === 'COMUM' ? 0.5 : 1;
+          const fracaoTransmitida = (() => {
+            if (!resultado.meacao || (b.natureza ?? 'COMUM') !== 'COMUM') return 1;
+            const linha = matriz[b.id];
+            const total = linha
+              ? participantes.reduce((a, p) => a + pctNum(linha[p.id]), 0)
+              : 0;
+            if (linha && Math.abs(total - 100) <= 0.05) {
+              const ficaComMeeiro = Math.min(pctNum(linha['__sobrevivente__']) / 100, 0.5);
+              return 1 - ficaComMeeiro;
+            }
+            return 0.5; // sem linha preenchida: segue o direito (meação de 1/2)
+          })();
           return {
             descricao: b.descricao,
             valor: maior,
             valorTransmitido: Math.round(maior * fracaoTransmitida * 100) / 100,
+            // Redesenho por usufruto aceito (rótulo da matriz): o registro
+            // deste imóvel vira DOIS atos — 1/3 (usufruto) e 2/3 (nua).
+            usufrutoNua:
+              anotacoesMatriz[b.id]?.['__sobrevivente__'] === 'usufruto vitalício',
           };
         }),
       // A escolha do dashboard manda; AUTO segue o motor de elegibilidade.
@@ -1400,11 +1422,17 @@ export default function SucessoristaClient({
       // lançados e os DECLARADOS na certidão de óbito (documentação a vir).
       qtdHerdeiros: Math.max(herdeiros.length, (familia.herdeirosDeclarados ?? []).length),
       temSobrevivente,
+      // União estável a RECONHECER no próprio inventário (escolha do item I):
+      // soma um ato sem valor declarado na escritura.
+      reconhecerUniaoEstavel:
+        temSobrevivente &&
+        vinculo === 'UNIAO_ESTAVEL' &&
+        familia.uniaoEstavelFormalizada === 'RECONHECER',
       transferencias,
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, anotacoesMatriz, participantes]);
 
 
   /**
@@ -1711,7 +1739,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {

@@ -77,6 +77,15 @@ const renuncias = comRenuncia.parcelas.find((p) => p.id === 'renuncias')!;
 eq('renúncia: 2 atos sem valor declarado', renuncias.valor, 2 * ESCRITURA_SEM_VALOR_2026.total);
 eq('renúncia: item 6.2 da tabela', renuncias.fundamento.includes('6.2'), true);
 
+/* união estável a RECONHECER no próprio inventário: UM ato sem valor
+   declarado; já formalizada (flag ausente/false), nada entra */
+const comReconhecimento = projetarCustos({ ...BASE, reconhecerUniaoEstavel: true });
+const reconhecimento = comReconhecimento.parcelas.find((p) => p.id === 'reconhecimento-uniao-estavel')!;
+eq('união estável a reconhecer: um ato sem valor declarado', reconhecimento.valor, ESCRITURA_SEM_VALOR_2026.total);
+eq('reconhecimento: item 6.2 da tabela', reconhecimento.fundamento.includes('6.2'), true);
+eq('união estável já formalizada: sem ato',
+  projetarCustos({ ...BASE }).parcelas.some((p) => p.id === 'reconhecimento-uniao-estavel'), false);
+
 /* ISS editável: tabela publicada com 5%; alíquota menor desconta a
    diferença sobre a parcela do Tabelião/Oficial */
 eq('ISS 5% = valor publicado', emolumentoEscritura(500_000, 5), 5_519.9);
@@ -139,18 +148,49 @@ eq('5 certidões de registro civil', partilha.parcelas.find((p) => p.id === 'cer
 eq('total = soma das parcelas', partilha.total, Math.round(partilha.parcelas.reduce((a, p) => a + p.valor, 0) * 100) / 100);
 eq('aviso de conferência da tabela', partilha.avisos.some((a) => a.includes('anoregsp')), true);
 
-/* partilha diferenciada: ato notarial extra + ato de registro extra */
+/* partilha diferenciada: UM ato de torna pela SOMA das diferenças positivas
+   e NENHUM ato de registro adicional (calibração do escritório) */
 const diferenciada = projetarCustos({
   ...BASE,
   transferencias: [{ valor: 120_000, tributo: 'ITCMD_DOACAO' }],
 });
 const idsDif = diferenciada.parcelas.map((p) => p.id);
-eq('torna vira ato próprio pela base da torna', idsDif.includes('escritura-torna-0'), true);
+eq('torna vira ato próprio pela base da torna', idsDif.includes('escritura-torna'), true);
 // 120 mil cai na faixa 115.260,01–153.680 → R$ 2.728,61
-eq('ato da torna pela faixa do valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.valor, 2_728.61);
-eq('torna: fundamento base = valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.fundamento.includes('valor da torna'), true);
-eq('registro adicional por imóvel', idsDif.includes('registro-atos-extras'), true);
+eq('ato da torna pela faixa do valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.valor, 2_728.61);
+eq('torna: fundamento base = total cedido', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.fundamento.includes('total cedido'), true);
+eq('SEM ato de registro adicional na diferenciada', idsDif.includes('registro-atos-extras'), false);
+
+/* usufruto × nua-propriedade (sugestão de economia aceita): o registro do
+   imóvel vira DOIS atos — 1/3 (usufruto, Nota 1.5) e 2/3 (nua). Exemplo da
+   calibração: imóvel de 250.000 → atos por 83.333,33 e 166.666,67. */
+const comUsufruto = projetarCustos({
+  ...BASE,
+  imoveis: [{ descricao: 'Casa', valor: 250_000, valorTransmitido: 125_000, usufrutoNua: true }],
+});
+const idsUsu = comUsufruto.parcelas.map((p) => p.id);
+eq('usufruto: dois atos de registro', [idsUsu.includes('registro-usufruto-0'), idsUsu.includes('registro-nua-0')], [true, true]);
+eq('usufruto: sem o ato único da partilha', idsUsu.includes('registro-0'), false);
+eq('usufruto: ato por 1/3 do valor', comUsufruto.parcelas.find((p) => p.id === 'registro-usufruto-0')!.valor, emolumentoRegistro(83_333.33));
+eq('nua-propriedade: ato por 2/3 do valor', comUsufruto.parcelas.find((p) => p.id === 'registro-nua-0')!.valor, emolumentoRegistro(166_666.67));
+eq('usufruto: fundamento cita a Nota 1.5', comUsufruto.parcelas.find((p) => p.id === 'registro-usufruto-0')!.fundamento.includes('1.5'), true);
 eq('aviso cita o usufruto acessório (1/4 sobre 1/3)', diferenciada.avisos.some((a) => a.includes('1/3')), true);
+
+// Caso real do escritório: viúva cede a meação, TRÊS herdeiros recebem
+// 16.744,33/34 cada — UM ato só pela soma (R$ 50.233,00, faixa
+// 38.420,01–76.840 → R$ 1.940,10), nunca três atos de R$ 1.209,95.
+const tornaTripla = projetarCustos({
+  ...BASE,
+  transferencias: [
+    { valor: 16_744.34, tributo: 'ITCMD_DOACAO' },
+    { valor: 16_744.33, tributo: 'ITCMD_DOACAO' },
+    { valor: 16_744.33, tributo: 'ITCMD_DOACAO' },
+  ],
+});
+const atosTorna = tornaTripla.parcelas.filter((p) => p.id.startsWith('escritura-torna'));
+eq('três beneficiários: UM ato só', atosTorna.length, 1);
+eq('torna tripla: faixa pela soma de 50.233,00', atosTorna[0].valor, 1_940.10);
+eq('torna tripla: detalhe traz a soma', atosTorna[0].detalhe!.includes('50.233,00'), true);
 
 /* judicial: taxa por faixa no lugar da escritura; registro continua */
 const judicial = projetarCustos({ ...BASE, rito: 'JUDICIAL' });
