@@ -478,6 +478,21 @@
 .sucessorista .matriz-partilha th,
 .sucessorista .matriz-partilha td { padding: 12px 12px; }
 
+/* Nomes compridos QUEBRAM em várias linhas: as colunas dos participantes
+   ficam com largura UNIFORME e a matriz cabe na folha sem obrigar a rolagem
+   lateral a cada conferência (o cabeçalho cresce para baixo, não para o
+   lado). O :not() poupa a coluna do bem e a do Σ%. */
+.sucessorista .matriz-partilha th:not(.col-bem):not(.col-total) {
+  width: 128px;
+  min-width: 112px;
+  max-width: 140px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  vertical-align: bottom;
+  font-size: 12.5px;
+}
+
 /* Rótulo pequeno sob a célula (ex.: "usufruto vitalício", "50% da
    nua-propriedade") — hint do redesenho do usufruto no espelho. */
 .sucessorista .matriz-partilha .pct-rotulo {
