@@ -110,6 +110,24 @@ eq('extrajudicial: parcelas esperadas', ids, [
   'certidao-testamento',
 ]);
 eq('registro pela faixa oficial', partilha.parcelas.find((p) => p.id === 'registro-0')!.valor, 3_962.79);
+
+/* registro com MEEIRO: a base do ato é a fração TRANSMITIDA (meação fora),
+   como na escritura — caso real do escritório: TERRENO de R$ 283.801,87 em
+   partilha igualitária com viúva meeira → base do ato R$ 141.900,94. */
+const comMeacao = projetarCustos({
+  ...BASE,
+  imoveis: [{ descricao: 'Terreno', valor: 283_801.87, valorTransmitido: 141_900.94 }],
+});
+const registroMeacao = comMeacao.parcelas.find((p) => p.id === 'registro-0')!;
+eq('registro com meação: faixa pela base transmitida', registroMeacao.valor, emolumentoRegistro(141_900.94));
+eq('registro com meação: detalhe explica a exclusão', registroMeacao.detalhe!.includes('TRANSMITIDA'), true);
+eq('registro com meação: cobra MENOS que o valor cheio',
+  registroMeacao.valor < emolumentoRegistro(283_801.87), true);
+// Sem valorTransmitido (sem meeiro), vale o valor cheio — retrocompatível.
+eq('registro sem meeiro: valor cheio', projetarCustos({
+  ...BASE,
+  imoveis: [{ descricao: 'Terreno', valor: 283_801.87 }],
+}).parcelas.find((p) => p.id === 'registro-0')!.valor, emolumentoRegistro(283_801.87));
 eq('certidão de matrícula exata', partilha.parcelas.find((p) => p.id === 'certidoes-matricula')!.valor, 77.89);
 eq('escritura: ato único mesmo com vários bens e herdeiros', projetarCustos({ ...BASE, qtdHerdeiros: 8, imoveis: [
   { descricao: 'Casa', valor: 400_000 },
