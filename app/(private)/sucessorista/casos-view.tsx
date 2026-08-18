@@ -5,7 +5,7 @@
  * revalida em segundo plano. Ordenação por URGÊNCIA do prazo do art. 611
  * (dias desde o óbito, decrescente) — é o que diferencia o painel de uma
  * lista de arquivos. Nada daqui trafega para servidor — exceto, opt-in, a
- * NUVEM DA EQUIPE: cards com modo 'nuvem' vêm do espelho compartilhado
+ * NUVEM (conta ou equipe): cards com modo 'nuvem' vêm do espelho no servidor
  * (folha do caso; documentos nunca sobem).
  */
 
@@ -85,7 +85,7 @@ export function CasosView({
   resumos: ResumoCaso[] | null;
   /** Nuvem da equipe ativa (o subtítulo deixa de prometer "nada sai da máquina"). */
   comNuvem?: boolean;
-  /** Chefe com nuvem ativa: envia os casos locais para a nuvem de uma vez. */
+  /** Envia os casos locais para a nuvem de uma vez (carga inicial manual). */
   onEnviarNuvem?: (() => Promise<void>) | null;
   dispositivo: string;
   temRascunhoLegado: boolean;
@@ -178,7 +178,7 @@ export function CasosView({
           <h1>Meus casos</h1>
           <p className="subtitulo" style={{ marginBottom: 0 }}>
             {comNuvem
-              ? 'Seus inventários e os casos da nuvem da equipe — os documentos nunca saem desta máquina.'
+              ? 'Seus inventários, sincronizados pela nuvem da sua conta — em qualquer computador, o login puxa os casos; os documentos nunca saem desta máquina.'
               : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
           </p>
         </div>
@@ -193,7 +193,7 @@ export function CasosView({
                   void onEnviarNuvem().finally(() => setEnviandoNuvem(false));
                 }}
               >
-                Enviar casos para a equipe
+                Enviar casos para a nuvem
               </Button>
             )}
             <Button onClick={() => setDialogoNovo(true)}>Novo caso</Button>
@@ -345,7 +345,7 @@ export function CasosView({
                   Alterado {alteradoHa(r.cabecalho.atualizadoEm)}
                   {r.cabecalho.atualizadoPor ? ` por ${r.cabecalho.atualizadoPor}` : ''}
                   {r.modo === 'nuvem'
-                    ? ' · nuvem da equipe'
+                    ? ' · na nuvem'
                     : r.caminhoPasta
                       ? ` · pasta: ${r.caminhoPasta}`
                       : ' · neste navegador'}

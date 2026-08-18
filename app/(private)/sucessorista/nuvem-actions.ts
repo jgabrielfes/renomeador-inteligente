@@ -1,11 +1,19 @@
 "use server";
 
-// NUVEM DA EQUIPE — server actions do espelho de casos (tabela equipe_casos).
+// NUVEM DE CASOS — server actions do espelho do caso.json no servidor.
+//
+// DUAS nuvens atrás das MESMAS actions (o cliente não sabe qual está ativa):
+// - NUVEM DA EQUIPE (tabela equipe_casos): CHEFE sempre, e o MEMBRO que
+//   entrou por convite de ACESSO TOTAL (users.acessoCasosEquipe);
+// - NUVEM DA CONTA (tabela conta_casos): TODO usuário logado sem a da
+//   equipe — é o que faz o login "puxar" os casos em qualquer computador.
+// A leitura cobre as duas (quem entra numa equipe não perde o que já tinha
+// espelhado na conta); a escrita vai para a ativa, apagando a sombra da
+// conta quando o mesmo caso passa a viver na da equipe.
 //
 // O que sobe é SÓ o `caso.json` (folha do caso: cabeçalho, dados do wizard e
 // manifesto de metadados) — os DOCUMENTOS nunca saem da máquina (fronteira
-// de dados do módulo). Quem enxerga a nuvem: o CHEFE da equipe sempre, e o
-// MEMBRO que entrou por convite de ACESSO TOTAL (users.acessoCasosEquipe).
+// de dados do módulo).
 // Toda validação é aqui no servidor — server action é endpoint público.
 //
 // Concorrência: a gravação carrega a mesma guarda dos stores locais —
@@ -47,7 +55,13 @@ export interface ResultadoSalvamentoNuvem {
 // ~4 MB serializado: folha + manifesto cabem com folga; barra abuso.
 const TAMANHO_MAXIMO = 4_000_000;
 
-async function acessoNuvem(): Promise<{ equipeId: string } | null> {
+interface EscopoNuvem {
+  userId: string;
+  /** Nuvem da equipe ativa (chefe ou membro com acesso total); null = só a da conta. */
+  equipeId: string | null;
+}
+
+async function escopoNuvem(): Promise<EscopoNuvem | null> {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return null;
@@ -55,9 +69,10 @@ async function acessoNuvem(): Promise<{ equipeId: string } | null> {
     where: { id },
     select: { equipeId: true, papelEquipe: true, acessoCasosEquipe: true },
   });
-  if (!eu?.equipeId) return null;
-  if (eu.papelEquipe !== "CHEFE" && !eu.acessoCasosEquipe) return null;
-  return { equipeId: eu.equipeId };
+  if (!eu) return null;
+  const equipeId =
+    eu.equipeId && (eu.papelEquipe === "CHEFE" || eu.acessoCasosEquipe) ? eu.equipeId : null;
+  return { userId: id, equipeId };
 }
 
 function lerCabecalho(arquivo: unknown): CabecalhoNuvem | null {
@@ -78,20 +93,36 @@ function lerCabecalho(arquivo: unknown): CabecalhoNuvem | null {
   };
 }
 
-/** Cabeçalhos dos casos da nuvem da equipe. null = sem acesso (ou falha). */
+/** Cabeçalhos dos casos na nuvem (equipe + conta). null = deslogado/falha. */
 export async function listarCasosNuvem(): Promise<CabecalhoNuvem[] | null> {
   if (!EH_SUCESSORISTA) return null;
   try {
-    const acesso = await acessoNuvem();
-    if (!acesso) return null;
-    const linhas = await prisma.equipeCaso.findMany({
-      where: { equipeId: acesso.equipeId },
-      select: { cabecalho: true },
-      orderBy: { atualizadoEm: "desc" },
-    });
-    return linhas
-      .map((l) => lerCabecalho({ cabecalho: l.cabecalho }))
-      .filter((c): c is CabecalhoNuvem => c !== null);
+    const escopo = await escopoNuvem();
+    if (!escopo) return null;
+    const [daEquipe, daConta] = await Promise.all([
+      escopo.equipeId
+        ? prisma.equipeCaso.findMany({
+            where: { equipeId: escopo.equipeId },
+            select: { cabecalho: true },
+            orderBy: { atualizadoEm: "desc" },
+          })
+        : Promise.resolve([]),
+      prisma.contaCaso.findMany({
+        where: { userId: escopo.userId },
+        select: { cabecalho: true },
+        orderBy: { atualizadoEm: "desc" },
+      }),
+    ]);
+    // O mesmo caso pode existir nas duas nuvens (conta antiga + equipe nova):
+    // fica UM cabeçalho por caseId, o mais novo.
+    const porCaso = new Map<string, CabecalhoNuvem>();
+    for (const l of [...daEquipe, ...daConta]) {
+      const c = lerCabecalho({ cabecalho: l.cabecalho });
+      if (!c) continue;
+      const atual = porCaso.get(c.caseId);
+      if (!atual || c.atualizadoEm > atual.atualizadoEm) porCaso.set(c.caseId, c);
+    }
+    return [...porCaso.values()].sort((a, b) => (a.atualizadoEm < b.atualizadoEm ? 1 : -1));
   } catch {
     return null;
   }
@@ -101,14 +132,24 @@ export async function listarCasosNuvem(): Promise<CabecalhoNuvem[] | null> {
 export async function abrirCasoNuvem(caseId: string): Promise<unknown | null> {
   if (!EH_SUCESSORISTA || typeof caseId !== "string" || !caseId) return null;
   try {
-    const acesso = await acessoNuvem();
-    if (!acesso) return null;
-    const linha = await prisma.equipeCaso.findUnique({
-      where: { id: caseId },
-      select: { equipeId: true, arquivo: true },
-    });
-    if (!linha || linha.equipeId !== acesso.equipeId) return null;
-    return linha.arquivo;
+    const escopo = await escopoNuvem();
+    if (!escopo) return null;
+    const [daEquipe, daConta] = await Promise.all([
+      escopo.equipeId
+        ? prisma.equipeCaso.findUnique({
+            where: { id: caseId },
+            select: { equipeId: true, arquivo: true, atualizadoEm: true },
+          })
+        : Promise.resolve(null),
+      prisma.contaCaso.findUnique({
+        where: { userId_id: { userId: escopo.userId, id: caseId } },
+        select: { arquivo: true, atualizadoEm: true },
+      }),
+    ]);
+    const equipeVale = daEquipe && daEquipe.equipeId === escopo.equipeId ? daEquipe : null;
+    if (equipeVale && daConta)
+      return equipeVale.atualizadoEm >= daConta.atualizadoEm ? equipeVale.arquivo : daConta.arquivo;
+    return equipeVale?.arquivo ?? daConta?.arquivo ?? null;
   } catch {
     return null;
   }
@@ -130,19 +171,35 @@ export async function salvarCasoNuvem(
   if (!cabecalho) return { ok: false, erro: "Arquivo de caso inválido." };
   try {
     if (JSON.stringify(arquivo).length > TAMANHO_MAXIMO)
-      return { ok: false, erro: "Caso grande demais para a nuvem da equipe." };
+      return { ok: false, erro: "Caso grande demais para a nuvem." };
   } catch {
     return { ok: false, erro: "Arquivo de caso inválido." };
   }
   try {
-    const acesso = await acessoNuvem();
-    if (!acesso) return { ok: false, erro: "Sem acesso à nuvem da equipe." };
-    const atual = await prisma.equipeCaso.findUnique({
-      where: { id: cabecalho.caseId },
-      select: { equipeId: true, arquivo: true, atualizadoPor: true },
-    });
-    if (atual && atual.equipeId !== acesso.equipeId)
+    const escopo = await escopoNuvem();
+    if (!escopo) return { ok: false, erro: "Sem acesso à nuvem." };
+    // A versão vigente para a guarda de conflito é a MAIS NOVA entre as duas
+    // nuvens — quem entrou numa equipe não perde o histórico da conta.
+    const [linhaEquipe, linhaConta] = await Promise.all([
+      escopo.equipeId
+        ? prisma.equipeCaso.findUnique({
+            where: { id: cabecalho.caseId },
+            select: { equipeId: true, arquivo: true, atualizadoPor: true, atualizadoEm: true },
+          })
+        : Promise.resolve(null),
+      prisma.contaCaso.findUnique({
+        where: { userId_id: { userId: escopo.userId, id: cabecalho.caseId } },
+        select: { arquivo: true, atualizadoPor: true, atualizadoEm: true },
+      }),
+    ]);
+    if (linhaEquipe && linhaEquipe.equipeId !== escopo.equipeId)
       return { ok: false, erro: "Este caso pertence a outra equipe." };
+    const atual =
+      linhaEquipe && linhaConta
+        ? linhaEquipe.atualizadoEm >= linhaConta.atualizadoEm
+          ? linhaEquipe
+          : linhaConta
+        : (linhaEquipe ?? linhaConta);
     const cabecalhoAtual = atual ? lerCabecalho(atual.arquivo) : null;
 
     if (atual && cabecalhoAtual && opcoes.forcar !== true) {
@@ -174,23 +231,50 @@ export async function salvarCasoNuvem(
     // Mesmo padrão do store do portal: JSON "puro" para as colunas Json.
     const cabecalhoJson = JSON.parse(JSON.stringify(cabecalho)) as object;
     const arquivoJson = JSON.parse(JSON.stringify(arquivo)) as object;
-    await prisma.equipeCaso.upsert({
-      where: { id: cabecalho.caseId },
-      create: {
-        id: cabecalho.caseId,
-        equipeId: acesso.equipeId,
-        cabecalho: cabecalhoJson,
-        arquivo: arquivoJson,
-        atualizadoEm: new Date(cabecalho.atualizadoEm),
-        atualizadoPor: cabecalho.atualizadoPor,
-      },
-      update: {
-        cabecalho: cabecalhoJson,
-        arquivo: arquivoJson,
-        atualizadoEm: new Date(cabecalho.atualizadoEm),
-        atualizadoPor: cabecalho.atualizadoPor,
-      },
-    });
+    if (escopo.equipeId) {
+      await prisma.equipeCaso.upsert({
+        where: { id: cabecalho.caseId },
+        create: {
+          id: cabecalho.caseId,
+          equipeId: escopo.equipeId,
+          cabecalho: cabecalhoJson,
+          arquivo: arquivoJson,
+          atualizadoEm: new Date(cabecalho.atualizadoEm),
+          atualizadoPor: cabecalho.atualizadoPor,
+        },
+        update: {
+          cabecalho: cabecalhoJson,
+          arquivo: arquivoJson,
+          atualizadoEm: new Date(cabecalho.atualizadoEm),
+          atualizadoPor: cabecalho.atualizadoPor,
+        },
+      });
+      // O caso agora vive na nuvem da equipe: a sombra da conta sai, para a
+      // listagem não carregar duas versões do mesmo caso para sempre.
+      if (linhaConta) {
+        await prisma.contaCaso.deleteMany({
+          where: { userId: escopo.userId, id: cabecalho.caseId },
+        });
+      }
+    } else {
+      await prisma.contaCaso.upsert({
+        where: { userId_id: { userId: escopo.userId, id: cabecalho.caseId } },
+        create: {
+          id: cabecalho.caseId,
+          userId: escopo.userId,
+          cabecalho: cabecalhoJson,
+          arquivo: arquivoJson,
+          atualizadoEm: new Date(cabecalho.atualizadoEm),
+          atualizadoPor: cabecalho.atualizadoPor,
+        },
+        update: {
+          cabecalho: cabecalhoJson,
+          arquivo: arquivoJson,
+          atualizadoEm: new Date(cabecalho.atualizadoEm),
+          atualizadoPor: cabecalho.atualizadoPor,
+        },
+      });
+    }
     return { ok: true, salvoEm: cabecalho.atualizadoEm };
   } catch {
     return { ok: false, erro: "Banco indisponível (ou migração pendente) — tente mais tarde." };
@@ -201,12 +285,15 @@ export async function salvarCasoNuvem(
 export async function removerCasoNuvem(caseId: string): Promise<boolean> {
   if (!EH_SUCESSORISTA || typeof caseId !== "string" || !caseId) return false;
   try {
-    const acesso = await acessoNuvem();
-    if (!acesso) return false;
-    const { count } = await prisma.equipeCaso.deleteMany({
-      where: { id: caseId, equipeId: acesso.equipeId },
-    });
-    return count > 0;
+    const escopo = await escopoNuvem();
+    if (!escopo) return false;
+    const [daEquipe, daConta] = await Promise.all([
+      escopo.equipeId
+        ? prisma.equipeCaso.deleteMany({ where: { id: caseId, equipeId: escopo.equipeId } })
+        : Promise.resolve({ count: 0 }),
+      prisma.contaCaso.deleteMany({ where: { id: caseId, userId: escopo.userId } }),
+    ]);
+    return daEquipe.count + daConta.count > 0;
   } catch {
     return false;
   }
