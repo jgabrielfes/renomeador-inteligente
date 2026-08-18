@@ -120,6 +120,10 @@ const esquemaBem = z
     inscricaoCadastral: z.string().trim(),
     matricula: z.string().trim(),
     registroImoveis: z.string().trim(),
+    pctVenal: z
+      .string()
+      .trim()
+      .refine((v) => v === '' || pctEfetivo(v) !== null, 'Percentual inválido — maior que 0 e até 100.'),
     instituicao: z.string().trim(),
     agencia: z.string().trim(),
     conta: z.string().trim(),
@@ -204,7 +208,7 @@ export function AcervoView({
     defaultValues: {
       descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '',
       municipio: '', inscricaoCadastral: '', matricula: '', registroImoveis: '',
-      instituicao: '', agencia: '', conta: '',
+      pctVenal: '', instituicao: '', agencia: '', conta: '',
     },
   });
   // O TIPO é a primeira lacuna: decide os campos de valor (imóvel = 3,
@@ -221,6 +225,7 @@ export function AcervoView({
             inscricaoCadastral: dados.inscricaoCadastral,
             matricula: dados.matricula,
             registroImoveis: dados.registroImoveis,
+            percentualVenal: dados.pctVenal,
           }).filter(([, v]) => v !== ''),
         )
       : {};
@@ -251,7 +256,7 @@ export function AcervoView({
     reset({
       descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza,
       valorVenal: '', valorAvaliacao: '', municipio: '', inscricaoCadastral: '',
-      matricula: '', registroImoveis: '', instituicao: '', agencia: '', conta: '',
+      matricula: '', registroImoveis: '', pctVenal: '', instituicao: '', agencia: '', conta: '',
     });
   };
 
@@ -313,6 +318,17 @@ export function AcervoView({
               <Field>
                 <FieldLabel htmlFor="bem-ri">Registro de Imóveis (cartório)</FieldLabel>
                 <Input id="bem-ri" placeholder="ex.: 1º RI de Guarulhos/SP" {...register('registroImoveis')} />
+              </Field>
+              <Field data-invalid={Boolean(errors.pctVenal)} style={{ maxWidth: 180 }}>
+                <FieldLabel htmlFor="bem-pct-venal">% do venal (área maior na prefeitura)</FieldLabel>
+                <Input
+                  id="bem-pct-venal"
+                  placeholder="ex.: 25"
+                  inputMode="decimal"
+                  aria-invalid={Boolean(errors.pctVenal)}
+                  {...register('pctVenal')}
+                />
+                <FieldError errors={[errors.pctVenal]} />
               </Field>
             </>
           )}
@@ -882,7 +898,13 @@ function LinhaBem({
   return (
     <div className="ficha" style={{ marginTop: 8 }}>
       <span className="eyebrow">Editando o bem {numero}</span>
+      {/* MESMA ordem, mesmos rótulos e mesmos campos do LANÇAMENTO do bem:
+          tipo primeiro, campos da declaração por tipo, e os valores. */}
       <div className="grade c2" style={{ marginTop: 8 }}>
+        <label className="campo">
+          Tipo do bem (declaração do ITCMD-SP)
+          <SeletorTipoItcmd value={codigo} onChange={setCodigo} />
+        </label>
         <label className="campo">
           Descrição
           <Input
@@ -891,38 +913,6 @@ function LinhaBem({
             onChange={(e) => setDescricao(e.target.value)}
           />
         </label>
-        <label className="campo">
-          Valor (R$)
-          <CurrencyInput value={valor} onChange={setValor} />
-        </label>
-        <label className="campo">
-          Tipo do bem (declaração do ITCMD-SP)
-          <SeletorTipoItcmd value={codigo} onChange={setCodigo} />
-        </label>
-        <label className="campo">
-          Natureza
-          <Select
-            value={natureza}
-            onValueChange={(v) => v && setNatureza(v as Bem['natureza'])}
-          >
-            <SelectTrigger aria-label="Natureza do bem">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="COMUM">Comum (adquirido na constância)</SelectItem>
-              <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="campo">
-          Valor venal (R$)
-          <CurrencyInput value={venal} onChange={setVenal} />
-        </label>
-        <label className="campo">
-          Valor de avaliação (R$)
-          <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
-        </label>
-        {/* Campos da declaração do ITCMD-SP conforme o tipo em edição. */}
         {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
           <>
             <label className="campo">
@@ -968,6 +958,35 @@ function LinhaBem({
             </label>
           </>
         )}
+        <label className="campo">
+          Valor venal na data do óbito (R$)
+          <CurrencyInput value={valor} onChange={setValor} />
+        </label>
+        <label className="campo">
+          Natureza
+          <Select
+            value={natureza}
+            onValueChange={(v) => v && setNatureza(v as Bem['natureza'])}
+          >
+            <SelectTrigger aria-label="Natureza do bem">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="COMUM">Comum (adquirido na constância)</SelectItem>
+              <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
+          <label className="campo">
+            Valor venal do exercício corrente (R$)
+            <CurrencyInput value={venal} onChange={setVenal} />
+          </label>
+        )}
+        <label className="campo">
+          Valor de avaliação (R$)
+          <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
+        </label>
       </div>
       {/* Prévia do venal EFETIVO: certidão da prefeitura × % informado —
           ao salvar, os valores do óbito e do exercício corrente recebem o
