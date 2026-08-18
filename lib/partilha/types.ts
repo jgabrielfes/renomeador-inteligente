@@ -63,6 +63,13 @@ export interface DetalhesImovel {
   inscricaoCadastral?: string;
   /** Fração ideal (%) somada das inscrições — 100 = imóvel integral. */
   fracaoIdeal?: string;
+  /**
+   * Percentual do IMÓVEL sobre o venal lançado pela prefeitura (%, texto) —
+   * para cadastro em ÁREA MAIOR: o venal EFETIVO (óbito e corrente) é a
+   * certidão × este percentual. Preenchido pelo usuário quando a leitura
+   * não identifica a fração; vazio = certidão integral.
+   */
+  percentualVenal?: string;
   /** Valores venais decimais + exercícios (óbito × corrente). */
   valorVenalObito?: string;
   exercicioObito?: string;

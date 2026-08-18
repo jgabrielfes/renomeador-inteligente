@@ -120,6 +120,10 @@ const esquemaBem = z
     inscricaoCadastral: z.string().trim(),
     matricula: z.string().trim(),
     registroImoveis: z.string().trim(),
+    pctVenal: z
+      .string()
+      .trim()
+      .refine((v) => v === '' || pctEfetivo(v) !== null, 'Percentual inválido — maior que 0 e até 100.'),
     instituicao: z.string().trim(),
     agencia: z.string().trim(),
     conta: z.string().trim(),
@@ -149,6 +153,12 @@ export function baseDeCustaMaior(bem: Bem): number {
     Number(bem.valorVenal) || 0,
     Number(bem.valorAvaliacao) || 0,
   );
+}
+
+/** % do venal válido (0 < pct ≤ 100) — aceita "12,5" ou "12.5"; null = sem efeito. */
+function pctEfetivo(v: string): number | null {
+  const n = Number(v.trim().replace(',', '.'));
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : null;
 }
 
 /** Decimal armazenado ("900000.00") → texto mascarado do CurrencyInput. */
@@ -198,7 +208,7 @@ export function AcervoView({
     defaultValues: {
       descricao: '', valor: '', codigo: '101', natureza: 'COMUM', valorVenal: '', valorAvaliacao: '',
       municipio: '', inscricaoCadastral: '', matricula: '', registroImoveis: '',
-      instituicao: '', agencia: '', conta: '',
+      pctVenal: '', instituicao: '', agencia: '', conta: '',
     },
   });
   // O TIPO é a primeira lacuna: decide os campos de valor (imóvel = 3,
@@ -215,6 +225,7 @@ export function AcervoView({
             inscricaoCadastral: dados.inscricaoCadastral,
             matricula: dados.matricula,
             registroImoveis: dados.registroImoveis,
+            percentualVenal: dados.pctVenal,
           }).filter(([, v]) => v !== ''),
         )
       : {};
@@ -245,7 +256,7 @@ export function AcervoView({
     reset({
       descricao: '', valor: '', codigo: dados.codigo, natureza: dados.natureza,
       valorVenal: '', valorAvaliacao: '', municipio: '', inscricaoCadastral: '',
-      matricula: '', registroImoveis: '', instituicao: '', agencia: '', conta: '',
+      matricula: '', registroImoveis: '', pctVenal: '', instituicao: '', agencia: '', conta: '',
     });
   };
 
@@ -307,6 +318,17 @@ export function AcervoView({
               <Field>
                 <FieldLabel htmlFor="bem-ri">Registro de Imóveis (cartório)</FieldLabel>
                 <Input id="bem-ri" placeholder="ex.: 1º RI de Guarulhos/SP" {...register('registroImoveis')} />
+              </Field>
+              <Field data-invalid={Boolean(errors.pctVenal)} style={{ maxWidth: 180 }}>
+                <FieldLabel htmlFor="bem-pct-venal">% do venal (área maior na prefeitura)</FieldLabel>
+                <Input
+                  id="bem-pct-venal"
+                  placeholder="ex.: 25"
+                  inputMode="decimal"
+                  aria-invalid={Boolean(errors.pctVenal)}
+                  {...register('pctVenal')}
+                />
+                <FieldError errors={[errors.pctVenal]} />
               </Field>
             </>
           )}
@@ -707,6 +729,8 @@ function LinhaBem({
   const [inscricao, setInscricao] = useState('');
   const [matricula, setMatricula] = useState('');
   const [registroRI, setRegistroRI] = useState('');
+  // % do imóvel sobre o venal da prefeitura (cadastro em ÁREA MAIOR).
+  const [pctVenal, setPctVenal] = useState('');
   const [instituicao, setInstituicao] = useState('');
   const [agencia, setAgencia] = useState('');
   const [conta, setConta] = useState('');
@@ -723,6 +747,7 @@ function LinhaBem({
     setInscricao(bem.imovel?.inscricaoCadastral ?? '');
     setMatricula(bem.imovel?.matricula ?? '');
     setRegistroRI(bem.imovel?.registroImoveis ?? '');
+    setPctVenal(bem.imovel?.percentualVenal ?? '');
     setInstituicao(bem.financeiro?.instituicao ?? '');
     setAgencia(bem.financeiro?.agencia ?? '');
     setConta(bem.financeiro?.conta ?? '');
@@ -751,20 +776,38 @@ function LinhaBem({
             inscricaoCadastral: limpo(inscricao),
             matricula: limpo(matricula),
             registroImoveis: limpo(registroRI),
+            percentualVenal: limpo(pctVenal),
           }
         : bem.imovel;
     const financeiro =
       tipoFinal === 'FINANCEIRO'
         ? { instituicao: limpo(instituicao), agencia: limpo(agencia), conta: limpo(conta) }
         : bem.financeiro;
+
+    // % do venal (cadastro em ÁREA MAIOR na prefeitura): com o percentual
+    // preenchido e a certidão lida, o sistema CALCULA o venal EFETIVO — na
+    // data do óbito (bem.valor) e no exercício corrente (bem.valorVenal) —
+    // por cima do que estiver nos campos de valor.
+    const pct = pctEfetivo(pctVenal);
+    const efetivoObito =
+      pct !== null && imovel?.valorVenalObito
+        ? ((Number(imovel.valorVenalObito) * pct) / 100).toFixed(2)
+        : null;
+    const efetivoAtual =
+      pct !== null && imovel?.valorVenalAtual
+        ? ((Number(imovel.valorVenalAtual) * pct) / 100).toFixed(2)
+        : null;
+
     onSalvar({
       ...bem,
       descricao: descricao.trim(),
-      valor: paraDecimal(valor),
+      valor: efetivoObito ?? paraDecimal(valor),
       tipo: tipoFinal,
       codigoItcmd: oficial ? codigo : bem.codigoItcmd,
       natureza,
-      valorVenal: venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined,
+      valorVenal:
+        efetivoAtual ??
+        (venal.trim() && VALOR_PTBR.test(venal.trim()) ? paraDecimal(venal) : undefined),
       valorAvaliacao: avaliacao.trim() && VALOR_PTBR.test(avaliacao.trim()) ? paraDecimal(avaliacao) : undefined,
       imovel,
       financeiro,
@@ -855,7 +898,13 @@ function LinhaBem({
   return (
     <div className="ficha" style={{ marginTop: 8 }}>
       <span className="eyebrow">Editando o bem {numero}</span>
+      {/* MESMA ordem, mesmos rótulos e mesmos campos do LANÇAMENTO do bem:
+          tipo primeiro, campos da declaração por tipo, e os valores. */}
       <div className="grade c2" style={{ marginTop: 8 }}>
+        <label className="campo">
+          Tipo do bem (declaração do ITCMD-SP)
+          <SeletorTipoItcmd value={codigo} onChange={setCodigo} />
+        </label>
         <label className="campo">
           Descrição
           <Input
@@ -864,38 +913,6 @@ function LinhaBem({
             onChange={(e) => setDescricao(e.target.value)}
           />
         </label>
-        <label className="campo">
-          Valor (R$)
-          <CurrencyInput value={valor} onChange={setValor} />
-        </label>
-        <label className="campo">
-          Tipo do bem (declaração do ITCMD-SP)
-          <SeletorTipoItcmd value={codigo} onChange={setCodigo} />
-        </label>
-        <label className="campo">
-          Natureza
-          <Select
-            value={natureza}
-            onValueChange={(v) => v && setNatureza(v as Bem['natureza'])}
-          >
-            <SelectTrigger aria-label="Natureza do bem">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="COMUM">Comum (adquirido na constância)</SelectItem>
-              <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="campo">
-          Valor venal (R$) — opcional
-          <CurrencyInput value={venal} onChange={setVenal} />
-        </label>
-        <label className="campo">
-          Valor de avaliação (R$) — opcional
-          <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
-        </label>
-        {/* Campos da declaração do ITCMD-SP conforme o tipo em edição. */}
         {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
           <>
             <label className="campo">
@@ -913,6 +930,15 @@ function LinhaBem({
             <label className="campo">
               Registro de Imóveis (cartório)
               <Input value={registroRI} onChange={(e) => setRegistroRI(e.target.value)} />
+            </label>
+            <label className="campo" style={{ maxWidth: 180 }}>
+              % do venal (área maior na prefeitura)
+              <Input
+                value={pctVenal}
+                placeholder="ex.: 25"
+                inputMode="decimal"
+                onChange={(e) => setPctVenal(e.target.value)}
+              />
             </label>
           </>
         )}
@@ -932,7 +958,62 @@ function LinhaBem({
             </label>
           </>
         )}
+        <label className="campo">
+          Valor venal na data do óbito (R$)
+          <CurrencyInput value={valor} onChange={setValor} />
+        </label>
+        <label className="campo">
+          Natureza
+          <Select
+            value={natureza}
+            onValueChange={(v) => v && setNatureza(v as Bem['natureza'])}
+          >
+            <SelectTrigger aria-label="Natureza do bem">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="COMUM">Comum (adquirido na constância)</SelectItem>
+              <SelectItem value="PARTICULAR">Particular (herança, doação, anterior)</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' && (
+          <label className="campo">
+            Valor venal do exercício corrente (R$)
+            <CurrencyInput value={venal} onChange={setVenal} />
+          </label>
+        )}
+        <label className="campo">
+          Valor de avaliação (R$)
+          <CurrencyInput value={avaliacao} onChange={setAvaliacao} />
+        </label>
       </div>
+      {/* Prévia do venal EFETIVO: certidão da prefeitura × % informado —
+          ao salvar, os valores do óbito e do exercício corrente recebem o
+          resultado (imóvel lançado em área maior no cadastro municipal). */}
+      {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' &&
+        pctEfetivo(pctVenal) !== null &&
+        (bem.imovel?.valorVenalObito || bem.imovel?.valorVenalAtual) && (
+          <p className="fund num" style={{ marginTop: 6 }}>
+            Venal efetivo ({pctEfetivo(pctVenal)!.toLocaleString('pt-BR')}% da certidão):
+            {bem.imovel?.valorVenalObito
+              ? ` óbito ${brl(((Number(bem.imovel.valorVenalObito) * pctEfetivo(pctVenal)!) / 100).toFixed(2))} (certidão ${brl(bem.imovel.valorVenalObito)})`
+              : ''}
+            {bem.imovel?.valorVenalAtual
+              ? ` · exercício atual ${brl(((Number(bem.imovel.valorVenalAtual) * pctEfetivo(pctVenal)!) / 100).toFixed(2))} (certidão ${brl(bem.imovel.valorVenalAtual)})`
+              : ''}
+            {' '}— aplicado aos campos de valor ao salvar.
+          </p>
+        )}
+      {tipoBemItcmd(codigo)?.tipo === 'IMOVEL' &&
+        pctEfetivo(pctVenal) !== null &&
+        !bem.imovel?.valorVenalObito &&
+        !bem.imovel?.valorVenalAtual && (
+          <p className="fund" style={{ marginTop: 6 }}>
+            Sem certidão de venal lida para este bem — o % fica guardado e o cálculo
+            acontece quando a certidão entrar pelo cofre.
+          </p>
+        )}
       {erro && <p className="mono-alerta">{erro}</p>}
       <div className="escolha" style={{ marginTop: 12 }}>
         <Button type="button" size="sm" onClick={salvar}>

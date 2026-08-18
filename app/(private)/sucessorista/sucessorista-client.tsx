@@ -2167,16 +2167,22 @@ export default function SucessoristaClient({
       // FRACIONADAS já chegam SOMADAS (fundirImoveisPorInscricao); fração
       // total abaixo de 100% ganha aviso para conferir a certidão faltante.
       const vazio = (v: string | undefined) => !v || !(Number(v) > 0);
-      const aplicarVenais = <T extends { valor: string; valorVenal?: string; imovel?: { valorVenalObito?: string; valorVenalAtual?: string; fracaoIdeal?: string } }>(bem: T): T => {
+      const aplicarVenais = <T extends { valor: string; valorVenal?: string; imovel?: { valorVenalObito?: string; valorVenalAtual?: string; fracaoIdeal?: string; percentualVenal?: string } }>(bem: T): T => {
         const det = bem.imovel;
         if (!det) return bem;
+        // % do venal (imóvel em ÁREA MAIOR na prefeitura): se o usuário já
+        // informou o percentual na ficha, a certidão entra pelo EFETIVO.
+        const pctBruto = Number(String(det.percentualVenal ?? '').replace(',', '.'));
+        const fator =
+          Number.isFinite(pctBruto) && pctBruto > 0 && pctBruto <= 100 ? pctBruto / 100 : 1;
+        const efetivo = (v: string) => (Number(v) * fator).toFixed(2);
         const comObito =
           vazio(bem.valor) && det.valorVenalObito && Number(det.valorVenalObito) > 0
-            ? { valor: det.valorVenalObito }
+            ? { valor: efetivo(det.valorVenalObito) }
             : {};
         const comAtual =
           vazio(bem.valorVenal) && det.valorVenalAtual && Number(det.valorVenalAtual) > 0
-            ? { valorVenal: det.valorVenalAtual }
+            ? { valorVenal: efetivo(det.valorVenalAtual) }
             : {};
         return { ...bem, ...comObito, ...comAtual };
       };
