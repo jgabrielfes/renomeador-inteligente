@@ -3,11 +3,14 @@
  * acervo entre meação e quinhões, animada ao abrir a aba — as fatias
  * crescem e os percentuais sobem até o valor final (~0,9s, easing suave).
  *
- * Convenções de dataviz: cores categóricas em ORDEM FIXA (paleta validada
- * para daltonismo sobre o papel do módulo), fatias separadas por um fio de
- * papel, identidade sempre com RÓTULO (legenda com nome, % e valor — nunca
- * cor sozinha) e tooltip nativo por fatia. Mais de 7 participantes: o
- * excedente agrupa em "Outros" (nunca inventar cor nova).
+ * Convenções de dataviz: cores da PALETA DA IDENTIDADE do módulo, em ORDEM
+ * FIXA alternando escuro × claro (fatias vizinhas se separam: pisos de
+ * distinção CVD/visão normal conferidos com o validador); a paleta sóbria é
+ * decisão de identidade, então a distinção NUNCA é só pela cor — legenda
+ * com nome, % e valor, vão de papel entre as fatias e tooltip por fatia.
+ * As cores vêm das variáveis --graf-1..8 do sucessorista.css (os slots da
+ * identidade re-mapeiam sozinhos no tema escuro — nunca cor solta). Mais de
+ * 7 participantes: o excedente agrupa em "Outros" (nunca inventar cor nova).
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -19,16 +22,16 @@ export interface FatiaQuinhao {
   sub?: string;
 }
 
-/** Ordem fixa — paleta categórica validada (CVD ΔE ≥ 9 sobre o papel). */
+/** Ordem fixa — slots da paleta da identidade (ver sucessorista.css). */
 const CORES = [
-  '#2a78d6',
-  '#eb6834',
-  '#1baf7a',
-  '#eda100',
-  '#e87ba4',
-  '#008300',
-  '#4a3aa7',
-  '#e34948',
+  'var(--graf-1)',
+  'var(--graf-2)',
+  'var(--graf-3)',
+  'var(--graf-4)',
+  'var(--graf-5)',
+  'var(--graf-6)',
+  'var(--graf-7)',
+  'var(--graf-8)',
 ];
 
 const brl = (v: number) =>
@@ -95,8 +98,9 @@ export function GraficoQuinhoes({ fatias, total }: { fatias: FatiaQuinhao[]; tot
           <path
             key={s.nome}
             d={arco(95, 95, 88, s.a0, s.a1)}
-            fill={s.cor}
-            stroke="var(--papel-alto)"
+            // var() não resolve em atributo de apresentação SVG — só em CSS:
+            // fill e stroke entram por style para as variáveis do tema valerem.
+            style={{ fill: s.cor, stroke: 'var(--papel-alto)' }}
             strokeWidth={2}
             strokeLinejoin="round"
           >

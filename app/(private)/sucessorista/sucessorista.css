@@ -1306,6 +1306,23 @@
   white-space: nowrap;
 }
 
+/* Cores do gráfico de pizza — a PALETA DA IDENTIDADE (bronze/verde/lacre e
+   tons derivados), em ordem fixa alternando escuro × claro para as fatias
+   vizinhas se separarem. Os slots 1/3/5/7 apontam para as variáveis da
+   paleta, então o tema escuro re-mapeia sozinho (nunca cor solta); a
+   distinção nunca é só pela cor: legenda com nome/%/valor + vão de papel
+   entre as fatias + tooltip. */
+.sucessorista {
+  --graf-1: var(--bronze);
+  --graf-2: #8fb3a1; /* verde claro */
+  --graf-3: var(--lacre);
+  --graf-4: #cfa96a; /* bronze claro */
+  --graf-5: var(--verde-registro);
+  --graf-6: #c4665f; /* lacre claro */
+  --graf-7: var(--tinta-media);
+  --graf-8: #d6c9a3; /* creme */
+}
+
 /* Gráfico de pizza dos quinhões (aba Partilha): pizza + legenda ao lado. */
 .sucessorista .pizza-quinhoes {
   display: flex;
