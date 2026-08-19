@@ -85,6 +85,7 @@ export function CasosView({
   onDuplicar,
   onExportar,
   onArquivar,
+  onRemoverNuvem = null,
   onRestaurarBackup,
   onImportar,
   onMigrarRascunho,
@@ -118,6 +119,8 @@ export function CasosView({
   onDuplicar: (caseId: string) => void;
   onExportar: (caseId: string) => void;
   onArquivar: (caseId: string) => void;
+  /** Remove o ESPELHO do caso na nuvem da conta/equipe (cards "na nuvem"). */
+  onRemoverNuvem?: ((caseId: string) => Promise<void>) | null;
   onRestaurarBackup: (caseId: string) => void;
   onImportar: (file: File) => void;
   onMigrarRascunho: () => void;
@@ -125,6 +128,9 @@ export function CasosView({
   const [dialogoNovo, setDialogoNovo] = useState(false);
   const [enviandoNuvem, setEnviandoNuvem] = useState(false);
   const [arquivando, setArquivando] = useState<ResumoCaso | null>(null);
+  /** Card "na nuvem" aguardando confirmação de remoção do espelho. */
+  const [removendoNuvem, setRemovendoNuvem] = useState<ResumoCaso | null>(null);
+  const [removendoNuvemBusy, setRemovendoNuvemBusy] = useState(false);
   const [nomeDisp, setNomeDisp] = useState(dispositivo || 'Meu computador');
   // Visualização (cards × lista) e ordenação — preferências do navegador.
   // Restauradas num efeito diferido (não no initializer) para o HTML do
@@ -482,7 +488,7 @@ export function CasosView({
                     restaurar backup
                   </Button>
                 )}
-                {r.modo === 'pasta' && (
+                {(r.modo === 'pasta' || r.modo === 'drive' || r.modo === 'onedrive' || r.modo === 'dropbox') && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -490,6 +496,16 @@ export function CasosView({
                     onClick={() => setArquivando(r)}
                   >
                     arquivar
+                  </Button>
+                )}
+                {r.modo === 'nuvem' && onRemoverNuvem && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={() => setRemovendoNuvem(r)}
+                  >
+                    remover da nuvem
                   </Button>
                 )}
               </div>
@@ -569,6 +585,45 @@ export function CasosView({
               }}
             >
               Arquivar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* remover da nuvem (cards espelhados de outros computadores) */}
+      <Dialog
+        open={removendoNuvem !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto && !removendoNuvemBusy) setRemovendoNuvem(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover “{removendoNuvem?.cabecalho.titulo}” da nuvem?</DialogTitle>
+            <DialogDescription>
+              O card sai do painel em TODOS os seus computadores, mas o caso NÃO é apagado:
+              ele continua salvo na máquina (pasta ou nuvem de arquivos) onde vive — e volta
+              a aparecer aqui se aquela máquina abrir o painel e espelhar de novo. Para sumir
+              de vez, ARQUIVE o caso na máquina onde ele está.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={removendoNuvemBusy} onClick={() => setRemovendoNuvem(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              loading={removendoNuvemBusy}
+              onClick={() => {
+                if (!removendoNuvem || !onRemoverNuvem) return;
+                setRemovendoNuvemBusy(true);
+                void onRemoverNuvem(removendoNuvem.cabecalho.caseId).finally(() => {
+                  setRemovendoNuvemBusy(false);
+                  setRemovendoNuvem(null);
+                });
+              }}
+            >
+              Remover da nuvem
             </Button>
           </DialogFooter>
         </DialogContent>

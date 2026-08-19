@@ -1054,6 +1054,22 @@ export default function SucessoristaClient({
     }
   };
 
+  /**
+   * Remove o ESPELHO do caso na nuvem da conta/equipe (cards "na nuvem" —
+   * casos que vivem em OUTRO computador). O caso em si não é apagado; se a
+   * máquina de origem espelhar de novo, ele volta — o dialog explica e
+   * orienta a ARQUIVAR lá para sumir de vez.
+   */
+  const removerCasoNuvemDoPainel = async (caseId: string) => {
+    const ok = await removerCasoNuvem(caseId);
+    if (ok) {
+      setResumosNuvem((prev) => prev.filter((c) => c.caseId !== caseId));
+      toast.success('Caso removido da nuvem. Ele continua salvo na máquina onde vive.');
+    } else {
+      toast.error('Não consegui remover da nuvem — tente de novo.');
+    }
+  };
+
   const restaurarBackupDoPainel = async (caseId: string) => {
     const s = storeRef.current;
     if (!(s instanceof FolderCaseStore)) return;
@@ -3113,6 +3129,7 @@ export default function SucessoristaClient({
           onDuplicar={(id) => void duplicarCasoDoPainel(id)}
           onExportar={(id) => void exportarCasoDoPainel(id)}
           onArquivar={(id) => void arquivarCasoDoPainel(id)}
+          onRemoverNuvem={nuvemAtiva ? removerCasoNuvemDoPainel : null}
           onRestaurarBackup={(id) => void restaurarBackupDoPainel(id)}
           onImportar={(f) => void importarCasoDoPainel(f)}
           onMigrarRascunho={() => void migrarRascunhoLegado()}
