@@ -96,6 +96,30 @@ export class DriveCaseStore implements CaseStore {
     });
   }
 
+  /**
+   * Erro LEGÍVEL da API do Drive: o corpo do 403 distingue "API não ativada
+   * no projeto do console" de "consentimento sem o escopo de arquivos" — as
+   * duas causas reais do "Drive respondeu 403" que já travou conexão nova.
+   */
+  private async erroDe(r: Response, acao: string): Promise<Error> {
+    const corpo = (await r.json().catch(() => null)) as {
+      error?: { message?: string; errors?: { reason?: string }[] };
+    } | null;
+    const razao = corpo?.error?.errors?.[0]?.reason ?? '';
+    if (r.status === 403 && razao === 'accessNotConfigured') {
+      return new Error(
+        'A API do Google Drive não está ATIVADA no projeto do console do Google Cloud — ative "Google Drive API" em APIs e serviços › Biblioteca e tente de novo.',
+      );
+    }
+    if (r.status === 403 && (razao === 'insufficientPermissions' || razao === 'insufficientScopes' || razao === 'forbidden')) {
+      return new Error(
+        'A conta conectou SEM conceder o acesso a arquivos — desconecte e conecte de novo, marcando a permissão do Drive na tela de consentimento do Google.',
+      );
+    }
+    const msg = corpo?.error?.message;
+    return new Error(`${acao} (${r.status}${msg ? ` — ${msg}` : ''}).`);
+  }
+
   private async listar(q: string): Promise<ArquivoDrive[]> {
     const itens: ArquivoDrive[] = [];
     let pagina: string | undefined;
@@ -107,7 +131,7 @@ export class DriveCaseStore implements CaseStore {
       url.searchParams.set('spaces', 'drive');
       if (pagina) url.searchParams.set('pageToken', pagina);
       const r = await this.chamar(url.toString());
-      if (!r.ok) throw new Error(`Drive respondeu ${r.status}.`);
+      if (!r.ok) throw await this.erroDe(r, 'Drive recusou a listagem');
       const dados = (await r.json()) as { files?: ArquivoDrive[]; nextPageToken?: string };
       itens.push(...(dados.files ?? []));
       pagina = dados.nextPageToken;
@@ -121,7 +145,7 @@ export class DriveCaseStore implements CaseStore {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: nome, mimeType: MIME_PASTA, ...(paiId ? { parents: [paiId] } : {}) }),
     });
-    if (!r.ok) throw new Error(`Drive recusou a criação da pasta (${r.status}).`);
+    if (!r.ok) throw await this.erroDe(r, 'Drive recusou a criação da pasta');
     return ((await r.json()) as { id: string }).id;
   }
 
@@ -137,7 +161,7 @@ export class DriveCaseStore implements CaseStore {
       method: 'POST',
       body: form,
     });
-    if (!r.ok) throw new Error(`Drive recusou o envio (${r.status}).`);
+    if (!r.ok) throw await this.erroDe(r, 'Drive recusou o envio');
     return ((await r.json()) as { id: string }).id;
   }
 
@@ -146,7 +170,7 @@ export class DriveCaseStore implements CaseStore {
       method: 'PATCH',
       body: conteudo,
     });
-    if (!r.ok) throw new Error(`Drive recusou a atualização (${r.status}).`);
+    if (!r.ok) throw await this.erroDe(r, 'Drive recusou a atualização');
   }
 
   private async baixar(fileId: string): Promise<Blob | null> {
@@ -412,6 +436,17 @@ export class DriveCaseStore implements CaseStore {
       return r.ok;
     } catch {
       return false;
+    }
+  }
+
+  /** Link para abrir as pastas no SITE do Google Drive (a "porta" da nuvem). */
+  async linkExterno(caseId?: string): Promise<string | null> {
+    try {
+      if (!caseId) return `https://drive.google.com/drive/folders/${await this.raiz()}`;
+      const entrada = await this.entradaDoCaso(caseId);
+      return entrada ? `https://drive.google.com/drive/folders/${entrada.pastaId}` : null;
+    } catch {
+      return null;
     }
   }
 

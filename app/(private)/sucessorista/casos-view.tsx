@@ -74,6 +74,8 @@ export function CasosView({
   onDesconectarOneDrive = null,
   dropbox = null,
   onDesconectarDropbox = null,
+  linkNuvem = null,
+  onAbrirPasta = null,
   dispositivo,
   temRascunhoLegado,
   onEscolherPasta,
@@ -106,6 +108,10 @@ export function CasosView({
   /** Dropbox: null = indisponível neste deploy (sem envs do Dropbox). */
   dropbox?: { disponivel: boolean; conectado: boolean; email: string | null } | null;
   onDesconectarDropbox?: (() => void) | null;
+  /** Link da pasta-raiz no SITE da nuvem de arquivos conectada. */
+  linkNuvem?: string | null;
+  /** Abre a PASTA DO CASO no site da nuvem (cards drive/onedrive/dropbox). */
+  onAbrirPasta?: ((caseId: string) => void) | null;
   dispositivo: string;
   temRascunhoLegado: boolean;
   onEscolherPasta: (nomeDispositivo: string) => void;
@@ -243,6 +249,16 @@ export function CasosView({
             Drive. Não é a conta certa? Desconecte e conecte de novo — o seletor de
             contas do Google abre para escolher.
           </span>
+          {linkNuvem && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={linkNuvem} target="_blank" rel="noreferrer" />}
+              nativeButton={false}
+            >
+              Abrir no Drive ↗
+            </Button>
+          )}
           {onDesconectarDrive && (
             <Button size="sm" variant="outline" onClick={onDesconectarDrive}>
               Desconectar
@@ -258,6 +274,16 @@ export function CasosView({
             <strong>{oneDrive?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
             no seu OneDrive
           </span>
+          {linkNuvem && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={linkNuvem} target="_blank" rel="noreferrer" />}
+              nativeButton={false}
+            >
+              Abrir no OneDrive ↗
+            </Button>
+          )}
           {onDesconectarOneDrive && (
             <Button size="sm" variant="outline" onClick={onDesconectarOneDrive}>
               Desconectar
@@ -273,6 +299,16 @@ export function CasosView({
             <strong>{dropbox?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
             no seu Dropbox
           </span>
+          {linkNuvem && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={linkNuvem} target="_blank" rel="noreferrer" />}
+              nativeButton={false}
+            >
+              Abrir no Dropbox ↗
+            </Button>
+          )}
           {onDesconectarDropbox && (
             <Button size="sm" variant="outline" onClick={onDesconectarDropbox}>
               Desconectar
@@ -473,6 +509,11 @@ export function CasosView({
                 </p>
               </button>
               <div className="acoes">
+                {(r.modo === 'drive' || r.modo === 'onedrive' || r.modo === 'dropbox') && onAbrirPasta && (
+                  <Button size="sm" variant="ghost" onClick={() => onAbrirPasta(r.cabecalho.caseId)}>
+                    abrir pasta ↗
+                  </Button>
+                )}
                 {r.modo !== 'nuvem' && (
                   <Button size="sm" variant="ghost" onClick={() => onDuplicar(r.cabecalho.caseId)}>
                     duplicar

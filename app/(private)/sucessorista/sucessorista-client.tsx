@@ -587,6 +587,8 @@ export default function SucessoristaClient({
   const [oneDrive, setOneDrive] = useState<EstadoOneDrive | null>(null);
   /** Dropbox conectado (modo dropbox): estado vindo do servidor. */
   const [dropbox, setDropbox] = useState<EstadoDropbox | null>(null);
+  /** Link da pasta-raiz no SITE da nuvem de arquivos (abrir no navegador). */
+  const [linkNuvem, setLinkNuvem] = useState<string | null>(null);
   /** Anexos já enviados à nuvem de arquivos nesta sessão (não reenviar). */
   const enviadosDriveRef = useRef(new WeakSet<File>());
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
@@ -803,6 +805,7 @@ export default function SucessoristaClient({
           setEstadoPainel('drive');
           setResumos(null);
           s.listarCasos().then(setResumos).catch(() => setResumos([]));
+          void s.linkExterno().then(setLinkNuvem);
         } else if (eOneDrive.conectado) {
           const s = new OneDriveCaseStore(
             new TokenDrivePool(tokenOneDrive),
@@ -812,6 +815,7 @@ export default function SucessoristaClient({
           setEstadoPainel('onedrive');
           setResumos(null);
           s.listarCasos().then(setResumos).catch(() => setResumos([]));
+          void s.linkExterno().then(setLinkNuvem);
         } else if (eDropbox.conectado) {
           const s = new DropboxCaseStore(
             new TokenDrivePool(tokenDropbox),
@@ -821,6 +825,7 @@ export default function SucessoristaClient({
           setEstadoPainel('dropbox');
           setResumos(null);
           s.listarCasos().then(setResumos).catch(() => setResumos([]));
+          void s.linkExterno().then(setLinkNuvem);
         } else if (pastaDisponivel()) {
           const { estado, raiz } = await estadoDaRaiz();
           if (estado === 'granted' && raiz) {
@@ -1068,6 +1073,14 @@ export default function SucessoristaClient({
     } else {
       toast.error('Não consegui remover da nuvem — tente de novo.');
     }
+  };
+
+  /** Abre a PASTA DO CASO no site da nuvem de arquivos (Drive/OneDrive). */
+  const abrirPastaNaNuvem = async (caseId: string) => {
+    const s = storeRef.current;
+    const url = await s?.linkExterno?.(caseId);
+    if (url) window.open(url, '_blank', 'noopener');
+    else toast.error('Não consegui montar o link da pasta — tente de novo.');
   };
 
   const restaurarBackupDoPainel = async (caseId: string) => {
@@ -3118,6 +3131,8 @@ export default function SucessoristaClient({
           onDesconectarOneDrive={() => void desconectarDoOneDrive()}
           dropbox={dropbox}
           onDesconectarDropbox={() => void desconectarDoDropbox()}
+          linkNuvem={linkNuvem}
+          onAbrirPasta={(id) => void abrirPastaNaNuvem(id)}
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
