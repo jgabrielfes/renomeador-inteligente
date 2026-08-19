@@ -109,6 +109,12 @@ export interface CaseStore {
   excluirDocumento?(caseId: string, caminhoRelativo: string): Promise<boolean>;
   /** Arquiva o caso (sai do painel; modo pasta/Drive movem para _Arquivados). */
   arquivarCaso?(caseId: string): Promise<boolean>;
+  /**
+   * Link para abrir as pastas no SITE da nuvem de arquivos (Drive/OneDrive/
+   * Dropbox): sem caseId, a pasta-raiz do app; com caseId, a pasta do caso.
+   * null = link indisponível.
+   */
+  linkExterno?(caseId?: string): Promise<string | null>;
 }
 
 /* ---------------- serialização estável + hash de integridade ---------------- */

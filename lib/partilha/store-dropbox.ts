@@ -378,6 +378,15 @@ export class DropboxCaseStore implements CaseStore {
     }
   }
 
+  /**
+   * Link para abrir o Dropbox no site. O nome LOCALIZADO da pasta-mãe dos
+   * apps ("Apps"/"Aplicativos") não é conhecido pela API — abre o início do
+   * Dropbox; os casos estão na pasta de app "O Sucessorista" dentro dela.
+   */
+  linkExterno(): Promise<string | null> {
+    return Promise.resolve('https://www.dropbox.com/home');
+  }
+
   /** Arquiva: move a pasta do caso para _Arquivados/ na pasta de app. */
   async arquivarCaso(caseId: string): Promise<boolean> {
     const entrada = await this.entradaDoCaso(caseId);

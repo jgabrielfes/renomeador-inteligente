@@ -401,6 +401,23 @@ export class OneDriveCaseStore implements CaseStore {
     }
   }
 
+  /** Link para abrir as pastas no SITE do OneDrive (a "porta" da nuvem). */
+  async linkExterno(caseId?: string): Promise<string | null> {
+    try {
+      let url = `${API}/special/approot?$select=webUrl`;
+      if (caseId) {
+        const entrada = await this.entradaDoCaso(caseId);
+        if (!entrada) return null;
+        url = `${API}/items/${entrada.pastaId}?$select=webUrl`;
+      }
+      const r = await this.chamar(url);
+      if (!r.ok) return null;
+      return ((await r.json()) as { webUrl?: string }).webUrl ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Arquiva: move a pasta do caso para _Arquivados/ dentro da pasta de app. */
   async arquivarCaso(caseId: string): Promise<boolean> {
     const entrada = await this.entradaDoCaso(caseId);
