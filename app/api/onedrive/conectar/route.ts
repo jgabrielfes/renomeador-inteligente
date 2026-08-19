@@ -35,10 +35,12 @@ export async function GET(req: Request) {
   autorizar.searchParams.set('redirect_uri', `${origem}/api/onedrive/callback`);
   autorizar.searchParams.set('response_type', 'code');
   autorizar.searchParams.set('response_mode', 'query');
-  // offline_access garante o REFRESH token; prompt=consent renova a
-  // autorização completa mesmo em reconexão.
+  // offline_access garante o REFRESH token; select_account SEMPRE abre o
+  // seletor de contas da Microsoft (sem ele, entra a conta já logada no
+  // navegador — e o usuário não consegue conectar a conta do escritório).
+  // O consentimento aparece sozinho na primeira autorização do app.
   autorizar.searchParams.set('scope', ESCOPOS_ONEDRIVE);
-  autorizar.searchParams.set('prompt', 'consent');
+  autorizar.searchParams.set('prompt', 'select_account');
   autorizar.searchParams.set('state', state);
 
   return new Response(null, {

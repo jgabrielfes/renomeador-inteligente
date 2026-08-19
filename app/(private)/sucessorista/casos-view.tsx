@@ -234,7 +234,8 @@ export function CasosView({
           <span>
             ☁️ Google Drive conectado{drive?.email ? `: ` : ''}
             <strong>{drive?.email ?? ''}</strong> — pasta &quot;O Sucessorista&quot; no seu
-            Drive
+            Drive. Não é a conta certa? Desconecte e conecte de novo — o seletor de
+            contas do Google abre para escolher.
           </span>
           {onDesconectarDrive && (
             <Button size="sm" variant="outline" onClick={onDesconectarDrive}>
