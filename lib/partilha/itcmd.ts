@@ -36,8 +36,33 @@
  * cálculo — a UI é obrigada a exibir esse aviso.
  */
 
-/** UFESP por ano-calendário (fonte: Sefaz-SP). Revisar a cada virada de ano. */
+/** UFESP por ano-calendário (fonte: Sefaz-SP). Revisar a cada virada de ano.
+ *  Anos ANTIGOS entram para os óbitos pré-2001 (regime da Lei 9.591/66):
+ *  até 1997 a UFESP era MENSAL — a tabela guarda o valor de JANEIRO do ano,
+ *  a convenção dos próprios atos do balcão ("UFESP DE JAN/1995"); 1994
+ *  (2º semestre, início do Real) e 1996 ficam FORA (valores mensais sem
+ *  fonte fechada) e caem no ano vizinho com a flag de estimativa. Óbito em
+ *  moeda anterior ao Real não é convertido pelo motor. */
 export const UFESP_POR_ANO: Record<number, number> = {
+  1995: 5.89,
+  1997: 7.93,
+  1998: 8.37,
+  1999: 8.51,
+  2000: 9.27,
+  2001: 9.83,
+  2002: 10.52,
+  2003: 11.49,
+  2004: 12.49,
+  2005: 13.3,
+  2006: 13.93,
+  2007: 14.23,
+  2008: 14.88,
+  2009: 15.85,
+  2010: 16.42,
+  2011: 17.45,
+  2012: 18.44,
+  2013: 19.37,
+  2014: 20.14,
   2015: 21.25,
   2016: 23.55,
   2017: 25.07,
@@ -470,12 +495,18 @@ function centavos(v: number): number {
 /* ---------- parâmetros ---------- */
 
 export function ufespDoAno(ano: number): { valor: number; estimado: boolean } {
-  const anos = Object.keys(UFESP_POR_ANO).map(Number);
-  const min = Math.min(...anos);
-  const max = Math.max(...anos);
   if (UFESP_POR_ANO[ano] !== undefined) return { valor: UFESP_POR_ANO[ano], estimado: false };
-  // Fora da tabela: usa o extremo mais próximo e sinaliza estimativa.
-  return { valor: UFESP_POR_ANO[ano < min ? min : max], estimado: true };
+  // Fora da tabela (ou LACUNA nos anos de UFESP mensal, como 1996): usa o
+  // ano conhecido MAIS PRÓXIMO — empate resolve para BAIXO (UFESP menor no
+  // óbito = base em UFESPs maior = provisão conservadora) — e sinaliza.
+  const anos = Object.keys(UFESP_POR_ANO).map(Number);
+  let melhor = anos[0];
+  for (const a of anos) {
+    const d = Math.abs(a - ano);
+    const dm = Math.abs(melhor - ano);
+    if (d < dm || (d === dm && a < melhor)) melhor = a;
+  }
+  return { valor: UFESP_POR_ANO[melhor], estimado: true };
 }
 
 function metaSelicEm(data: string): { taxaAa: number; estimado: boolean } {
@@ -538,8 +569,123 @@ export function jurosArt20(vencimento: string, pagamento: string): {
 
 /* ---------- provisão ---------- */
 
+/** Vigência da Lei 10.705/2000 — óbito ANTERIOR segue a Lei 9.591/66. */
+export const INICIO_LEI_10705 = '2001-01-01';
+
+/**
+ * Regime da Lei 9.591/1966 — óbitos ANTERIORES a 01/01/2001 (Súmula 112 do
+ * STF: o imposto causa mortis é devido pela alíquota vigente ao tempo da
+ * ABERTURA DA SUCESSÃO; a Lei 10.705/2000 só alcança óbitos a partir da sua
+ * vigência). A conta consagrada da Sefaz-SP — a mesma dos atos lavrados do
+ * balcão ("base ÷ UFESP do óbito × UFESP atual × 4% + 20%"):
+ *
+ * - Base: o valor venal na DATA DO ÓBITO, convertido em UFESPs da época e
+ *   atualizado pela UFESP até o RECOLHIMENTO (diferente da 10.705, cuja
+ *   atualização para no vencimento e a Selic assume) — aqui a UFESP corrige
+ *   o caminho inteiro e NÃO há juros Selic.
+ * - Alíquota: 4%.
+ * - Multa: 20% sobre o imposto, pelo atraso (inventário tardio) — é a única
+ *   penalidade da conta do balcão; sem o escalonamento dos arts. 19/21.
+ * - NÃO se aplicam: as isenções do art. 6º, o desconto de 90 dias (art. 17,
+ *   §2º), as multas dos arts. 19/21 e os juros do art. 20 — tudo da 10.705.
+ */
+function provisionarLei9591(entrada: EntradaItcmd): ProvisaoItcmd {
+  const { dataObito, dataReferencia, baseCalculo } = entrada;
+  const avisos: string[] = [];
+  let estimativa = false;
+
+  const anoObito = Number(dataObito.slice(0, 4));
+  const anoRef = Number(dataReferencia.slice(0, 4));
+  const uO = ufespDoAno(anoObito);
+  const uR = ufespDoAno(anoRef);
+  if (uO.estimado || uR.estimado) {
+    estimativa = true;
+    avisos.push(
+      'Ano fora da tabela de UFESPs embarcada — a atualização usou o ano conhecido mais próximo. Confira a UFESP do óbito na tabela da Sefaz-SP.',
+    );
+  }
+  if (dataObito < '1994-07-01') {
+    estimativa = true;
+    avisos.push(
+      'Óbito anterior ao Real (jul/1994): o valor venal da época estaria em moeda antiga — o motor NÃO converte cruzeiros. Lance a base já em reais da época equivalente ou apure a conta com a Sefaz-SP (sistema de óbitos anteriores a 2001).',
+    );
+  } else if (anoObito <= 1997) {
+    estimativa = true;
+    avisos.push(
+      'Até 1997 a UFESP era MENSAL — o motor usa o valor de janeiro do ano do óbito (a convenção dos atos do balcão). Confira o mês exato na tabela da Sefaz-SP.',
+    );
+  }
+
+  // Base em UFESPs do óbito, atualizada pela UFESP ATUAL (até o recolhimento).
+  const baseEmUfesps = baseCalculo / uO.valor;
+  const baseAtualizada = centavos(baseEmUfesps * uR.valor);
+  const imposto = centavos(baseAtualizada * 0.04);
+  const impostoHistorico = centavos(baseCalculo * 0.04);
+
+  const parcelas: ParcelaItcmd[] = [
+    {
+      id: 'imposto',
+      rotulo: 'Imposto causa mortis (4% sobre a base na data do óbito)',
+      valor: impostoHistorico,
+      fundamento: 'Lei 9.591/1966 (regime da data do óbito — Súmula 112 do STF)',
+      detalhe: `Base de ${fmt(baseCalculo)} na data do óbito = ${baseEmUfesps.toFixed(2)} UFESPs (${fmt(uO.valor)} em ${anoObito}).`,
+    },
+  ];
+  const atualizacao = centavos(imposto - impostoHistorico);
+  if (atualizacao !== 0) {
+    parcelas.push({
+      id: 'atualizacao',
+      rotulo: 'Atualização monetária da base (variação da UFESP até o recolhimento)',
+      valor: atualizacao,
+      fundamento: 'Lei 9.591/1966 — base atualizada pela UFESP até a data do pagamento',
+      detalhe: `${baseEmUfesps.toFixed(2)} UFESPs: ${fmt(uO.valor)} (${anoObito}) → ${fmt(uR.valor)} (${anoRef}) atualiza a base para ${fmt(baseAtualizada)}; sobre a diferença incide o 4%. No regime antigo a UFESP corrige até o RECOLHIMENTO — não há juros Selic.`,
+    });
+  }
+
+  const diasDesdeObito = diffDias(dataObito, dataReferencia);
+  const vencimento = somarDias(dataObito, 180);
+  const diasDeAtraso = Math.max(0, diffDias(vencimento, dataReferencia));
+  if (diasDeAtraso > 0) {
+    parcelas.push({
+      id: 'multa-9591',
+      rotulo: 'Multa pelo atraso (20%)',
+      valor: centavos(imposto * 0.2),
+      fundamento: 'Lei 9.591/1966 — multa de 20% pela abertura/recolhimento tardio',
+      detalhe: 'A conta da Sefaz para óbitos anteriores a 2001: imposto atualizado + 20%. É a mesma memória dos atos lavrados ("× 4% + 20%").',
+    });
+  }
+
+  avisos.push(
+    'Óbito ANTERIOR a 01/01/2001: vale a lei da data do óbito (Súmula 112 do STF) — Lei 9.591/1966, alíquota de 4%, base atualizada pela UFESP até o recolhimento e multa de 20% pelo atraso. As isenções do art. 6º, o desconto de 90 dias, as multas dos arts. 19/21 e os juros Selic da Lei 10.705/2000 NÃO se aplicam. Emita a conta fiscal na Sefaz-SP (sistema próprio de óbitos anteriores a 2001) para o valor oficial.',
+  );
+
+  const total = centavos(parcelas.reduce((acc, p) => acc + p.valor, 0));
+  return {
+    ufespObito: uO.valor,
+    ufespReferencia: uR.valor,
+    // No regime antigo a atualização vai até o RECOLHIMENTO (a referência).
+    ufespAtualizacao: uR.valor,
+    anoAtualizacao: anoRef,
+    baseEmUfesps,
+    baseAtualizada,
+    imposto,
+    vencimento,
+    diasDesdeObito,
+    diasDeAtraso,
+    parcelas,
+    total,
+    avisos,
+    estimativa,
+  };
+}
+
 export function provisionarItcmd(entrada: EntradaItcmd): ProvisaoItcmd {
   const { dataObito, dataReferencia, baseCalculo } = entrada;
+
+  // Regra de ouro (Súmula 112/STF): vale a lei da DATA DO ÓBITO — óbito
+  // anterior à vigência da Lei 10.705/2000 sai pelo regime da Lei 9.591/66.
+  if (dataObito && dataObito < INICIO_LEI_10705) return provisionarLei9591(entrada);
+
   const avisos: string[] = [];
   let estimativa = false;
 

@@ -444,6 +444,17 @@ export default function SucessoristaClient({
    */
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
+    // Óbito ANTERIOR à Lei 10.705/2000: as isenções do art. 6º não existem
+    // no regime da Lei 9.591/66 (Súmula 112/STF — vale a lei do óbito).
+    if (falecido.dataObito && falecido.dataObito < '2001-01-01') {
+      return {
+        valorIsento: 0,
+        detalhes: [],
+        avisos: [
+          'Óbito anterior a 01/01/2001 (regime da Lei 9.591/66): as isenções do art. 6º da Lei 10.705/2000 NÃO se aplicam — nenhum bem foi abatido da base.',
+        ],
+      };
+    }
     // Ficha do item I: as respostas "possui outro imóvel?" dos herdeiros
     // decidem automaticamente o requisito da alínea "a" do art. 6º, I.
     let respostasOutroImovel = 0;
@@ -485,7 +496,7 @@ export default function SucessoristaClient({
       detalhes.push(`Bem ${a.indice} isento (${a.hipotese}) — ${brl(a.valor.toFixed(2))} abatido da base.`);
     });
     return { valorIsento, detalhes, avisos };
-  }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas]);
+  }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas, falecido.dataObito]);
 
   /**
    * Relógio do ITCMD: com o imposto DECLARADO/PAGO e a data informada (aba
@@ -1709,8 +1720,25 @@ export default function SucessoristaClient({
         );
       }
     }
+    // TITULARIDADE pela matrícula × certidão de óbito: o(a) falecido(a) (ou
+    // o cônjuge, no bem comum) precisa constar do registro aquisitivo — se
+    // não consta, o bem pode não ser do espólio (ou falta averbação prévia).
+    if (falecido.nome.trim()) {
+      for (const [i, b] of bens.entries()) {
+        const prop = b.imovel?.proprietariosMatricula;
+        if (b.tipo !== 'IMOVEL' || !prop?.trim()) continue;
+        const consta =
+          mesmaPessoa(falecido.nome, prop) ||
+          (temSobrevivente && nomeSobrev.trim() && mesmaPessoa(nomeSobrev, prop));
+        if (!consta) {
+          lista.push(
+            `Bem ${i + 1}: o(a) falecido(a) NÃO aparece na titularidade da matrícula (consta: ${prop}) — confira se o bem é mesmo do espólio, se a aquisição está registrada, ou se falta averbação prévia no RI`,
+          );
+        }
+      }
+    }
     return lista;
-  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens]);
+  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens, falecido.nome, temSobrevivente, nomeSobrev]);
 
   /**
    * Conferidor de QUALIFICAÇÃO CRUZADA (motor puro): folha × certidões do
@@ -2439,12 +2467,20 @@ export default function SucessoristaClient({
         });
         const novos = bensLidos
           .filter((b) => !casados.has(b))
-          .filter(
-            (b) =>
-              !atualizados.some(
-                (x) => x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase(),
-              ),
-          )
+          // A IDENTIDADE do imóvel é a MATRÍCULA: bem lido cuja matrícula já
+          // está lançada (na ficha ou na descrição) NUNCA entra como segundo
+          // bem — certidões de venal de exercícios diferentes são o MESMO
+          // imóvel (os detalhes já entraram pelo casamento acima).
+          .filter((b) => {
+            const matLida = soDigitos(b.imovel?.matricula as string | undefined);
+            return !atualizados.some(
+              (x) =>
+                x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase() ||
+                (matLida.length >= 3 &&
+                  (soDigitos(x.imovel?.matricula) === matLida ||
+                    soDigitos(x.descricao).includes(matLida))),
+            );
+          })
           .map((b) =>
             aplicarVenais({
               id: uid('b'),

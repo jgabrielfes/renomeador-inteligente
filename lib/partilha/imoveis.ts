@@ -66,19 +66,41 @@ export function fundirImoveisPorInscricao<T extends BemFundivel>(bens: T[]): T[]
       saida.push(bem);
       continue;
     }
-    /* mesmo imóvel: soma os valores e lista as inscrições */
-    principal.valor = somar(principal.valor, bem.valor);
     const im: Record<string, unknown> = { ...((principal.imovel ?? {}) as Record<string, unknown>) };
     const inscricaoAtual = im.inscricaoCadastral as string | null | undefined;
     const outraInscricao = bem.imovel?.inscricaoCadastral;
-    if (outraInscricao && inscricaoAtual && !inscricaoAtual.includes(outraInscricao)) {
-      im.inscricaoCadastral = `${inscricaoAtual} e ${outraInscricao}`;
-    } else if (outraInscricao && !inscricaoAtual) {
-      im.inscricaoCadastral = outraInscricao;
+    // MESMO LANÇAMENTO (a MESMA inscrição municipal nos dois): não é fração
+    // do imóvel, são certidões do MESMO cadastro em EXERCÍCIOS diferentes (a
+    // rotina do balcão: venal do ano do óbito + venal do exercício corrente).
+    // Nada se SOMA — cada certidão preenche o campo vazio do seu exercício e
+    // a fração fica a MAIOR informada. (Sem inscrição dos dois lados, vale a
+    // soma: unidades distintas numa mesma matrícula, como apto + vaga.)
+    const insA = soDigitos(inscricaoAtual);
+    const insB = soDigitos(outraInscricao);
+    const mesmoLancamento = insA.length > 0 && insA === insB;
+    if (mesmoLancamento) {
+      principal.valor = principal.valor ?? bem.valor;
+      if (!im.valorVenalObito && bem.imovel?.valorVenalObito)
+        im.valorVenalObito = bem.imovel.valorVenalObito;
+      if (!im.valorVenalAtual && bem.imovel?.valorVenalAtual)
+        im.valorVenalAtual = bem.imovel.valorVenalAtual;
+      const frA = Number(im.fracaoIdeal ?? 0);
+      const frB = Number(bem.imovel?.fracaoIdeal ?? 0);
+      if (Number.isFinite(frB) && frB > (Number.isFinite(frA) ? frA : 0))
+        im.fracaoIdeal = bem.imovel?.fracaoIdeal ?? im.fracaoIdeal;
+    } else {
+      /* inscrições DIFERENTES do mesmo imóvel (sub-inscrições): soma os
+         valores e lista as inscrições — um ato de registro, não dois */
+      principal.valor = somar(principal.valor, bem.valor);
+      if (outraInscricao && inscricaoAtual && !inscricaoAtual.includes(outraInscricao)) {
+        im.inscricaoCadastral = `${inscricaoAtual} e ${outraInscricao}`;
+      } else if (outraInscricao && !inscricaoAtual) {
+        im.inscricaoCadastral = outraInscricao;
+      }
+      im.valorVenalObito = somar(im.valorVenalObito as string | null, bem.imovel?.valorVenalObito);
+      im.valorVenalAtual = somar(im.valorVenalAtual as string | null, bem.imovel?.valorVenalAtual);
+      im.fracaoIdeal = somar(im.fracaoIdeal as string | null, bem.imovel?.fracaoIdeal);
     }
-    im.valorVenalObito = somar(im.valorVenalObito as string | null, bem.imovel?.valorVenalObito);
-    im.valorVenalAtual = somar(im.valorVenalAtual as string | null, bem.imovel?.valorVenalAtual);
-    im.fracaoIdeal = somar(im.fracaoIdeal as string | null, bem.imovel?.fracaoIdeal);
     /* demais campos: preenche o que o principal ainda não tem */
     for (const [k, v] of Object.entries((bem.imovel ?? {}) as Record<string, unknown>)) {
       if (v !== null && v !== undefined && v !== '' && (im[k] === null || im[k] === undefined || im[k] === '')) {

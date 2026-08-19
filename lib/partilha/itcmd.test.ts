@@ -311,5 +311,48 @@ aprox('teto 8% sobre os quinhões', provProg.imposto, 80_000, 1);
 }
 
 
+/* ---------- óbitos ANTERIORES a 2001 — regime da Lei 9.591/66 ---------- */
+{
+  // REGRESSÃO por escritura REAL do balcão (óbito 1999, ato de 2024):
+  // "R$ 20.333,18 ÷ R$ 8,51 (UFESP de 1999) × R$ 35,36 (UFESP de 2024)
+  //  × 4% + 20%" = R$ 4.055,35 na guia lavrada.
+  const antigo = provisionarItcmd({
+    dataObito: '1999-03-10',
+    dataReferencia: '2024-06-25',
+    baseCalculo: 20_333.18,
+  });
+  aprox('base em UFESPs de 1999 (8,51)', antigo.ufespObito, 8.51);
+  aprox('atualização pela UFESP ATUAL (2024)', antigo.ufespAtualizacao, 35.36);
+  aprox('total = 4% da base atualizada + 20%', antigo.total, 4_055.35, 0.05);
+  eq('sem juros Selic no regime antigo', antigo.parcelas.some((p) => p.id === 'juros'), false);
+  eq('sem desconto de 90 dias', antigo.parcelas.some((p) => p.id === 'desconto'), false);
+  eq('sem multas dos arts. 19/21', antigo.parcelas.some((p) => p.id === 'multa-abertura' || p.id === 'multa-moratoria'), false);
+  eq('multa única de 20%', antigo.parcelas.some((p) => p.id === 'multa-9591'), true);
+  aprox('multa = 20% do imposto atualizado', antigo.parcelas.find((p) => p.id === 'multa-9591')!.valor, antigo.imposto * 0.2, 0.02);
+  eq('fundamento na Lei 9.591/66', antigo.parcelas[0].fundamento.includes('9.591'), true);
+  eq('aviso do regime antigo', antigo.avisos.some((a) => a.includes('9.591')), true);
+
+  // Óbito de 1995 (UFESP mensal à época — jan/1995 = 5,89, a convenção do
+  // balcão): a saída marca ESTIMATIVA pedindo conferência do mês.
+  const de95 = provisionarItcmd({
+    dataObito: '1995-08-01',
+    dataReferencia: '2024-06-25',
+    baseCalculo: 100_000,
+  });
+  aprox('UFESP de 1995 (jan)', de95.ufespObito, 5.89);
+  eq('estimativa sinalizada (UFESP mensal)', de95.estimativa, true);
+
+  // Óbito de 2000 (último ano do regime antigo) × 2001 (primeiro da 10.705):
+  // a fronteira é exata.
+  const de2000 = provisionarItcmd({ dataObito: '2000-12-31', dataReferencia: '2026-01-10', baseCalculo: 50_000 });
+  eq('31/12/2000 ainda é Lei 9.591', de2000.parcelas[0].fundamento.includes('9.591'), true);
+  const de2001 = provisionarItcmd({ dataObito: '2001-01-01', dataReferencia: '2026-01-10', baseCalculo: 50_000 });
+  eq('01/01/2001 já é Lei 10.705', de2001.parcelas[0].fundamento.includes('10.705'), true);
+
+  // Óbito pré-Real: o motor avisa que não converte moeda antiga.
+  const de1990 = provisionarItcmd({ dataObito: '1990-05-01', dataReferencia: '2026-01-10', baseCalculo: 10_000 });
+  eq('pré-Real: estimativa + aviso de moeda', [de1990.estimativa, de1990.avisos.some((a) => a.includes('Real'))], [true, true]);
+}
+
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);
