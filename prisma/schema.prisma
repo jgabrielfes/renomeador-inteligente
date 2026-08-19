@@ -207,6 +207,12 @@ model User {
   oneDriveRefreshToken String?
   oneDriveEmail        String?
   oneDriveConectadoEm  DateTime?
+  // DROPBOX conectado (Sucessorista): refresh token de app com acesso "App
+  // folder" — a aplicação só enxerga a pasta "Apps/O Sucessorista" no
+  // Dropbox do usuário. O refresh token do Dropbox NÃO rotaciona.
+  dropboxRefreshToken String?
+  dropboxEmail        String?
+  dropboxConectadoEm  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
