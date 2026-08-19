@@ -9,7 +9,7 @@
  * registros) da sobrepartilha é calculado à parte. Estimativa de apoio.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -27,10 +27,11 @@ import {
 } from '@/components/ui/select';
 
 import { partilhar } from '@/lib/partilha/engine';
-import { provisionarItcmd } from '@/lib/partilha/itcmd';
+import { provisionarItcmd, type ProvisaoItcmd } from '@/lib/partilha/itcmd';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
-import type { Bem, Caso, Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
+import type { ModalidadeEscritura } from '@/lib/partilha/escritura';
+import type { Bem, Caso, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { paraDecimal } from './acervo-view';
 
 const brl = (v: number | string) =>
@@ -67,6 +68,7 @@ export function SobrepartilhaView({
   issPct,
   ufesp,
   onFechar,
+  onMinuta,
 }: {
   bens: Bem[];
   setBens: (b: Bem[]) => void;
@@ -79,6 +81,12 @@ export function SobrepartilhaView({
   issPct: number;
   ufesp: number;
   onFechar: () => void;
+  /** Minuta da ESCRITURA DE SOBREPARTILHA (gerador determinístico do client). */
+  onMinuta?: (args: {
+    modalidade: ModalidadeEscritura;
+    resultado: Resultado;
+    provisao: ProvisaoItcmd | null;
+  }) => Promise<void> | void;
 }) {
   const sobrepartilha = bens.filter((b) => b.sobrepartilha);
 
@@ -162,6 +170,19 @@ export function SobrepartilhaView({
   }, [resultado, sobrepartilha, herdeiros.length, temSobrevivente, ufesp, issPct]);
 
   const custoTotal = (provisao?.total ?? 0) + (custos?.total ?? 0);
+
+  /* Minuta da escritura de sobrepartilha — modalidade escolhida aqui mesmo. */
+  const [modalidadeMinuta, setModalidadeMinuta] = useState<ModalidadeEscritura>('PRESENCIAL');
+  const [gerandoMinuta, setGerandoMinuta] = useState(false);
+  const gerarMinuta = async () => {
+    if (!onMinuta || !resultado || resultado.bloqueios.length > 0) return;
+    setGerandoMinuta(true);
+    try {
+      await onMinuta({ modalidade: modalidadeMinuta, resultado, provisao });
+    } finally {
+      setGerandoMinuta(false);
+    }
+  };
 
   return (
     <div className="cartao" style={{ marginTop: 28, borderLeft: '3px solid var(--bronze)' }}>
@@ -304,6 +325,35 @@ export function SobrepartilhaView({
               custo do inventário principal. Estimativa de apoio, a confirmar no caso.
             </p>
           </div>
+
+          {onMinuta && (
+            <div style={{ marginTop: 14 }}>
+              <span className="eyebrow">Minuta da escritura de sobrepartilha</span>
+              <div className="escolha" style={{ marginTop: 6, alignItems: 'center' }}>
+                <Select
+                  value={modalidadeMinuta}
+                  onValueChange={(v) => v && setModalidadeMinuta(v as ModalidadeEscritura)}
+                >
+                  <SelectTrigger aria-label="Modalidade do ato da sobrepartilha" style={{ maxWidth: 280 }}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PRESENCIAL">Ato presencial</SelectItem>
+                    <SelectItem value="VIDEOCONFERENCIA">Por videoconferência (e-Notariado)</SelectItem>
+                    <SelectItem value="HIBRIDA">Híbrida (parte por vídeo)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="button" loading={gerandoMinuta} onClick={() => void gerarMinuta()}>
+                  Baixar minuta (DOCX)
+                </Button>
+              </div>
+              <p className="fund" style={{ marginTop: 6 }}>
+                Sai no modelo do balcão, com a seção &quot;DA SOBREPARTILHA&quot; e a remissão à
+                escritura anterior (data, tabelionato, livro e folhas) em lacunas para completar.
+                Minuta para conferência do(a) responsável.
+              </p>
+            </div>
+          )}
         </>
       )}
       {resultado && resultado.bloqueios.length > 0 && (
