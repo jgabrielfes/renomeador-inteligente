@@ -342,8 +342,8 @@ export function CustosView({
         <div style={{ marginTop: 18 }}>
           <span className="eyebrow">Folha de orçamento</span>
           <p className="fund" style={{ margin: '4px 0 8px' }}>
-            A planilha acima numa folha apresentável à família, com os fundamentos de cada
-            parcela — em PDF nas cores do módulo, ou em DOCX para editar antes de entregar.
+            A planilha acima numa folha apresentável à família, enxuta (Item · Valor) —
+            em PDF nas cores do módulo, ou em DOCX para editar antes de entregar.
           </p>
           <div className="escolha">
             <Button
