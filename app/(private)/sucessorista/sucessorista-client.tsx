@@ -482,6 +482,19 @@ export default function SucessoristaClient({
     return { valorIsento, detalhes, avisos };
   }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas]);
 
+  /**
+   * Relógio do ITCMD: com o imposto DECLARADO/PAGO e a data informada (aba
+   * IV), os encargos são projetados ATÉ ESSA DATA — o prazo para de correr.
+   */
+  const referenciaItcmd = useMemo(() => {
+    const marco =
+      (fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO') &&
+      fiscal.itcmdQuitadoEm
+        ? fiscal.itcmdQuitadoEm
+        : null;
+    return marco && marco < hoje ? marco : hoje;
+  }, [fiscal.itcmdSituacao, fiscal.itcmdQuitadoEm, hoje]);
+
   const provisao = useMemo(() => {
     if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;
     const herancaBruta = Number(resultado.heranca.total);
@@ -503,14 +516,14 @@ export default function SucessoristaClient({
     const fator = herancaBruta > 0 ? baseLiquida / herancaBruta : 0;
     return provisionarItcmd({
       dataObito: falecido.dataObito,
-      dataReferencia: hoje,
+      dataReferencia: referenciaItcmd,
       baseCalculo: baseLiquida,
       dataProtocolo: fiscal.inventarioAberto && fiscal.dataProtocolo ? fiscal.dataProtocolo : null,
       quinhoes: resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) * fator })),
       faixasProgressivas: fiscal.faixas,
       vigenciaProgressiva: fiscal.vigencia,
     });
-  }, [falecido.dataObito, resultado, bens, hoje, isencoes, fiscal]);
+  }, [falecido.dataObito, resultado, bens, referenciaItcmd, isencoes, fiscal]);
 
   /* --- passo 2 da partilha: matriz bem × participante (% de cada bem) --- */
   const [matriz, setMatriz] = useState<Record<string, Record<string, string>>>({});
@@ -1586,11 +1599,11 @@ export default function SucessoristaClient({
         base,
         provisao: provisionarItcmd({
           dataObito: su.dataObito,
-          dataReferencia: hoje,
+          dataReferencia: referenciaItcmd,
           baseCalculo: base,
         }),
       }));
-  }, [fiscal.sucessoes, basesSucessoes, hoje]);
+  }, [fiscal.sucessoes, basesSucessoes, referenciaItcmd]);
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**

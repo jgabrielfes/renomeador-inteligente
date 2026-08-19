@@ -1193,6 +1193,18 @@
 .sucessorista .doc-card-remover:focus-visible {
   display: flex;
 }
+/* Clique-e-arraste entre tópicos: a miniatura é "pegável" e o card que
+   pode receber ganha o tracejado bronze de "solte aqui". */
+.sucessorista .doc-card[draggable='true'] .doc-card-thumb {
+  cursor: grab;
+}
+.sucessorista .check-item.solta-aqui {
+  outline: 2px dashed var(--bronze);
+  outline-offset: 3px;
+  border-radius: 8px;
+  background: var(--papel-alto);
+}
+
 /* No toque não há hover — o ✕ fica sempre visível no celular. */
 @media (max-width: 860px) {
   .sucessorista .doc-card-remover {

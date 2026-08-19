@@ -61,6 +61,12 @@ export interface EstadoFiscal {
   faixas: FaixaProgressiva[];
   inventarioAberto: boolean;
   dataProtocolo: string;
+  /**
+   * Situação do ITCMD: DECLARADO/PAGO com a data ESTANCAM o relógio dos
+   * encargos — a provisão passa a ser calculada até essa data, não até hoje.
+   */
+  itcmdSituacao?: 'PENDENTE' | 'DECLARADO' | 'PAGO';
+  itcmdQuitadoEm?: string;
   /** Alíquota do ISS do município da serventia (%) — tabela publicada com 5%. */
   issPct?: string;
   /**
@@ -105,6 +111,8 @@ export const ESTADO_FISCAL_INICIAL: EstadoFiscal = {
   faixas: FAIXAS_PL7_2024.map((f) => ({ ...f })),
   inventarioAberto: false,
   dataProtocolo: '',
+  itcmdSituacao: 'PENDENTE',
+  itcmdQuitadoEm: '',
   issPct: '5',
   sucessoes: [],
   rito: 'AUTO',
@@ -390,7 +398,16 @@ export function ItcmdView({
           )}
 
           {/* ---------- provisão ---------- */}
-          <h2>Provisão do imposto em {formatarData(hoje)}</h2>
+          <h2>
+            Provisão do imposto em{' '}
+            {formatarData(
+              (fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO') &&
+                fiscal.itcmdQuitadoEm &&
+                fiscal.itcmdQuitadoEm < hoje
+                ? fiscal.itcmdQuitadoEm
+                : hoje,
+            )}
+          </h2>
           <div className="grade c2" style={{ margin: '10px 0 4px' }}>
             <div className="campo">
               O inventário já foi aberto (protocolado)?
@@ -412,7 +429,45 @@ export function ItcmdView({
                 />
               </label>
             )}
+            <div className="campo">
+              Situação do ITCMD
+              <div className="escolha">
+                {(
+                  [
+                    ['PENDENTE', 'Pendente'],
+                    ['DECLARADO', 'Declarado'],
+                    ['PAGO', 'Pago'],
+                  ] as const
+                ).map(([valor, rotulo]) => (
+                  <Pilula
+                    key={valor}
+                    ativo={(fiscal.itcmdSituacao ?? 'PENDENTE') === valor}
+                    onClick={() => patch({ itcmdSituacao: valor })}
+                  >
+                    {rotulo}
+                  </Pilula>
+                ))}
+              </div>
+            </div>
+            {(fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO') && (
+              <label className="campo">
+                {fiscal.itcmdSituacao === 'PAGO' ? 'Pago em' : 'Declarado em'}
+                <DateInput
+                  value={fiscal.itcmdQuitadoEm ?? ''}
+                  onChange={(iso) => patch({ itcmdQuitadoEm: iso })}
+                />
+              </label>
+            )}
           </div>
+          {(fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO') &&
+            fiscal.itcmdQuitadoEm && (
+              <p className="fund" style={{ margin: '0 0 8px' }}>
+                Relógio ESTANCADO em {formatarData(fiscal.itcmdQuitadoEm)}: atualização,
+                multas e juros são projetados até essa data, não até hoje. A rigor, os
+                encargos correm até o PAGAMENTO — a declaração sozinha não os suspende;
+                use &quot;Declarado&quot; como marco operacional e confirme na conta fiscal.
+              </p>
+            )}
 
           <div className="espelho">
             <div className="cabeca">
