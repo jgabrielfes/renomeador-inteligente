@@ -65,6 +65,28 @@ const distintos = fundirImoveisPorInscricao([
 ]);
 eq('bases diferentes não fundem', distintos.length, 3);
 
+// MESMA inscrição em EXERCÍCIOS diferentes (rotina do balcão): é o MESMO
+// lançamento — nada se soma; cada certidão preenche o campo do seu exercício.
+const exercicios = fundirImoveisPorInscricao([
+  {
+    descricao: 'Casa — venal 2019',
+    valor: '150000.00',
+    tipo: 'IMOVEL',
+    imovel: { inscricaoCadastral: '084.33.20.0048.01.000', matricula: '55.123', valorVenalObito: '150000.00', fracaoIdeal: '100.00' },
+  },
+  {
+    descricao: 'Casa — venal 2026',
+    valor: null,
+    tipo: 'IMOVEL',
+    imovel: { inscricaoCadastral: '084.33.20.0048.01.000', matricula: '55.123', valorVenalAtual: '260000.00', fracaoIdeal: '100.00' },
+  },
+]);
+eq('exercícios diferentes: um bem só', exercicios.length, 1);
+eq('venal do óbito NÃO somado', exercicios[0].imovel?.valorVenalObito, '150000.00');
+eq('venal corrente preenchido', exercicios[0].imovel?.valorVenalAtual, '260000.00');
+eq('fração não somada (fica 100%)', exercicios[0].imovel?.fracaoIdeal, '100.00');
+eq('valor do fato gerador preservado', exercicios[0].valor, '150000.00');
+
 // Campo vazio do principal é preenchido pelo fundido.
 const preenche = fundirImoveisPorInscricao([
   { descricao: 'Casa', valor: '10.00', tipo: 'IMOVEL', imovel: { matricula: '777', inscricaoCadastral: null, registroImoveis: null } },

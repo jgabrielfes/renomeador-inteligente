@@ -30,6 +30,8 @@ import type { ResumoCaso } from '@/lib/partilha/caso-store';
 export type EstadoPainel =
   | 'carregando'
   | 'drive' // Google Drive conectado — os casos vivem na conta Google
+  | 'onedrive' // OneDrive conectado — os casos vivem na conta Microsoft
+  | 'dropbox' // Dropbox conectado — os casos vivem na conta Dropbox
   | 'sem-raiz' // nunca escolheu a pasta (modo pasta disponível)
   | 'pasta-bloqueada' // raiz salva, permissão em "prompt" — exige clique
   | 'pasta'
@@ -68,6 +70,10 @@ export function CasosView({
   onEnviarNuvem = null,
   drive = null,
   onDesconectarDrive = null,
+  oneDrive = null,
+  onDesconectarOneDrive = null,
+  dropbox = null,
+  onDesconectarDropbox = null,
   dispositivo,
   temRascunhoLegado,
   onEscolherPasta,
@@ -93,6 +99,12 @@ export function CasosView({
   /** Google Drive: null = indisponível neste deploy (sem envs do Google). */
   drive?: { disponivel: boolean; conectado: boolean; email: string | null } | null;
   onDesconectarDrive?: (() => void) | null;
+  /** OneDrive: null = indisponível neste deploy (sem envs da Microsoft). */
+  oneDrive?: { disponivel: boolean; conectado: boolean; email: string | null } | null;
+  onDesconectarOneDrive?: (() => void) | null;
+  /** Dropbox: null = indisponível neste deploy (sem envs do Dropbox). */
+  dropbox?: { disponivel: boolean; conectado: boolean; email: string | null } | null;
+  onDesconectarDropbox?: (() => void) | null;
   dispositivo: string;
   temRascunhoLegado: boolean;
   onEscolherPasta: (nomeDispositivo: string) => void;
@@ -185,12 +197,16 @@ export function CasosView({
           <p className="subtitulo" style={{ marginBottom: 0 }}>
             {estado === 'drive'
               ? `Seus inventários no SEU Google Drive${drive?.email ? ` (${drive.email})` : ''} — casos e documentos acessíveis de qualquer dispositivo com o seu login.`
-              : comNuvem
-                ? 'Seus inventários, sincronizados pela nuvem da sua conta — em qualquer computador, o login puxa os casos; os documentos nunca saem desta máquina.'
-                : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
+              : estado === 'onedrive'
+                ? `Seus inventários no SEU OneDrive${oneDrive?.email ? ` (${oneDrive.email})` : ''} — casos e documentos acessíveis de qualquer dispositivo com o seu login.`
+                : estado === 'dropbox'
+                  ? `Seus inventários no SEU Dropbox${dropbox?.email ? ` (${dropbox.email})` : ''} — casos e documentos acessíveis de qualquer dispositivo com o seu login.`
+                  : comNuvem
+                  ? 'Seus inventários, sincronizados pela nuvem da sua conta — em qualquer computador, o login puxa os casos; os documentos nunca saem desta máquina.'
+                  : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
           </p>
         </div>
-        {(estado === 'pasta' || estado === 'portatil' || estado === 'drive') && (
+        {(estado === 'pasta' || estado === 'portatil' || estado === 'drive' || estado === 'onedrive' || estado === 'dropbox') && (
           <div className="escolha">
             {onEnviarNuvem && (
               <Button
@@ -228,7 +244,37 @@ export function CasosView({
         </div>
       )}
 
-      {estado !== 'drive' && estado !== 'carregando' && drive?.disponivel && (
+      {estado === 'onedrive' && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ OneDrive conectado{oneDrive?.email ? `: ` : ''}
+            <strong>{oneDrive?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
+            no seu OneDrive
+          </span>
+          {onDesconectarOneDrive && (
+            <Button size="sm" variant="outline" onClick={onDesconectarOneDrive}>
+              Desconectar
+            </Button>
+          )}
+        </div>
+      )}
+
+      {estado === 'dropbox' && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ Dropbox conectado{dropbox?.email ? `: ` : ''}
+            <strong>{dropbox?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
+            no seu Dropbox
+          </span>
+          {onDesconectarDropbox && (
+            <Button size="sm" variant="outline" onClick={onDesconectarDropbox}>
+              Desconectar
+            </Button>
+          )}
+        </div>
+      )}
+
+      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && drive?.disponivel && (
         <div className="seletor-pasta">
           <span>
             ☁️ <strong>Conectar meu Google Drive</strong> — os casos e documentos passam a
@@ -236,6 +282,32 @@ export function CasosView({
             pasta no computador).
           </span>
           <Button size="sm" render={<a href="/api/drive/conectar" />} nativeButton={false}>
+            Conectar
+          </Button>
+        </div>
+      )}
+
+      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && oneDrive?.disponivel && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ <strong>Conectar meu OneDrive</strong> — os casos e documentos passam a
+            viver na SUA conta Microsoft, acessíveis de qualquer dispositivo (sem escolher
+            pasta no computador).
+          </span>
+          <Button size="sm" render={<a href="/api/onedrive/conectar" />} nativeButton={false}>
+            Conectar
+          </Button>
+        </div>
+      )}
+
+      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && dropbox?.disponivel && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ <strong>Conectar meu Dropbox</strong> — os casos e documentos passam a
+            viver na SUA conta Dropbox, acessíveis de qualquer dispositivo (sem escolher
+            pasta no computador).
+          </span>
+          <Button size="sm" render={<a href="/api/dropbox/conectar" />} nativeButton={false}>
             Conectar
           </Button>
         </div>
@@ -382,11 +454,15 @@ export function CasosView({
                   {r.cabecalho.atualizadoPor ? ` por ${r.cabecalho.atualizadoPor}` : ''}
                   {r.modo === 'drive'
                     ? ' · no seu Google Drive'
-                    : r.modo === 'nuvem'
-                      ? ' · na nuvem'
-                      : r.caminhoPasta
-                        ? ` · pasta: ${r.caminhoPasta}`
-                        : ' · neste navegador'}
+                    : r.modo === 'onedrive'
+                      ? ' · no seu OneDrive'
+                      : r.modo === 'dropbox'
+                        ? ' · no seu Dropbox'
+                        : r.modo === 'nuvem'
+                        ? ' · na nuvem'
+                        : r.caminhoPasta
+                          ? ` · pasta: ${r.caminhoPasta}`
+                          : ' · neste navegador'}
                 </p>
               </button>
               <div className="acoes">

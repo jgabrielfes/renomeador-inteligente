@@ -18,7 +18,7 @@ export const SCHEMA_VERSION = 1;
 export const APP_VERSION = '0.1.0'; // acompanhar package.json
 
 /** 'nuvem' aparece só em ResumoCaso (card do painel) — não é um CaseStore. */
-export type ModoStore = 'pasta' | 'portatil' | 'drive' | 'nuvem';
+export type ModoStore = 'pasta' | 'portatil' | 'drive' | 'onedrive' | 'dropbox' | 'nuvem';
 
 /** Cabeçalho do caso — PRIMEIRA chave do caso.json (leitura barata no painel). */
 export interface CabecalhoCaso {

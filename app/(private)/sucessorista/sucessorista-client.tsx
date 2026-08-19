@@ -79,6 +79,10 @@ import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { DriveCaseStore, TokenDrivePool } from '@/lib/partilha/store-drive';
 import { desconectarDrive, estadoDrive, tokenDrive, type EstadoDrive } from './drive-actions';
+import { OneDriveCaseStore } from '@/lib/partilha/store-onedrive';
+import { desconectarOneDrive, estadoOneDrive, tokenOneDrive, type EstadoOneDrive } from './onedrive-actions';
+import { DropboxCaseStore } from '@/lib/partilha/store-dropbox';
+import { desconectarDropbox, estadoDropbox, tokenDropbox, type EstadoDropbox } from './dropbox-actions';
 import { GraficoQuinhoes } from './grafico-quinhoes';
 import { FontesView } from './fontes-view';
 import {
@@ -440,6 +444,17 @@ export default function SucessoristaClient({
    */
   const isencoes = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || !ufespObito) return null;
+    // Óbito ANTERIOR à Lei 10.705/2000: as isenções do art. 6º não existem
+    // no regime da Lei 9.591/66 (Súmula 112/STF — vale a lei do óbito).
+    if (falecido.dataObito && falecido.dataObito < '2001-01-01') {
+      return {
+        valorIsento: 0,
+        detalhes: [],
+        avisos: [
+          'Óbito anterior a 01/01/2001 (regime da Lei 9.591/66): as isenções do art. 6º da Lei 10.705/2000 NÃO se aplicam — nenhum bem foi abatido da base.',
+        ],
+      };
+    }
     // Ficha do item I: as respostas "possui outro imóvel?" dos herdeiros
     // decidem automaticamente o requisito da alínea "a" do art. 6º, I.
     let respostasOutroImovel = 0;
@@ -481,7 +496,7 @@ export default function SucessoristaClient({
       detalhes.push(`Bem ${a.indice} isento (${a.hipotese}) — ${brl(a.valor.toFixed(2))} abatido da base.`);
     });
     return { valorIsento, detalhes, avisos };
-  }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas]);
+  }, [resultado, ufespObito, bens, herdeiros, familia.perguntas, fiscal.isencoesRecusadas, falecido.dataObito]);
 
   /**
    * Relógio do ITCMD: com o imposto DECLARADO/PAGO e a data informada (aba
@@ -568,7 +583,11 @@ export default function SucessoristaClient({
   const [nomeRaiz, setNomeRaiz] = useState('');
   /** Google Drive conectado (modo drive): estado vindo do servidor. */
   const [drive, setDrive] = useState<EstadoDrive | null>(null);
-  /** Anexos já enviados ao Drive nesta sessão (não reenviar a cada render). */
+  /** OneDrive conectado (modo onedrive): estado vindo do servidor. */
+  const [oneDrive, setOneDrive] = useState<EstadoOneDrive | null>(null);
+  /** Dropbox conectado (modo dropbox): estado vindo do servidor. */
+  const [dropbox, setDropbox] = useState<EstadoDropbox | null>(null);
+  /** Anexos já enviados à nuvem de arquivos nesta sessão (não reenviar). */
   const enviadosDriveRef = useRef(new WeakSet<File>());
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
@@ -762,11 +781,19 @@ export default function SucessoristaClient({
         setTemRascunhoLegado(Boolean(rascunho) && !migrado);
         if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
 
-        // GOOGLE DRIVE conectado tem prioridade: a "pasta do processo" vive
-        // na conta Google do usuário e vale em qualquer dispositivo — sem
-        // seletor de pasta local (é o que resolve o conflito entre máquinas).
-        const eDrive = await estadoDrive();
+        // NUVEM DE ARQUIVOS conectada tem prioridade: a "pasta do processo"
+        // vive na conta Google/Microsoft/Dropbox do usuário e vale em
+        // qualquer dispositivo — sem seletor de pasta local (é o que resolve
+        // o conflito entre máquinas). Com mais de uma conectada, a ordem é
+        // Google → OneDrive → Dropbox (desconecte para cair na seguinte).
+        const [eDrive, eOneDrive, eDropbox] = await Promise.all([
+          estadoDrive(),
+          estadoOneDrive(),
+          estadoDropbox(),
+        ]);
         setDrive(eDrive);
+        setOneDrive(eOneDrive);
+        setDropbox(eDropbox);
         if (eDrive.conectado) {
           const s = new DriveCaseStore(
             new TokenDrivePool(tokenDrive),
@@ -774,6 +801,24 @@ export default function SucessoristaClient({
           );
           setStore(s);
           setEstadoPainel('drive');
+          setResumos(null);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
+        } else if (eOneDrive.conectado) {
+          const s = new OneDriveCaseStore(
+            new TokenDrivePool(tokenOneDrive),
+            nomeDisp || 'OneDrive',
+          );
+          setStore(s);
+          setEstadoPainel('onedrive');
+          setResumos(null);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
+        } else if (eDropbox.conectado) {
+          const s = new DropboxCaseStore(
+            new TokenDrivePool(tokenDropbox),
+            nomeDisp || 'Dropbox',
+          );
+          setStore(s);
+          setEstadoPainel('dropbox');
           setResumos(null);
           s.listarCasos().then(setResumos).catch(() => setResumos([]));
         } else if (pastaDisponivel()) {
@@ -861,9 +906,10 @@ export default function SucessoristaClient({
       const mapa: AnexosProcesso = {};
       for (const item of diff.itens) {
         if (!item.arquivo?.file) continue;
-        // Modo Drive: o arquivo VEIO do Drive — o efeito de upload não deve
-        // devolvê-lo para lá.
-        if (s.modo === 'drive') enviadosDriveRef.current.add(item.arquivo.file);
+        // Nuvem de arquivos: o arquivo VEIO de lá — o efeito de upload não
+        // deve devolvê-lo.
+        if (s.modo === 'drive' || s.modo === 'onedrive' || s.modo === 'dropbox')
+          enviadosDriveRef.current.add(item.arquivo.file);
         const entrada = diff.manifesto.find((m) => m.caminhoRelativo === item.caminhoRelativo);
         const docId = entrada?.classificacao;
         if (!docId) continue;
@@ -1094,14 +1140,23 @@ export default function SucessoristaClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, estadoPainel]);
 
-  /** Volta do consentimento do Google (?drive=...) — um toast e limpa a URL. */
+  /** Volta do consentimento (?drive= / ?onedrive= / ?dropbox=) — toast e limpa a URL. */
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get('drive');
-    if (!q) return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('drive');
+    const qOne = params.get('onedrive');
+    const qDbx = params.get('dropbox');
+    if (!q && !qOne && !qDbx) return;
     if (q === 'conectado') toast.success('Google Drive conectado — seus casos agora vivem na sua conta Google.');
     else if (q === 'erro') toast.error('Não foi possível conectar o Google Drive — tente de novo.');
+    if (qOne === 'conectado') toast.success('OneDrive conectado — seus casos agora vivem na sua conta Microsoft.');
+    else if (qOne === 'erro') toast.error('Não foi possível conectar o OneDrive — tente de novo.');
+    if (qDbx === 'conectado') toast.success('Dropbox conectado — seus casos agora vivem na sua conta Dropbox.');
+    else if (qDbx === 'erro') toast.error('Não foi possível conectar o Dropbox — tente de novo.');
     const url = new URL(window.location.href);
     url.searchParams.delete('drive');
+    url.searchParams.delete('onedrive');
+    url.searchParams.delete('dropbox');
     window.history.replaceState(null, '', url.toString());
   }, []);
 
@@ -1115,16 +1170,37 @@ export default function SucessoristaClient({
     window.location.reload();
   };
 
+  const desconectarDoOneDrive = async () => {
+    const ok = await desconectarOneDrive();
+    if (!ok) {
+      toast.error('Não consegui desconectar — tente de novo.');
+      return;
+    }
+    toast.success('OneDrive desconectado. Seus arquivos continuam no seu OneDrive; o app voltou ao armazenamento local.');
+    window.location.reload();
+  };
+
+  const desconectarDoDropbox = async () => {
+    const ok = await desconectarDropbox();
+    if (!ok) {
+      toast.error('Não consegui desconectar — tente de novo.');
+      return;
+    }
+    toast.success('Dropbox desconectado. Seus arquivos continuam no seu Dropbox; o app voltou ao armazenamento local.');
+    window.location.reload();
+  };
+
   /**
-   * MODO DRIVE: anexo novo do caso sobe automaticamente para a pasta do
-   * caso no Google Drive (direto do navegador) — é o que faz o documento
-   * aparecer nas outras máquinas. Depois do lote, o manifesto é revarrido
-   * em silêncio para o caso.json apontar para os arquivos novos.
+   * NUVEM DE ARQUIVOS (Drive/OneDrive): anexo novo do caso sobe
+   * automaticamente para a pasta do caso (direto do navegador) — é o que
+   * faz o documento aparecer nas outras máquinas. Depois do lote, o
+   * manifesto é revarrido em silêncio para o caso.json apontar para os
+   * arquivos novos.
    */
   useEffect(() => {
     const s = storeRef.current;
     const aberto = casoAbertoRef.current;
-    if (!s || s.modo !== 'drive' || !s.enviarDocumento || !aberto) return;
+    if (!s || (s.modo !== 'drive' && s.modo !== 'onedrive' && s.modo !== 'dropbox') || !s.enviarDocumento || !aberto) return;
     const pendentes: File[] = [];
     for (const files of Object.values(anexosProcesso)) {
       for (const f of files) {
@@ -1145,7 +1221,7 @@ export default function SucessoristaClient({
           }
         }
         if (falhas > 0) {
-          toast.error(`${falhas} documento(s) não subiram para o Drive — eles seguem só nesta aba; tente anexar de novo.`);
+          toast.error(`${falhas} documento(s) não subiram para a nuvem — eles seguem só nesta aba; tente anexar de novo.`);
         }
         try {
           // Revarre com um arquivo SINTÉTICO (o store só olha caseId +
@@ -1644,8 +1720,25 @@ export default function SucessoristaClient({
         );
       }
     }
+    // TITULARIDADE pela matrícula × certidão de óbito: o(a) falecido(a) (ou
+    // o cônjuge, no bem comum) precisa constar do registro aquisitivo — se
+    // não consta, o bem pode não ser do espólio (ou falta averbação prévia).
+    if (falecido.nome.trim()) {
+      for (const [i, b] of bens.entries()) {
+        const prop = b.imovel?.proprietariosMatricula;
+        if (b.tipo !== 'IMOVEL' || !prop?.trim()) continue;
+        const consta =
+          mesmaPessoa(falecido.nome, prop) ||
+          (temSobrevivente && nomeSobrev.trim() && mesmaPessoa(nomeSobrev, prop));
+        if (!consta) {
+          lista.push(
+            `Bem ${i + 1}: o(a) falecido(a) NÃO aparece na titularidade da matrícula (consta: ${prop}) — confira se o bem é mesmo do espólio, se a aquisição está registrada, ou se falta averbação prévia no RI`,
+          );
+        }
+      }
+    }
     return lista;
-  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens]);
+  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens, falecido.nome, temSobrevivente, nomeSobrev]);
 
   /**
    * Conferidor de QUALIFICAÇÃO CRUZADA (motor puro): folha × certidões do
@@ -2374,12 +2467,20 @@ export default function SucessoristaClient({
         });
         const novos = bensLidos
           .filter((b) => !casados.has(b))
-          .filter(
-            (b) =>
-              !atualizados.some(
-                (x) => x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase(),
-              ),
-          )
+          // A IDENTIDADE do imóvel é a MATRÍCULA: bem lido cuja matrícula já
+          // está lançada (na ficha ou na descrição) NUNCA entra como segundo
+          // bem — certidões de venal de exercícios diferentes são o MESMO
+          // imóvel (os detalhes já entraram pelo casamento acima).
+          .filter((b) => {
+            const matLida = soDigitos(b.imovel?.matricula as string | undefined);
+            return !atualizados.some(
+              (x) =>
+                x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase() ||
+                (matLida.length >= 3 &&
+                  (soDigitos(x.imovel?.matricula) === matLida ||
+                    soDigitos(x.descricao).includes(matLida))),
+            );
+          })
           .map((b) =>
             aplicarVenais({
               id: uid('b'),
@@ -2987,6 +3088,10 @@ export default function SucessoristaClient({
           }
           drive={drive}
           onDesconectarDrive={() => void desconectarDoDrive()}
+          oneDrive={oneDrive}
+          onDesconectarOneDrive={() => void desconectarDoOneDrive()}
+          dropbox={dropbox}
+          onDesconectarDropbox={() => void desconectarDoDropbox()}
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
@@ -3083,9 +3188,13 @@ export default function SucessoristaClient({
           title={
             store?.modo === 'drive'
               ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
-              : store?.modo === 'pasta'
-                ? 'Gravado direto na pasta do processo — nada sai desta máquina'
-                : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+              : store?.modo === 'onedrive'
+                ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
+                : store?.modo === 'dropbox'
+                  ? 'Gravado no SEU Dropbox — acessível de qualquer dispositivo com o seu login'
+                  : store?.modo === 'pasta'
+                    ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+                    : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
           }
         >
           {salvamento.estado === 'salvando' && '● salvando…'}
@@ -3108,7 +3217,7 @@ export default function SucessoristaClient({
             </button>
           )}
           {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
-          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
+          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'onedrive' ? 'no seu OneDrive' : store?.modo === 'dropbox' ? 'no seu Dropbox' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
         </div>
         {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
             se chega à Administração e ao Sair. */}
@@ -3517,7 +3626,8 @@ export default function SucessoristaClient({
                 enviadosDriveRef.current.add(file);
                 return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
               }}
-              modoDrive={store?.modo === 'drive'}
+              modoDrive={store?.modo === 'drive' || store?.modo === 'onedrive' || store?.modo === 'dropbox'}
+              nuvemNome={store?.modo === 'onedrive' ? 'OneDrive' : store?.modo === 'dropbox' ? 'Dropbox' : 'Google Drive'}
               onExcluirDrive={async (file) => {
                 // Chamado SÓ depois da autorização extra do dialog.
                 const s = storeRef.current;

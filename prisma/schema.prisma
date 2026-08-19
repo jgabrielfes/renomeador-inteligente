@@ -200,6 +200,19 @@ model User {
   driveRefreshToken String?
   driveEmail        String?
   driveConectadoEm  DateTime?
+  // ONEDRIVE conectado (Sucessorista): refresh token do escopo
+  // Files.ReadWrite.AppFolder — a aplicação só enxerga a pasta de app
+  // ("Apps/O Sucessorista") no OneDrive do usuário. O refresh token da
+  // Microsoft ROTACIONA a cada renovação: tokenOneDrive() regrava a coluna.
+  oneDriveRefreshToken String?
+  oneDriveEmail        String?
+  oneDriveConectadoEm  DateTime?
+  // DROPBOX conectado (Sucessorista): refresh token de app com acesso "App
+  // folder" — a aplicação só enxerga a pasta "Apps/O Sucessorista" no
+  // Dropbox do usuário. O refresh token do Dropbox NÃO rotaciona.
+  dropboxRefreshToken String?
+  dropboxEmail        String?
+  dropboxConectadoEm  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
