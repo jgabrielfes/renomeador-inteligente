@@ -292,6 +292,7 @@ export function DocumentosView({
   convites = {},
   onSalvarNaPasta,
   modoDrive = false,
+  nuvemNome = 'Google Drive',
   onExcluirDrive,
   onMontado,
 }: {
@@ -307,9 +308,11 @@ export function DocumentosView({
   convites?: Record<string, ConviteHerdeiro>;
   /** Modo pasta: grava o envio do cofre em "Recebidos do cofre/" do caso. */
   onSalvarNaPasta?: (file: File) => Promise<boolean>;
-  /** true = os anexos deste caso vivem no Google Drive do usuário. */
+  /** true = os anexos deste caso vivem na nuvem de arquivos do usuário. */
   modoDrive?: boolean;
-  /** Exclui o documento do Drive (chamado SÓ após a autorização extra). */
+  /** Nome da nuvem conectada ("Google Drive" | "OneDrive") — textos do dialog. */
+  nuvemNome?: string;
+  /** Exclui o documento da nuvem (chamado SÓ após a autorização extra). */
   onExcluirDrive?: (file: File) => Promise<boolean>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
@@ -576,13 +579,13 @@ export function DocumentosView({
           <DialogHeader>
             <DialogTitle>Remover “{excluir?.file.name}”?</DialogTitle>
             <DialogDescription>
-              Este caso vive no seu Google Drive. Você pode tirar o documento só desta
-              folha (o arquivo continua no Drive) — ou excluí-lo TAMBÉM do seu Google
-              Drive, indo para a lixeira do Google (recuperável por lá por 30 dias).
+              Este caso vive no seu {nuvemNome}. Você pode tirar o documento só desta
+              folha (o arquivo continua lá) — ou excluí-lo TAMBÉM do seu {nuvemNome},
+              indo para a lixeira (recuperável por lá por um tempo).
             </DialogDescription>
           </DialogHeader>
           {erroExcluir && (
-            <p className="mono-alerta">Não consegui excluir do Drive — tente de novo.</p>
+            <p className="mono-alerta">Não consegui excluir do {nuvemNome} — tente de novo.</p>
           )}
           <DialogFooter>
             <Button
@@ -616,7 +619,7 @@ export function DocumentosView({
                   .finally(() => setExcluindoDrive(false));
               }}
             >
-              Excluir também do meu Drive
+              Excluir também do meu {nuvemNome}
             </Button>
           </DialogFooter>
         </DialogContent>

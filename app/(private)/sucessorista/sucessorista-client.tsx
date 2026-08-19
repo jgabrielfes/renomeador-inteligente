@@ -79,6 +79,8 @@ import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
 import { DriveCaseStore, TokenDrivePool } from '@/lib/partilha/store-drive';
 import { desconectarDrive, estadoDrive, tokenDrive, type EstadoDrive } from './drive-actions';
+import { OneDriveCaseStore } from '@/lib/partilha/store-onedrive';
+import { desconectarOneDrive, estadoOneDrive, tokenOneDrive, type EstadoOneDrive } from './onedrive-actions';
 import { GraficoQuinhoes } from './grafico-quinhoes';
 import { FontesView } from './fontes-view';
 import {
@@ -568,7 +570,9 @@ export default function SucessoristaClient({
   const [nomeRaiz, setNomeRaiz] = useState('');
   /** Google Drive conectado (modo drive): estado vindo do servidor. */
   const [drive, setDrive] = useState<EstadoDrive | null>(null);
-  /** Anexos já enviados ao Drive nesta sessão (não reenviar a cada render). */
+  /** OneDrive conectado (modo onedrive): estado vindo do servidor. */
+  const [oneDrive, setOneDrive] = useState<EstadoOneDrive | null>(null);
+  /** Anexos já enviados à nuvem de arquivos nesta sessão (não reenviar). */
   const enviadosDriveRef = useRef(new WeakSet<File>());
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
@@ -762,11 +766,14 @@ export default function SucessoristaClient({
         setTemRascunhoLegado(Boolean(rascunho) && !migrado);
         if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
 
-        // GOOGLE DRIVE conectado tem prioridade: a "pasta do processo" vive
-        // na conta Google do usuário e vale em qualquer dispositivo — sem
-        // seletor de pasta local (é o que resolve o conflito entre máquinas).
-        const eDrive = await estadoDrive();
+        // NUVEM DE ARQUIVOS conectada tem prioridade: a "pasta do processo"
+        // vive na conta Google/Microsoft do usuário e vale em qualquer
+        // dispositivo — sem seletor de pasta local (é o que resolve o
+        // conflito entre máquinas). Com os DOIS conectados, o Google vence
+        // (desconecte-o para o painel cair no OneDrive).
+        const [eDrive, eOneDrive] = await Promise.all([estadoDrive(), estadoOneDrive()]);
         setDrive(eDrive);
+        setOneDrive(eOneDrive);
         if (eDrive.conectado) {
           const s = new DriveCaseStore(
             new TokenDrivePool(tokenDrive),
@@ -774,6 +781,15 @@ export default function SucessoristaClient({
           );
           setStore(s);
           setEstadoPainel('drive');
+          setResumos(null);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
+        } else if (eOneDrive.conectado) {
+          const s = new OneDriveCaseStore(
+            new TokenDrivePool(tokenOneDrive),
+            nomeDisp || 'OneDrive',
+          );
+          setStore(s);
+          setEstadoPainel('onedrive');
           setResumos(null);
           s.listarCasos().then(setResumos).catch(() => setResumos([]));
         } else if (pastaDisponivel()) {
@@ -861,9 +877,9 @@ export default function SucessoristaClient({
       const mapa: AnexosProcesso = {};
       for (const item of diff.itens) {
         if (!item.arquivo?.file) continue;
-        // Modo Drive: o arquivo VEIO do Drive — o efeito de upload não deve
-        // devolvê-lo para lá.
-        if (s.modo === 'drive') enviadosDriveRef.current.add(item.arquivo.file);
+        // Nuvem de arquivos: o arquivo VEIO de lá — o efeito de upload não
+        // deve devolvê-lo.
+        if (s.modo === 'drive' || s.modo === 'onedrive') enviadosDriveRef.current.add(item.arquivo.file);
         const entrada = diff.manifesto.find((m) => m.caminhoRelativo === item.caminhoRelativo);
         const docId = entrada?.classificacao;
         if (!docId) continue;
@@ -1094,14 +1110,19 @@ export default function SucessoristaClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, estadoPainel]);
 
-  /** Volta do consentimento do Google (?drive=...) — um toast e limpa a URL. */
+  /** Volta do consentimento (?drive=... / ?onedrive=...) — toast e limpa a URL. */
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get('drive');
-    if (!q) return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('drive');
+    const qOne = params.get('onedrive');
+    if (!q && !qOne) return;
     if (q === 'conectado') toast.success('Google Drive conectado — seus casos agora vivem na sua conta Google.');
     else if (q === 'erro') toast.error('Não foi possível conectar o Google Drive — tente de novo.');
+    if (qOne === 'conectado') toast.success('OneDrive conectado — seus casos agora vivem na sua conta Microsoft.');
+    else if (qOne === 'erro') toast.error('Não foi possível conectar o OneDrive — tente de novo.');
     const url = new URL(window.location.href);
     url.searchParams.delete('drive');
+    url.searchParams.delete('onedrive');
     window.history.replaceState(null, '', url.toString());
   }, []);
 
@@ -1115,16 +1136,27 @@ export default function SucessoristaClient({
     window.location.reload();
   };
 
+  const desconectarDoOneDrive = async () => {
+    const ok = await desconectarOneDrive();
+    if (!ok) {
+      toast.error('Não consegui desconectar — tente de novo.');
+      return;
+    }
+    toast.success('OneDrive desconectado. Seus arquivos continuam no seu OneDrive; o app voltou ao armazenamento local.');
+    window.location.reload();
+  };
+
   /**
-   * MODO DRIVE: anexo novo do caso sobe automaticamente para a pasta do
-   * caso no Google Drive (direto do navegador) — é o que faz o documento
-   * aparecer nas outras máquinas. Depois do lote, o manifesto é revarrido
-   * em silêncio para o caso.json apontar para os arquivos novos.
+   * NUVEM DE ARQUIVOS (Drive/OneDrive): anexo novo do caso sobe
+   * automaticamente para a pasta do caso (direto do navegador) — é o que
+   * faz o documento aparecer nas outras máquinas. Depois do lote, o
+   * manifesto é revarrido em silêncio para o caso.json apontar para os
+   * arquivos novos.
    */
   useEffect(() => {
     const s = storeRef.current;
     const aberto = casoAbertoRef.current;
-    if (!s || s.modo !== 'drive' || !s.enviarDocumento || !aberto) return;
+    if (!s || (s.modo !== 'drive' && s.modo !== 'onedrive') || !s.enviarDocumento || !aberto) return;
     const pendentes: File[] = [];
     for (const files of Object.values(anexosProcesso)) {
       for (const f of files) {
@@ -1145,7 +1177,7 @@ export default function SucessoristaClient({
           }
         }
         if (falhas > 0) {
-          toast.error(`${falhas} documento(s) não subiram para o Drive — eles seguem só nesta aba; tente anexar de novo.`);
+          toast.error(`${falhas} documento(s) não subiram para a nuvem — eles seguem só nesta aba; tente anexar de novo.`);
         }
         try {
           // Revarre com um arquivo SINTÉTICO (o store só olha caseId +
@@ -2987,6 +3019,8 @@ export default function SucessoristaClient({
           }
           drive={drive}
           onDesconectarDrive={() => void desconectarDoDrive()}
+          oneDrive={oneDrive}
+          onDesconectarOneDrive={() => void desconectarDoOneDrive()}
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
@@ -3083,9 +3117,11 @@ export default function SucessoristaClient({
           title={
             store?.modo === 'drive'
               ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
-              : store?.modo === 'pasta'
-                ? 'Gravado direto na pasta do processo — nada sai desta máquina'
-                : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+              : store?.modo === 'onedrive'
+                ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
+                : store?.modo === 'pasta'
+                  ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+                  : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
           }
         >
           {salvamento.estado === 'salvando' && '● salvando…'}
@@ -3108,7 +3144,7 @@ export default function SucessoristaClient({
             </button>
           )}
           {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
-          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
+          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'onedrive' ? 'no seu OneDrive' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
         </div>
         {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
             se chega à Administração e ao Sair. */}
@@ -3517,7 +3553,8 @@ export default function SucessoristaClient({
                 enviadosDriveRef.current.add(file);
                 return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
               }}
-              modoDrive={store?.modo === 'drive'}
+              modoDrive={store?.modo === 'drive' || store?.modo === 'onedrive'}
+              nuvemNome={store?.modo === 'onedrive' ? 'OneDrive' : 'Google Drive'}
               onExcluirDrive={async (file) => {
                 // Chamado SÓ depois da autorização extra do dialog.
                 const s = storeRef.current;
