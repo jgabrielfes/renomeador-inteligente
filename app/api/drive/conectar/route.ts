@@ -36,8 +36,12 @@ export async function GET(req: Request) {
   autorizar.searchParams.set('scope', 'https://www.googleapis.com/auth/drive.file email');
   // offline + consent: garante o REFRESH token (a conexão vale para sempre,
   // até o usuário desconectar) mesmo quando o usuário já consentiu antes.
+  // select_account: SEMPRE abre o seletor de contas do Google — sem ele, o
+  // Google usa a conta já logada no navegador e o usuário não consegue
+  // escolher a conta do ESCRITÓRIO (ex.: logado na pessoal, quer conectar a
+  // work.*) — foi exatamente o que travou a primeira conexão real.
   autorizar.searchParams.set('access_type', 'offline');
-  autorizar.searchParams.set('prompt', 'consent');
+  autorizar.searchParams.set('prompt', 'consent select_account');
   autorizar.searchParams.set('state', state);
 
   return new Response(null, {

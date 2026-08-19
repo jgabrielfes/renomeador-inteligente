@@ -998,19 +998,29 @@ export default function SucessoristaClient({
       setCasoAberto({ cabecalho: caso.cabecalho });
       setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
       irPara('caso');
-    } catch {
-      toast.error('Não consegui criar a pasta do caso.');
+    } catch (e) {
+      // O motivo importa: "Drive respondeu 403" aponta conta sem acesso ao
+      // app (test users do console), "reconecte" aponta token revogado etc.
+      toast.error('Não consegui criar a pasta do caso.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
     }
   };
 
   const duplicarCasoDoPainel = async (caseId: string) => {
     const s = storeRef.current;
     if (!s) return;
-    const original = await s.abrirCaso(caseId);
-    if (!original) return;
-    await s.criarCaso(`${original.cabecalho.titulo} (cópia)`, original.dados);
-    setResumos(await s.listarCasos());
-    toast.success('Caso duplicado.');
+    try {
+      const original = await s.abrirCaso(caseId);
+      if (!original) return;
+      await s.criarCaso(`${original.cabecalho.titulo} (cópia)`, original.dados);
+      setResumos(await s.listarCasos());
+      toast.success('Caso duplicado.');
+    } catch (e) {
+      toast.error('Não consegui duplicar o caso.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
   };
 
   const exportarCasoDoPainel = async (caseId: string) => {
