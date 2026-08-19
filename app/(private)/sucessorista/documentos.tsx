@@ -191,10 +191,15 @@ function MiniaturaCard({
   file,
   onAbrir,
   onRemover,
+  arrasto,
+  onFimArrasto,
 }: {
   file: File;
   onAbrir: () => void;
   onRemover: () => void;
+  /** Payload do clique-e-arraste entre tópicos (docId + posição). */
+  arrasto?: { docId: string; indice: number };
+  onFimArrasto?: () => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [pronto, setPronto] = useState(false);
@@ -211,7 +216,16 @@ function MiniaturaCard({
   }, [file]);
   const ext = (file.name.split('.').pop() ?? 'DOC').toUpperCase();
   return (
-    <figure className="doc-card">
+    <figure
+      className="doc-card"
+      draggable={Boolean(arrasto)}
+      onDragStart={(e) => {
+        if (!arrasto) return;
+        e.dataTransfer.setData('application/x-anexo-caso', JSON.stringify(arrasto));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={onFimArrasto}
+    >
       <button
         type="button"
         className="doc-card-thumb"
@@ -349,6 +363,22 @@ export function DocumentosView({
     setAnexos({ ...anexos, [docId]: atuais.filter((_, i) => i !== indice) });
   };
 
+  /** Card em que o arraste está pairando — realce do "solte aqui". */
+  const [alvoDrop, setAlvoDrop] = useState<string | null>(null);
+
+  /** Clique-e-arraste entre tópicos: move o anexo de um card para outro. */
+  const moverAnexo = (deDocId: string, indice: number, paraDocId: string) => {
+    if (deDocId === paraDocId) return;
+    const origem = anexos[deDocId] ?? [];
+    const file = origem[indice];
+    if (!file) return;
+    setAnexos({
+      ...anexos,
+      [deDocId]: origem.filter((_, i) => i !== indice),
+      [paraDocId]: [...(anexos[paraDocId] ?? []), file],
+    });
+  };
+
   /**
    * MODO DRIVE: remover um anexo pode alcançar o arquivo no Google Drive do
    * usuário — ação destrutiva. Pedido do escritório: SEMPRE pedir uma
@@ -417,8 +447,9 @@ export function DocumentosView({
       <h2>Documentos do processo</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
         O que o ITCMD-SP e o tabelionato exigem, na ordem de montagem. Anexe conforme for
-        recebendo — o que a etapa 0 leu já chegou classificado — e, no final, gere o
-        processo em PDF único ou individualizado. Os arquivos ficam só neste navegador.
+        recebendo — o que a etapa 0 leu já chegou classificado — e, se algo caiu no tópico
+        errado, ARRASTE a miniatura para o card certo. No final, gere o processo em PDF
+        único ou individualizado.
       </p>
       <p className="progresso num">
         {itensComAnexo} de {catalogoDoCasoTopo.length} itens com anexo · {totalAnexos} arquivo(s)
@@ -431,7 +462,29 @@ export function DocumentosView({
             {docs.map((doc) => {
               const arquivos = anexos[doc.id] ?? [];
               return (
-                <div className="check-item" key={doc.id}>
+                <div
+                  className={`check-item${alvoDrop === doc.id ? ' solta-aqui' : ''}`}
+                  key={doc.id}
+                  onDragOver={(e) => {
+                    if (!e.dataTransfer.types.includes('application/x-anexo-caso')) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setAlvoDrop(doc.id);
+                  }}
+                  onDragLeave={() => setAlvoDrop((atual) => (atual === doc.id ? null : atual))}
+                  onDrop={(e) => {
+                    const bruto = e.dataTransfer.getData('application/x-anexo-caso');
+                    setAlvoDrop(null);
+                    if (!bruto) return;
+                    e.preventDefault();
+                    try {
+                      const { docId, indice } = JSON.parse(bruto) as { docId: string; indice: number };
+                      moverAnexo(docId, indice, doc.id);
+                    } catch {
+                      // payload de outra origem — ignora
+                    }
+                  }}
+                >
                   <span className="prio">{arquivos.length > 0 ? '✓' : '·'}</span>
                   <div>
                     <h4>{doc.titulo}</h4>
@@ -464,6 +517,8 @@ export function DocumentosView({
                             file={f}
                             onAbrir={() => setPreview(f)}
                             onRemover={() => pedirRemocao(doc.id, i, f)}
+                            arrasto={{ docId: doc.id, indice: i }}
+                            onFimArrasto={() => setAlvoDrop(null)}
                           />
                         ))}
                       </div>

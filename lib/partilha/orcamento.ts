@@ -2,8 +2,10 @@
  * FOLHA DE ORÇAMENTO do inventário (item V — Custos).
  *
  * Consolida a projeção completa numa folha apresentável à família: parcelas
- * cartorárias/judiciais com fundamento legal, ITCMD provisionado (inclusive
- * das sucessões cumuladas) e os CUSTOS ADICIONAIS lançados pelo usuário.
+ * cartorárias/judiciais, ITCMD provisionado (inclusive das sucessões
+ * cumuladas) e os CUSTOS ADICIONAIS lançados pelo usuário — tabela enxuta
+ * Item · Valor (os fundamentos legais ficam no espelho da aba, não na folha;
+ * pedido do escritório).
  * Sai em PDF nas cores da identidade (papel/tinta/bronze/lacre, pdf-lib no
  * navegador) ou em DOCX EDITÁVEL na mesma veste (montarDocxRico, Tahoma,
  * tabela com bordas) — tudo gerado localmente, nada sai da máquina.
@@ -21,7 +23,6 @@ export interface DespesaAdicional {
 
 export interface LinhaOrcamento {
   rotulo: string;
-  fundamento: string;
   valor: number;
   detalhe?: string;
 }
@@ -50,7 +51,7 @@ export function montarDadosOrcamento(entrada: {
   nomeCaso: string;
   dataObito?: string;
   rito: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
-  parcelas: { rotulo: string; fundamento: string; valor: number; detalhe?: string; aproximado: boolean }[];
+  parcelas: { rotulo: string; valor: number; detalhe?: string; aproximado: boolean }[];
   avisos: string[];
   provisaoTotal: number | null;
   sucessoes: { nome: string; dataObito: string; total: number }[];
@@ -59,21 +60,19 @@ export function montarDadosOrcamento(entrada: {
 }): DadosOrcamento {
   const linhas: LinhaOrcamento[] = entrada.parcelas.map((p) => ({
     rotulo: p.rotulo + (p.aproximado ? ' *' : ''),
-    fundamento: p.fundamento,
     valor: p.valor,
     detalhe: p.detalhe,
   }));
   for (const s of entrada.sucessoes) {
     linhas.push({
       rotulo: `ITCMD — sucessão cumulada de ${s.nome}`,
-      fundamento: `Lei 10.705/2000 — fato gerador em ${formatarData(s.dataObito)}`,
+      detalhe: `fato gerador em ${formatarData(s.dataObito)}`,
       valor: s.total,
     });
   }
   if (entrada.provisaoTotal !== null) {
     linhas.push({
       rotulo: 'ITCMD provisionado (sucessão principal)',
-      fundamento: 'Lei 10.705/2000, arts. 15, 19, 20 e 21 — provisão do item IV',
       valor: entrada.provisaoTotal,
     });
   }
@@ -82,7 +81,6 @@ export function montarDadosOrcamento(entrada: {
     if (!a.descricao.trim() && valor === 0) continue;
     linhas.push({
       rotulo: a.descricao.trim() || 'Despesa adicional',
-      fundamento: 'custo adicional — lançamento do escritório',
       valor,
     });
   }
@@ -123,19 +121,15 @@ export async function montarOrcamentoDocx(d: DadosOrcamento): Promise<Blob> {
     { tipo: 'p', texto: '' },
     {
       tipo: 'tabela',
-      // Largura útil A4 (~9.070 twips): item · fundamento · valor.
-      colunas: [3300, 3970, 1800],
+      // Largura útil A4 (~9.070 twips): item · valor.
+      colunas: [7270, 1800],
       tamanho: 19,
       linhas: [
-        { celulas: ['Item', 'Fundamento', 'Valor'], negrito: true },
+        { celulas: ['Item', 'Valor'], negrito: true },
         ...d.linhas.map((l) => ({
-          celulas: [
-            l.rotulo + (l.detalhe ? ` — ${l.detalhe}` : ''),
-            l.fundamento,
-            brl(l.valor),
-          ],
+          celulas: [l.rotulo + (l.detalhe ? ` — ${l.detalhe}` : ''), brl(l.valor)],
         })),
-        { celulas: ['TOTAL PROJETADO', '', brl(d.total)], negrito: true },
+        { celulas: ['TOTAL PROJETADO', brl(d.total)], negrito: true },
       ],
     },
     { tipo: 'p', texto: '' },
@@ -238,16 +232,15 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
   });
   y -= 20;
 
-  // Tabela: Item · Fundamento · Valor
-  const COL = { item: 205, fund: 200, valor: LARGURA - 205 - 200 };
+  // Tabela: Item · Valor
+  const COL = { valor: 110, item: LARGURA - 110 };
   const PAD = 6;
   const desenharLinha = (
-    celulas: [string, string, string],
+    celulas: [string, string],
     opts: { fonte: Fonte; tamanho: number; corTexto: readonly [number, number, number]; fundo?: readonly [number, number, number] },
   ) => {
     const l1 = quebrar(celulas[0], opts.fonte, opts.tamanho, COL.item - PAD * 2);
-    const l2 = quebrar(celulas[1], opts.fonte, opts.tamanho, COL.fund - PAD * 2);
-    const altura = Math.max(l1.length, l2.length, 1) * (opts.tamanho + 3) + PAD * 2;
+    const altura = Math.max(l1.length, 1) * (opts.tamanho + 3) + PAD * 2;
     precisa(altura);
     if (opts.fundo)
       page.drawRectangle({ x: MARGEM, y: y - altura, width: LARGURA, height: altura, color: cor(opts.fundo) });
@@ -256,12 +249,7 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
       page.drawText(linha, { x: MARGEM + PAD, y: ty, size: opts.tamanho, font: opts.fonte, color: cor(opts.corTexto) });
       ty -= opts.tamanho + 3;
     }
-    ty = y - PAD - opts.tamanho;
-    for (const linha of l2) {
-      page.drawText(linha, { x: MARGEM + COL.item + PAD, y: ty, size: opts.tamanho, font: opts.fonte, color: cor(C.tintaMedia) });
-      ty -= opts.tamanho + 3;
-    }
-    const valor = limparTexto(celulas[2]);
+    const valor = limparTexto(celulas[1]);
     const larguraValor = opts.fonte.widthOfTextAtSize(valor, opts.tamanho);
     page.drawText(valor, {
       x: MARGEM + LARGURA - PAD - larguraValor,
@@ -277,16 +265,16 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
     });
   };
 
-  desenharLinha(['Item', 'Fundamento', 'Valor'], {
+  desenharLinha(['Item', 'Valor'], {
     fonte: negrito, tamanho: 9.5, corTexto: C.tinta, fundo: C.papelAlto,
   });
   for (const l of d.linhas) {
     desenharLinha(
-      [l.rotulo + (l.detalhe ? ` — ${l.detalhe}` : ''), l.fundamento, brl(l.valor)],
+      [l.rotulo + (l.detalhe ? ` — ${l.detalhe}` : ''), brl(l.valor)],
       { fonte: corpo, tamanho: 9, corTexto: C.tinta },
     );
   }
-  desenharLinha(['TOTAL PROJETADO', '', brl(d.total)], {
+  desenharLinha(['TOTAL PROJETADO', brl(d.total)], {
     fonte: negrito, tamanho: 10.5, corTexto: C.tinta, fundo: C.papelAlto,
   });
 

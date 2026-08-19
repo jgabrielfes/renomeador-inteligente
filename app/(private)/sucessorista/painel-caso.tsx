@@ -331,8 +331,17 @@ export function PainelCaso({
                     <span className="rotulo">Escritura e atos notariais (est.)</span>
                     <span>
                       {brl(
+                        // TODOS os atos de notas — escritura, torna, renúncias e
+                        // reconhecimento de união estável: filtrar só por
+                        // 'escritura*' deixava parcelas fora e o detalhamento
+                        // não fechava com o total do cabeçalho.
                         custos.parcelas
-                          .filter((p) => p.id.startsWith('escritura'))
+                          .filter(
+                            (p) =>
+                              !p.id.startsWith('registro') &&
+                              !p.id.startsWith('certid') &&
+                              p.id !== 'taxa-judiciaria',
+                          )
                           .reduce((a, p) => a + p.valor, 0),
                       )}
                     </span>

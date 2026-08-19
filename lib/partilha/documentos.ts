@@ -18,6 +18,7 @@ export type GrupoDocumento =
   | 'FINANCEIRO'
   | 'VEICULOS'
   | 'SOCIETARIO'
+  | 'ADVOGADO'
   | 'FISCAL'
   | 'ENCERRAMENTO'
   | 'OUTROS';
@@ -32,6 +33,7 @@ export const ROTULO_GRUPO: Record<GrupoDocumento, string> = {
   FINANCEIRO: 'Financeiro',
   VEICULOS: 'Veículos',
   SOCIETARIO: 'Participações societárias',
+  ADVOGADO: 'Documentos do advogado',
   FISCAL: 'Fiscal',
   ENCERRAMENTO: 'Encerramento do caso',
   OUTROS: 'Outros',
@@ -137,10 +139,44 @@ export const CATALOGO_DOCUMENTOS: DocumentoProcesso[] = [
       'Balanço da sociedade na data do óbito (ou o último exercício) — base do valor das quotas no ITCMD.',
   },
   {
+    id: 'docs-advogado',
+    grupo: 'ADVOGADO',
+    titulo: 'Procuração e documentos do advogado',
+    descricao:
+      'Procuração das partes ao advogado (ad judicia et extra), substabelecimentos, carteira da OAB e contrato de honorários.',
+  },
+  {
     id: 'declaracao-ir',
     grupo: 'FISCAL',
     titulo: 'Última declaração de IR do falecido',
     descricao: 'O mapa do patrimônio: confere se nenhum bem ficou fora das declarações.',
+  },
+  {
+    id: 'declaracao-itcmd',
+    grupo: 'FISCAL',
+    titulo: 'Declaração do ITCMD',
+    descricao:
+      'A declaração transmitida no sistema da Sefaz-SP, com o número do protocolo — base da conta fiscal do imposto.',
+  },
+  {
+    id: 'demonstrativo-itcmd',
+    grupo: 'FISCAL',
+    titulo: 'Demonstrativo de cálculo do ITCMD',
+    descricao:
+      'O demonstrativo emitido pela Sefaz-SP (conta fiscal): base atualizada, multas, juros e desconto — confere com a provisão do item IV.',
+  },
+  {
+    id: 'guia-itcmd',
+    grupo: 'FISCAL',
+    titulo: 'Guia de recolhimento (DARE) do ITCMD',
+    descricao: 'A guia DARE emitida para o recolhimento do imposto, dentro da validade.',
+  },
+  {
+    id: 'comprovante-itcmd',
+    grupo: 'FISCAL',
+    titulo: 'Comprovante de pagamento do ITCMD',
+    descricao:
+      'O comprovante bancário do recolhimento — o RI confere antes de registrar (Lei 10.705/2000, art. 25); estanca os encargos na data do pagamento (item IV).',
   },
   // ENCERRAMENTO: o produto final do caso volta para o cofre — traslado
   // (extrajudicial) OU formal de partilha (judicial), e as matrículas já com
@@ -195,6 +231,12 @@ const REGRAS_CLASSIFICACAO: Array<[RegExp, string]> = [
   [/\bCRLV\b|\bCRV\b|\bDUT\b|VEICULO|RENAVAM|\bIPVA\b|\bFIPE\b/, 'doc-veiculos'],
   [/EXTRATO|SALDO|APLICACAO|POUPANCA|PREVIDENCIA/, 'extratos-bancarios'],
   [/IMPOSTO DE RENDA|\bIRPF\b|\bDIRPF\b|DECLARACAO DE AJUSTE/, 'declaracao-ir'],
+  // ITCMD: a ordem importa — comprovante/guia/demonstrativo antes do genérico.
+  [/COMPROVANTE.*(ITCMD|DARE)|(ITCMD|DARE).*(PAGO|PAGAMENTO|RECOLHIMENTO|QUITA)/, 'comprovante-itcmd'],
+  [/\bDARE\b|GUIA.*(ITCMD|RECOLHIMENTO)/, 'guia-itcmd'],
+  [/DEMONSTRATIVO|CONTA FISCAL/, 'demonstrativo-itcmd'],
+  [/DECLARACAO.*ITCMD|ITCMD.*DECLARACAO|\bITCMD\b|\bITCD\b/, 'declaracao-itcmd'],
+  [/PROCURACAO|SUBSTABELECIMENTO|\bOAB\b|HONORARIOS/, 'docs-advogado'],
   [/RESIDENCIA|ENDERECO/, 'comprovantes-endereco'],
   // Sem saber de QUEM é o RG/CNH, o palpite seguro é o grupo dos herdeiros
   // (maioria das partes) — a IA é quem separa de cujus/supérstite.
