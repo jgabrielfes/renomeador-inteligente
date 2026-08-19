@@ -137,6 +137,8 @@ export function CasosView({
   /** Card "na nuvem" aguardando confirmação de remoção do espelho. */
   const [removendoNuvem, setRemovendoNuvem] = useState<ResumoCaso | null>(null);
   const [removendoNuvemBusy, setRemovendoNuvemBusy] = useState(false);
+  /** Dialog "Escolha o seu drive" (Google Drive · OneDrive · Dropbox). */
+  const [dialogoNuvemArquivos, setDialogoNuvemArquivos] = useState(false);
   const [nomeDisp, setNomeDisp] = useState(dispositivo || 'Meu computador');
   // Visualização (cards × lista) e ordenação — preferências do navegador.
   // Restauradas num efeito diferido (não no initializer) para o HTML do
@@ -317,44 +319,21 @@ export function CasosView({
         </div>
       )}
 
-      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && drive?.disponivel && (
-        <div className="seletor-pasta">
-          <span>
-            ☁️ <strong>Conectar meu Google Drive</strong> — os casos e documentos passam a
-            viver na SUA conta Google, acessíveis de qualquer dispositivo (sem escolher
-            pasta no computador).
-          </span>
-          <Button size="sm" render={<a href="/api/drive/conectar" />} nativeButton={false}>
-            Conectar
-          </Button>
-        </div>
-      )}
-
-      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && oneDrive?.disponivel && (
-        <div className="seletor-pasta">
-          <span>
-            ☁️ <strong>Conectar meu OneDrive</strong> — os casos e documentos passam a
-            viver na SUA conta Microsoft, acessíveis de qualquer dispositivo (sem escolher
-            pasta no computador).
-          </span>
-          <Button size="sm" render={<a href="/api/onedrive/conectar" />} nativeButton={false}>
-            Conectar
-          </Button>
-        </div>
-      )}
-
-      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' && dropbox?.disponivel && (
-        <div className="seletor-pasta">
-          <span>
-            ☁️ <strong>Conectar meu Dropbox</strong> — os casos e documentos passam a
-            viver na SUA conta Dropbox, acessíveis de qualquer dispositivo (sem escolher
-            pasta no computador).
-          </span>
-          <Button size="sm" render={<a href="/api/dropbox/conectar" />} nativeButton={false}>
-            Conectar
-          </Button>
-        </div>
-      )}
+      {/* UMA faixa só para as nuvens de arquivos: o dialog "Escolha o seu
+          drive" lista os provedores disponíveis neste deploy. */}
+      {estado !== 'drive' && estado !== 'onedrive' && estado !== 'dropbox' && estado !== 'carregando' &&
+        (drive?.disponivel || oneDrive?.disponivel || dropbox?.disponivel) && (
+          <div className="seletor-pasta">
+            <span>
+              ☁️ <strong>Conectar uma nuvem de arquivos</strong> — os casos e documentos
+              passam a viver na SUA conta, acessíveis de qualquer dispositivo (sem
+              escolher pasta no computador).
+            </span>
+            <Button size="sm" onClick={() => setDialogoNuvemArquivos(true)}>
+              Escolher meu drive
+            </Button>
+          </div>
+        )}
 
       {estado === 'pasta' && onTrocarPasta && (
         <div className="seletor-pasta">
@@ -628,6 +607,68 @@ export function CasosView({
               Arquivar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* escolha do drive — um card por provedor disponível */}
+      <Dialog open={dialogoNuvemArquivos} onOpenChange={(aberto) => !aberto && setDialogoNuvemArquivos(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escolha o seu drive</DialogTitle>
+            <DialogDescription>
+              Conecte UMA vez: a pasta &quot;O Sucessorista&quot; é criada na sua conta e a
+              aplicação só enxerga ela — nada além. Os casos e documentos ficam acessíveis
+              de qualquer dispositivo com o seu login, e dá para desconectar quando quiser.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {drive?.disponivel && (
+              <Button
+                variant="outline"
+                render={<a href="/api/drive/conectar" />}
+                nativeButton={false}
+                style={{ justifyContent: 'flex-start', height: 'auto', padding: '12px 16px', textAlign: 'left', whiteSpace: 'normal' }}
+              >
+                <span>
+                  <strong>Google Drive</strong>
+                  <br />
+                  <small>Conta Google — o seletor de contas abre para você escolher a do escritório.</small>
+                </span>
+              </Button>
+            )}
+            {oneDrive?.disponivel && (
+              <Button
+                variant="outline"
+                render={<a href="/api/onedrive/conectar" />}
+                nativeButton={false}
+                style={{ justifyContent: 'flex-start', height: 'auto', padding: '12px 16px', textAlign: 'left', whiteSpace: 'normal' }}
+              >
+                <span>
+                  <strong>OneDrive</strong>
+                  <br />
+                  <small>Conta Microsoft — pasta de app &quot;Apps/O Sucessorista&quot;.</small>
+                </span>
+              </Button>
+            )}
+            {dropbox?.disponivel && (
+              <Button
+                variant="outline"
+                render={<a href="/api/dropbox/conectar" />}
+                nativeButton={false}
+                style={{ justifyContent: 'flex-start', height: 'auto', padding: '12px 16px', textAlign: 'left', whiteSpace: 'normal' }}
+              >
+                <span>
+                  <strong>Dropbox</strong>
+                  <br />
+                  <small>Conta Dropbox — pasta de app &quot;Apps/O Sucessorista&quot;.</small>
+                </span>
+              </Button>
+            )}
+          </div>
+          <p className="fund" style={{ marginTop: 4 }}>
+            Usuário Apple: o iCloud não tem API pública — use o modo pasta apontando para a
+            pasta sincronizada do iCloud Drive no computador.
+          </p>
         </DialogContent>
       </Dialog>
 
