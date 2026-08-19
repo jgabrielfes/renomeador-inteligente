@@ -18,7 +18,7 @@ export const SCHEMA_VERSION = 1;
 export const APP_VERSION = '0.1.0'; // acompanhar package.json
 
 /** 'nuvem' aparece só em ResumoCaso (card do painel) — não é um CaseStore. */
-export type ModoStore = 'pasta' | 'portatil' | 'nuvem';
+export type ModoStore = 'pasta' | 'portatil' | 'drive' | 'nuvem';
 
 /** Cabeçalho do caso — PRIMEIRA chave do caso.json (leitura barata no painel). */
 export interface CabecalhoCaso {
@@ -95,6 +95,20 @@ export interface CaseStore {
    * em subpasta própria, sem tocar documento existente). false = sem pasta.
    */
   salvarDocumentoRecebido?(caseId: string, file: File): Promise<boolean>;
+  /**
+   * Envia um ANEXO do caso para o armazenamento (modo Drive: o documento
+   * arrastado sobe para a pasta do caso no Google Drive do usuário, direto
+   * do navegador). false = sem onde gravar.
+   */
+  enviarDocumento?(caseId: string, file: File): Promise<boolean>;
+  /**
+   * EXCLUI um documento do armazenamento do caso (modo Drive: apaga do
+   * Google Drive do usuário). Ação DESTRUTIVA — a UI SEMPRE pede uma
+   * autorização a mais antes de chamar (pedido do escritório).
+   */
+  excluirDocumento?(caseId: string, caminhoRelativo: string): Promise<boolean>;
+  /** Arquiva o caso (sai do painel; modo pasta/Drive movem para _Arquivados). */
+  arquivarCaso?(caseId: string): Promise<boolean>;
 }
 
 /* ---------------- serialização estável + hash de integridade ---------------- */

@@ -194,6 +194,12 @@ model User {
   // true = entrou por convite de ACESSO TOTAL: enxerga a nuvem de casos da
   // equipe (o chefe sempre enxerga, independentemente desta flag).
   acessoCasosEquipe Boolean @default(false)
+  // GOOGLE DRIVE conectado (Sucessorista): refresh token do escopo
+  // drive.file — a aplicação só enxerga a pasta que ELA criou no Drive do
+  // usuário. Null = não conectado. Desconectar revoga no Google e limpa.
+  driveRefreshToken String?
+  driveEmail        String?
+  driveConectadoEm  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

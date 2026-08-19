@@ -10,6 +10,14 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   CATALOGO_DOCUMENTOS,
   ROTULO_GRUPO,
   type GrupoDocumento,
@@ -269,6 +277,8 @@ export function DocumentosView({
   rito = null,
   convites = {},
   onSalvarNaPasta,
+  modoDrive = false,
+  onExcluirDrive,
   onMontado,
 }: {
   anexos: AnexosProcesso;
@@ -283,10 +293,18 @@ export function DocumentosView({
   convites?: Record<string, ConviteHerdeiro>;
   /** Modo pasta: grava o envio do cofre em "Recebidos do cofre/" do caso. */
   onSalvarNaPasta?: (file: File) => Promise<boolean>;
+  /** true = os anexos deste caso vivem no Google Drive do usuário. */
+  modoDrive?: boolean;
+  /** Exclui o documento do Drive (chamado SÓ após a autorização extra). */
+  onExcluirDrive?: (file: File) => Promise<boolean>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
 }) {
   const [preview, setPreview] = useState<File | null>(null);
+  /** Pedido de remoção aguardando a AUTORIZAÇÃO EXTRA (modo Drive). */
+  const [excluir, setExcluir] = useState<{ docId: string; indice: number; file: File } | null>(null);
+  const [excluindoDrive, setExcluindoDrive] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState(false);
   const [gerando, setGerando] = useState<'pdf' | 'zip' | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -329,6 +347,22 @@ export function DocumentosView({
   const remover = (docId: string, indice: number) => {
     const atuais = anexos[docId] ?? [];
     setAnexos({ ...anexos, [docId]: atuais.filter((_, i) => i !== indice) });
+  };
+
+  /**
+   * MODO DRIVE: remover um anexo pode alcançar o arquivo no Google Drive do
+   * usuário — ação destrutiva. Pedido do escritório: SEMPRE pedir uma
+   * autorização A MAIS antes de excluir do Drive; o dialog abaixo oferece as
+   * duas saídas (só do caso × caso + Drive). Fora do modo Drive, remove
+   * direto, como sempre.
+   */
+  const pedirRemocao = (docId: string, indice: number, file: File) => {
+    if (!modoDrive || !onExcluirDrive) {
+      remover(docId, indice);
+      return;
+    }
+    setErroExcluir(false);
+    setExcluir({ docId, indice, file });
   };
 
   const itensOrdenados = () =>
@@ -429,7 +463,7 @@ export function DocumentosView({
                             key={`${f.name}-${i}`}
                             file={f}
                             onAbrir={() => setPreview(f)}
-                            onRemover={() => remover(doc.id, i)}
+                            onRemover={() => pedirRemocao(doc.id, i, f)}
                           />
                         ))}
                       </div>
@@ -474,6 +508,64 @@ export function DocumentosView({
       ))}
 
       <LupaPreview file={preview} onClose={() => setPreview(null)} />
+
+      {/* AUTORIZAÇÃO EXTRA do modo Drive: excluir do app pode excluir do
+          Google Drive do usuário — nunca sem este segundo aval. */}
+      <Dialog
+        open={excluir !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto && !excluindoDrive) setExcluir(null);
+        }}
+      >
+        <DialogContent className="sucessorista">
+          <DialogHeader>
+            <DialogTitle>Remover “{excluir?.file.name}”?</DialogTitle>
+            <DialogDescription>
+              Este caso vive no seu Google Drive. Você pode tirar o documento só desta
+              folha (o arquivo continua no Drive) — ou excluí-lo TAMBÉM do seu Google
+              Drive, indo para a lixeira do Google (recuperável por lá por 30 dias).
+            </DialogDescription>
+          </DialogHeader>
+          {erroExcluir && (
+            <p className="mono-alerta">Não consegui excluir do Drive — tente de novo.</p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={excluindoDrive}
+              onClick={() => {
+                if (excluir) remover(excluir.docId, excluir.indice);
+                setExcluir(null);
+              }}
+            >
+              Remover só do caso
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              loading={excluindoDrive}
+              onClick={() => {
+                if (!excluir || !onExcluirDrive) return;
+                setExcluindoDrive(true);
+                setErroExcluir(false);
+                void onExcluirDrive(excluir.file)
+                  .then((ok) => {
+                    if (!ok) {
+                      setErroExcluir(true);
+                      return;
+                    }
+                    remover(excluir.docId, excluir.indice);
+                    setExcluir(null);
+                  })
+                  .finally(() => setExcluindoDrive(false));
+              }}
+            >
+              Excluir também do meu Drive
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

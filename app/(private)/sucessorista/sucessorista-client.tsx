@@ -77,6 +77,8 @@ import {
 } from './fiscal-view';
 import { SobrepartilhaView } from './sobrepartilha-view';
 import { CasosView, type EstadoPainel } from './casos-view';
+import { DriveCaseStore, TokenDrivePool } from '@/lib/partilha/store-drive';
+import { desconectarDrive, estadoDrive, tokenDrive, type EstadoDrive } from './drive-actions';
 import { GraficoQuinhoes } from './grafico-quinhoes';
 import { FontesView } from './fontes-view';
 import {
@@ -550,6 +552,10 @@ export default function SucessoristaClient({
   const [dispositivo, setDispositivo] = useState('');
   /** Nome da pasta-raiz ativa — mostrado no seletor do painel Meus Casos. */
   const [nomeRaiz, setNomeRaiz] = useState('');
+  /** Google Drive conectado (modo drive): estado vindo do servidor. */
+  const [drive, setDrive] = useState<EstadoDrive | null>(null);
+  /** Anexos já enviados ao Drive nesta sessão (não reenviar a cada render). */
+  const enviadosDriveRef = useRef(new WeakSet<File>());
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
   const [salvamento, setSalvamento] = useState<{
@@ -742,7 +748,21 @@ export default function SucessoristaClient({
         setTemRascunhoLegado(Boolean(rascunho) && !migrado);
         if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
 
-        if (pastaDisponivel()) {
+        // GOOGLE DRIVE conectado tem prioridade: a "pasta do processo" vive
+        // na conta Google do usuário e vale em qualquer dispositivo — sem
+        // seletor de pasta local (é o que resolve o conflito entre máquinas).
+        const eDrive = await estadoDrive();
+        setDrive(eDrive);
+        if (eDrive.conectado) {
+          const s = new DriveCaseStore(
+            new TokenDrivePool(tokenDrive),
+            nomeDisp || 'Google Drive',
+          );
+          setStore(s);
+          setEstadoPainel('drive');
+          setResumos(null);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
+        } else if (pastaDisponivel()) {
           const { estado, raiz } = await estadoDaRaiz();
           if (estado === 'granted' && raiz) {
             const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
@@ -827,6 +847,9 @@ export default function SucessoristaClient({
       const mapa: AnexosProcesso = {};
       for (const item of diff.itens) {
         if (!item.arquivo?.file) continue;
+        // Modo Drive: o arquivo VEIO do Drive — o efeito de upload não deve
+        // devolvê-lo para lá.
+        if (s.modo === 'drive') enviadosDriveRef.current.add(item.arquivo.file);
         const entrada = diff.manifesto.find((m) => m.caminhoRelativo === item.caminhoRelativo);
         const docId = entrada?.classificacao;
         if (!docId) continue;
@@ -945,7 +968,7 @@ export default function SucessoristaClient({
 
   const arquivarCasoDoPainel = async (caseId: string) => {
     const s = storeRef.current;
-    if (!(s instanceof FolderCaseStore)) return;
+    if (!s?.arquivarCaso) return;
     const ok = await s.arquivarCaso(caseId);
     if (ok) {
       toast.success('Caso arquivado em _Arquivados/.');
@@ -1056,6 +1079,81 @@ export default function SucessoristaClient({
     // roda uma vez, quando o store local fica pronto
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, estadoPainel]);
+
+  /** Volta do consentimento do Google (?drive=...) — um toast e limpa a URL. */
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('drive');
+    if (!q) return;
+    if (q === 'conectado') toast.success('Google Drive conectado — seus casos agora vivem na sua conta Google.');
+    else if (q === 'erro') toast.error('Não foi possível conectar o Google Drive — tente de novo.');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('drive');
+    window.history.replaceState(null, '', url.toString());
+  }, []);
+
+  const desconectarDoDrive = async () => {
+    const ok = await desconectarDrive();
+    if (!ok) {
+      toast.error('Não consegui desconectar — tente de novo.');
+      return;
+    }
+    toast.success('Google Drive desconectado. Seus arquivos continuam no seu Drive; o app voltou ao armazenamento local.');
+    window.location.reload();
+  };
+
+  /**
+   * MODO DRIVE: anexo novo do caso sobe automaticamente para a pasta do
+   * caso no Google Drive (direto do navegador) — é o que faz o documento
+   * aparecer nas outras máquinas. Depois do lote, o manifesto é revarrido
+   * em silêncio para o caso.json apontar para os arquivos novos.
+   */
+  useEffect(() => {
+    const s = storeRef.current;
+    const aberto = casoAbertoRef.current;
+    if (!s || s.modo !== 'drive' || !s.enviarDocumento || !aberto) return;
+    const pendentes: File[] = [];
+    for (const files of Object.values(anexosProcesso)) {
+      for (const f of files) {
+        if (!enviadosDriveRef.current.has(f)) pendentes.push(f);
+      }
+    }
+    if (pendentes.length === 0) return;
+    for (const f of pendentes) enviadosDriveRef.current.add(f);
+    const caseId = aberto.cabecalho.caseId;
+    const t = setTimeout(() => {
+      void (async () => {
+        let falhas = 0;
+        for (const f of pendentes) {
+          const ok = await s.enviarDocumento!(caseId, f);
+          if (!ok) {
+            falhas += 1;
+            enviadosDriveRef.current.delete(f);
+          }
+        }
+        if (falhas > 0) {
+          toast.error(`${falhas} documento(s) não subiram para o Drive — eles seguem só nesta aba; tente anexar de novo.`);
+        }
+        try {
+          // Revarre com um arquivo SINTÉTICO (o store só olha caseId +
+          // manifesto) — as entradas novas ganham hash e religam nas outras
+          // máquinas na próxima abertura.
+          const diff = await s.varrerDocumentos({
+            schemaVersion: 1,
+            appVersion: '',
+            cabecalho: aberto.cabecalho,
+            dados: null,
+            manifesto: manifestoRef.current,
+            integridade: { hashDados: '' },
+          });
+          manifestoRef.current = diff.manifesto;
+        } catch {
+          // manifesto atualiza na próxima abertura
+        }
+      })();
+    }, 800);
+    return () => clearTimeout(t);
+     
+  }, [anexosProcesso]);
 
   const voltarAoPainel = () => {
     // Flush + recarga: o painel volta com a folha pristina (o estado do
@@ -2802,6 +2900,8 @@ export default function SucessoristaClient({
           onEnviarNuvem={
             nuvemAtiva && (resumos?.length ?? 0) > 0 ? enviarCasosParaNuvem : null
           }
+          drive={drive}
+          onDesconectarDrive={() => void desconectarDoDrive()}
           dispositivo={dispositivo}
           temRascunhoLegado={temRascunhoLegado}
           onEscolherPasta={(nome) => void escolherPastaRaiz(nome)}
@@ -2896,9 +2996,11 @@ export default function SucessoristaClient({
         <div
           className={`rascunho-info${salvamento.estado === 'erro' || salvamento.estado === 'somente-leitura' ? ' problema' : ''}`}
           title={
-            store?.modo === 'pasta'
-              ? 'Gravado direto na pasta do processo — nada sai desta máquina'
-              : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+            store?.modo === 'drive'
+              ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
+              : store?.modo === 'pasta'
+                ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+                : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
           }
         >
           {salvamento.estado === 'salvando' && '● salvando…'}
@@ -2921,7 +3023,7 @@ export default function SucessoristaClient({
             </button>
           )}
           {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
-          <small>{store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
+          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
         </div>
         {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
             se chega à Administração e ao Sair. */}
@@ -3321,12 +3423,21 @@ export default function SucessoristaClient({
               rito={ritoEfetivo}
               convites={convites}
               onSalvarNaPasta={async (file) => {
-                // Modo pasta: o envio do cofre também vai ao DISCO, em
-                // "Recebidos do cofre/" do caso (o manifesto religa sozinho).
+                // Modo pasta/Drive: o envio do cofre também vai ao armazenamento,
+                // em "Recebidos do cofre/" do caso (o manifesto religa sozinho).
                 const s = storeRef.current;
                 const aberto = casoAbertoRef.current;
                 if (!s?.salvarDocumentoRecebido || !aberto) return false;
+                enviadosDriveRef.current.add(file);
                 return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
+              }}
+              modoDrive={store?.modo === 'drive'}
+              onExcluirDrive={async (file) => {
+                // Chamado SÓ depois da autorização extra do dialog.
+                const s = storeRef.current;
+                const aberto = casoAbertoRef.current;
+                if (!s?.excluirDocumento || !aberto) return false;
+                return s.excluirDocumento(aberto.cabecalho.caseId, file.name);
               }}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
             />
@@ -3563,7 +3674,7 @@ export default function SucessoristaClient({
                   }
                   return;
                 }
-                if (s instanceof FolderCaseStore && arquivo && (await s.salvarComoConflito(arquivo))) {
+                if (s && 'salvarComoConflito' in s && arquivo && (await (s as FolderCaseStore).salvarComoConflito(arquivo))) {
                   toast.success('Sua versão foi salva como caso.conflito.<data>.json na pasta.');
                 } else {
                   toast.error('Não consegui salvar a cópia.');

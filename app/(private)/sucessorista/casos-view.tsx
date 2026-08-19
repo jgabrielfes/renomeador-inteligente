@@ -29,6 +29,7 @@ import type { ResumoCaso } from '@/lib/partilha/caso-store';
 
 export type EstadoPainel =
   | 'carregando'
+  | 'drive' // Google Drive conectado — os casos vivem na conta Google
   | 'sem-raiz' // nunca escolheu a pasta (modo pasta disponível)
   | 'pasta-bloqueada' // raiz salva, permissão em "prompt" — exige clique
   | 'pasta'
@@ -65,6 +66,8 @@ export function CasosView({
   resumos,
   comNuvem = false,
   onEnviarNuvem = null,
+  drive = null,
+  onDesconectarDrive = null,
   dispositivo,
   temRascunhoLegado,
   onEscolherPasta,
@@ -87,6 +90,9 @@ export function CasosView({
   comNuvem?: boolean;
   /** Envia os casos locais para a nuvem de uma vez (carga inicial manual). */
   onEnviarNuvem?: (() => Promise<void>) | null;
+  /** Google Drive: null = indisponível neste deploy (sem envs do Google). */
+  drive?: { disponivel: boolean; conectado: boolean; email: string | null } | null;
+  onDesconectarDrive?: (() => void) | null;
   dispositivo: string;
   temRascunhoLegado: boolean;
   onEscolherPasta: (nomeDispositivo: string) => void;
@@ -177,12 +183,14 @@ export function CasosView({
         <div>
           <h1>Meus casos</h1>
           <p className="subtitulo" style={{ marginBottom: 0 }}>
-            {comNuvem
-              ? 'Seus inventários, sincronizados pela nuvem da sua conta — em qualquer computador, o login puxa os casos; os documentos nunca saem desta máquina.'
-              : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
+            {estado === 'drive'
+              ? `Seus inventários no SEU Google Drive${drive?.email ? ` (${drive.email})` : ''} — casos e documentos acessíveis de qualquer dispositivo com o seu login.`
+              : comNuvem
+                ? 'Seus inventários, sincronizados pela nuvem da sua conta — em qualquer computador, o login puxa os casos; os documentos nunca saem desta máquina.'
+                : 'Seus inventários, direto da pasta do processo — nada sai desta máquina.'}
           </p>
         </div>
-        {(estado === 'pasta' || estado === 'portatil') && (
+        {(estado === 'pasta' || estado === 'portatil' || estado === 'drive') && (
           <div className="escolha">
             {onEnviarNuvem && (
               <Button
@@ -205,6 +213,34 @@ export function CasosView({
           qualquer caso: mostra a pasta-raiz ATIVA desta conta e troca num
           clique (cada login tem a própria pasta; trocar não apaga nada — os
           casos continuam nas pastas, o painel só passa a olhar a nova). */}
+      {estado === 'drive' && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ Google Drive conectado{drive?.email ? `: ` : ''}
+            <strong>{drive?.email ?? ''}</strong> — pasta &quot;O Sucessorista&quot; no seu
+            Drive
+          </span>
+          {onDesconectarDrive && (
+            <Button size="sm" variant="outline" onClick={onDesconectarDrive}>
+              Desconectar
+            </Button>
+          )}
+        </div>
+      )}
+
+      {estado !== 'drive' && estado !== 'carregando' && drive?.disponivel && (
+        <div className="seletor-pasta">
+          <span>
+            ☁️ <strong>Conectar meu Google Drive</strong> — os casos e documentos passam a
+            viver na SUA conta Google, acessíveis de qualquer dispositivo (sem escolher
+            pasta no computador).
+          </span>
+          <Button size="sm" render={<a href="/api/drive/conectar" />} nativeButton={false}>
+            Conectar
+          </Button>
+        </div>
+      )}
+
       {estado === 'pasta' && onTrocarPasta && (
         <div className="seletor-pasta">
           <span>
@@ -344,11 +380,13 @@ export function CasosView({
                 <p className="linha fund">
                   Alterado {alteradoHa(r.cabecalho.atualizadoEm)}
                   {r.cabecalho.atualizadoPor ? ` por ${r.cabecalho.atualizadoPor}` : ''}
-                  {r.modo === 'nuvem'
-                    ? ' · na nuvem'
-                    : r.caminhoPasta
-                      ? ` · pasta: ${r.caminhoPasta}`
-                      : ' · neste navegador'}
+                  {r.modo === 'drive'
+                    ? ' · no seu Google Drive'
+                    : r.modo === 'nuvem'
+                      ? ' · na nuvem'
+                      : r.caminhoPasta
+                        ? ` · pasta: ${r.caminhoPasta}`
+                        : ' · neste navegador'}
                 </p>
               </button>
               <div className="acoes">
