@@ -39,9 +39,9 @@ import {
   type TituloCessao,
 } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
-import type { Caso, Bem, Herdeiro } from '@/lib/partilha/types';
+import type { Caso, Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
-import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno } from '@/lib/partilha/itcmd';
+import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno, type ProvisaoItcmd } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
@@ -131,6 +131,7 @@ import type {
   DadosEscritura,
   ModalidadeEscritura,
   PagamentoDiferenciado,
+  SucessaoEscritura,
 } from '@/lib/partilha/escritura';
 import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
@@ -2740,6 +2741,42 @@ export default function SucessoristaClient({
         })),
       };
     }
+    // Sucessões cumuladas: cada uma entra na MESMA escritura com a partilha
+    // sintética dela ("mesmos herdeiros" — o mesmo cálculo do item III) e a
+    // provisão do próprio fato gerador.
+    const sucessoesEscritura: SucessaoEscritura[] = (fiscal.sucessoes ?? [])
+      .filter((su) => su.dataObito && (basesSucessoes[su.id] ?? 0) > 0)
+      .map((su) => {
+        const base = basesSucessoes[su.id] ?? 0;
+        let resultadoSu: Resultado | null = null;
+        if (su.mesmosHerdeiros && herdeiros.length > 0) {
+          try {
+            resultadoSu = partilhar({
+              falecido: { dataObito: su.dataObito },
+              sobrevivente: null,
+              herdeiros,
+              bens: [
+                {
+                  id: `su-base-${su.id}`,
+                  descricao: `Base transmitida na sucessão de ${su.nome}`,
+                  valor: base.toFixed(2),
+                  natureza: 'PARTICULAR',
+                },
+              ],
+            });
+          } catch {
+            resultadoSu = null;
+          }
+        }
+        return {
+          id: su.id,
+          nome: su.nome,
+          dataObito: su.dataObito,
+          base,
+          resultado: resultadoSu,
+          provisao: provisoesSucessoes.find((p) => p.sucessao.id === su.id)?.provisao ?? null,
+        };
+      });
     const { montarEscrituraDocx } = await import('@/lib/partilha/escritura');
     const blob = await montarEscrituraDocx({
       modalidade,
@@ -2758,6 +2795,7 @@ export default function SucessoristaClient({
       provisao,
       diferenciada,
       clausulasExtras,
+      sucessoes: sucessoesEscritura.length > 0 ? sucessoesEscritura : undefined,
     });
     baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
     registrarDoc('ESCRITURA', {
@@ -2766,6 +2804,40 @@ export default function SucessoristaClient({
       modalidade,
       itens: diferenciada?.pagamentos.length ?? 0,
     });
+  };
+
+  /**
+   * Minuta da ESCRITURA DE SOBREPARTILHA — o caso sintético da view (só os
+   * bens de fora + a mesma família) sai pelo MESMO gerador determinístico,
+   * com a seção "DA SOBREPARTILHA" e a remissão à escritura anterior em
+   * lacunas para o(a) escrevente completar.
+   */
+  const gerarEscrituraSobrepartilha = async (args: {
+    modalidade: ModalidadeEscritura;
+    resultado: Resultado;
+    provisao: ProvisaoItcmd | null;
+  }) => {
+    const { montarEscrituraDocx } = await import('@/lib/partilha/escritura');
+    const blob = await montarEscrituraDocx({
+      modalidade: args.modalidade,
+      partesRemotas: '',
+      falecido,
+      qualificacaoFalecido: familia.qualificacoes['__falecido__'],
+      temSobrevivente,
+      nomeSobrev,
+      vinculo,
+      regime,
+      herdeiros,
+      qualificacoes: familia.qualificacoes,
+      inventarianteId: familia.inventarianteId ?? null,
+      bens: bens.filter((b) => b.sobrepartilha),
+      resultado: args.resultado,
+      provisao: args.provisao,
+      diferenciada: null,
+      sobrepartilha: true,
+    });
+    baixarBlob(blob, `Minuta de sobrepartilha${falecido.nome ? ` - ${falecido.nome}` : ''}.docx`);
+    registrarDoc('ESCRITURA_SOBREPARTILHA', { modalidade: args.modalidade });
   };
 
   /** Mescla a qualificação vinda do PORTAL numa ficha (campo vazio primeiro;
@@ -3405,6 +3477,7 @@ export default function SucessoristaClient({
                 issPct={Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5))}
                 ufesp={provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor}
                 onFechar={() => setSobrepartilhaAberta(false)}
+                onMinuta={gerarEscrituraSobrepartilha}
               />
             )}
           </>
