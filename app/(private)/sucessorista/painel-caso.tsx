@@ -14,14 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
-import {
-  ALIQUOTA_ITCMD_SP,
-  impostoProgressivo,
-  type FaixaProgressiva,
-  type ProvisaoItcmd,
-  type ResultadoIsencoes,
-} from '@/lib/partilha/itcmd';
-import { totalEstimado, type OportunidadeEconomia } from '@/lib/partilha/economia';
+import type { ProvisaoItcmd, ResultadoIsencoes } from '@/lib/partilha/itcmd';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 
 const brl = (v: number | string) =>
@@ -46,8 +39,6 @@ export function PainelCaso({
   resultado,
   provisao,
   isencoes,
-  faixas,
-  economias = [],
   custos = null,
   impostoSucessoes = 0,
   custosAdicionais = 0,
@@ -72,8 +63,6 @@ export function PainelCaso({
   resultado: Resultado | null;
   provisao: ProvisaoItcmd | null;
   isencoes: ResultadoIsencoes | null;
-  faixas: FaixaProgressiva[];
-  economias?: OportunidadeEconomia[];
   custos?: ProjecaoCustos | null;
   /** Soma dos custos adicionais lançados à mão na aba V. */
   custosAdicionais?: number;
@@ -123,25 +112,6 @@ export function PainelCaso({
     }
     return { total, aConferir, ultima };
   }, [convites]);
-
-  /* comparativo da reforma: mesmas bases do item V (líquidas de isenção e
-     atualizadas pela UFESP), faixas sobre cada quinhão */
-  const comparativo = useMemo(() => {
-    if (!resultado || !provisao || resultado.bloqueios.length > 0) return null;
-    const herancaBruta = Number(resultado.heranca.total);
-    if (herancaBruta <= 0) return null;
-    const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
-    const fatorIsencao = baseLiquida / herancaBruta;
-    const fatorAtualizacao = baseLiquida > 0 ? provisao.baseAtualizada / baseLiquida : 0;
-    let fixo = 0;
-    let prog = 0;
-    for (const q of resultado.quinhoes) {
-      const base = Number(q.valor) * fatorIsencao * fatorAtualizacao;
-      fixo += base * ALIQUOTA_ITCMD_SP;
-      prog += impostoProgressivo(base, provisao.ufespReferencia, faixas).imposto;
-    }
-    return { fixo, prog, diferenca: prog - fixo };
-  }, [resultado, provisao, isencoes, faixas]);
 
   const incapaz = herdeiros.some((h) => h.menorOuIncapaz);
 
@@ -416,20 +386,6 @@ export function PainelCaso({
         )}
       </div>
 
-      {economias.length > 0 && (
-        <div className="metrica">
-          <div className="k">Oportunidades de economia</div>
-          <div className="v sm num" style={{ color: 'var(--verde-registro)' }}>
-            {brl(totalEstimado(economias))}
-          </div>
-          <p className="rodape">
-            {economias.filter((o) => o.aplicada).length} garantida(s) ·{' '}
-            {economias.filter((o) => !o.aplicada).length} sugestão(ões) — detalhes no item
-            III (Partilha).
-          </p>
-        </div>
-      )}
-
       <div className="metrica">
         <div className="k">Acervo</div>
         <div className="v sm num">{resultado ? brl(resultado.acervo.massaPartilhavel) : '—'}</div>
@@ -460,20 +416,6 @@ export function PainelCaso({
           <p className="rodape">Lance os bens no item II.</p>
         )}
       </div>
-
-      {comparativo && (
-        <div className="metrica">
-          <div className="k">Se a tabela progressiva valesse hoje</div>
-          <div className={`v sm num ${comparativo.diferenca > 0 ? 'lacre' : 'verde'}`}>
-            {comparativo.diferenca > 0 ? '+' : ''}
-            {brl(comparativo.diferenca)}
-          </div>
-          <p className="rodape num">
-            {brl(comparativo.prog)} contra {brl(comparativo.fixo)} de hoje. A progressividade da
-            LC 227/2026 incide sobre cada quinhão — mais herdeiros diluem a alíquota.
-          </p>
-        </div>
-      )}
 
       <div className="metrica">
         <div className="k">Pontos de atenção</div>

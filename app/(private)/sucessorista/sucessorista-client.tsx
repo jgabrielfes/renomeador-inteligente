@@ -4054,8 +4054,6 @@ export default function SucessoristaClient({
         resultado={resultado}
         provisao={provisao}
         isencoes={isencoes}
-        faixas={fiscal.faixas}
-        economias={economias}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
         custosAdicionais={somaAdicionais(custosAdicionais)}
