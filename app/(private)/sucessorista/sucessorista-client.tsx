@@ -14,7 +14,7 @@
  * escopada em .sucessorista, por cima dos componentes do shadcn.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
 
@@ -146,6 +146,13 @@ import { Doutrina } from './doutrina';
 
 const brl = (v: string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+/** Percentual da massa partilhável no espelho da partilha (1 casa). */
+const pctFmtEspelho = (valor: string, massa: string): string => {
+  const m = Number(massa);
+  if (!(m > 0)) return '—';
+  return `${((Number(valor) / m) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+};
 
 // Aleatório (não sequencial): o caso é restaurado do sessionStorage e um
 // contador zerado no reload geraria ids que colidem com os restaurados.
@@ -4591,44 +4598,88 @@ function EspelhoView({
             ))}
           </div>
 
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Herdeiro</span>
-              <span>Fração da herança</span>
-              <span style={{ textAlign: 'right' }}>Quinhão</span>
-            </div>
-            {resultado.quinhoes.map((q) => {
-              // Fração ideal de CADA BEM (a que vai para a escritura): nos
-              // comuns já desconta a meação — 3 filhos + viúva meeira = 1/6.
-              const porBem = [
-                q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
-                q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
-              ]
-                .filter(Boolean)
-                .join(' · ');
-              return (
-                <div key={q.herdeiroId}>
-                  <div className="lanc">
-                    <span className="nome">
-                      {q.nome}
-                      {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
-                    </span>
-                    <span className="fracao num">{q.fracaoHeranca}</span>
-                    <span className="valor num">{brl(q.valor)}</span>
-                  </div>
-                  {porBem && (
-                    <div className="fund num" style={{ fontWeight: 600 }}>
-                      Fração ideal por bem: {porBem}
-                    </div>
-                  )}
-                  <div className="fund">
-                    {q.fundamento}
-                    {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* Tabela SEMÂNTICA (T4 da auditoria): thead/th com scope — números
+              tabulares alinhados à direita, seleção e cópia para Word/Excel
+              preservando as colunas, leitura correta por leitor de tela e a
+              repetição do cabeçalho por página na impressão. O fundamento
+              legal de cada lançamento fica visível na linha seguinte. */}
+          <Table className="espelho-tabela">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Herdeiro</TableHead>
+                <TableHead scope="col">Fração da herança</TableHead>
+                <TableHead scope="col" className="text-right">
+                  % da massa
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Quinhão
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {resultado.meacao && (
+                <>
+                  <TableRow>
+                    <TableCell className="espelho-nome">
+                      {resultado.meacao.beneficiario} · meação — não é herança
+                    </TableCell>
+                    <TableCell className="num">{resultado.meacao.fracao}</TableCell>
+                    <TableCell className="num text-right">
+                      {pctFmtEspelho(resultado.meacao.valor, resultado.acervo.massaPartilhavel)}
+                    </TableCell>
+                    <TableCell className="num text-right">{brl(resultado.meacao.valor)}</TableCell>
+                  </TableRow>
+                  <TableRow className="espelho-fundamento">
+                    <TableCell colSpan={4}>{resultado.meacao.fundamento}</TableCell>
+                  </TableRow>
+                </>
+              )}
+              {resultado.quinhoes.map((q) => {
+                // Fração ideal de CADA BEM (a que vai para a escritura): nos
+                // comuns já desconta a meação — 3 filhos + viúva meeira = 1/6.
+                const porBem = [
+                  q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+                  q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <Fragment key={q.herdeiroId}>
+                    <TableRow>
+                      <TableCell className="espelho-nome">
+                        {q.nome}
+                        {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
+                      </TableCell>
+                      <TableCell className="num">{q.fracaoHeranca}</TableCell>
+                      <TableCell className="num text-right">
+                        {pctFmtEspelho(q.valor, resultado.acervo.massaPartilhavel)}
+                      </TableCell>
+                      <TableCell className="num text-right">{brl(q.valor)}</TableCell>
+                    </TableRow>
+                    <TableRow className="espelho-fundamento">
+                      <TableCell colSpan={4}>
+                        {porBem && (
+                          <span className="num" style={{ fontWeight: 600 }}>
+                            Fração ideal por bem: {porBem} ·{' '}
+                          </span>
+                        )}
+                        {q.fundamento}
+                        {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell>Total (massa partilhável)</TableCell>
+                <TableCell />
+                <TableCell className="num text-right">100%</TableCell>
+                <TableCell className="num text-right">{brl(resultado.acervo.massaPartilhavel)}</TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
 
           {/* COLAÇÃO (CC 2.002): quadro ajustado — massa fictícia, abate do
               donatário e quinhão líquido a receber de cada herdeiro. */}
@@ -4637,23 +4688,31 @@ function EspelhoView({
               <span className="eyebrow">
                 Colação aplicada — {brl(colacao.totalColacionado.toFixed(2))} voltando à massa de cálculo
               </span>
-              <div className="espelho" style={{ marginTop: 8 }}>
-                <div className="cabeca">
-                  <span>Herdeiro</span>
-                  <span style={{ textAlign: 'right' }}>Quinhão − colacionado</span>
-                  <span style={{ textAlign: 'right' }}>Líquido a receber</span>
-                </div>
-                {colacao.quinhoes.map((q) => (
-                  <div key={q.herdeiroId} className="lanc">
-                    <span className="nome">{q.nome}</span>
-                    <span className="fracao num">
-                      {brl(q.valorComMassaFicticia.toFixed(2))}
-                      {q.colacionado > 0 ? ` − ${brl(q.colacionado.toFixed(2))}` : ''}
-                    </span>
-                    <span className="valor num">{brl(q.valorLiquido.toFixed(2))}</span>
-                  </div>
-                ))}
-              </div>
+              <Table className="espelho-tabela" style={{ marginTop: 8 }}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Herdeiro</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Quinhão − colacionado
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Líquido a receber
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {colacao.quinhoes.map((q) => (
+                    <TableRow key={q.herdeiroId}>
+                      <TableCell className="espelho-nome">{q.nome}</TableCell>
+                      <TableCell className="num text-right">
+                        {brl(q.valorComMassaFicticia.toFixed(2))}
+                        {q.colacionado > 0 ? ` − ${brl(q.colacionado.toFixed(2))}` : ''}
+                      </TableCell>
+                      <TableCell className="num text-right">{brl(q.valorLiquido.toFixed(2))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
               {colacao.avisos.map((a, i) => (
                 <p key={i} className="mono-alerta" style={{ marginTop: 6 }}>
                   {a}

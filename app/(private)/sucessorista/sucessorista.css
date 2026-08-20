@@ -72,7 +72,9 @@
      de um ano = histórico (neutro, "multa já incidente") — o vermelho só
      pode significar urgência de verdade. Lógica em lib/partilha/prazo.ts. */
   --estado-ok: var(--verde-registro);
-  --estado-alerta: #b98523;
+  /* Âmbar escurecido para 4,68:1 sobre o papel — o #b98523 sugerido na
+     auditoria dava 2,96:1 como TEXTO e reprovava no próprio critério. */
+  --estado-alerta: #8f6612;
   --estado-vencido: var(--lacre);
 
   /* T2 da auditoria: variantes para uso SOBRE O FUNDO ESCURO da lombada
@@ -250,6 +252,10 @@
   max-width: 1080px;
   min-width: 0;
 }
+
+/* Campo de texto LONGO (T5): ocupa a linha inteira de qualquer grade —
+   local do falecimento, matrículas de certidão, endereço, filiação. */
+.sucessorista .campo-longo { grid-column: 1 / -1; }
 
 /* ---------- Documentos em LINHA ÚNICA (I3) ---------- */
 
@@ -1096,6 +1102,56 @@
   border-bottom: 1px solid var(--fio);
 }
 
+/* ---------- espelho da partilha em TABELA semântica (T4) ---------- */
+
+.sucessorista .espelho-tabela {
+  border-top: 2px solid var(--tinta);
+  font-variant-numeric: tabular-nums;
+}
+
+.sucessorista .espelho-tabela th {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+}
+
+.sucessorista .espelho-tabela .espelho-nome { font-weight: 600; }
+
+/* Fundamento legal do lançamento: linha própria, discreta, sob o valor. */
+.sucessorista .espelho-tabela .espelho-fundamento td {
+  padding-top: 0;
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  border-bottom: 1px solid var(--fio);
+}
+
+/* ---------- impressão (T4): a etapa vira o entregável ---------- */
+
+@media print {
+  .sucessorista .lombada,
+  .sucessorista .painel,
+  .sucessorista .painel-fab,
+  .sucessorista .painel-fundo,
+  .sucessorista .rodape-acoes,
+  .sucessorista .passos,
+  .sucessorista .barra-status .bs-salva,
+  .sucessorista .doutrina-detalhe,
+  .sucessorista button {
+    display: none !important;
+  }
+
+  .sucessorista .processo { display: block; min-height: 0; }
+  .sucessorista .folha { max-width: none; padding: 0; }
+  .sucessorista { background: #fff; color: #000; }
+  .sucessorista .barra-status { position: static; border-bottom: 2px solid #000; }
+
+  /* Cabeçalho da tabela repetido em TODA página impressa. */
+  .sucessorista thead { display: table-header-group; }
+  .sucessorista .espelho-tabela .espelho-fundamento td { color: #000; }
+}
+
 /* ---------- espelho da partilha (assinatura visual) ---------- */
 
 .sucessorista .espelho { border-top: 2px solid var(--tinta); margin-top: 10px; }
@@ -1747,7 +1803,8 @@
 .sucessorista .novidade h4 { font-size: var(--t-sm); font-weight: 600; margin: 0 0 2px; }
 .sucessorista .novidade p { font-size: var(--t-xs); color: var(--tinta-media); margin: 0; }
 
-@media (max-width: 1100px) {
+/* T3: breakpoint órfão de 1100px fundido no de 1024px. */
+@media (max-width: 1024px) {
   .sucessorista .dash-pilha {
     grid-template-columns: 1fr;
     grid-template-areas: 'cofre' 'rito' 'equipe' 'inicio' 'arquivo' 'novidades';
@@ -2002,6 +2059,7 @@
   font-weight: 600;
   line-height: 1;
 }
-@media (max-width: 900px) {
+/* T3: breakpoint órfão de 900px fundido no de 1024px. */
+@media (max-width: 1024px) {
   .sucessorista .complexidade-grade { grid-template-columns: 1fr; justify-items: center; }
 }

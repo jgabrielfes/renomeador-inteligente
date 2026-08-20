@@ -258,24 +258,30 @@ export function FamiliaView({
             onChange={(e) => setFalecido({ ultimoDomicilio: e.target.value })}
           />
         </label>
-        <label className="campo">
+        {/* Campos de texto LONGO ocupam a linha inteira do grid (T5): local
+            do falecimento e as matrículas de certidão cortavam o valor sem
+            forma de ver o conteúdo — e o title guarda o texto completo. */}
+        <label className="campo campo-longo">
           Local do falecimento
           <Input
             value={falecido.localFalecimento ?? ''}
+            title={falecido.localFalecimento ?? ''}
             onChange={(e) => setFalecido({ localFalecimento: e.target.value })}
           />
         </label>
-        <label className="campo">
+        <label className="campo campo-longo">
           Certidão de óbito (matrícula/ORCPN)
           <Input
             value={falecido.certidaoObito ?? ''}
+            title={falecido.certidaoObito ?? ''}
             onChange={(e) => setFalecido({ certidaoObito: e.target.value })}
           />
         </label>
-        <label className="campo">
+        <label className="campo campo-longo">
           Certidão de casamento (matrícula/ORCPN)
           <Input
             value={falecido.certidaoCasamento ?? ''}
+            title={falecido.certidaoCasamento ?? ''}
             onChange={(e) => setFalecido({ certidaoCasamento: e.target.value })}
           />
         </label>
@@ -1115,6 +1121,15 @@ const GRUPO_CONJUGE: { rotulo: string; campos: CampoQualificacao[] } = {
   ],
 };
 
+/** Campos de texto LONGO (T5): ocupam a linha inteira do grid — filiação,
+ *  endereço e matrículas de certidão cortavam o valor sem forma de vê-lo. */
+const CAMPOS_LONGOS = new Set<keyof Qualificacao>([
+  'filiacao',
+  'endereco',
+  'conjugeFiliacao',
+  'casamentoCertidao',
+]);
+
 /** Campos de data da ficha — entram com o DateInput, não com Input livre. */
 const CAMPOS_DE_DATA = new Set<keyof Qualificacao>([
   'dataNascimento',
@@ -1168,7 +1183,10 @@ export function QualificacaoEditor({
           <p className="q-grupo">{grupo.rotulo}</p>
           <div className="grade q-grid">
             {grupo.campos.map(({ campo, rotulo }) => (
-              <label className="campo" key={campo}>
+              <label
+                className={`campo${CAMPOS_LONGOS.has(campo) ? ' campo-longo' : ''}`}
+                key={campo}
+              >
                 {grupo === GRUPOS_QUALIFICACAO[0] || casado ? rotulo : rotuloConjuge(rotulo)}
                 {campo === 'estadoCivil' ? (
                   // Escolha FECHADA (pedido do escritório): solteiro · casado ·
@@ -1198,6 +1216,7 @@ export function QualificacaoEditor({
                 ) : (
                   <Input
                     value={valor[campo] as string}
+                    title={CAMPOS_LONGOS.has(campo) ? ((valor[campo] as string) ?? '') : undefined}
                     inputMode={campo === 'cpf' || campo === 'conjugeCpf' ? 'numeric' : undefined}
                     onChange={(e) =>
                       onChange({
