@@ -235,6 +235,25 @@
   overflow-y: auto;
 }
 
+/* Setinha que RECOLHE o painel para a margem direita (desktop). */
+.sucessorista .painel .recolher-desktop {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  background: var(--papel);
+  color: var(--tinta-media);
+}
+
+.sucessorista .painel .recolher-desktop:hover { color: var(--tinta); }
+.sucessorista .painel .recolher-desktop .rotulo-vertical { display: none; }
+
 .sucessorista .painel h2 {
   font-family: var(--display);
   font-weight: 600;
@@ -554,8 +573,6 @@
   border-top: 2px solid var(--tinta);
 }
 
-/* Ticker de notícias (Migalhas Notariais e Registrais) — barra fina no topo
-   da folha; a manchete troca sozinha e o clique abre em nova aba. */
 /* ---------- painel "Meus casos" (tela inicial do módulo) ---------- */
 
 .sucessorista .casos { padding-top: 12px; }
@@ -824,73 +841,6 @@
   list-style: disc;
 }
 .sucessorista .economias .oportunidade .condicoes li { margin-top: 2px; }
-
-/* Painel de notícias: notícia em destaque com título + introdução —
-   radar maior (pedido do escritório): manchete e introdução cresceram. */
-.sucessorista .noticias-ticker {
-  margin: -12px 0 26px;
-  padding: 14px 18px 16px;
-  border: 1px solid var(--fio);
-  border-left: 3px solid var(--bronze);
-  border-radius: 8px;
-  background: var(--papel-alto);
-  font-size: 13px;
-  overflow: hidden;
-}
-
-.sucessorista .noticias-ticker .cabeca {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.sucessorista .noticias-ticker .rotulo {
-  flex-shrink: 0;
-  font-weight: 700;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--bronze);
-  text-decoration: none;
-}
-
-.sucessorista .noticias-ticker .manchete {
-  display: block;
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 17px;
-  line-height: 1.3;
-  color: var(--tinta);
-  text-decoration: none;
-  animation: manchete-entra 0.45s ease-out;
-}
-
-.sucessorista .noticias-ticker .manchete:hover { text-decoration: underline; }
-
-.sucessorista .noticias-ticker .introducao {
-  margin: 6px 0 0;
-  color: var(--tinta-media);
-  font-size: 13px;
-  line-height: 1.55;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  animation: manchete-entra 0.45s ease-out;
-}
-
-.sucessorista .noticias-ticker .contagem {
-  flex-shrink: 0;
-  margin-left: auto;
-  color: var(--tinta-media);
-  font-size: 11px;
-}
-
-@keyframes manchete-entra {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
 
 /* Logo do escritório (marca branca dos honorários). */
 .sucessorista .logo-marca {
@@ -1261,8 +1211,49 @@
   .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* Painel RECOLHIDO (desktop): a coluna vira uma TIRA fina na margem direita
+   — só a setinha e o rótulo vertical; o clique reabre. Abaixo de 1024px o
+   painel desce para baixo da folha e o recolhimento não se aplica. */
+@media (min-width: 1281px) {
+  .sucessorista .processo.painel-recolhido { grid-template-columns: 216px minmax(0, 1fr) 42px; }
+}
+
+@media (min-width: 1025px) and (max-width: 1280px) {
+  .sucessorista .processo.painel-recolhido { grid-template-columns: 192px minmax(0, 1fr) 42px; }
+}
+
+@media (min-width: 1025px) {
+  .sucessorista .processo.painel-recolhido .painel {
+    padding: 10px 4px;
+    overflow: hidden;
+  }
+  .sucessorista .processo.painel-recolhido .painel > :not(.recolher-desktop) { display: none; }
+  .sucessorista .processo.painel-recolhido .painel .recolher-desktop {
+    position: static;
+    width: 100%;
+    height: auto;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+  }
+  .sucessorista .processo.painel-recolhido .painel .recolher-desktop .rotulo-vertical {
+    display: block;
+    writing-mode: vertical-rl;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--tinta-media);
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 1024px) {
   .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr); }
+  /* Sem coluna fixa à direita, a setinha de recolher não se aplica. */
+  .sucessorista .painel .recolher-desktop { display: none; }
   /* O painel desce para baixo da folha, mas SÓ na coluna do conteúdo:
      ocupando as duas colunas (1/-1) ele começava em x=0 e o texto deslizava
      por baixo da lombada fixa ao rolar. A lombada abraça as duas linhas,
