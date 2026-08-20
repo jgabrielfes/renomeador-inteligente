@@ -62,6 +62,8 @@ const profundidade = (path: string): number => path.split('/').filter(Boolean).l
 
 export class DropboxCaseStore implements CaseStore {
   readonly modo = 'dropbox' as const;
+  /** Motivo da última falha de envio de documento (a UI mostra no toast). */
+  ultimoErro: string | null = null;
   /** caseId → { pasta: '/Nome', nome } (preenchido pela listagem). */
   private casos = new Map<string, { pasta: string; nome: string }>();
 
@@ -338,14 +340,19 @@ export class DropboxCaseStore implements CaseStore {
 
   private async gravarDocumento(caseId: string, file: File, subpasta?: string): Promise<boolean> {
     const entrada = await this.entradaDoCaso(caseId);
-    if (!entrada) return false;
+    if (!entrada) {
+      this.ultimoErro = 'Este caso não tem pasta no Dropbox conectado (veio da nuvem de outra máquina?).';
+      return false;
+    }
     try {
       // Nome repetido SUBSTITUI o conteúdo (mode overwrite; o Dropbox guarda
       // as versões) — a mesma identidade continua valendo no manifesto.
       const destino = subpasta ? `${entrada.pasta}/${subpasta}/${file.name}` : `${entrada.pasta}/${file.name}`;
       await this.gravarArquivo(destino, file);
+      this.ultimoErro = null;
       return true;
-    } catch {
+    } catch (err) {
+      this.ultimoErro = err instanceof Error ? err.message : 'Falha de rede no envio ao Dropbox.';
       return false;
     }
   }

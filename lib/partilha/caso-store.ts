@@ -115,6 +115,8 @@ export interface CaseStore {
    * null = link indisponível.
    */
   linkExterno?(caseId?: string): Promise<string | null>;
+  /** Motivo da última falha de `enviarDocumento` — a UI mostra no toast. */
+  ultimoErro?: string | null;
 }
 
 /* ---------------- serialização estável + hash de integridade ---------------- */

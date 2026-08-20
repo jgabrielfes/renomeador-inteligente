@@ -26,6 +26,7 @@ import { montarPdfUnificado, montarZipIndividualizado } from '@/lib/partilha/pro
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { LupaPreview } from './preview';
+import { toast } from 'sonner';
 
 export type AnexosProcesso = Record<string, File[]>;
 
@@ -191,12 +192,17 @@ function MiniaturaCard({
   file,
   onAbrir,
   onRemover,
+  onNuvem,
+  enviandoNuvem = false,
   arrasto,
   onFimArrasto,
 }: {
   file: File;
   onAbrir: () => void;
   onRemover: () => void;
+  /** Reenvio manual à nuvem de arquivos (o ☁ no canto da miniatura). */
+  onNuvem?: () => void;
+  enviandoNuvem?: boolean;
   /** Payload do clique-e-arraste entre tópicos (docId + posição). */
   arrasto?: { docId: string; indice: number };
   onFimArrasto?: () => void;
@@ -248,6 +254,18 @@ function MiniaturaCard({
       >
         ✕
       </button>
+      {onNuvem && (
+        <button
+          type="button"
+          className="doc-card-nuvem"
+          title={`Subir ${file.name} para a nuvem`}
+          aria-label={`Subir ${file.name} para a nuvem`}
+          disabled={enviandoNuvem}
+          onClick={onNuvem}
+        >
+          {enviandoNuvem ? '…' : '☁'}
+        </button>
+      )}
       <figcaption className="doc-card-nome num" title={file.name}>
         {file.name}
       </figcaption>
@@ -294,6 +312,7 @@ export function DocumentosView({
   modoDrive = false,
   nuvemNome = 'Google Drive',
   onExcluirDrive,
+  onSubirNuvem,
   onMontado,
 }: {
   anexos: AnexosProcesso;
@@ -314,6 +333,11 @@ export function DocumentosView({
   nuvemNome?: string;
   /** Exclui o documento da nuvem (chamado SÓ após a autorização extra). */
   onExcluirDrive?: (file: File) => Promise<boolean>;
+  /**
+   * Reenvio MANUAL à nuvem de arquivos ("Subir tudo" + o ☁ das miniaturas)
+   * — o plano B quando o envio automático falhou (rede, arquivo grande).
+   */
+  onSubirNuvem?: (files: File[]) => Promise<{ ok: number; falhas: number; motivo?: string }>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
 }) {
@@ -368,6 +392,34 @@ export function DocumentosView({
 
   /** Card em que o arraste está pairando — realce do "solte aqui". */
   const [alvoDrop, setAlvoDrop] = useState<string | null>(null);
+
+  /* Reenvio manual à nuvem de arquivos: tudo de uma vez ou um por um. */
+  const [subindoTudo, setSubindoTudo] = useState(false);
+  const [subindoUm, setSubindoUm] = useState<File | null>(null);
+  const subirTudo = async () => {
+    if (!onSubirNuvem) return;
+    const todos = Object.values(anexos).flat();
+    if (todos.length === 0) return;
+    setSubindoTudo(true);
+    try {
+      const r = await onSubirNuvem(todos);
+      if (r.falhas === 0) toast.success(`${r.ok} documento(s) na pasta do caso no seu ${nuvemNome} — tudo sincronizado.`);
+      else toast.error(`${r.ok} subiram; ${r.falhas} falharam — tente de novo.`, { description: r.motivo });
+    } finally {
+      setSubindoTudo(false);
+    }
+  };
+  const subirUm = async (file: File) => {
+    if (!onSubirNuvem) return;
+    setSubindoUm(file);
+    try {
+      const r = await onSubirNuvem([file]);
+      if (r.falhas === 0) toast.success(`“${file.name}” está na pasta do caso no seu ${nuvemNome}.`);
+      else toast.error(`Não consegui subir “${file.name}”.`, { description: r.motivo });
+    } finally {
+      setSubindoUm(null);
+    }
+  };
 
   /** Clique-e-arraste entre tópicos: move o anexo de um card para outro. */
   const moverAnexo = (deDocId: string, indice: number, paraDocId: string) => {
@@ -458,6 +510,25 @@ export function DocumentosView({
         {itensComAnexo} de {catalogoDoCasoTopo.length} itens com anexo · {totalAnexos} arquivo(s)
       </p>
 
+      {modoDrive && onSubirNuvem && totalAnexos > 0 && (
+        <div className="escolha" style={{ alignItems: 'center', margin: '2px 0 14px' }}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            loading={subindoTudo}
+            onClick={() => void subirTudo()}
+          >
+            ☁ Subir tudo para a nuvem ({totalAnexos})
+          </Button>
+          <span className="fund">
+            Reenvia TODOS os anexos para a pasta do caso no seu {nuvemNome} (nome repetido
+            substitui — nada duplica). Use quando algum envio automático falhar; o ☁ de
+            cada miniatura sobe um por vez.
+          </span>
+        </div>
+      )}
+
       {grupos.map(({ grupo, docs }) => (
         <div key={grupo}>
           <span className="eyebrow">{ROTULO_GRUPO[grupo]}</span>
@@ -520,6 +591,8 @@ export function DocumentosView({
                             file={f}
                             onAbrir={() => setPreview(f)}
                             onRemover={() => pedirRemocao(doc.id, i, f)}
+                            onNuvem={modoDrive && onSubirNuvem ? () => void subirUm(f) : undefined}
+                            enviandoNuvem={subindoUm === f}
                             arrasto={{ docId: doc.id, indice: i }}
                             onFimArrasto={() => setAlvoDrop(null)}
                           />

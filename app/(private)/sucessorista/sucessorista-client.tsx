@@ -1240,6 +1240,9 @@ export default function SucessoristaClient({
     const s = storeRef.current;
     const aberto = casoAbertoRef.current;
     if (!s || (s.modo !== 'drive' && s.modo !== 'onedrive' && s.modo !== 'dropbox') || !s.enviarDocumento || !aberto) return;
+    // Caso aberto DIRETO da nuvem da conta (sem pasta na nuvem de arquivos
+    // desta máquina): não há para onde subir — sem tentar, sem toast de erro.
+    if (origemNuvemRef.current) return;
     const pendentes: File[] = [];
     for (const files of Object.values(anexosProcesso)) {
       for (const f of files) {
@@ -1260,7 +1263,10 @@ export default function SucessoristaClient({
           }
         }
         if (falhas > 0) {
-          toast.error(`${falhas} documento(s) não subiram para a nuvem — eles seguem só nesta aba; tente anexar de novo.`);
+          toast.error(
+            `${falhas} documento(s) não subiram para a nuvem — eles seguem anexados ao caso; reenvie pela aba Documentos ("Subir para a nuvem").`,
+            { description: s.ultimoErro ?? undefined },
+          );
         }
         try {
           // Revarre com um arquivo SINTÉTICO (o store só olha caseId +
@@ -2980,6 +2986,49 @@ export default function SucessoristaClient({
     registrarDoc('ESCRITURA_SOBREPARTILHA', { modalidade: args.modalidade });
   };
 
+  /**
+   * Reenvio MANUAL à nuvem de arquivos (aba Documentos): sobe um documento
+   * (ou todos) para a pasta do caso — o plano B quando o envio automático
+   * falhou. Marca o WeakSet (o efeito automático não repete) e revarre o
+   * manifesto em silêncio no fim do lote.
+   */
+  const subirParaNuvem = async (
+    files: File[],
+  ): Promise<{ ok: number; falhas: number; motivo?: string }> => {
+    const s = storeRef.current;
+    const aberto = casoAbertoRef.current;
+    if (!s?.enviarDocumento || !aberto) {
+      return { ok: 0, falhas: files.length, motivo: 'Nuvem de arquivos indisponível neste caso.' };
+    }
+    let ok = 0;
+    let falhas = 0;
+    for (const f of files) {
+      const subiu = await s.enviarDocumento(aberto.cabecalho.caseId, f);
+      if (subiu) {
+        ok += 1;
+        enviadosDriveRef.current.add(f);
+      } else {
+        falhas += 1;
+      }
+    }
+    if (ok > 0) {
+      try {
+        const diff = await s.varrerDocumentos({
+          schemaVersion: 1,
+          appVersion: '',
+          cabecalho: aberto.cabecalho,
+          dados: null,
+          manifesto: manifestoRef.current,
+          integridade: { hashDados: '' },
+        });
+        manifestoRef.current = diff.manifesto;
+      } catch {
+        // manifesto atualiza na próxima abertura
+      }
+    }
+    return { ok, falhas, motivo: s.ultimoErro ?? undefined };
+  };
+
   /** Mescla a qualificação vinda do PORTAL numa ficha (campo vazio primeiro;
    *  uniaoEstavel trafega como 'sim'/'' e vira a caixinha booleana). */
   const mesclarQualificacaoDoPortal = (
@@ -3670,6 +3719,7 @@ export default function SucessoristaClient({
               }}
               modoDrive={store?.modo === 'drive' || store?.modo === 'onedrive' || store?.modo === 'dropbox'}
               nuvemNome={store?.modo === 'onedrive' ? 'OneDrive' : store?.modo === 'dropbox' ? 'Dropbox' : 'Google Drive'}
+              onSubirNuvem={subirParaNuvem}
               onExcluirDrive={async (file) => {
                 // Chamado SÓ depois da autorização extra do dialog.
                 const s = storeRef.current;
