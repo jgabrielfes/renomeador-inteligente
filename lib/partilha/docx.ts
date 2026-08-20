@@ -108,16 +108,69 @@ export function vestirIdentidade(paragrafos: Paragrafo[]): Paragrafo[] {
   );
 }
 
+/**
+ * Runs INLINE por marcação leve no texto: **negrito** e __sublinhado__
+ * (combináveis: __**NOME**__) — a formatação dos modelos do balcão vive
+ * DENTRO do parágrafo (o nome da parte, o valor, o rótulo da cláusula),
+ * nunca no parágrafo inteiro. Segurança: "__" encostado em outro underscore
+ * é literal (a lacuna "______" e as linhas de assinatura), e marcação
+ * desbalanceada no parágrafo inteiro vira texto literal — nunca corrompe.
+ */
+function segmentosInline(texto: string): { t: string; b: boolean; u: boolean }[] {
+  const marcaB = (i: number) => texto.startsWith('**', i);
+  const marcaU = (i: number) =>
+    texto.startsWith('__', i) && texto[i - 1] !== '_' && texto[i + 2] !== '_';
+  let nb = 0;
+  let nu = 0;
+  for (let i = 0; i < texto.length; i++) {
+    if (marcaB(i)) {
+      nb++;
+      i++;
+    } else if (marcaU(i)) {
+      nu++;
+      i++;
+    }
+  }
+  const usarB = nb > 0 && nb % 2 === 0;
+  const usarU = nu > 0 && nu % 2 === 0;
+  const segs: { t: string; b: boolean; u: boolean }[] = [];
+  let b = false;
+  let u = false;
+  let atual = '';
+  const fecha = () => {
+    if (atual) segs.push({ t: atual, b, u });
+    atual = '';
+  };
+  for (let i = 0; i < texto.length; i++) {
+    if (usarB && marcaB(i)) {
+      fecha();
+      b = !b;
+      i++;
+      continue;
+    }
+    if (usarU && marcaU(i)) {
+      fecha();
+      u = !u;
+      i++;
+      continue;
+    }
+    atual += texto[i];
+  }
+  fecha();
+  return segs.length > 0 ? segs : [{ t: texto, b: false, u: false }];
+}
+
 function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const jc = par.centrado ? 'center' : par.titulo ? (estilo.tituloCentrado ? 'center' : 'left') : 'both';
   const negrito = par.negrito || par.titulo;
   const sz = String(par.tamanho ?? (par.discreto ? 18 : estilo.tamanho));
   const cor = par.cor ?? estilo.cor;
-  const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
-    negrito ? '<w:b/>' : ''
-  }${cor ? `<w:color w:val="${cor}"/>` : ''}${
-    par.sublinhado ? '<w:u w:val="single"/>' : ''
-  }<w:sz w:val="${sz}"/></w:rPr>`;
+  const rPrDe = (b: boolean, u: boolean) =>
+    `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
+      b ? '<w:b/>' : ''
+    }${cor ? `<w:color w:val="${cor}"/>` : ''}${
+      u ? '<w:u w:val="single"/>' : ''
+    }<w:sz w:val="${sz}"/></w:rPr>`;
   // Retângulo do título (mesmas bordas do modelo notarial) ou filete inferior
   // colorido (títulos de seção da identidade do Sucessorista).
   const pBdr = par.moldura
@@ -129,7 +182,13 @@ function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const pPr = `<w:pPr>${pBdr}<w:spacing w:before="${par.titulo ? '240' : '0'}" w:after="${
     par.titulo ? '240' : par.discreto ? '40' : '160'
   }"/><w:jc w:val="${jc}"/>${negrito ? `<w:rPr><w:b/></w:rPr>` : ''}</w:pPr>`;
-  return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(par.texto)}</w:t></w:r></w:p>`;
+  const runs = segmentosInline(par.texto)
+    .map(
+      (s) =>
+        `<w:r>${rPrDe(Boolean(negrito) || s.b, Boolean(par.sublinhado) || s.u)}<w:t xml:space="preserve">${escaparXml(s.t)}</w:t></w:r>`,
+    )
+    .join('');
+  return `<w:p>${pPr}${runs || `<w:r>${rPrDe(Boolean(negrito), Boolean(par.sublinhado))}<w:t xml:space="preserve"></w:t></w:r>`}</w:p>`;
 }
 
 function tabelaXml(t: TabelaDocx, estilo: EstiloDoc): string {
@@ -146,11 +205,20 @@ function tabelaXml(t: TabelaDocx, estilo: EstiloDoc): string {
     .map((linha) => {
       const celulas = linha.celulas
         .map((c, i) => {
-          const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
-            linha.negrito ? '<w:b/>' : ''
-          }${estilo.cor ? `<w:color w:val="${estilo.cor}"/>` : ''}<w:sz w:val="${sz}"/></w:rPr>`;
           const pPr = `<w:pPr><w:spacing w:before="20" w:after="20"/>${linha.negrito ? '<w:rPr><w:b/></w:rPr>' : ''}</w:pPr>`;
-          return `<w:tc><w:tcPr><w:tcW w:w="${t.colunas[i] ?? 0}" w:type="dxa"/></w:tcPr><w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(c)}</w:t></w:r></w:p></w:tc>`;
+          // Mesma marcação inline dos parágrafos (**…** e __…__) — os rótulos
+          // da tabela-resumo dos modelos são negrito com o valor normal.
+          const runs = segmentosInline(c)
+            .map((s) => {
+              const rPr = `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
+                linha.negrito || s.b ? '<w:b/>' : ''
+              }${estilo.cor ? `<w:color w:val="${estilo.cor}"/>` : ''}${
+                s.u ? '<w:u w:val="single"/>' : ''
+              }<w:sz w:val="${sz}"/></w:rPr>`;
+              return `<w:r>${rPr}<w:t xml:space="preserve">${escaparXml(s.t)}</w:t></w:r>`;
+            })
+            .join('');
+          return `<w:tc><w:tcPr><w:tcW w:w="${t.colunas[i] ?? 0}" w:type="dxa"/></w:tcPr><w:p>${pPr}${runs}</w:p></w:tc>`;
         })
         .join('');
       return `<w:tr>${celulas}</w:tr>`;
