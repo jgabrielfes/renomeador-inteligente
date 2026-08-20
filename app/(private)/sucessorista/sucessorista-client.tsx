@@ -49,6 +49,7 @@ import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
 import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
 import { anteciparQualificacaoRegistral, ehImovelDeRegistro } from '@/lib/partilha/antecipador';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
+import { nomeConstaEm, semQualificadoresDeNome } from '@/lib/partilha/nomes';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -182,11 +183,53 @@ function preencherVazios(
   return ficha;
 }
 
-/** "%" digitado na matriz da partilha → número (aceita vírgula); vazio = 0. */
+/** Célula da matriz que é FRAÇÃO ("1/3", "2/5") em vez de percentual. */
+const ehFracao = (v: string | undefined): boolean => /^\s*\d+\s*\/\s*\d+\s*$/.test(v ?? '');
+
+/**
+ * Célula da matriz da partilha → percentual numérico. Aceita percentual com
+ * vírgula ("33,33") E fração exata ("1/3" = 33,333…%) — a fração existe para
+ * a dízima não fabricar torna que a família não combinou.
+ */
 const pctNum = (v: string | undefined): number => {
   if (!v) return 0;
+  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (m && Number(m[2]) > 0) return (Number(m[1]) / Number(m[2])) * 100;
   const n = Number(v.replace(',', '.'));
   return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+/**
+ * Célula como fração EXATA {n, d} do bem (1 = bem inteiro): "1/3" vira 1/3
+ * de verdade; percentual vira n/1.000.000 (até 4 casas). É o que a
+ * atribuição usa para montar titularidades sem erro de arredondamento.
+ */
+const fracaoDaCelula = (v: string | undefined): { n: number; d: number } => {
+  if (!v) return { n: 0, d: 1 };
+  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (m && Number(m[2]) > 0) return { n: Number(m[1]), d: Number(m[2]) };
+  return { n: Math.round(pctNum(v) * 10000), d: 1_000_000 };
+};
+
+const mdc = (a: number, b: number): number => (b === 0 ? a : mdc(b, a % b));
+const mmc = (a: number, b: number): number => (a / mdc(a, b)) * b;
+
+/**
+ * Percentual → fração "bonita" (denominador pequeno) quando o valor casa de
+ * perto com uma — "33,33" e "33,34" viram "1/3", "50" vira "1/2". Sem
+ * casamento limpo, devolve null (a célula fica como está).
+ */
+const fracaoBonita = (pct: number): string | null => {
+  const v = pct / 100;
+  if (v <= 0 || v > 1) return null;
+  for (let d = 1; d <= 99; d++) {
+    const n = Math.round(v * d);
+    if (n > 0 && Math.abs(n / d - v) <= 0.0001) {
+      const g = mdc(n, d);
+      return `${n / g}/${d / g}`;
+    }
+  }
+  return null;
 };
 
 /** Descrição enxuta do bem para a matriz (o título completo fica no title). */
@@ -548,6 +591,31 @@ export default function SucessoristaClient({
      "50% da nua-propriedade") — hint efêmero preenchido pelo redesenho do
      usufruto; some ao editar a célula ou limpar a matriz. */
   const [anotacoesMatriz, setAnotacoesMatriz] = useState<Record<string, Record<string, string>>>({});
+  /* Modo de digitação da matriz: percentual ("33,33") × fração ("1/3") — a
+     fração é exata e não fabrica torna de dízima. Alternar CONVERTE as
+     células preenchidas (33,33 ⇆ 1/3) sem mexer no que não casa limpo. */
+  const [matrizEmFracao, setMatrizEmFracao] = useState(false);
+  const alternarModoMatriz = (fracao: boolean) => {
+    setMatrizEmFracao(fracao);
+    setMatriz((prev) => {
+      const nova: typeof prev = {};
+      for (const [bemId, linha] of Object.entries(prev)) {
+        const l: Record<string, string> = {};
+        for (const [pid, v] of Object.entries(linha)) {
+          if (!v) continue;
+          l[pid] = fracao
+            ? ehFracao(v)
+              ? v
+              : (fracaoBonita(pctNum(v)) ?? v)
+            : ehFracao(v)
+              ? pctNum(v).toFixed(2).replace('.', ',')
+              : v;
+        }
+        nova[bemId] = l;
+      }
+      return nova;
+    });
+  };
 
   /* --- VI: honorários do caso (perfil do escritório fica na própria view) --- */
   const [condicoesHonorarios, setCondicoesHonorarios] =
@@ -1535,20 +1603,22 @@ export default function SucessoristaClient({
         }
         continue;
       }
-      // Pontos-base normalizados para fechar EXATAMENTE 10000 — o motor exige
-      // soma 1 por bem ("33,33" três vezes viraria 9999 sem o ajuste).
-      const bps = l.pcts.map((p) => Math.round((p / l.total) * 10000));
-      const soma = bps.reduce((a, v) => a + v, 0);
-      let maior = 0;
-      for (let i = 1; i < bps.length; i++) if (bps[i] > bps[maior]) maior = i;
-      bps[maior] += 10000 - soma;
+      // Frações EXATAS normalizadas pela PRÓPRIA soma (o motor exige soma 1
+      // por bem): "33,33" três vezes vira 3333/9999 = 1/3 de cada — a dízima
+      // é absorvida na proporção, sem despejar o resto numa das partes (era
+      // o ajuste a 10000 que fabricava uma torna de centavos que a família
+      // nunca combinou). Célula em fração ("1/3") já entra exata.
+      const celulas = participantes.map((p) => fracaoDaCelula((matriz[l.bem.id] ?? {})[p.id]));
+      const den = celulas.reduce((a, f) => (f.n > 0 ? mmc(a, f.d) : a), 1);
+      const pesos = celulas.map((f) => (f.n > 0 ? f.n * (den / f.d) : 0));
+      const somaPesos = pesos.reduce((a, v) => a + v, 0);
       participantes.forEach((p, i) => {
-        if (bps[i] > 0)
+        if (pesos[i] > 0)
           titularidades.push({
             bemId: l.bem.id,
             titularId: p.id,
             direito: 'PLENA',
-            fracao: `${bps[i]}/10000`,
+            fracao: `${pesos[i]}/${somaPesos}`,
           });
       });
     }
@@ -1678,10 +1748,14 @@ export default function SucessoristaClient({
             descricao: b.descricao,
             valor: maior,
             valorTransmitido: Math.round(maior * fracaoTransmitida * 100) / 100,
-            // Redesenho por usufruto aceito (rótulo da matriz): o registro
+            // Redesenho por usufruto aceito (rótulos da matriz): o registro
             // deste imóvel vira DOIS atos — 1/3 (usufruto) e 2/3 (nua).
-            usufrutoNua:
-              anotacoesMatriz[b.id]?.['__sobrevivente__'] === 'usufruto vitalício',
+            // QUALQUER rótulo da linha basta: editar uma célula apaga só o
+            // rótulo dela, e o ajuste fino do % do sobrevivente não pode
+            // devolver o registro a um ato único pelo valor cheio.
+            usufrutoNua: Object.values(anotacoesMatriz[b.id] ?? {}).some((r) =>
+              /usufruto|nua-propriedade/i.test(r),
+            ),
           };
         }),
       // A escolha do dashboard manda; AUTO segue o motor de elegibilidade.
@@ -1735,8 +1809,12 @@ export default function SucessoristaClient({
    */
   const alertasLeitura = useMemo(() => {
     const lista: string[] = [];
-    for (const nome of familia.herdeirosDeclarados ?? []) {
-      const h = herdeiros.find((x) => mesmaPessoa(nome, x.nome));
+    for (const declarado of familia.herdeirosDeclarados ?? []) {
+      // A certidão qualifica o filho ("Pedro Vitor, Maior") — só o NOME
+      // cruza com a ficha, palavra a palavra (o item I tem o nome completo).
+      const nome = semQualificadoresDeNome(declarado);
+      if (!nome) continue;
+      const h = herdeiros.find((x) => mesmaPessoa(nome, x.nome) || nomeConstaEm(nome, x.nome));
       if (!h) {
         lista.push(
           `Certidão de óbito declara o(a) herdeiro(a) ${nome} — ainda não lançado(a) no item I (documentação faltando?)`,
@@ -1774,7 +1852,7 @@ export default function SucessoristaClient({
         const prop = b.imovel?.proprietariosMatricula;
         if (b.tipo !== 'IMOVEL' || !prop?.trim()) continue;
         if ((b.natureza ?? 'COMUM') !== 'COMUM') continue;
-        if (mesmaPessoa(falecido.nome, prop) && /solteir/i.test(prop)) {
+        if ((mesmaPessoa(falecido.nome, prop) || nomeConstaEm(falecido.nome, prop)) && /solteir/i.test(prop)) {
           lista.push(
             `Bem ${i + 1}: o registro aquisitivo mostra o(a) falecido(a) SOLTEIRO(A) — na comunhão parcial, bem adquirido antes do casamento é PARTICULAR (sem meação). Confira a natureza lançada (está "comum")`,
           );
@@ -1788,9 +1866,16 @@ export default function SucessoristaClient({
       for (const [i, b] of bens.entries()) {
         const prop = b.imovel?.proprietariosMatricula;
         if (b.tipo !== 'IMOVEL' || !prop?.trim()) continue;
+        // Por PALAVRAS além do substring: o registro aquisitivo intercala
+        // RG/CPF/qualificação entre os nomes ("VENDIDO a FRANCISCO DIMAS DA
+        // SILVA (RG nº …), brasileiro, solteiro") e o alerta não pode
+        // acusar divergência que não existe.
         const consta =
           mesmaPessoa(falecido.nome, prop) ||
-          (temSobrevivente && nomeSobrev.trim() && mesmaPessoa(nomeSobrev, prop));
+          nomeConstaEm(falecido.nome, prop) ||
+          (temSobrevivente &&
+            nomeSobrev.trim() &&
+            (mesmaPessoa(nomeSobrev, prop) || nomeConstaEm(nomeSobrev, prop)));
         if (!consta) {
           lista.push(
             `Bem ${i + 1}: o(a) falecido(a) NÃO aparece na titularidade da matrícula (consta: ${prop}) — confira se o bem é mesmo do espólio, se a aquisição está registrada, ou se falta averbação prévia no RI`,
@@ -2092,6 +2177,24 @@ export default function SucessoristaClient({
   };
 
   /**
+   * Linha do redesenho em FRAÇÕES exatas quando cada parcela casa com uma
+   * fração pequena E a soma fecha o bem inteiro ("1/3" + "1/3" + "1/3");
+   * senão, percentuais com o ajuste de 2 casas. É o que impede 33,33 +
+   * 33,33 + 33,34 de fabricar uma torna de centavos.
+   */
+  const linhaDoRedesenho = (pcts: Record<string, number>): Record<string, string> => {
+    const ids = Object.keys(pcts).filter((id) => pcts[id] > 0);
+    const fracoes = ids.map((id) => fracaoBonita(pcts[id]));
+    if (ids.length > 0 && fracoes.every((f): f is string => f !== null)) {
+      const rats = fracoes.map((f) => f.split('/').map(Number) as [number, number]);
+      const den = rats.reduce((a, [, d]) => mmc(a, d), 1);
+      const soma = rats.reduce((a, [n, d]) => a + n * (den / d), 0);
+      if (soma === den) return Object.fromEntries(ids.map((id, i) => [id, fracoes[i]]));
+    }
+    return fecharLinha(pcts);
+  };
+
+  /**
    * Sugestão do usufruto aceita: cada imóvel é dividido pelos COEFICIENTES
    * fiscais do RITCMD-SP — o(a) sobrevivente reserva o USUFRUTO VITALÍCIO
    * (1/3) e os herdeiros ficam com a NUA-PROPRIEDADE (2/3, rateada pela
@@ -2117,7 +2220,7 @@ export default function SucessoristaClient({
       if (b.tipo !== 'IMOVEL') continue;
       if (sobrev) {
         // Usufruto (1/3) ao sobrevivente + nua-propriedade (2/3) rateada.
-        nova[b.id] = fecharLinha({
+        nova[b.id] = linhaDoRedesenho({
           [sobrev.id]: PCT_USUFRUTO,
           ...Object.fromEntries(
             herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * (100 - PCT_USUFRUTO)]),
@@ -2134,7 +2237,7 @@ export default function SucessoristaClient({
         };
       } else {
         // Sem sobrevivente: herdeiros em plena propriedade, pela proporção.
-        nova[b.id] = fecharLinha(
+        nova[b.id] = linhaDoRedesenho(
           Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
         );
       }
@@ -2158,7 +2261,7 @@ export default function SucessoristaClient({
         const v = Number(b.valor);
         if (v <= 0) continue;
         if (alvoSobrev <= 0) {
-          nova[b.id] = fecharLinha(
+          nova[b.id] = linhaDoRedesenho(
             Object.fromEntries(herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * 100])),
           );
           continue;
@@ -2166,7 +2269,7 @@ export default function SucessoristaClient({
         const pctSobrev = Math.min(100, (alvoSobrev / v) * 100);
         alvoSobrev = Math.max(0, alvoSobrev - v);
         const resto = 100 - pctSobrev;
-        nova[b.id] = fecharLinha({
+        nova[b.id] = linhaDoRedesenho({
           __sobrevivente__: pctSobrev,
           ...Object.fromEntries(
             herdeirosPart.map((p, i) => [p.id, (dirHerdeiros[i] / somaHerd) * resto]),
@@ -2180,7 +2283,7 @@ export default function SucessoristaClient({
     setPasso(2);
     toast.success('Partilha redesenhada com usufruto (1/3) e nua-propriedade (2/3)', {
       description:
-        'Cada imóvel foi dividido pelos coeficientes fiscais: 33,33% de usufruto vitalício ao(à) sobrevivente e 66,67% de nua-propriedade aos herdeiros. Inclua a RESERVA DE USUFRUTO na minuta e confira a torna e as custas extra no card antes de gerar.',
+        'Cada imóvel foi dividido pelos coeficientes fiscais em FRAÇÕES EXATAS: 1/3 de usufruto vitalício ao(à) sobrevivente e 2/3 de nua-propriedade aos herdeiros — sem dízima e sem torna de centavos. Inclua a RESERVA DE USUFRUTO na minuta e confira a torna e as custas extra no card antes de gerar.',
     });
   };
 
@@ -2440,7 +2543,7 @@ export default function SucessoristaClient({
         herdeirosDeclarados: (() => {
           const atuais = prev.herdeirosDeclarados ?? [];
           const novosDecl = lido.herdeirosNoObito
-            .map((n) => nomeProprio(n))
+            .map((n) => nomeProprio(semQualificadoresDeNome(n)))
             .filter((n) => n && !atuais.some((x) => mesmaPessoa(x, n)));
           return [...atuais, ...novosDecl];
         })(),
@@ -2520,7 +2623,9 @@ export default function SucessoristaClient({
           return 'PARTICULAR';
         const prop = b.imovel?.proprietariosMatricula ?? '';
         const adquiriuSolteiro =
-          Boolean(nomeDoAutor) && mesmaPessoa(nomeDoAutor, prop) && /solteir/i.test(prop);
+          Boolean(nomeDoAutor) &&
+          (mesmaPessoa(nomeDoAutor, prop) || nomeConstaEm(nomeDoAutor, prop)) &&
+          /solteir/i.test(prop);
         if (regimeLido === 'COMUNHAO_PARCIAL' && adquiriuSolteiro) return 'PARTICULAR';
         return 'COMUM';
       };
@@ -3492,6 +3597,32 @@ export default function SucessoristaClient({
 
                 {resultado && resultado.bloqueios.length === 0 && participantes.length > 0 && (
                   <>
+                    {/* Modo de digitação: % × fração. Alternar CONVERTE as células
+                        (33,33 ⇆ 1/3) — a fração é exata e não fabrica torna de
+                        dízima quando o combinado é "um terço para cada". */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px', flexWrap: 'wrap' }}>
+                      <span className="fund">Trabalhar com:</span>
+                      <Button
+                        size="sm"
+                        variant={matrizEmFracao ? 'outline' : 'default'}
+                        aria-pressed={!matrizEmFracao}
+                        onClick={() => alternarModoMatriz(false)}
+                      >
+                        Percentual
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={matrizEmFracao ? 'default' : 'outline'}
+                        aria-pressed={matrizEmFracao}
+                        onClick={() => alternarModoMatriz(true)}
+                      >
+                        Fração
+                      </Button>
+                      <span className="fund">
+                        — fração é exata (1/3, 1/6…): três vezes 1/3 fecha o bem inteiro, sem a
+                        torna de centavos da dízima. Os dois formatos valem em qualquer célula.
+                      </span>
+                    </div>
                     <ScrollArea className="matriz-scroll" orientation="vertical">
                     <Table className="matriz-partilha">
                       <TableHeader>
@@ -3519,17 +3650,17 @@ export default function SucessoristaClient({
                               </TableCell>
                               {participantes.map((p) => (
                                 <TableCell key={p.id}>
-                                  {/* Sufixo % fixo dentro do campo: o valor digitado
-                                      é sempre percentual do bem. */}
+                                  {/* Sufixo % dentro do campo — some quando a célula
+                                      é FRAÇÃO ("1/3"), aceita nos dois modos. */}
                                   <span className="pct-campo">
                                     <Input
                                       className="pct num"
                                       inputMode="decimal"
-                                      placeholder="—"
-                                      aria-label={`Percentual do bem ${i + 1} para ${p.nome}`}
+                                      placeholder={matrizEmFracao ? '1/3' : '—'}
+                                      aria-label={`Percentual ou fração do bem ${i + 1} para ${p.nome}`}
                                       value={linha[p.id] ?? ''}
                                       onChange={(e) => {
-                                        const v = e.target.value.replace(/[^\d.,]/g, '').slice(0, 6);
+                                        const v = e.target.value.replace(/[^\d.,/]/g, '').slice(0, 8);
                                         setMatriz((prev) => ({
                                           ...prev,
                                           [b.id]: { ...(prev[b.id] ?? {}), [p.id]: v },
@@ -3543,7 +3674,7 @@ export default function SucessoristaClient({
                                         });
                                       }}
                                     />
-                                    <span aria-hidden="true">%</span>
+                                    {!ehFracao(linha[p.id]) && <span aria-hidden="true">%</span>}
                                   </span>
                                   {anotacoesMatriz[b.id]?.[p.id] && (
                                     <span className="pct-rotulo">{anotacoesMatriz[b.id][p.id]}</span>
@@ -3928,6 +4059,8 @@ export default function SucessoristaClient({
         onVerCofre={() => irPara('documentos')}
         aberto={painelAberto}
         onFechar={() => setPainelAberto(false)}
+        itcmdPago={fiscal.itcmdSituacao === 'PAGO'}
+        itcmdQuitadoEm={fiscal.itcmdQuitadoEm ?? ''}
       />
 
       {/* Celular: fundo escurecido + botão flutuante que abre o painel. */}

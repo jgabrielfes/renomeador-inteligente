@@ -58,6 +58,8 @@ export function PainelCaso({
   onVerCofre,
   aberto = false,
   onFechar,
+  itcmdPago = false,
+  itcmdQuitadoEm = '',
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -87,6 +89,9 @@ export function PainelCaso({
   /** Celular: o painel vira gaveta — aberto/fechado pelo botão flutuante. */
   aberto?: boolean;
   onFechar?: () => void;
+  /** ITCMD marcado como PAGO na aba IV: o relógio do art. 611 fica verde. */
+  itcmdPago?: boolean;
+  itcmdQuitadoEm?: string;
 }) {
   const temObito = Boolean(falecido.dataObito);
   const dias = temObito ? diffDias(falecido.dataObito, hojeIso()) : 0;
@@ -155,7 +160,9 @@ export function PainelCaso({
 
   const custo10 = imposto * 0.1;
   const custo20 = imposto * 0.2;
-  const cls = dias > 180 ? 'tarde' : dias > 60 ? 'meio' : '';
+  // ITCMD PAGO: o relógio deixa de ameaçar — número e barra ficam VERDES e o
+  // rodapé informa a quitação (multas e juros pararam na data do pagamento).
+  const cls = itcmdPago ? '' : dias > 180 ? 'tarde' : dias > 60 ? 'meio' : '';
   const largura = Math.min(100, Math.max(2, (dias / 240) * 100));
 
   return (
@@ -225,8 +232,12 @@ export function PainelCaso({
       {temObito && (
         <div className="metrica">
           <div className="k">Prazo do art. 611 do CPC</div>
-          <div className={`v num ${dias > 60 ? 'lacre' : 'verde'}`} style={{ fontSize: 20 }}>
+          <div
+            className={`v num ${itcmdPago || dias <= 60 ? 'verde' : 'lacre'}`}
+            style={{ fontSize: 20 }}
+          >
             {dias} dia(s) desde o óbito
+            {itcmdPago && <span style={{ fontSize: 13 }}> · ITCMD pago</span>}
           </div>
           <div className="regua" aria-hidden>
             <div className="barra">
@@ -239,7 +250,13 @@ export function PainelCaso({
             </div>
           </div>
           <p className="rodape">
-            {dias <= 60 ? (
+            {itcmdPago ? (
+              <>
+                <strong>ITCMD pago{itcmdQuitadoEm ? ` em ${formatarData(itcmdQuitadoEm)}` : ''}</strong>
+                {' '}— multas e juros pararam na data do pagamento; o relógio deixou de
+                pesar no custo do caso.
+              </>
+            ) : dias <= 60 ? (
               <>
                 Restam <strong>{60 - dias} dia(s)</strong> para requerer sem multa.
                 {imposto > 0 && <> Abrir depois custa {brl(custo10)}.</>}

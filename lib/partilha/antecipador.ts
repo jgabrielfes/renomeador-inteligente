@@ -19,6 +19,7 @@
  *    com validade na prenotação, valor venal de referência.
  */
 
+import { nomeConstaEm } from './nomes';
 import type { Bem } from './types';
 
 export interface EntradaAntecipador {
@@ -82,6 +83,14 @@ const semAcento = (s: string) =>
 const contem = (texto: string | null | undefined, termo: string) =>
   semAcento(texto ?? '').includes(semAcento(termo));
 
+/**
+ * Nome presente na titularidade: literal OU palavra a palavra (o registro
+ * aquisitivo intercala RG/CPF/qualificação entre os nomes e pode inverter a
+ * ordem — divergência de grafia só é apontada quando nem as palavras batem).
+ */
+const nomeNaTitularidade = (nome: string, titularidade: string) =>
+  contem(titularidade, nome) || nomeConstaEm(nome, titularidade);
+
 export function anteciparQualificacaoRegistral(e: EntradaAntecipador): RelatorioAntecipador {
   const tituloRegistro = e.extrajudicial
     ? 'traslado da escritura de inventário e partilha'
@@ -122,7 +131,7 @@ export function anteciparQualificacaoRegistral(e: EntradaAntecipador): Relatorio
       if (
         contem(titularidade, 'casad') &&
         e.nomeSobrev?.trim() &&
-        !contem(titularidade, e.nomeSobrev)
+        !nomeNaTitularidade(e.nomeSobrev, titularidade)
       ) {
         exigencia(
           `A matrícula menciona titular casado(a), mas o cônjuge que consta não é ${e.nomeSobrev} (ou não está legível) — conferir se houve casamento anterior (juntar certidões que recomponham a cadeia: casamento anterior, divórcio/óbito e o casamento atual).`,
@@ -132,7 +141,7 @@ export function anteciparQualificacaoRegistral(e: EntradaAntecipador): Relatorio
       // Grafia do nome do falecido divergente da matrícula.
       if (
         e.falecido.nome.trim() &&
-        !contem(titularidade, e.falecido.nome) &&
+        !nomeNaTitularidade(e.falecido.nome, titularidade) &&
         // só aponta se a matrícula traz ALGUM nome (não é campo genérico)
         titularidade.trim().length > 5
       ) {
