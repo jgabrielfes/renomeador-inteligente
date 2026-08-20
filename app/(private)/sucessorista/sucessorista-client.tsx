@@ -1765,6 +1765,22 @@ export default function SucessoristaClient({
         );
       }
     }
+    // NATUREZA × registro aquisitivo: comunhão PARCIAL com o(a) falecido(a)
+    // SOLTEIRO(A) no registro pelo qual adquiriu = bem de ANTES do casamento
+    // → PARTICULAR (sem meação). Lançado como "comum", pede conferência —
+    // a meação indevida muda a partilha e o orçamento inteiros.
+    if (regime === 'COMUNHAO_PARCIAL' && temSobrevivente && falecido.nome.trim()) {
+      for (const [i, b] of bens.entries()) {
+        const prop = b.imovel?.proprietariosMatricula;
+        if (b.tipo !== 'IMOVEL' || !prop?.trim()) continue;
+        if ((b.natureza ?? 'COMUM') !== 'COMUM') continue;
+        if (mesmaPessoa(falecido.nome, prop) && /solteir/i.test(prop)) {
+          lista.push(
+            `Bem ${i + 1}: o registro aquisitivo mostra o(a) falecido(a) SOLTEIRO(A) — na comunhão parcial, bem adquirido antes do casamento é PARTICULAR (sem meação). Confira a natureza lançada (está "comum")`,
+          );
+        }
+      }
+    }
     // TITULARIDADE pela matrícula × certidão de óbito: o(a) falecido(a) (ou
     // o cônjuge, no bem comum) precisa constar do registro aquisitivo — se
     // não consta, o bem pode não ser do espólio (ou falta averbação prévia).
@@ -1783,7 +1799,7 @@ export default function SucessoristaClient({
       }
     }
     return lista;
-  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens, falecido.nome, temSobrevivente, nomeSobrev]);
+  }, [familia.herdeirosDeclarados, familia.qualificacoes, herdeiros, bens, falecido.nome, temSobrevivente, nomeSobrev, regime]);
 
   /**
    * Conferidor de QUALIFICAÇÃO CRUZADA (motor puro): folha × certidões do
@@ -2491,6 +2507,23 @@ export default function SucessoristaClient({
             : {};
         return { ...bem, ...comObito, ...comAtual };
       };
+      // NATUREZA decidida pelo REGISTRO AQUISITIVO × regime quando a IA não
+      // afirmou: na comunhão PARCIAL, o(a) falecido(a) constando SOLTEIRO(A)
+      // no registro pelo qual adquiriu = bem de ANTES do casamento →
+      // PARTICULAR (sem meação — muda partilha e orçamento); nos regimes de
+      // separação, PARTICULAR; nos demais (ou sem elementos), COMUM.
+      const regimeLido = lido.sobrevivente.regime ?? regime;
+      const nomeDoAutor = lido.falecido.nome ?? falecido.nome;
+      const naturezaDoBem = (b: (typeof bensLidos)[number]): 'COMUM' | 'PARTICULAR' => {
+        if (b.natureza) return b.natureza;
+        if (regimeLido === 'SEPARACAO_CONVENCIONAL' || regimeLido === 'SEPARACAO_OBRIGATORIA')
+          return 'PARTICULAR';
+        const prop = b.imovel?.proprietariosMatricula ?? '';
+        const adquiriuSolteiro =
+          Boolean(nomeDoAutor) && mesmaPessoa(nomeDoAutor, prop) && /solteir/i.test(prop);
+        if (regimeLido === 'COMUNHAO_PARCIAL' && adquiriuSolteiro) return 'PARTICULAR';
+        return 'COMUM';
+      };
       // Aviso das frações: certidões que não fecham o imóvel inteiro.
       for (const b of bensLidos) {
         const fr = Number(String(b.imovel?.fracaoIdeal ?? '').replace(',', '.'));
@@ -2555,7 +2588,7 @@ export default function SucessoristaClient({
               id: uid('b'),
               descricao: b.descricao,
               valor: b.valor ?? '0.00',
-              natureza: b.natureza ?? ('COMUM' as const),
+              natureza: naturezaDoBem(b),
               tipo: b.tipo ?? ('OUTRO' as const),
               ...(b.imovel
                 ? { imovel: Object.fromEntries(Object.entries(b.imovel).filter(([, v]) => v !== null)) as NonNullable<Bem['imovel']> }
