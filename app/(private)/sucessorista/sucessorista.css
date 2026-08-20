@@ -1193,6 +1193,27 @@
 .sucessorista .doc-card-remover:focus-visible {
   display: flex;
 }
+/* Reenvio manual à nuvem de arquivos: o ☁ espelha o ✕ no canto esquerdo. */
+.sucessorista .doc-card-nuvem {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 50%;
+  background: var(--papel-alto);
+  color: var(--bronze);
+  font-size: 11px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+.sucessorista .doc-card:hover .doc-card-nuvem,
+.sucessorista .doc-card-nuvem:focus-visible {
+  display: flex;
+}
 /* Clique-e-arraste entre tópicos: a miniatura é "pegável" e o card que
    pode receber ganha o tracejado bronze de "solte aqui". */
 .sucessorista .doc-card[draggable='true'] .doc-card-thumb {
@@ -1205,9 +1226,10 @@
   background: var(--papel-alto);
 }
 
-/* No toque não há hover — o ✕ fica sempre visível no celular. */
+/* No toque não há hover — o ✕ e o ☁ ficam sempre visíveis no celular. */
 @media (max-width: 860px) {
-  .sucessorista .doc-card-remover {
+  .sucessorista .doc-card-remover,
+  .sucessorista .doc-card-nuvem {
     display: flex;
   }
 }

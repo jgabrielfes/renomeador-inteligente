@@ -74,8 +74,14 @@ export class TokenDrivePool {
   }
 }
 
+/** Teto do upload multipart/media simples do Drive (~5 MB) — acima disso a
+ *  API exige sessão RESUMABLE (era a causa dos anexos grandes falharem). */
+const LIMITE_UPLOAD_SIMPLES_DRIVE = 4 * 1024 * 1024;
+
 export class DriveCaseStore implements CaseStore {
   readonly modo = 'drive' as const;
+  /** Motivo da última falha de envio de documento (a UI mostra no toast). */
+  ultimoErro: string | null = null;
   private raizId: string | null = null;
   /** caseId → { pastaId, casoJsonId, nome } (preenchido pela listagem). */
   private casos = new Map<string, { pastaId: string; casoJsonId: string; nome: string }>();
@@ -149,8 +155,42 @@ export class DriveCaseStore implements CaseStore {
     return ((await r.json()) as { id: string }).id;
   }
 
-  /** Upload multipart (metadados + conteúdo) — cria arquivo novo. */
+  /**
+   * Upload RESUMABLE: abre a sessão (POST cria / PATCH atualiza) e envia o
+   * conteúdo INTEIRO num PUT à URL da sessão — vale para qualquer tamanho.
+   */
+  private async uploadResumable(
+    inicioUrl: string,
+    metodo: 'POST' | 'PATCH',
+    metadados: object | null,
+    conteudo: Blob,
+  ): Promise<string> {
+    const r = await this.chamar(inicioUrl, {
+      method: metodo,
+      headers: {
+        ...(metadados ? { 'content-type': 'application/json; charset=UTF-8' } : {}),
+        'x-upload-content-type': conteudo.type || 'application/octet-stream',
+      },
+      body: metadados ? JSON.stringify(metadados) : undefined,
+    });
+    if (!r.ok) throw await this.erroDe(r, 'Drive recusou o envio');
+    const sessao = r.headers.get('location');
+    if (!sessao) throw new Error('Drive não abriu a sessão de envio — tente de novo.');
+    const up = await this.chamar(sessao, { method: 'PUT', body: conteudo });
+    if (!up.ok) throw new Error(`Drive interrompeu o envio (${up.status}) — tente de novo.`);
+    return (((await up.json().catch(() => ({}))) as { id?: string }).id ?? '');
+  }
+
+  /** Cria arquivo novo: multipart até ~4 MB; acima, sessão resumable. */
   private async criarArquivo(nome: string, paiId: string, conteudo: Blob): Promise<string> {
+    if (conteudo.size > LIMITE_UPLOAD_SIMPLES_DRIVE) {
+      return this.uploadResumable(
+        `${UPLOAD}/files?uploadType=resumable&fields=id`,
+        'POST',
+        { name: nome, parents: [paiId] },
+        conteudo,
+      );
+    }
     const meta = new Blob([JSON.stringify({ name: nome, parents: [paiId] })], {
       type: 'application/json',
     });
@@ -165,7 +205,17 @@ export class DriveCaseStore implements CaseStore {
     return ((await r.json()) as { id: string }).id;
   }
 
+  /** Atualiza o conteúdo: media até ~4 MB; acima, sessão resumable. */
   private async atualizarArquivo(fileId: string, conteudo: Blob): Promise<void> {
+    if (conteudo.size > LIMITE_UPLOAD_SIMPLES_DRIVE) {
+      await this.uploadResumable(
+        `${UPLOAD}/files/${fileId}?uploadType=resumable`,
+        'PATCH',
+        null,
+        conteudo,
+      );
+      return;
+    }
     const r = await this.chamar(`${UPLOAD}/files/${fileId}?uploadType=media`, {
       method: 'PATCH',
       body: conteudo,
@@ -385,7 +435,10 @@ export class DriveCaseStore implements CaseStore {
 
   private async gravarDocumento(caseId: string, file: File, subpasta?: string): Promise<boolean> {
     const entrada = await this.entradaDoCaso(caseId);
-    if (!entrada) return false;
+    if (!entrada) {
+      this.ultimoErro = 'Este caso não tem pasta no Drive conectado (veio da nuvem de outra máquina?).';
+      return false;
+    }
     try {
       let paiId = entrada.pastaId;
       if (subpasta) {
@@ -401,8 +454,10 @@ export class DriveCaseStore implements CaseStore {
       );
       if (iguais[0]) await this.atualizarArquivo(iguais[0].id, file);
       else await this.criarArquivo(file.name, paiId, file);
+      this.ultimoErro = null;
       return true;
-    } catch {
+    } catch (err) {
+      this.ultimoErro = err instanceof Error ? err.message : 'Falha de rede no envio ao Drive.';
       return false;
     }
   }

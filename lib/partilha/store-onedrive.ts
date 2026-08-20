@@ -56,6 +56,8 @@ interface ItemOneDrive {
 
 export class OneDriveCaseStore implements CaseStore {
   readonly modo = 'onedrive' as const;
+  /** Motivo da última falha de envio de documento (a UI mostra no toast). */
+  ultimoErro: string | null = null;
   private raizId: string | null = null;
   /** caseId → { pastaId, casoJsonId, nome } (preenchido pela listagem). */
   private casos = new Map<string, { pastaId: string; casoJsonId: string; nome: string }>();
@@ -355,7 +357,10 @@ export class OneDriveCaseStore implements CaseStore {
 
   private async gravarDocumento(caseId: string, file: File, subpasta?: string): Promise<boolean> {
     const entrada = await this.entradaDoCaso(caseId);
-    if (!entrada) return false;
+    if (!entrada) {
+      this.ultimoErro = 'Este caso não tem pasta no OneDrive conectado (veio da nuvem de outra máquina?).';
+      return false;
+    }
     try {
       let paiId = entrada.pastaId;
       if (subpasta) {
@@ -367,8 +372,10 @@ export class OneDriveCaseStore implements CaseStore {
       // Nome repetido SUBSTITUI o conteúdo (o OneDrive guarda as versões) —
       // a mesma identidade de arquivo continua valendo no manifesto.
       await this.gravarArquivo(file.name, paiId, file);
+      this.ultimoErro = null;
       return true;
-    } catch {
+    } catch (err) {
+      this.ultimoErro = err instanceof Error ? err.message : 'Falha de rede no envio ao OneDrive.';
       return false;
     }
   }

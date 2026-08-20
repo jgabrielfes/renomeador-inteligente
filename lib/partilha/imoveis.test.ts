@@ -87,6 +87,29 @@ eq('venal corrente preenchido', exercicios[0].imovel?.valorVenalAtual, '260000.0
 eq('fração não somada (fica 100%)', exercicios[0].imovel?.fracaoIdeal, '100.00');
 eq('valor do fato gerador preservado', exercicios[0].valor, '150000.00');
 
+// Caso REAL (capital): matrícula + certidões de venal de 2016 e 2026 do
+// MESMO imóvel — a inscrição da capital tem 3–4 grupos (não entra pela base
+// de sub-inscrição) e a pontuação varia ("0056-8" × "0056.8"): a fusão sai
+// pela inscrição COMPLETA em dígitos, e cada venal preenche o seu exercício.
+const capital = fundirImoveisPorInscricao([
+  {
+    descricao: 'CASA situada à Rua Hugo nº 59',
+    valor: '197571.00',
+    tipo: 'IMOVEL',
+    imovel: { matricula: '194.868', inscricaoCadastral: '168.171.0056-8', valorVenalObito: '197571.00' },
+  },
+  {
+    descricao: 'Imóvel situado na R HUGO, 00059',
+    valor: null,
+    tipo: 'IMOVEL',
+    imovel: { matricula: null, inscricaoCadastral: '168.171.0056.8', valorVenalAtual: '267364.00' },
+  },
+]);
+eq('capital: matrícula + venais viram um bem', capital.length, 1);
+eq('capital: venal do óbito preservado', capital[0].imovel?.valorVenalObito, '197571.00');
+eq('capital: venal corrente preenchido', capital[0].imovel?.valorVenalAtual, '267364.00');
+eq('capital: matrícula preservada', capital[0].imovel?.matricula, '194.868');
+
 // Campo vazio do principal é preenchido pelo fundido.
 const preenche = fundirImoveisPorInscricao([
   { descricao: 'Casa', valor: '10.00', tipo: 'IMOVEL', imovel: { matricula: '777', inscricaoCadastral: null, registroImoveis: null } },
