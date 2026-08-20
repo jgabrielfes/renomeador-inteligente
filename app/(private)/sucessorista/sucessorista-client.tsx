@@ -128,7 +128,6 @@ import {
 import { HonorariosView } from './honorarios-view';
 import { MatriculaView } from './matricula-view';
 import { MinutasView, EscrituraView } from './minutas-view';
-import { NoticiasTicker } from './noticias';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -296,6 +295,8 @@ const CHAVE_PERFIL = 'sucessorista-perfil';
 /** Tema do módulo (claro = identidade papel; escuro = mesma paleta invertida). */
 export type TemaSucessorista = 'claro' | 'escuro';
 const CHAVE_TEMA = 'sucessorista-tema';
+/** Painel do caso RECOLHIDO para a margem direita (preferência do navegador). */
+const CHAVE_PAINEL_RECOLHIDO = 'sucessorista-painel-recolhido';
 
 interface CasoSalvo {
   v: 1;
@@ -367,6 +368,10 @@ export default function SucessoristaClient({
   // flutuante abre/fecha). Em tela larga o estado é inócuo — o painel é a
   // coluna fixa de sempre e o botão nem aparece (CSS).
   const [painelAberto, setPainelAberto] = useState(false);
+  /* Desktop: painel do caso recolhido numa tira na margem direita — a
+     setinha recolhe/reabre; a preferência fica no navegador e é restaurada
+     no efeito diferido (não quebra a hidratação). */
+  const [painelRecolhido, setPainelRecolhido] = useState(false);
 
   const irPara = (aba: Aba) => {
     setAbaProc(aba);
@@ -835,6 +840,7 @@ export default function SucessoristaClient({
           }
           const t = localStorage.getItem(CHAVE_TEMA);
           if (t === 'claro' || t === 'escuro') setTema(t);
+          if (localStorage.getItem(CHAVE_PAINEL_RECOLHIDO) === '1') setPainelRecolhido(true);
         } catch {
           // modo restrito
         }
@@ -1445,6 +1451,16 @@ export default function SucessoristaClient({
       // modo restrito
     }
   }, [tema]);
+
+  // Painel recolhido: mesma mecânica de preferência do navegador.
+  useEffect(() => {
+    if (!restauradoRef.current) return;
+    try {
+      localStorage.setItem(CHAVE_PAINEL_RECOLHIDO, painelRecolhido ? '1' : '0');
+    } catch {
+      // modo restrito
+    }
+  }, [painelRecolhido]);
 
   /* --- sociedades lidas → bem de quotas no acervo ---
      Recalculado sempre que a sociedade, os nomes ou o regime mudam: o valor é
@@ -3362,7 +3378,7 @@ export default function SucessoristaClient({
         />
       </div>
     ) : (
-    <div className="processo">
+    <div className={`processo${painelRecolhido ? ' painel-recolhido' : ''}`}>
       <nav className="lombada" aria-label="Abas do processo">
         <button className="voltar" onClick={voltarAoPainel}>← Meus casos</button>
         <div className="marca">
@@ -3483,8 +3499,6 @@ export default function SucessoristaClient({
       </nav>
 
       <main className="folha">
-        {/* O radar do Migalhas mora só na página inicial do caso (aba 0). */}
-        {abaProc === 'caso' && <NoticiasTicker />}
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -4059,6 +4073,8 @@ export default function SucessoristaClient({
         onVerCofre={() => irPara('documentos')}
         aberto={painelAberto}
         onFechar={() => setPainelAberto(false)}
+        recolhido={painelRecolhido}
+        onAlternarRecolhido={() => setPainelRecolhido((v) => !v)}
         itcmdPago={fiscal.itcmdSituacao === 'PAGO'}
         itcmdQuitadoEm={fiscal.itcmdQuitadoEm ?? ''}
       />

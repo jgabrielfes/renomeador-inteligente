@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
@@ -58,6 +58,8 @@ export function PainelCaso({
   onVerCofre,
   aberto = false,
   onFechar,
+  recolhido = false,
+  onAlternarRecolhido,
   itcmdPago = false,
   itcmdQuitadoEm = '',
 }: {
@@ -89,6 +91,9 @@ export function PainelCaso({
   /** Celular: o painel vira gaveta — aberto/fechado pelo botão flutuante. */
   aberto?: boolean;
   onFechar?: () => void;
+  /** Desktop: painel RECOLHIDO numa tira na margem direita — a seta reabre. */
+  recolhido?: boolean;
+  onAlternarRecolhido?: () => void;
   /** ITCMD marcado como PAGO na aba IV: o relógio do art. 611 fica verde. */
   itcmdPago?: boolean;
   itcmdQuitadoEm?: string;
@@ -166,7 +171,24 @@ export function PainelCaso({
   const largura = Math.min(100, Math.max(2, (dias / 240) * 100));
 
   return (
-    <aside className={`painel${aberto ? ' aberto' : ''}`} aria-label="Painel do caso">
+    <aside
+      className={`painel${aberto ? ' aberto' : ''}${recolhido ? ' recolhido' : ''}`}
+      aria-label="Painel do caso"
+    >
+      {/* Desktop: a setinha recolhe o painel numa tira na margem direita e o
+          clique na tira reabre (no celular a gaveta cobre esse papel). */}
+      {onAlternarRecolhido && (
+        <button
+          type="button"
+          className="recolher-desktop"
+          onClick={onAlternarRecolhido}
+          aria-expanded={!recolhido}
+          title={recolhido ? 'Abrir o painel do caso' : 'Recolher o painel do caso'}
+        >
+          {recolhido ? <ChevronLeft size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+          <span className="rotulo-vertical">Painel do caso</span>
+        </button>
+      )}
       {onFechar && (
         <button type="button" className="fechar-mobile" onClick={onFechar} aria-label="Fechar o painel">
           ✕
