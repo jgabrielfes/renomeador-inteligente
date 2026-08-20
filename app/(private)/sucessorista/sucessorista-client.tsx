@@ -2384,9 +2384,26 @@ export default function SucessoristaClient({
       // Ficha do(a) falecido(a) (certidão de óbito/planilha) — qualifica o
       // "de cujus" na escritura e nas petições.
       if (lido.falecido.qualificacao) {
+        // GUARDA do estado civil: a certidão de CASAMENTO qualifica os
+        // nubentes como "solteiros" À ÉPOCA DO ATO — lida junto com a
+        // certidão de óbito, esse "solteiro" NÃO pode virar o estado civil
+        // do(a) falecido(a) (caso real: CC + CO no mesmo lote preencheram
+        // "solteiro" para autor casado). Havendo casamento no conjunto,
+        // o estado civil que entra é "casado(a)".
+        const qFal = { ...lido.falecido.qualificacao };
+        const houveCasamento =
+          (lido.sobrevivente.existe === true &&
+            (lido.sobrevivente.vinculo ?? 'CASAMENTO') === 'CASAMENTO') ||
+          Boolean(fal.certidaoCasamento?.trim() || fal.dataCasamento);
+        if (
+          houveCasamento &&
+          (!qFal.estadoCivil || qFal.estadoCivil.toLowerCase().includes('solteir'))
+        ) {
+          qFal.estadoCivil = 'casado(a)';
+        }
         qualificacoes['__falecido__'] = preencherVazios(
           qualificacoes['__falecido__'] ?? QUALIFICACAO_VAZIA,
-          lido.falecido.qualificacao,
+          qFal,
         );
       }
 
@@ -2499,6 +2516,11 @@ export default function SucessoristaClient({
               if (soDigitos(bem.imovel?.matricula) === matLida) return true;
               if (soDigitos(bem.descricao).includes(matLida)) return true;
             }
+            // MESMA inscrição municipal (dígitos): certidão de venal sem
+            // matrícula casa com o imóvel já lançado — nunca vira 2º bem.
+            const insLida = soDigitos(x.imovel?.inscricaoCadastral as string | undefined);
+            if (insLida.length >= 6 && soDigitos(bem.imovel?.inscricaoCadastral) === insLida)
+              return true;
             return false;
           });
           if (!lidoB) return bem;
@@ -2518,12 +2540,14 @@ export default function SucessoristaClient({
           // imóvel (os detalhes já entraram pelo casamento acima).
           .filter((b) => {
             const matLida = soDigitos(b.imovel?.matricula as string | undefined);
+            const insLida = soDigitos(b.imovel?.inscricaoCadastral as string | undefined);
             return !atualizados.some(
               (x) =>
                 x.descricao.trim().toLowerCase() === b.descricao.trim().toLowerCase() ||
                 (matLida.length >= 3 &&
                   (soDigitos(x.imovel?.matricula) === matLida ||
-                    soDigitos(x.descricao).includes(matLida))),
+                    soDigitos(x.descricao).includes(matLida))) ||
+                (insLida.length >= 6 && soDigitos(x.imovel?.inscricaoCadastral) === insLida),
             );
           })
           .map((b) =>

@@ -52,12 +52,20 @@ export function fundirImoveisPorInscricao<T extends BemFundivel>(bens: T[]): T[]
   for (const bem of bens) {
     const ehImovel = bem.tipo === 'IMOVEL' || Boolean(bem.imovel);
     const matricula = soDigitos(bem.imovel?.matricula);
+    const inscricao = soDigitos(bem.imovel?.inscricaoCadastral);
     const base = baseDaInscricao(bem.imovel?.inscricaoCadastral);
     const principal = ehImovel
       ? saida.find((s) => {
           if (s.tipo !== 'IMOVEL' && !s.imovel) return false;
           const matS = soDigitos(s.imovel?.matricula);
           if (matricula.length >= 3 && matS.length >= 3) return matricula === matS;
+          // MESMA inscrição completa (comparada pelos DÍGITOS — a pontuação
+          // varia: "168.171.0056-8" × "168.171.0056.8"): mesmo imóvel — é o
+          // que casa a certidão de venal SEM matrícula com o bem da
+          // matrícula (inscrições da capital têm 3–4 grupos e não entram
+          // pela base de sub-inscrição abaixo, que é o formato de 5 grupos).
+          const insS = soDigitos(s.imovel?.inscricaoCadastral);
+          if (inscricao.length >= 6 && inscricao === insS) return true;
           const baseS = baseDaInscricao(s.imovel?.inscricaoCadastral);
           return base !== null && baseS !== null && base === baseS;
         })
