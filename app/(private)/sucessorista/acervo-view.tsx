@@ -578,9 +578,18 @@ export function AcervoView({
         <Button variant="outline" onClick={voltar}>
           Voltar à família
         </Button>
-        <Button onClick={avancar} disabled={bens.length === 0}>
-          Calcular a partilha
-        </Button>
+        {/* Ação primária da etapa: quando bloqueada, a RAZÃO aparece por
+            escrito logo abaixo — botão apagado sem explicação não orienta. */}
+        <div style={{ textAlign: 'right' }}>
+          <Button onClick={avancar} disabled={bens.length === 0}>
+            Calcular a partilha
+          </Button>
+          {bens.length === 0 && (
+            <p className="fund" style={{ margin: '6px 0 0' }}>
+              Falta lançar ao menos um bem no acervo.
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );

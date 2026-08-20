@@ -26,6 +26,7 @@ import {
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ResumoCaso } from '@/lib/partilha/caso-store';
+import { faixaDoPrazo, rotuloDoPrazo } from '@/lib/partilha/prazo';
 
 export type EstadoPainel =
   | 'carregando'
@@ -453,7 +454,7 @@ export function CasosView({
       <div className={`casos-grade${visual === 'lista' ? ' lista' : ''}`}>
         {ordenados.map((r) => {
           const dias = diasDesde(r.cabecalho.dataObito);
-          const faixa = dias === null ? '' : dias > 180 ? 'tarde' : dias > 60 ? 'meio' : 'ok';
+          const faixa = dias === null ? '' : faixaDoPrazo(dias);
           return (
             <div key={r.cabecalho.caseId} className="caso-cartao">
               <button className="abrir" onClick={() => onAbrir(r.cabecalho.caseId)}>
@@ -465,7 +466,7 @@ export function CasosView({
                 <p className={`prazo num ${faixa}`}>
                   {dias === null
                     ? 'Sem data do óbito'
-                    : `${dias} dia(s) do óbito${dias > 180 ? ' — multa de 20%' : dias > 60 ? ' — multa de 10%' : ' — dentro do prazo'}`}
+                    : `${dias} dia(s) do óbito — ${rotuloDoPrazo(dias)}`}
                 </p>
                 <p className="linha num">
                   {r.cabecalho.custoProjetado !== null ? `Custo projetado ${brl(r.cabecalho.custoProjetado)} · ` : ''}

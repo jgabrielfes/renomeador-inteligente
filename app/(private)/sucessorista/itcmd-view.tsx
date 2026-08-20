@@ -205,7 +205,7 @@ export function ItcmdView({
             <div className="lanc">
               <span className="nome">{falecido.nome || '— informe no item I'}</span>
               <span className="fracao num">{falecido.cpf || 'CPF —'}</span>
-              <span className="valor num" style={{ fontSize: 15 }}>
+              <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>
                 óbito {formatarData(falecido.dataObito)}
               </span>
             </div>
@@ -264,7 +264,7 @@ export function ItcmdView({
               <div className="lanc" key={b.id}>
                 <span className="nome">{b.descricao}</span>
                 <span className="fracao">{b.natureza === 'COMUM' ? 'comum' : 'particular'}</span>
-                <span className="valor num" style={{ fontSize: 16 }}>{brl(b.valor)}</span>
+                <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(b.valor)}</span>
               </div>
             ))}
             <div className="lanc">
@@ -478,7 +478,7 @@ export function ItcmdView({
             <div className="lanc">
               <span className="nome">Base atualizada pela UFESP</span>
               <span className="fracao">art. 15</span>
-              <span className="valor num" style={{ fontSize: 16 }}>{brl(provisao.baseAtualizada)}</span>
+              <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(provisao.baseAtualizada)}</span>
             </div>
             <div className="fund">
               {provisao.baseEmUfesps.toFixed(2)} UFESPs (UFESP do óbito {brl(provisao.ufespObito)} →
@@ -493,7 +493,7 @@ export function ItcmdView({
                   <span className="fracao">{p.fundamento.replace('Lei 10.705/2000, ', '')}</span>
                   <span
                     className="valor num"
-                    style={{ color: p.valor < 0 ? 'var(--verde-registro)' : undefined, fontSize: 17 }}
+                    style={{ color: p.valor < 0 ? 'var(--verde-registro)' : undefined, fontSize: 'var(--t-base)' }}
                   >
                     {p.valor < 0 ? `− ${brl(-p.valor)}` : brl(p.valor)}
                   </span>
@@ -504,7 +504,7 @@ export function ItcmdView({
             <div className="lanc">
               <span className="nome">Provisão total em {formatarData(hoje)}</span>
               <span />
-              <span className="valor num" style={{ fontSize: 22 }}>{brl(provisao.total)}</span>
+              <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>{brl(provisao.total)}</span>
             </div>
           </div>
 
@@ -621,7 +621,7 @@ export function ItcmdView({
                 <div className="lanc" key={i}>
                   <span className="nome" style={{ fontWeight: 400 }}>{rotulo}</span>
                   <span className="fracao num">{reais}</span>
-                  <span className="valor" style={{ fontSize: 15 }}>
+                  <span className="valor" style={{ fontSize: 'var(--t-base)' }}>
                     <Input
                       inputMode="decimal"
                       className="num ml-auto"
@@ -644,7 +644,7 @@ export function ItcmdView({
             })}
           </div>
 
-          <h3 style={{ margin: '18px 0 6px', fontSize: 15 }}>
+          <h3 style={{ margin: '18px 0 6px', fontSize: 'var(--t-base)' }}>
             Comparativo por herdeiro — hoje (4%) × tabela progressiva
           </h3>
           <div className="espelho">
@@ -675,7 +675,7 @@ export function ItcmdView({
                       <span
                         className="valor num"
                         style={{
-                          fontSize: 16,
+                          fontSize: 'var(--t-base)',
                           color: l.prog > l.fixo ? 'var(--lacre)' : 'var(--verde-registro)',
                         }}
                       >

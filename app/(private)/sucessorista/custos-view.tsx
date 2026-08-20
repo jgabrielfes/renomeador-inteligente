@@ -278,7 +278,7 @@ export function CustosView({
                     {p.aproximado ? ' *' : ''}
                   </span>
                   <span className="fracao">{p.fundamento}</span>
-                  <span className="valor num" style={{ fontSize: 17 }}>{brl(p.valor)}</span>
+                  <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(p.valor)}</span>
                 </div>
                 {p.detalhe && <div className="fund">{p.detalhe}</div>}
               </div>
@@ -288,7 +288,7 @@ export function CustosView({
                 <div className="lanc">
                   <span className="nome">ITCMD — sucessão cumulada de {sucessao.nome}</span>
                   <span className="fracao">fato gerador em {formatarData(sucessao.dataObito)}</span>
-                  <span className="valor num" style={{ fontSize: 17 }}>{brl(pv.total)}</span>
+                  <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(pv.total)}</span>
                 </div>
                 <div className="fund">
                   Base de {brl(base)} (acervo por sucessão ou lançamento do item I) atualizada
@@ -303,13 +303,13 @@ export function CustosView({
               <div className="lanc" key={a.id}>
                 <span className="nome">{a.descricao || 'Despesa adicional'}</span>
                 <span className="fracao">custo adicional — lançamento do escritório</span>
-                <span className="valor num" style={{ fontSize: 17 }}>{brl(Number(a.valor) || 0)}</span>
+                <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(Number(a.valor) || 0)}</span>
               </div>
             ))}
             <div className="lanc">
               <span className="nome">Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</span>
               <span />
-              <span className="valor num" style={{ fontSize: 18 }}>{brl(custos.total + impostoSucessoes + totalAdicionais)}</span>
+              <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>{brl(custos.total + impostoSucessoes + totalAdicionais)}</span>
             </div>
             {provisao && (
               <div className="lanc">
@@ -317,7 +317,7 @@ export function CustosView({
                   CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})
                 </span>
                 <span className="fracao">provisão do item IV</span>
-                <span className="valor num" style={{ fontSize: 22 }}>
+                <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>
                   {brl(provisao.total + custos.total + impostoSucessoes + totalAdicionais)}
                 </span>
               </div>

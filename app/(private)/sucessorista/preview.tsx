@@ -85,7 +85,7 @@ export function LupaPreview({ file, onClose }: { file: File | null; onClose: () 
             >
               −
             </Button>
-            <span className="num" style={{ fontSize: 13, minWidth: 48, textAlign: 'center' }}>
+            <span className="num" style={{ fontSize: 'var(--t-sm)', minWidth: 48, textAlign: 'center' }}>
               {Math.round(zoom * 100)}%
             </span>
             <Button

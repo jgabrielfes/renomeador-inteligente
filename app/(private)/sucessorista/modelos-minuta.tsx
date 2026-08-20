@@ -310,7 +310,7 @@ export function MeusModelosMinuta({
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1">
-            <p style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{visualizando?.texto}</p>
+            <p style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--t-sm)' }}>{visualizando?.texto}</p>
           </ScrollArea>
         </DialogContent>
       </Dialog>

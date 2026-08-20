@@ -15,6 +15,7 @@ import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
 import type { ProvisaoItcmd, ResultadoIsencoes } from '@/lib/partilha/itcmd';
+import { faixaDoPrazo } from '@/lib/partilha/prazo';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 
 const brl = (v: number | string) =>
@@ -135,9 +136,11 @@ export function PainelCaso({
 
   const custo10 = imposto * 0.1;
   const custo20 = imposto * 0.2;
-  // ITCMD PAGO: o relógio deixa de ameaçar — número e barra ficam VERDES e o
-  // rodapé informa a quitação (multas e juros pararam na data do pagamento).
-  const cls = itcmdPago ? '' : dias > 180 ? 'tarde' : dias > 60 ? 'meio' : '';
+  // Semântica de cor do prazo (lib/partilha/prazo.ts): ok → alerta →
+  // vencido → histórico (neutro, "multa já incidente"). ITCMD PAGO deixa
+  // tudo VERDE — o relógio parou de custar dinheiro.
+  const faixaPrazo = itcmdPago ? 'ok' : faixaDoPrazo(dias);
+  const cls = faixaPrazo === 'ok' ? '' : faixaPrazo;
   const largura = Math.min(100, Math.max(2, (dias / 240) * 100));
 
   return (
@@ -214,7 +217,7 @@ export function PainelCaso({
           onChange={(e) => setNotas?.(e.target.value)}
           style={{
             marginTop: 6,
-            fontSize: 12.5,
+            fontSize: 'var(--t-xs)',
             minHeight: 120,
             background: 'var(--papel-alto, transparent)',
           }}
@@ -225,11 +228,16 @@ export function PainelCaso({
         <div className="metrica">
           <div className="k">Prazo do art. 611 do CPC</div>
           <div
-            className={`v num ${itcmdPago || dias <= 60 ? 'verde' : 'lacre'}`}
-            style={{ fontSize: 20 }}
+            className={`v num ${
+              faixaPrazo === 'ok' ? 'verde' : faixaPrazo === 'alerta' ? 'alerta' : faixaPrazo === 'historico' ? 'historico' : 'lacre'
+            }`}
+            style={{ fontSize: 'var(--t-lg)' }}
           >
             {dias} dia(s) desde o óbito
-            {itcmdPago && <span style={{ fontSize: 13 }}> · ITCMD pago</span>}
+            {itcmdPago && <span style={{ fontSize: 'var(--t-sm)' }}> · ITCMD pago</span>}
+            {!itcmdPago && faixaPrazo === 'historico' && (
+              <span style={{ fontSize: 'var(--t-sm)' }}> · multa já incidente</span>
+            )}
           </div>
           <div className="regua" aria-hidden>
             <div className="barra">

@@ -50,6 +50,7 @@ import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/co
 import { anteciparQualificacaoRegistral, ehImovelDeRegistro } from '@/lib/partilha/antecipador';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import { nomeConstaEm, semQualificadoresDeNome } from '@/lib/partilha/nomes';
+import { faixaDoPrazo, rotuloDoPrazo } from '@/lib/partilha/prazo';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -240,6 +241,10 @@ function hojeIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Dias corridos desde uma data ISO — a contagem do relógio do art. 611. */
+const diasDesdeObito = (iso: string): number =>
+  Math.round((new Date(`${hojeIso()}T00:00`).getTime() - new Date(`${iso}T00:00`).getTime()) / 86_400_000);
+
 const FALECIDO_VAZIO: DadosFalecido = {
   nome: '',
   cpf: '',
@@ -371,7 +376,9 @@ export default function SucessoristaClient({
   /* Desktop: painel do caso recolhido numa tira na margem direita — a
      setinha recolhe/reabre; a preferência fica no navegador e é restaurada
      no efeito diferido (não quebra a hidratação). */
-  const [painelRecolhido, setPainelRecolhido] = useState(false);
+  // FECHADO por padrão (V3 da auditoria): a barra de status no topo da
+  // folha mantém os números à vista; quem abrir o painel fica com ele.
+  const [painelRecolhido, setPainelRecolhido] = useState(true);
 
   const irPara = (aba: Aba) => {
     setAbaProc(aba);
@@ -840,7 +847,7 @@ export default function SucessoristaClient({
           }
           const t = localStorage.getItem(CHAVE_TEMA);
           if (t === 'claro' || t === 'escuro') setTema(t);
-          if (localStorage.getItem(CHAVE_PAINEL_RECOLHIDO) === '1') setPainelRecolhido(true);
+          if (localStorage.getItem(CHAVE_PAINEL_RECOLHIDO) === '0') setPainelRecolhido(false);
         } catch {
           // modo restrito
         }
@@ -3499,6 +3506,47 @@ export default function SucessoristaClient({
       </nav>
 
       <main className="folha">
+        {/* Barra de status FINA no topo da folha (V3): prazo do art. 611,
+            custo projetado e salvamento sempre à vista — o painel do caso
+            pode ficar recolhido sem o advogado perder os números. */}
+        <div className="barra-status num" role="status">
+          {falecido.dataObito ? (
+            <span
+              className={`bs-prazo ${
+                fiscal.itcmdSituacao === 'PAGO' ? 'ok' : faixaDoPrazo(diasDesdeObito(falecido.dataObito))
+              }`}
+            >
+              Art. 611: {diasDesdeObito(falecido.dataObito)} dia(s) —{' '}
+              {fiscal.itcmdSituacao === 'PAGO' ? 'ITCMD pago' : rotuloDoPrazo(diasDesdeObito(falecido.dataObito))}
+            </span>
+          ) : (
+            <span className="bs-prazo">Art. 611: informe a data do óbito</span>
+          )}
+          <span>
+            Custo projetado:{' '}
+            {provisao
+              ? brl(
+                  (
+                    provisao.total +
+                    (custos?.total ?? 0) +
+                    impostoSucessoes +
+                    somaAdicionais(custosAdicionais)
+                  ).toFixed(2),
+                )
+              : '—'}
+          </span>
+          <span className="bs-salva">
+            {salvamento.estado === 'salvando'
+              ? '● salvando…'
+              : salvamento.estado === 'erro'
+                ? '● erro ao salvar'
+                : salvamento.estado === 'somente-leitura'
+                  ? '● somente leitura'
+                  : salvamento.estado === 'salvo' && salvamento.quando
+                    ? `● salvo às ${new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                    : '● salvamento automático'}
+          </span>
+        </div>
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -4429,14 +4477,14 @@ function EspelhoView({
           <div className="grade c2" style={{ margin: '14px 0 6px' }}>
             <div>
               <span className="eyebrow">Massa partilhável</span>
-              <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 24 }}>
+              <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
                 {brl(resultado.acervo.massaPartilhavel)}
               </p>
             </div>
             {resultado.meacao && (
               <div>
                 <span className="eyebrow">Meação — {resultado.meacao.beneficiario}</span>
-                <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 24 }}>
+                <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
                   {brl(resultado.meacao.valor)}
                 </p>
                 <p className="fund">
@@ -4477,7 +4525,7 @@ function EspelhoView({
             {bens.map((b, i) => (
               <div className="check-item" key={b.id}>
                 <span className="prio num">{i + 1}.</span>
-                <p style={{ fontSize: 13.5 }}>
+                <p style={{ fontSize: 'var(--t-sm)' }}>
                   {b.descricao}
                   <span className="fracao num"> · {brl(b.valor)} · {b.natureza === 'COMUM' ? 'comum' : 'particular'}</span>
                 </p>

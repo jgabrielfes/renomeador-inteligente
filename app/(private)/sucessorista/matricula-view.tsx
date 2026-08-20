@@ -207,7 +207,7 @@ export function MatriculaView({
         <>
           {matriculasDoCaso.map((f, i) => (
             <div className="linha-item" key={`${f.name}-${i}`}>
-              <span className="num" style={{ fontSize: 13 }}>
+              <span className="num" style={{ fontSize: 'var(--t-sm)' }}>
                 {f.name}
               </span>
               <span />
@@ -314,7 +314,7 @@ function RelatorioMatricula({
         )
           .filter(([, v]) => v)
           .map(([rotulo, valor]) => (
-            <p key={rotulo} style={{ fontSize: 13, margin: 0 }}>
+            <p key={rotulo} style={{ fontSize: 'var(--t-sm)', margin: 0 }}>
               <span style={{ color: 'var(--tinta-media)' }}>{rotulo}:</span>{' '}
               <strong className="num">{valor}</strong>
             </p>
@@ -411,7 +411,7 @@ function RelatorioMatricula({
           <p
             key={item.rotulo}
             style={{
-              fontSize: 13,
+              fontSize: 'var(--t-sm)',
               margin: 0,
               display: 'flex',
               justifyContent: 'space-between',
@@ -429,7 +429,7 @@ function RelatorioMatricula({
 
       <h2>Análise Jurídica</h2>
       {analise.analiseJuridica.map((par, i) => (
-        <p key={i} style={{ fontSize: 13.5, margin: '0 0 10px', maxWidth: '75ch' }}>
+        <p key={i} style={{ fontSize: 'var(--t-sm)', margin: '0 0 10px', maxWidth: '75ch' }}>
           {par}
         </p>
       ))}
@@ -451,9 +451,9 @@ function RelatorioMatricula({
       ))}
 
       <h2>Confiabilidade da Extração</h2>
-      <p style={{ fontSize: 13.5, margin: 0 }}>
+      <p style={{ fontSize: 'var(--t-sm)', margin: 0 }}>
         {analise.confiabilidade.indicePct !== null && (
-          <strong className="num" style={{ fontSize: 16 }}>
+          <strong className="num" style={{ fontSize: 'var(--t-base)' }}>
             Índice: {analise.confiabilidade.indicePct}%
           </strong>
         )}

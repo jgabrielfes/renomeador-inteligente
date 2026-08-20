@@ -722,7 +722,7 @@ function EditorHerdeiros({
                   demais da classe e o item V soma UM ato sem valor declarado
                   por renunciante (Tabela de Notas, item 6.2). */}
               {h.status !== 'PRE_MORTO' && (
-                <label className="marcar" style={{ margin: 0, fontWeight: 400, fontSize: 12 }}>
+                <label className="marcar" style={{ margin: 0, fontWeight: 400, fontSize: 'var(--t-xs)' }}>
                   <Checkbox
                     checked={h.status === 'RENUNCIANTE'}
                     onCheckedChange={(v) =>
@@ -795,7 +795,7 @@ function EditorHerdeiros({
                   onChange({ ...estado, qualificacoes: { ...estado.qualificacoes, [h.id]: q } })
                 }
               />
-              <h3 style={{ margin: '18px 0 8px', fontSize: 14 }}>Perguntas da declaração do ITCMD</h3>
+              <h3 style={{ margin: '18px 0 8px', fontSize: 'var(--t-sm)' }}>Perguntas da declaração do ITCMD</h3>
               {ROTULOS_PERGUNTAS_ITCMD.map(({ campo, texto }) => {
                 const atual = estado.perguntas[h.id] ?? PERGUNTAS_ITCMD_VAZIAS;
                 const marcar = (v: boolean) =>
@@ -805,7 +805,7 @@ function EditorHerdeiros({
                   });
                 return (
                   <div key={campo} style={{ marginBottom: 10 }}>
-                    <p style={{ fontSize: 13, marginBottom: 5 }}>{texto}</p>
+                    <p style={{ fontSize: 'var(--t-sm)', marginBottom: 5 }}>{texto}</p>
                     <div className="escolha">
                       <Pilula ativo={atual[campo] === true} onClick={() => marcar(true)}>
                         Sim
