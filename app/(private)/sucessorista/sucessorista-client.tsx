@@ -140,6 +140,7 @@ import type {
 } from '@/lib/partilha/escritura';
 import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
+import { Doutrina } from './doutrina';
 
 /* ---------- helpers ---------- */
 
@@ -345,6 +346,8 @@ export default function SucessoristaClient({
   ehMaster = false,
   equipe = null,
   contaId = null,
+  casoInicialId = null,
+  etapaInicial = null,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -362,12 +365,18 @@ export default function SucessoristaClient({
   equipe?: import('./equipe-actions').InfoEquipe | null;
   /** Id do usuário logado — escopa a pasta-raiz e o cache POR CONTA. */
   contaId?: string | null;
+  /** Rota /caso/<id>/<etapa> (T1): o caso a abrir ao montar — F5, favorito
+   *  e link colado entre membros da equipe voltam ao caso certo. */
+  casoInicialId?: string | null;
+  etapaInicial?: string | null;
 }) {
-  // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
-  // compartilhável. A troca usa history.replaceState — atualização rasa, sem
-  // round-trip ao servidor nem barra de progresso a cada clique de aba.
+  // A etapa e o CASO vivem na URL (/caso/<id>/<etapa>; ?etapa= segue como
+  // compatibilidade): sobrevivem ao F5 e o recorte é compartilhável. A troca
+  // usa history.replaceState — atualização rasa, sem round-trip ao servidor.
   const searchParams = useSearchParams();
-  const [abaProc, setAbaProc] = useState<Aba>(() => abaValida(searchParams.get('etapa')));
+  const [abaProc, setAbaProc] = useState<Aba>(() =>
+    abaValida(etapaInicial ?? searchParams.get('etapa')),
+  );
 
   // Celular: o painel do caso vira uma GAVETA sobre a folha (botão
   // flutuante abre/fecha). Em tela larga o estado é inócuo — o painel é a
@@ -383,11 +392,8 @@ export default function SucessoristaClient({
   const irPara = (aba: Aba) => {
     setAbaProc(aba);
     setPainelAberto(false);
-    const url = new URL(window.location.href);
-    url.searchParams.set('etapa', aba);
-    window.history.replaceState(null, '', url);
-    // Cada aba é uma "página" nova da folha: começa no topo, não onde a
-    // rolagem da aba anterior parou.
+    // A URL é gravada pelo efeito de rota (/caso/<id>/<etapa>) — aqui só a
+    // rolagem: cada aba é uma "página" nova da folha, começa no topo.
     window.scrollTo(0, 0);
   };
 
@@ -689,6 +695,22 @@ export default function SucessoristaClient({
   useEffect(() => {
     casoAbertoRef.current = casoAberto;
   }, [casoAberto]);
+
+  /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
+     favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
+     volta à raiz (o ?etapa= antigo segue aceito na chegada). */
+  useEffect(() => {
+    const id = casoAberto?.cabecalho.caseId;
+    if (id) {
+      window.history.replaceState(null, '', `/caso/${encodeURIComponent(id)}/${abaProc}`);
+    } else if (window.location.pathname.startsWith('/caso/')) {
+      window.history.replaceState(null, '', '/');
+    }
+  }, [casoAberto, abaProc]);
+
+  /** Rota apontou um caso que não existe/não abriu: tela própria, nunca um
+   *  redirecionamento silencioso para a lista. */
+  const [casoNaoEncontrado, setCasoNaoEncontrado] = useState(false);
 
   /* --- telemetria (privacidade: nada de nome, CPF ou valor absoluto) --- */
 
@@ -1069,6 +1091,31 @@ export default function SucessoristaClient({
     setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
     if (s) void religarDocumentos(s, caso);
   };
+
+  /* Chegada por /caso/<id>: abre o caso assim que o store local fica pronto
+     (ou direto da nuvem). Caso inexistente vira a tela "caso não
+     encontrado" — nunca um redirecionamento silencioso. */
+  const casoInicialTratadoRef = useRef(false);
+  useEffect(() => {
+    if (!casoInicialId || casoInicialTratadoRef.current) return;
+    let vivo = true;
+    const tentar = async (restantes: number) => {
+      if (!vivo || casoInicialTratadoRef.current) return;
+      if (storeRef.current || restantes <= 0) {
+        casoInicialTratadoRef.current = true;
+        await abrirCasoDoPainel(casoInicialId);
+        if (vivo && !casoAbertoRef.current) setCasoNaoEncontrado(true);
+        return;
+      }
+      setTimeout(() => void tentar(restantes - 1), 300);
+    };
+    void tentar(20);
+    return () => {
+      vivo = false;
+    };
+    // abrirCasoDoPainel não é memoizada; o ref garante execução única.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casoInicialId]);
 
   const criarCasoDoPainel = async (tituloNovo: string) => {
     const s = storeRef.current;
@@ -3336,10 +3383,26 @@ export default function SucessoristaClient({
 
   return (
     <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
-    {/* Sem caso aberto, a tela inicial é o painel "Meus casos". Não há link
-        "← Módulos": este site É o Sucessorista e `/` já é esta tela — no
-        lugar dele, a faixa de sessão. */}
-    {casoAberto === null ? (
+    {/* Rota /caso/<id> que não abriu: tela própria com o caminho de volta
+        — nunca um redirecionamento silencioso (T1 da auditoria). */}
+    {casoAberto === null && casoNaoEncontrado ? (
+      <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
+        {menu}
+        <h1>Caso não encontrado</h1>
+        <p className="subtitulo">
+          O link aponta um caso que não está nesta máquina nem na sua nuvem — ele pode ter
+          sido arquivado, a pasta pode ter sido movida, ou o link veio de outra conta.
+        </p>
+        <Button
+          onClick={() => {
+            setCasoNaoEncontrado(false);
+            window.history.replaceState(null, '', '/');
+          }}
+        >
+          Ir para Meus casos
+        </Button>
+      </div>
+    ) : casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {menu}
         <CasosView
@@ -3458,45 +3521,9 @@ export default function SucessoristaClient({
             {rotulo}
           </button>
         ))}
-        {/* Indicador de salvamento — o caso grava sozinho, nada sai da máquina. */}
-        <div
-          className={`rascunho-info${salvamento.estado === 'erro' || salvamento.estado === 'somente-leitura' ? ' problema' : ''}`}
-          title={
-            store?.modo === 'drive'
-              ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
-              : store?.modo === 'onedrive'
-                ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
-                : store?.modo === 'dropbox'
-                  ? 'Gravado no SEU Dropbox — acessível de qualquer dispositivo com o seu login'
-                  : store?.modo === 'pasta'
-                    ? 'Gravado direto na pasta do processo — nada sai desta máquina'
-                    : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
-          }
-        >
-          {salvamento.estado === 'salvando' && '● salvando…'}
-          {salvamento.estado === 'salvo' && (
-            <>
-              ● salvo às{' '}
-              {salvamento.quando
-                ? new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                : ''}
-            </>
-          )}
-          {salvamento.estado === 'erro' && (
-            <button className="religar" onClick={() => void salvarAgoraRef.current()}>
-              ● erro ao salvar — tentar de novo
-            </button>
-          )}
-          {salvamento.estado === 'somente-leitura' && (
-            <button className="religar" onClick={() => void desbloquearPasta()}>
-              ● somente leitura — reconectar pasta
-            </button>
-          )}
-          {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
-          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'onedrive' ? 'no seu OneDrive' : store?.modo === 'dropbox' ? 'no seu Dropbox' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
-        </div>
         {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
-            se chega à Administração e ao Sair. */}
+            se chega à Administração e ao Sair. (O indicador de salvamento
+            saiu daqui para a barra de status da folha — T2 da auditoria.) */}
         {menu && <div className="sessao">{menu}</div>}
         <div className="selo">
           Cálculo de apoio com fundamento legal.
@@ -3535,16 +3562,44 @@ export default function SucessoristaClient({
                 )
               : '—'}
           </span>
-          <span className="bs-salva">
-            {salvamento.estado === 'salvando'
-              ? '● salvando…'
-              : salvamento.estado === 'erro'
-                ? '● erro ao salvar'
-                : salvamento.estado === 'somente-leitura'
-                  ? '● somente leitura'
-                  : salvamento.estado === 'salvo' && salvamento.quando
-                    ? `● salvo às ${new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                    : '● salvamento automático'}
+          <span
+            className="bs-salva"
+            title={
+              store?.modo === 'drive'
+                ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
+                : store?.modo === 'onedrive'
+                  ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
+                  : store?.modo === 'dropbox'
+                    ? 'Gravado no SEU Dropbox — acessível de qualquer dispositivo com o seu login'
+                    : store?.modo === 'pasta'
+                      ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+                      : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+            }
+          >
+            {salvamento.estado === 'erro' ? (
+              <button className="bs-acao" onClick={() => void salvarAgoraRef.current()}>
+                ● erro ao salvar — tentar de novo
+              </button>
+            ) : salvamento.estado === 'somente-leitura' ? (
+              <button className="bs-acao" onClick={() => void desbloquearPasta()}>
+                ● somente leitura — reconectar pasta
+              </button>
+            ) : salvamento.estado === 'salvando' ? (
+              '● salvando…'
+            ) : salvamento.estado === 'salvo' && salvamento.quando ? (
+              `● salvo às ${new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+            ) : (
+              '● salvamento automático'
+            )}{' '}
+            {store?.modo === 'drive'
+              ? 'no seu Google Drive'
+              : store?.modo === 'onedrive'
+                ? 'no seu OneDrive'
+                : store?.modo === 'dropbox'
+                  ? 'no seu Dropbox'
+                  : store?.modo === 'pasta'
+                    ? 'na pasta do processo'
+                    : 'neste navegador'}
           </span>
         </div>
         {abaProc === 'caso' && (
@@ -3603,11 +3658,13 @@ export default function SucessoristaClient({
         {abaProc === 'partilha' && (
           <>
             <h1>Partilha</h1>
-            <p className="subtitulo">
-              O espelho da partilha com o fundamento legal de cada lançamento — e a apuração
-              de torna quando a família convenciona diferente do direito. O vínculo, o regime
-              e os herdeiros vêm do item I; os bens, do item II.
-            </p>
+            <Doutrina
+              id="partilha"
+              resumo="O espelho da partilha com o fundamento legal de cada lançamento."
+            >
+              A torna é apurada quando a família convenciona diferente do direito. O
+              vínculo, o regime e os herdeiros vêm do item I; os bens, do item II.
+            </Doutrina>
 
             <div className="passos" role="tablist" aria-label="Passos">
               {['Espelho da partilha', 'Partilha diferenciada'].map((t, i) => (

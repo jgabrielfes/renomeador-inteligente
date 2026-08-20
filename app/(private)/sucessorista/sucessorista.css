@@ -21,8 +21,12 @@
   /* Fonte única do módulo: TAHOMA (pedido do escritório — mesma família das
      minutas do balcão). As duas variáveis apontam para a mesma pilha, então
      títulos e texto seguem juntos sem tocar nas regras abaixo. */
-  --display: Tahoma, Verdana, 'Segoe UI', system-ui, sans-serif;
-  --texto: Tahoma, Verdana, 'Segoe UI', system-ui, sans-serif;
+  /* V2 da auditoria: a Geist (já carregada pelo layout) assume a UI — o
+     display se diferencia do corpo por PESO e tracking negativo, não por
+     família. A ESCRITURA .docx continua Tahoma: é formatação de documento
+     do balcão, não interface. */
+  --display: var(--font-geist-sans), 'Segoe UI', system-ui, sans-serif;
+  --texto: var(--font-geist-sans), 'Segoe UI', system-ui, sans-serif;
 
   /* --- tema shadcn re-mapeado para a identidade (não remover) --- */
   --background: var(--papel);
@@ -70,6 +74,13 @@
   --estado-ok: var(--verde-registro);
   --estado-alerta: #b98523;
   --estado-vencido: var(--lacre);
+
+  /* T2 da auditoria: variantes para uso SOBRE O FUNDO ESCURO da lombada
+     (#1a2320) — os tons da folha reprovam no WCAG lá (bronze 3,3:1,
+     verde 2,2:1, cinza-médio 2,1:1). Estes passam de 4,5:1 (6,2–6,8:1). */
+  --bronze-inverso: #c9a35f;
+  --verde-registro-inverso: #74b697;
+  --tinta-media-inversa: #9aa39e;
 }
 
 .sucessorista * { box-sizing: border-box; }
@@ -100,6 +111,11 @@
 }
 
 .sucessorista .lombada {
+  /* Sobre o fundo escuro, os tokens do shadcn viram as variantes inversas —
+     é o que conserta o contraste do menu de sessão (user-menu) sem tocar
+     componente por componente. */
+  --muted-foreground: var(--tinta-media-inversa);
+  --foreground: var(--papel);
   background: var(--tinta);
   color: var(--papel);
   padding: 28px 0 28px 24px;
@@ -154,7 +170,10 @@
   border: 1px solid rgba(246, 244, 238, 0.25);
   background: transparent;
   color: #b9c1bc;
-  font: 600 10.5px/1.2 var(--texto);
+  font-weight: 600;
+  font-size: var(--t-xs);
+  line-height: 1.2;
+  font-family: var(--texto);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: 7px 6px;
@@ -167,28 +186,17 @@
   color: var(--papel-alto);
 }
 
-/* Indicador do rascunho local — o caso não se perde ao fechar o navegador. */
-.sucessorista .lombada .rascunho-info {
-  margin: 10px 16px 0 0;
-  font-size: var(--t-xs);
-  letter-spacing: 0.04em;
-  color: var(--verde-registro);
-  filter: brightness(1.6);
-}
 
-.sucessorista .lombada .rascunho-info small {
-  display: block;
-  color: #7c8580;
-  filter: none;
-  margin-top: 2px;
-}
 
 .sucessorista .aba {
   appearance: none;
   border: 0;
   background: transparent;
   color: #b9c1bc;
-  font: 500 13px/1.2 var(--texto);
+  font-weight: 500;
+  font-size: var(--t-sm);
+  line-height: 1.2;
+  font-family: var(--texto);
   letter-spacing: 0.04em;
   text-align: left;
   padding: 11px 18px 11px 14px;
@@ -207,7 +215,7 @@
 .sucessorista .aba .indice {
   font-family: var(--display);
   font-size: var(--t-xs);
-  color: var(--bronze);
+  color: var(--bronze-inverso);
   margin-right: 8px;
 }
 
@@ -215,7 +223,7 @@
   margin-top: auto;
   padding-right: 24px;
   font-size: var(--t-xs);
-  color: #7c8580;
+  color: var(--tinta-media-inversa);
   line-height: 1.5;
 }
 
@@ -241,6 +249,126 @@
   padding: 48px 56px 104px;
   max-width: 1080px;
   min-width: 0;
+}
+
+/* ---------- Documentos em LINHA ÚNICA (I3) ---------- */
+
+.sucessorista .doc-drop-global { border-radius: 10px; }
+.sucessorista .doc-drop-global.ativa {
+  outline: 2px dashed var(--bronze);
+  outline-offset: 6px;
+  background: color-mix(in srgb, var(--bronze) 6%, transparent);
+}
+
+.sucessorista .doc-drop-aviso {
+  margin: 0 0 var(--e-3);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--bronze);
+}
+
+.sucessorista .contador-grupo {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--tinta-media);
+}
+
+.sucessorista .doc-lista {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--fio);
+}
+
+.sucessorista .doc-linha {
+  border-bottom: 1px solid var(--fio);
+  padding: var(--e-1) 0;
+}
+
+.sucessorista .doc-linha.solta-aqui {
+  background: color-mix(in srgb, var(--bronze) 8%, transparent);
+  border-radius: 6px;
+}
+
+.sucessorista .doc-linha-cabeca {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  min-height: 40px;
+}
+
+.sucessorista .doc-linha-cabeca h4 {
+  margin: 0;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+/* O STATUS é o elemento mais legível da linha — não o botão. */
+.sucessorista .chip-doc {
+  flex-shrink: 0;
+  min-width: 92px;
+  text-align: center;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.sucessorista .chip-doc.ok {
+  background: color-mix(in srgb, var(--estado-ok) 14%, transparent);
+  color: var(--estado-ok);
+}
+.sucessorista .chip-doc.falta {
+  background: color-mix(in srgb, var(--estado-alerta) 14%, transparent);
+  color: var(--estado-alerta);
+}
+
+.sucessorista .doc-ajuda {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  cursor: help;
+}
+
+.sucessorista .doc-linha-fio { flex: 1; border-bottom: 1px dotted var(--fio); }
+
+/* A ação fica discreta e ganha corpo no hover/focus da linha. */
+.sucessorista .doc-linha-acao { opacity: 0.55; }
+.sucessorista .doc-linha:hover .doc-linha-acao,
+.sucessorista .doc-linha:focus-within .doc-linha-acao { opacity: 1; }
+
+/* Doutrina colapsada (V5): cada etapa abre com UMA linha de resumo e o
+   "Por quê?" guarda a explicação completa — lembrado por etapa. */
+.sucessorista .doutrina { margin: 0 0 var(--e-6); }
+.sucessorista .doutrina .subtitulo { margin: 0 0 var(--e-1); }
+
+.sucessorista .doutrina-detalhe summary {
+  cursor: pointer;
+  display: inline-block;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  list-style: none;
+}
+
+.sucessorista .doutrina-detalhe summary::-webkit-details-marker { display: none; }
+.sucessorista .doutrina-detalhe summary::before { content: '▸ '; }
+.sucessorista .doutrina-detalhe[open] summary::before { content: '▾ '; }
+
+.sucessorista .doutrina-texto {
+  margin-top: var(--e-2);
+  color: var(--tinta-media);
+  max-width: 62ch;
+  font-size: var(--t-sm);
+  line-height: var(--lh-corpo);
 }
 
 /* ---------- interativos: alvo de clique, foco e estados (I1/I4) ----------
@@ -293,6 +421,17 @@
 .sucessorista .barra-status .bs-prazo.vencido { color: var(--estado-vencido); }
 .sucessorista .barra-status .bs-prazo.historico { color: var(--tinta-media); }
 .sucessorista .barra-status .bs-salva { margin-left: auto; }
+
+/* Ação de recuperação do salvamento (erro/somente leitura) na barra. */
+.sucessorista .barra-status .bs-acao {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--lacre);
+  text-decoration: underline;
+}
 
 .sucessorista input:focus-visible,
 .sucessorista .aba:focus-visible {
@@ -895,16 +1034,6 @@
 }
 
 /* Indicador de salvamento com problema (erro/somente leitura) em lacre. */
-.sucessorista .lombada .rascunho-info.problema { color: #e8b0a8; filter: none; }
-.sucessorista .lombada .rascunho-info .religar {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  padding: 0;
-  text-decoration: underline;
-}
 
 /* "← Meus casos" na lombada é botão, com a cara do link de voltar. */
 .sucessorista .lombada button.voltar {
@@ -1207,7 +1336,10 @@
   object-position: top;
 }
 .sucessorista .doc-card-ext {
-  font: 600 12px/1 var(--texto);
+  font-weight: 600;
+  font-size: var(--t-xs);
+  line-height: 1;
+  font-family: var(--texto);
   letter-spacing: 0.08em;
   color: var(--tinta-media);
 }
@@ -1291,7 +1423,10 @@
   border: 1px solid var(--tinta);
   background: var(--tinta);
   color: var(--papel);
-  font: 600 14px/1 var(--texto);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  line-height: 1;
+  font-family: var(--texto);
   padding: 11px 20px;
   border-radius: 6px;
 }
@@ -1445,7 +1580,6 @@
   .sucessorista .lombada .marca,
   .sucessorista .lombada .perfil,
   .sucessorista .lombada .selo,
-  .sucessorista .lombada .rascunho-info { display: none; }
   .sucessorista .lombada .voltar { margin: 0; padding: 8px 6px; align-self: center; white-space: nowrap; }
   .sucessorista .aba {
     border-radius: 999px;
@@ -1812,7 +1946,6 @@
 .sucessorista.tema-escuro .arrasto.ativo { background: #202723; }
 .sucessorista.tema-escuro .alerta-painel { background: #3a2420; color: #e8b0a8; }
 .sucessorista.tema-escuro .alerta-painel.info { background: #35301f; color: #d9c087; }
-.sucessorista.tema-escuro .lombada .rascunho-info { filter: none; }
 
 /* ---------- integração com a moldura do app ---------- */
 

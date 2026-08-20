@@ -29,6 +29,7 @@ import type { Colacao } from '@/lib/partilha/colacao';
 import { TIPOS_BEM_ITCMD, tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
 import type { SucessaoCumulada } from './itcmd-view';
 import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
+import { Doutrina } from './doutrina';
 
 export interface ResumoSociedade {
   chave: string;
@@ -297,11 +298,11 @@ export function AcervoView({
   return (
     <section>
       <h1>O acervo</h1>
-      <p className="subtitulo">
-        Bens pelo valor da data do óbito. A natureza — comum ou particular — decide a meação
-        e, no regime parcial, decide se o(a) sobrevivente concorre com os filhos. O tipo do
-        bem alimenta as isenções e o checklist do ITCMD.
-      </p>
+      <Doutrina id="acervo" resumo="Bens pelo valor da data do óbito.">
+        A natureza — comum ou particular — decide a meação e, no regime parcial, decide se
+        o(a) sobrevivente concorre com os filhos. O tipo do bem alimenta as isenções e o
+        checklist do ITCMD.
+      </Doutrina>
 
       <h2 style={{ marginTop: 0 }}>Bens</h2>
       <form noValidate onSubmit={handleSubmit(lancar)}>

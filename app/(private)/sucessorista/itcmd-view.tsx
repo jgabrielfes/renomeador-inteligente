@@ -45,6 +45,7 @@ import {
 import { Pilula } from './familia';
 import { montarIcs, linkGoogleAgenda, prazosDoItcmd } from '@/lib/partilha/calendario';
 import { baixarBlob } from '@/lib/partilha/xlsx';
+import { Doutrina } from './doutrina';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -163,11 +164,13 @@ export function ItcmdView({
   return (
     <section>
       <h1>ITCMD</h1>
-      <p className="subtitulo">
-        Espelho da declaração do ITCMD-SP e provisão do imposto causa mortis até hoje
-        ({formatarData(hoje)}), contada do fato gerador — a data do óbito. Cada parcela sai
-        com o artigo da Lei 10.705/2000 que a fundamenta.
-      </p>
+      <Doutrina
+        id="itcmd"
+        resumo={`Espelho da declaração do ITCMD-SP e provisão do imposto até hoje (${formatarData(hoje)}).`}
+      >
+        A provisão é contada do fato gerador — a data do óbito. Cada parcela sai com o
+        artigo da Lei 10.705/2000 que a fundamenta.
+      </Doutrina>
 
       {faltaObito && (
         <div className="nota exigencia">

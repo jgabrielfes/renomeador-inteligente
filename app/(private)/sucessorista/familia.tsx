@@ -44,6 +44,7 @@ import {
 } from '@/lib/partilha/familia';
 import type { CertidaoCivilLida, DivergenciaConferencia } from '@/lib/partilha/conferencia';
 import type { SucessaoCumulada } from './itcmd-view';
+import { Doutrina } from './doutrina';
 
 // Aleatório (não sequencial): o caso volta do sessionStorage e um contador
 // zerado no reload geraria ids que colidem com os herdeiros restaurados.
@@ -144,11 +145,10 @@ export function FamiliaView({
   return (
     <section>
       <h1>A família</h1>
-      <p className="subtitulo">
-        O caso começa aqui: quem faleceu, quando, sob qual regime — e quem fica. Cada campo
-        preenchido move um número no painel ao lado na hora; a qualificação alimenta a
-        escritura, o espelho do ITCMD e o cofre de documentos.
-      </p>
+      <Doutrina id="familia" resumo="Quem faleceu, quando, sob qual regime — e quem fica.">
+        Cada campo preenchido move um número no painel ao lado na hora; a qualificação
+        alimenta a escritura, o espelho do ITCMD e o cofre de documentos.
+      </Doutrina>
 
       {/* Conferidor de qualificação cruzada: folha × certidões do registro
           civil lidas pelo cofre. Divergência ALTA (vermelho) trava a

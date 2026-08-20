@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   CATALOGO_DOCUMENTOS,
+  classificarNoCatalogo,
   ROTULO_GRUPO,
   type GrupoDocumento,
 } from '@/lib/partilha/documentos';
@@ -273,18 +274,18 @@ function MiniaturaCard({
   );
 }
 
-function BotaoAnexar({ onFiles }: { onFiles: (lista: FileList) => void }) {
+function BotaoAnexar({ onFiles, discreto = false }: { onFiles: (lista: FileList) => void; discreto?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
-    <span style={{ display: 'inline-block', marginTop: 8 }}>
+    <span style={discreto ? undefined : { display: 'inline-block', marginTop: 8 }}>
       <Button
         type="button"
-        variant="outline"
+        variant={discreto ? 'ghost' : 'outline'}
         size="sm"
-        className="rounded-full"
+        className={discreto ? 'doc-linha-acao' : 'rounded-full'}
         onClick={() => ref.current?.click()}
       >
-        + anexar arquivo(s)
+        {discreto ? 'anexar' : '+ anexar arquivo(s)'}
       </Button>
       <input
         ref={ref}
@@ -392,6 +393,31 @@ export function DocumentosView({
 
   /** Card em que o arraste está pairando — realce do "solte aqui". */
   const [alvoDrop, setAlvoDrop] = useState<string | null>(null);
+
+  /* A LISTA INTEIRA é zona de drop (I3): arrastar arquivos do computador
+     sobre ela aciona o classificador local pelo nome e distribui cada um no
+     item correspondente — o mesmo classificador do cofre da etapa 0. */
+  const [dropGlobal, setDropGlobal] = useState(false);
+  const soltarNaLista = (files: File[]) => {
+    if (files.length === 0) return;
+    const novo: AnexosProcesso = { ...anexos };
+    const destinos = new Map<string, number>();
+    for (const file of files) {
+      const docId = classificarNoCatalogo('', file.name);
+      novo[docId] = [...(novo[docId] ?? []), file];
+      destinos.set(docId, (destinos.get(docId) ?? 0) + 1);
+    }
+    setAnexos(novo);
+    const resumo = [...destinos.entries()]
+      .map(([docId, n]) => {
+        const titulo = CATALOGO_DOCUMENTOS.find((d) => d.id === docId)?.titulo ?? docId;
+        return `${n}× ${titulo}`;
+      })
+      .join(' · ');
+    toast.success(`${files.length} arquivo(s) distribuído(s) pelo nome`, {
+      description: `${resumo}. Caiu no tópico errado? Arraste a miniatura para o card certo.`,
+    });
+  };
 
   /* Reenvio manual à nuvem de arquivos: tudo de uma vez ou um por um. */
   const [subindoTudo, setSubindoTudo] = useState(false);
@@ -501,10 +527,10 @@ export function DocumentosView({
     <>
       <h2>Documentos do processo</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
-        O que o ITCMD-SP e o tabelionato exigem, na ordem de montagem. Anexe conforme for
-        recebendo — o que a etapa 0 leu já chegou classificado — e, se algo caiu no tópico
-        errado, ARRASTE a miniatura para o card certo. No final, gere o processo em PDF
-        único ou individualizado.
+        O que o ITCMD-SP e o tabelionato exigem, na ordem de montagem. ARRASTE arquivos do
+        computador sobre a lista — cada um cai no item correspondente pelo nome — ou anexe
+        item a item; miniatura no tópico errado se arrasta para o certo. Passe o mouse no
+        “?” para a descrição do documento.
       </p>
       <p className="progresso num">
         {itensComAnexo} de {catalogoDoCasoTopo.length} itens com anexo · {totalAnexos} arquivo(s)
@@ -529,85 +555,128 @@ export function DocumentosView({
         </div>
       )}
 
-      {grupos.map(({ grupo, docs }) => (
-        <div key={grupo}>
-          <span className="eyebrow">{ROTULO_GRUPO[grupo]}</span>
-          <div className="check" style={{ marginBottom: 18 }}>
-            {docs.map((doc) => {
-              const arquivos = anexos[doc.id] ?? [];
-              return (
-                <div
-                  className={`check-item${alvoDrop === doc.id ? ' solta-aqui' : ''}`}
-                  key={doc.id}
-                  onDragOver={(e) => {
-                    if (!e.dataTransfer.types.includes('application/x-anexo-caso')) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    setAlvoDrop(doc.id);
-                  }}
-                  onDragLeave={() => setAlvoDrop((atual) => (atual === doc.id ? null : atual))}
-                  onDrop={(e) => {
-                    const bruto = e.dataTransfer.getData('application/x-anexo-caso');
-                    setAlvoDrop(null);
-                    if (!bruto) return;
-                    e.preventDefault();
-                    try {
-                      const { docId, indice } = JSON.parse(bruto) as { docId: string; indice: number };
-                      moverAnexo(docId, indice, doc.id);
-                    } catch {
-                      // payload de outra origem — ignora
-                    }
-                  }}
-                >
-                  <span className="prio">{arquivos.length > 0 ? '✓' : '·'}</span>
-                  <div>
-                    <h4>{doc.titulo}</h4>
-                    <p>{doc.descricao}</p>
-                    {(enviosDoCofre[doc.id] ?? []).map((envio, i) => (
-                      <p className="anexo-linha cofre" key={`cofre-${envio.herdeiro}-${i}`}>
-                        <span>
-                          🔗 <strong>{envio.herdeiro}</strong> enviou pelo cofre:{' '}
-                          <span className="num">{envio.nomeArquivo}</span>
-                          {envio.tipoDetectado ? ` · lido como ${envio.tipoDetectado}` : ''} ·{' '}
-                          {ROTULO_STATUS_PORTAL[envio.status] ?? envio.status}
-                          {envio.arquivoTamanho ? (
-                            <span className="num"> · {tamanhoLegivel(envio.arquivoTamanho)}</span>
-                          ) : (
-                            ' · arquivo com o herdeiro (peça por outro canal)'
-                          )}
+      {/* Cada item do catálogo é UMA linha (I3): chip de status legível,
+          título, "?" com a descrição e a ação discreta — os detalhes
+          (miniaturas, envios do cofre) só abrem espaço quando existem. A
+          LISTA INTEIRA aceita o arraste de arquivos do computador. */}
+      <div
+        className={`doc-drop-global${dropGlobal ? ' ativa' : ''}`}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          setDropGlobal(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setDropGlobal(false);
+        }}
+        onDrop={(e) => {
+          setDropGlobal(false);
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          soltarNaLista(Array.from(e.dataTransfer.files));
+        }}
+      >
+        {dropGlobal && (
+          <p className="doc-drop-aviso">
+            Solte aqui: cada arquivo cai no item correspondente pelo nome.
+          </p>
+        )}
+        {grupos.map(({ grupo, docs }) => {
+          const comAnexo = docs.filter((d) => (anexos[d.id] ?? []).length > 0).length;
+          return (
+            <div key={grupo}>
+              <span className="eyebrow">
+                {ROTULO_GRUPO[grupo]}{' '}
+                <span className="num contador-grupo">
+                  {comAnexo} de {docs.length}
+                </span>
+              </span>
+              <div className="doc-lista" style={{ marginBottom: 18 }}>
+                {docs.map((doc) => {
+                  const arquivos = anexos[doc.id] ?? [];
+                  const envios = enviosDoCofre[doc.id] ?? [];
+                  const tem = arquivos.length > 0;
+                  return (
+                    <div
+                      className={`doc-linha${alvoDrop === doc.id ? ' solta-aqui' : ''}`}
+                      key={doc.id}
+                      onDragOver={(e) => {
+                        if (!e.dataTransfer.types.includes('application/x-anexo-caso')) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setAlvoDrop(doc.id);
+                      }}
+                      onDragLeave={() => setAlvoDrop((atual) => (atual === doc.id ? null : atual))}
+                      onDrop={(e) => {
+                        const bruto = e.dataTransfer.getData('application/x-anexo-caso');
+                        setAlvoDrop(null);
+                        if (!bruto) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                          const { docId, indice } = JSON.parse(bruto) as { docId: string; indice: number };
+                          moverAnexo(docId, indice, doc.id);
+                        } catch {
+                          // payload de outra origem — ignora
+                        }
+                      }}
+                    >
+                      <div className="doc-linha-cabeca">
+                        <span className={`chip-doc ${tem ? 'ok' : 'falta'}`}>
+                          {tem ? `${arquivos.length} anexado(s)` : 'falta'}
                         </span>
-                        <AcoesEnvioCofre
-                          envio={envio}
-                          onAnexar={(file) => anexar(doc.id, [file])}
-                          onSalvarNaPasta={onSalvarNaPasta}
-                        />
-                      </p>
-                    ))}
-                    {arquivos.length > 0 && (
-                      <div className="doc-cards">
-                        {arquivos.map((f, i) => (
-                          <MiniaturaCard
-                            key={`${f.name}-${i}`}
-                            file={f}
-                            onAbrir={() => setPreview(f)}
-                            onRemover={() => pedirRemocao(doc.id, i, f)}
-                            onNuvem={modoDrive && onSubirNuvem ? () => void subirUm(f) : undefined}
-                            enviandoNuvem={subindoUm === f}
-                            arrasto={{ docId: doc.id, indice: i }}
-                            onFimArrasto={() => setAlvoDrop(null)}
-                          />
-                        ))}
+                        <h4 title={doc.descricao}>{doc.titulo}</h4>
+                        <span className="doc-ajuda" title={doc.descricao} aria-label={doc.descricao}>
+                          ?
+                        </span>
+                        <span className="doc-linha-fio" aria-hidden />
+                        <BotaoAnexar discreto onFiles={(lista) => anexar(doc.id, lista)} />
                       </div>
-                    )}
-                    <BotaoAnexar onFiles={(lista) => anexar(doc.id, lista)} />
-                  </div>
-                  <span />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+                      {envios.map((envio, i) => (
+                        <p className="anexo-linha cofre" key={`cofre-${envio.herdeiro}-${i}`}>
+                          <span>
+                            🔗 <strong>{envio.herdeiro}</strong> enviou pelo cofre:{' '}
+                            <span className="num">{envio.nomeArquivo}</span>
+                            {envio.tipoDetectado ? ` · lido como ${envio.tipoDetectado}` : ''} ·{' '}
+                            {ROTULO_STATUS_PORTAL[envio.status] ?? envio.status}
+                            {envio.arquivoTamanho ? (
+                              <span className="num"> · {tamanhoLegivel(envio.arquivoTamanho)}</span>
+                            ) : (
+                              ' · arquivo com o herdeiro (peça por outro canal)'
+                            )}
+                          </span>
+                          <AcoesEnvioCofre
+                            envio={envio}
+                            onAnexar={(file) => anexar(doc.id, [file])}
+                            onSalvarNaPasta={onSalvarNaPasta}
+                          />
+                        </p>
+                      ))}
+                      {tem && (
+                        <div className="doc-cards">
+                          {arquivos.map((f, i) => (
+                            <MiniaturaCard
+                              key={`${f.name}-${i}`}
+                              file={f}
+                              onAbrir={() => setPreview(f)}
+                              onRemover={() => pedirRemocao(doc.id, i, f)}
+                              onNuvem={modoDrive && onSubirNuvem ? () => void subirUm(f) : undefined}
+                              enviandoNuvem={subindoUm === f}
+                              arrasto={{ docId: doc.id, indice: i }}
+                              onFimArrasto={() => setAlvoDrop(null)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <h2>Montar o processo</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
