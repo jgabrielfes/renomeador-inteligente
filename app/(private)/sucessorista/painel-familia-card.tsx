@@ -42,8 +42,22 @@ import {
   type RitoPainel,
 } from '@/lib/portal/painel';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
+import { montarRelatorioComunicacaoPdf } from '@/lib/portal/relatorio-pdf';
+import { baixarBlob } from '@/lib/partilha/xlsx';
 
-import { encerrarPainel, estadoPainel, publicarPainel, revogarConvite } from './painel-actions';
+import {
+  encerrarPainel,
+  estadoPainel,
+  eventosDoCaso,
+  publicarPainel,
+  revogarConvite,
+} from './painel-actions';
+
+/** Preferência do navegador: o card abre recolhido depois que o usuário o
+ *  recolheu uma vez (é o primeiro bloco da Página Inicial). */
+const CHAVE_RECOLHIDO = 'sucessorista-painel-familia-recolhido';
+
+const agoraIso = () => new Date().toISOString();
 
 /** Config do painel — vive no snapshot do CASO (caso.json), por caso. */
 export interface EstadoPainelFamilia {
@@ -119,6 +133,30 @@ export function PainelFamiliaCard({
   const [confirmaEncerrar, setConfirmaEncerrar] = useState(false);
   const [revogando, setRevogando] = useState<string | null>(null);
   const [confirmaRevogar, setConfirmaRevogar] = useState<ConviteHerdeiro | null>(null);
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+  /* Recolhível (é o primeiro bloco da Página Inicial): a preferência fica no
+     navegador; a restauração é diferida para não brigar com a hidratação. */
+  const [recolhido, setRecolhido] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (localStorage.getItem(CHAVE_RECOLHIDO) === '1') setRecolhido(true);
+      } catch {
+        // modo restrito
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  const alternarRecolhido = () => {
+    setRecolhido((r) => {
+      try {
+        localStorage.setItem(CHAVE_RECOLHIDO, r ? '0' : '1');
+      } catch {
+        // modo restrito
+      }
+      return !r;
+    });
+  };
 
   const fases = fasesDoRito(rito);
   const faseAtual = fases.some((f) => f.id === estado.faseAtual)
@@ -213,6 +251,32 @@ export function PainelFamiliaCard({
     }
   };
 
+  /** Registro de atendimento em papel: prova da comunicação com a família. */
+  const gerarRelatorio = async () => {
+    setGerandoRelatorio(true);
+    try {
+      const r = await eventosDoCaso(casoId);
+      if (!r.ok || !r.eventos) {
+        toast.error('Não foi possível carregar o registro', { description: r.erro });
+        return;
+      }
+      const blob = await montarRelatorioComunicacaoPdf({
+        nomeFalecido,
+        nomeAdvogado,
+        agora: agoraIso(),
+        eventos: r.eventos,
+      });
+      baixarBlob(blob, `Relatorio de comunicacao - ${nomeFalecido || 'inventario'}.pdf`);
+      if (r.eventos.length === 0) {
+        toast.info('Ainda sem registros', {
+          description: 'Os eventos passam a ser gravados com o uso do cofre e do painel.',
+        });
+      }
+    } finally {
+      setGerandoRelatorio(false);
+    }
+  };
+
   const revogar = async (convite: ConviteHerdeiro) => {
     setRevogando(convite.token);
     try {
@@ -233,7 +297,28 @@ export function PainelFamiliaCard({
 
   return (
     <div className="cartao area-painel">
-      <span className="eyebrow">Painel da família</span>
+      {/* Cabeçalho clicável: primeiro bloco da Página Inicial, recolhível. */}
+      <button
+        type="button"
+        className="painel-familia-topo"
+        aria-expanded={!recolhido}
+        onClick={alternarRecolhido}
+      >
+        <span className="eyebrow">Painel da família</span>
+        <span className="fund">
+          {estado.publicadoEm
+            ? `publicado em ${dataCurta(estado.publicadoEm)} · ${ativos.length} convite(s)`
+            : ativos.length > 0
+              ? `${ativos.length} convite(s) — ainda não publicado`
+              : 'não publicado'}
+        </span>
+        <span className="painel-familia-seta" aria-hidden>
+          {recolhido ? '▸' : '▾'}
+        </span>
+      </button>
+
+      {!recolhido && (
+      <>
       <p className="fund" style={{ margin: '4px 0 10px' }}>
         Uma janela FILTRADA do caso para os herdeiros convidados: fase em linguagem
         simples, próximo passo e o que falta de cada um. Você decide o que aparece e
@@ -356,6 +441,15 @@ export function PainelFamiliaCard({
         <Button type="button" loading={publicando} onClick={() => void publicar()}>
           Publicar para a família
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          loading={gerandoRelatorio}
+          onClick={() => void gerarRelatorio()}
+        >
+          Relatório de comunicação (PDF)
+        </Button>
         {estado.publicadoEm && (
           <>
             <span className="fund">Publicado em {dataCurta(estado.publicadoEm)}</span>
@@ -373,9 +467,11 @@ export function PainelFamiliaCard({
       </div>
       <p className="fund" style={{ marginTop: 8 }}>
         Mudou a fase ou o próximo passo? Publique de novo — a família só vê a versão
-        publicada. Encerrar apaga do servidor o painel, os convites e os arquivos
-        enviados pelos herdeiros deste caso.
+        publicada. Encerrar apaga do servidor o painel, os convites, os arquivos
+        enviados e o registro de comunicação deste caso.
       </p>
+      </>
+      )}
 
       <Dialog open={confirmaEncerrar} onOpenChange={(o) => !encerrando && setConfirmaEncerrar(o)}>
         <DialogContent>

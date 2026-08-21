@@ -1711,9 +1711,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
+    'painel painel'
     'cofre cofre'
     'rito rito'
-    'painel painel'
     'equipe inicio'
     'arquivo novidades';
   gap: 16px;
@@ -1783,7 +1783,7 @@
 @media (max-width: 1024px) {
   .sucessorista .dash-pilha {
     grid-template-columns: 1fr;
-    grid-template-areas: 'cofre' 'rito' 'painel' 'equipe' 'inicio' 'arquivo' 'novidades';
+    grid-template-areas: 'painel' 'cofre' 'rito' 'equipe' 'inicio' 'arquivo' 'novidades';
   }
 }
 
@@ -2145,4 +2145,25 @@
   align-items: center;
   gap: 6px;
   flex: none;
+}
+
+/* Cabeçalho clicável do card "Painel da família" (primeiro bloco da Página
+   Inicial, recolhível): linha inteira alterna aberto × recolhido. */
+.sucessorista .painel-familia-topo {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.sucessorista .painel-familia-topo .fund { flex: 1; }
+.sucessorista .painel-familia-seta {
+  flex: none;
+  color: var(--bronze);
+  font-size: var(--t-sm);
 }

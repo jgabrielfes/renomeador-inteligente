@@ -21,6 +21,8 @@ import { prisma } from "@/lib/prisma";
 import { EH_SUCESSORISTA } from "@/lib/app";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
 import type { ConviteHerdeiro } from "@/lib/portal/store";
+import type { DetalheEventoPortal } from "@/lib/portal/eventos";
+import { registrarEventoPortal } from "@/lib/portal/eventos-server";
 
 // Snapshot generoso (fases + textos por herdeiro), mas com teto anti-abuso.
 const TAMANHO_MAXIMO = 1_000_000;
@@ -68,24 +70,11 @@ async function podeGerir(
   }
 }
 
-async function registrarEvento(
-  casoId: string,
-  tipo: string,
-  detalhe?: Record<string, unknown>,
-  token?: string,
-): Promise<void> {
-  try {
-    await prisma.portalEvento.create({
-      data: {
-        casoId,
-        tipo,
-        token: token ?? null,
-        detalhe: detalhe ? (JSON.parse(JSON.stringify(detalhe)) as object) : undefined,
-      },
-    });
-  } catch {
-    // registro de melhor-esforço — nunca derruba a ação principal
-  }
+/** Fase ATUAL (título leigo) do primeiro painel de um snapshot publicado. */
+function faseDoSnapshot(snapshot: unknown): string | null {
+  const paineis = Object.values((snapshot as Record<string, PainelHerdeiro> | null) ?? {});
+  const atual = paineis[0]?.fases?.find?.((f) => f.atual);
+  return atual?.titulo ?? null;
 }
 
 /**
@@ -117,7 +106,7 @@ export async function publicarPainel(dados: {
   try {
     const existente = await prisma.portalPainel.findUnique({
       where: { casoId },
-      select: { userId: true },
+      select: { userId: true, snapshot: true, visibilidade: true },
     });
     if (existente && !(await podeGerir(existente.userId, eu))) {
       return { publicado: false, erro: "Este painel foi publicado por outra conta." };
@@ -127,7 +116,20 @@ export async function publicarPainel(dados: {
       create: { casoId, userId: eu.id, snapshot, visibilidade },
       update: { snapshot, visibilidade },
     });
-    void registrarEvento(casoId, "PUBLICACAO", { convites: tokens.length });
+    void registrarEventoPortal(casoId, "PUBLICACAO", { convites: tokens.length });
+    // Marcos do caso para o histórico do herdeiro: a FASE mudou entre as
+    // publicações, e o quinhão saiu de fechado para LIBERADO.
+    const faseNova = faseDoSnapshot(snapshot);
+    const faseAnterior = existente ? faseDoSnapshot(existente.snapshot) : null;
+    if (faseNova && faseNova !== faseAnterior) {
+      void registrarEventoPortal(casoId, "FASE", { fase: faseNova });
+    }
+    const quinhaoAntes = Boolean(
+      (existente?.visibilidade as VisibilidadePainel | null)?.quinhao,
+    );
+    if (dados.visibilidade?.quinhao && !quinhaoAntes && existente) {
+      void registrarEventoPortal(casoId, "QUINHAO_LIBERADO");
+    }
     return {
       publicado: true,
       publicadoEm: linha.updatedAt.toISOString(),
@@ -189,6 +191,9 @@ export async function encerrarPainel(
     const [convites] = await prisma.$transaction([
       prisma.portalConvite.deleteMany({ where: { casoId: id } }),
       prisma.portalPainel.delete({ where: { casoId: id } }),
+      // Sem FK desde a migração registro_de_atendimento: o encerramento é
+      // quem apaga o histórico — "apagar tudo do servidor" inclui os eventos.
+      prisma.portalEvento.deleteMany({ where: { casoId: id } }),
     ]);
     return { ok: true, convitesApagados: convites.count };
   } catch {
@@ -241,9 +246,64 @@ export async function revogarConvite(
     } else {
       await atualizaConvite;
     }
-    if (painel) void registrarEvento(linha.casoId, "CONVITE_REVOGADO", undefined, t);
+    void registrarEventoPortal(
+      linha.casoId,
+      "CONVITE_REVOGADO",
+      { herdeiro: convite.nomeHerdeiro },
+      t,
+    );
     return { ok: true, convite };
   } catch {
     return { ok: false, erro: "Falha ao revogar — tente novamente." };
+  }
+}
+
+export interface EventoDoCaso {
+  quando: string;
+  tipo: string;
+  token: string | null;
+  detalhe: DetalheEventoPortal | null;
+}
+
+/**
+ * Registro de atendimento completo do caso — alimenta o "Relatório de
+ * comunicação com a família" (PDF montado no navegador do advogado).
+ * Autorização: dono do espelho (ou colega de equipe); sem espelho publicado,
+ * qualquer conta logada do site — a mesma régua da emissão de convites.
+ */
+export async function eventosDoCaso(
+  casoId: string,
+): Promise<{ ok: boolean; eventos?: EventoDoCaso[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+
+  try {
+    const painel = await prisma.portalPainel.findUnique({
+      where: { casoId: id },
+      select: { userId: true },
+    });
+    if (painel && !(await podeGerir(painel.userId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const linhas = await prisma.portalEvento.findMany({
+      where: { casoId: id },
+      orderBy: { createdAt: "asc" },
+      take: 500,
+      select: { createdAt: true, tipo: true, token: true, detalhe: true },
+    });
+    return {
+      ok: true,
+      eventos: linhas.map((l) => ({
+        quando: l.createdAt.toISOString(),
+        tipo: l.tipo,
+        token: l.token,
+        detalhe: (l.detalhe as DetalheEventoPortal | null) ?? null,
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar o registro — tente novamente." };
   }
 }

@@ -8,6 +8,12 @@ import { store } from '@/lib/portal/store-prisma';
 import { registrarPortal } from '@/app/(private)/sucessorista/actions';
 import { foraDaPlataforma } from '@/lib/app';
 import { prisma } from '@/lib/prisma';
+import {
+  textoLeigoDoEvento,
+  TIPOS_VISIVEIS_AO_HERDEIRO,
+  type DetalheEventoPortal,
+} from '@/lib/portal/eventos';
+import { registrarEventoPortal } from '@/lib/portal/eventos-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,9 +37,20 @@ export async function GET(req: Request, ctx: Ctx) {
   const visita = new URL(req.url).searchParams.get('visita') === '1';
   if (visita) {
     const agora = new Date().toISOString();
+    const primeiraVez = !convite.primeiroAcessoEm;
     convite.primeiroAcessoEm = convite.primeiroAcessoEm ?? agora;
     convite.ultimoAcessoEm = agora;
     await store.marcarAcesso(token, convite.primeiroAcessoEm, agora);
+    // Registro de atendimento: só o PRIMEIRO acesso vira evento (o último
+    // acesso vive no convite; um evento por visita inundaria o relatório).
+    if (primeiraVez) {
+      void registrarEventoPortal(
+        convite.casoId,
+        'ACESSO',
+        { herdeiro: convite.nomeHerdeiro },
+        token,
+      );
+    }
   }
 
   // Painel do Cliente publicado para o caso: devolve SÓ o recorte deste
@@ -48,7 +65,31 @@ export async function GET(req: Request, ctx: Ctx) {
         where: { casoId: convite.casoId },
         select: { snapshot: true },
       });
-      painel = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
+      const recorte = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
+      if (recorte && typeof recorte === 'object') {
+        // "Atualizações do caso" AO VIVO: eventos do caso inteiro (fase) +
+        // os DESTE token — nunca os dos outros herdeiros. Texto leigo; o que
+        // não tem tradução para o herdeiro fica de fora.
+        const eventos = await prisma.portalEvento.findMany({
+          where: {
+            casoId: convite.casoId,
+            tipo: { in: TIPOS_VISIVEIS_AO_HERDEIRO },
+            OR: [{ token: null }, { token }],
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 12,
+          select: { tipo: true, detalhe: true, createdAt: true },
+        });
+        const historico = eventos
+          .map((e) => ({
+            data: e.createdAt.toISOString().slice(0, 10),
+            texto: textoLeigoDoEvento(e.tipo, (e.detalhe as DetalheEventoPortal | null) ?? null),
+          }))
+          .filter((e): e is { data: string; texto: string } => e.texto !== null);
+        painel = { ...recorte, historico };
+      } else {
+        painel = recorte;
+      }
     } catch {
       painel = null;
     }
@@ -97,6 +138,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (body?.confirmarEnvio === true) {
     const atualizado = await store.confirmarEnvio(token);
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'CONFIRMACAO',
+      { herdeiro: atualizado.nomeHerdeiro },
+      token,
+    );
     void registrarPortal({
       casoId: atualizado.casoId,
       etapa: 'CONFIRMACAO',
@@ -115,6 +162,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
     const atualizado = await store.salvarQualificacao(token, qualificacao);
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'DADOS_RECEBIDOS',
+      { herdeiro: atualizado.nomeHerdeiro },
+      token,
+    );
     // Telemetria: o herdeiro respondeu a ficha. Só a CONTAGEM de campos —
     // os valores são CPF/RG/endereço e nunca entram. Evento sem usuário: o
     // herdeiro convidado não tem login (o casoId amarra ao caso).
@@ -141,6 +194,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
       descricao: String(body.novoPedido.descricao ?? '').slice(0, 400),
     });
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'PENDENCIA',
+      { herdeiro: atualizado.nomeHerdeiro, documento: titulo },
+      token,
+    );
     return Response.json(atualizado);
   }
 
@@ -161,6 +220,33 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const atualizado = await store.atualizarDocumento(token, body.docId, patch);
   if (!atualizado) return Response.json({ erro: 'Convite ou documento não encontrado' }, { status: 404 });
+  // Registro de atendimento: recebido/aprovado/devolvido, com o título do
+  // pedido e — na recusa — o motivo que o herdeiro leu.
+  if (patch.status) {
+    const pedido = atualizado.documentos.find((d) => d.id === body.docId);
+    const tipoEvento =
+      patch.status === 'ENVIADO'
+        ? ('DOC_RECEBIDO' as const)
+        : patch.status === 'APROVADO'
+          ? ('DOC_ACEITO' as const)
+          : patch.status === 'REJEITADO'
+            ? ('DOC_RECUSADO' as const)
+            : null;
+    if (tipoEvento) {
+      void registrarEventoPortal(
+        atualizado.casoId,
+        tipoEvento,
+        {
+          herdeiro: atualizado.nomeHerdeiro,
+          documento: pedido?.titulo,
+          ...(tipoEvento === 'DOC_RECUSADO' && patch.observacaoAdvogado
+            ? { motivo: patch.observacaoAdvogado.slice(0, 300) }
+            : {}),
+        },
+        token,
+      );
+    }
+  }
   if (patch.status === 'ENVIADO') {
     // Documento anexado pelo herdeiro: a TAG do tipo detectado é segura; o
     // nome do arquivo, não — ele fica de fora.

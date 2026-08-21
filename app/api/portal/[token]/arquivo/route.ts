@@ -172,6 +172,18 @@ export async function POST(req: Request, ctx: Ctx) {
   });
   if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
 
+  // Registro de atendimento: documento REAL recebido pelo cofre.
+  {
+    const { registrarEventoPortal } = await import('@/lib/portal/eventos-server');
+    const pedido = atualizado.documentos.find((d) => d.id === docId);
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'DOC_RECEBIDO',
+      { herdeiro: atualizado.nomeHerdeiro, documento: pedido?.titulo },
+      token,
+    );
+  }
+
   // Telemetria: mesma da rota PATCH — tags e contagens, nunca o conteúdo
   // nem o nome do arquivo.
   void registrarPortal({

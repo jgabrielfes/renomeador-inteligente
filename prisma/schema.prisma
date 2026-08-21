@@ -186,24 +186,25 @@ model PortalPainel {
   visibilidade Json
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  eventos      PortalEvento[]
 
   @@map("portal_paineis")
 }
 
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
-// advogado (relatório de comunicação com a família). Rótulos e contagens,
-// nunca conteúdo de documento.
+// advogado (relatório de comunicação com a família). SEM FK para o painel:
+// convite e acesso acontecem ANTES de publicar; quem apaga os eventos é o
+// "Encerrar compartilhamento" (deleteMany explícito). Rótulos, nomes de
+// herdeiro e motivos de recusa (dado do PRÓPRIO escritório) — nunca
+// conteúdo de documento e NUNCA em /admin.
 model PortalEvento {
-  id        String       @id @default(cuid())
+  id        String   @id @default(cuid())
   casoId    String
-  painel    PortalPainel @relation(fields: [casoId], references: [casoId], onDelete: Cascade)
   // Convite relacionado, quando o evento é de um herdeiro específico.
   token     String?
   tipo      String
   detalhe   Json?
-  createdAt DateTime     @default(now())
+  createdAt DateTime @default(now())
 
   @@index([casoId, createdAt])
   @@map("portal_eventos")
