@@ -131,6 +131,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [apagando, setApagando] = useState<string | null>(null);
   /** Arquivos anexados nesta visita, por documento — permitem a lupa local. */
   const [arquivos, setArquivos] = useState<Record<string, File>>({});
   const [preview, setPreview] = useState<File | null>(null);
@@ -312,6 +313,25 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     });
     if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
     setAnalisando(null);
+  };
+
+  /** Apaga um envio SEU (mandou errado, quer trocar) — some do caso na hora.
+   *  Pedido já aprovado não se apaga; fale com o escritório. */
+  const apagarArquivo = async (arquivoId: string) => {
+    setApagando(arquivoId);
+    setDicaQualidade(null);
+    try {
+      const r = await fetch(`/api/portal/${token}/arquivo?arquivo=${encodeURIComponent(arquivoId)}`, {
+        method: 'DELETE',
+      });
+      if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
+      else {
+        const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+        setDicaQualidade(corpo?.erro ?? 'Não foi possível apagar agora — tente de novo.');
+      }
+    } finally {
+      setApagando(null);
+    }
   };
 
   if (erro) {
@@ -570,39 +590,75 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               {d.status === 'REJEITADO' && d.observacaoAdvogado && (
                 <p className="alerta">Advogado: {d.observacaoAdvogado}</p>
               )}
-              {(d.status === 'PENDENTE' || d.status === 'REJEITADO') && (
-                /* Ordem na leitura = ordem da ação: primeiro escolher o
-                   arquivo, e o envio acontece na sequência (pedido do
-                   escritório — o rótulo vem DEPOIS do seletor). */
-                <label className="campo" style={{ marginTop: 8, maxWidth: 340 }}>
-                  <input
-                    type="file"
-                    disabled={analisando !== null}
-                    onChange={(e: Ev) => {
-                      const f = e.target.files?.[0];
-                      if (f) void enviarDocumento(d.id, f);
-                    }}
-                  />
-                  Enviar arquivo
-                </label>
-              )}
-              {d.nomeArquivo && d.status !== 'PENDENTE' && (
-                <p className="fund">
-                  Arquivo: {d.nomeArquivo}
-                  {d.tipoDetectado ? ` · lido como ${d.tipoDetectado}` : ''}
-                  {arquivos[d.id] && (
-                    <button
-                      type="button"
-                      className="lupa"
-                      title={`Pré-visualizar ${d.nomeArquivo}`}
-                      aria-label={`Pré-visualizar ${d.nomeArquivo}`}
-                      onClick={() => setPreview(arquivos[d.id])}
-                    >
-                      🔍
-                    </button>
-                  )}
-                </p>
-              )}
+              {(() => {
+                /* Envios REAIS deste pedido (frente/verso/correlatos). O
+                   registro antigo de arquivo único vira uma lista de um. */
+                const enviados =
+                  d.arquivos ??
+                  (d.arquivoId && d.nomeArquivo
+                    ? [
+                        {
+                          arquivoId: d.arquivoId,
+                          nome: d.nomeArquivo,
+                          tamanho: d.arquivoTamanho ?? 0,
+                          tipoDetectado: d.tipoDetectado,
+                        },
+                      ]
+                    : []);
+                return (
+                  <>
+                    {enviados.map((a) => (
+                      <p className="fund" key={a.arquivoId}>
+                        Enviado: {a.nome}
+                        {a.tipoDetectado ? ` · lido como ${a.tipoDetectado}` : ''}
+                        {arquivos[d.id]?.name === a.nome && (
+                          <button
+                            type="button"
+                            className="lupa"
+                            title={`Pré-visualizar ${a.nome}`}
+                            aria-label={`Pré-visualizar ${a.nome}`}
+                            onClick={() => setPreview(arquivos[d.id])}
+                          >
+                            🔍
+                          </button>
+                        )}
+                        {d.status !== 'APROVADO' && (
+                          <button
+                            type="button"
+                            className="apagar-arquivo"
+                            disabled={apagando !== null}
+                            onClick={() => void apagarArquivo(a.arquivoId)}
+                          >
+                            {apagando === a.arquivoId ? 'apagando…' : 'apagar arquivo'}
+                          </button>
+                        )}
+                      </p>
+                    ))}
+                    {enviados.length === 0 && d.nomeArquivo && d.status !== 'PENDENTE' && (
+                      <p className="fund">
+                        Arquivo: {d.nomeArquivo}
+                        {d.tipoDetectado ? ` · lido como ${d.tipoDetectado}` : ''}
+                      </p>
+                    )}
+                    {/* O seletor fica SEMPRE disponível fora do aprovado:
+                        primeiro envio, o verso ou um correlato — escolher o
+                        arquivo já dispara o envio. */}
+                    {d.status !== 'APROVADO' && (
+                      <label className="campo" style={{ marginTop: 8, maxWidth: 340 }}>
+                        <input
+                          type="file"
+                          aria-label={`Escolher arquivo para ${d.titulo}`}
+                          disabled={analisando !== null}
+                          onChange={(e: Ev) => {
+                            const f = e.target.files?.[0];
+                            if (f) void enviarDocumento(d.id, f);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             <span />
           </div>

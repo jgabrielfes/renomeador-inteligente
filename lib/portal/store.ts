@@ -8,6 +8,17 @@
  * O upload real de arquivos pluga em Vercel Blob no mesmo ponto.
  */
 
+/** Um arquivo REAL guardado pelo portal para um pedido (frente, verso,
+ *  correlatos — um pedido aceita VÁRIOS). */
+export interface ArquivoDoPedido {
+  arquivoId: string;
+  nome: string;
+  tamanho: number;
+  tipoDetectado?: string;
+  emitidaEm?: string;
+  enviadoEm?: string;
+}
+
 export interface DocumentoPedido {
   id: string;
   titulo: string;
@@ -22,9 +33,13 @@ export interface DocumentoPedido {
    * ARQUIVO real recebido pelo portal (tabela `portal_arquivos`): id para o
    * advogado baixar/anexar ao caso. Ausente = só o registro chegou (arquivo
    * grande demais ou falha no envio — o herdeiro entrega por outro canal).
+   * Estes campos "soltos" espelham o ÚLTIMO envio (compatibilidade); a
+   * lista completa é `arquivos`.
    */
   arquivoId?: string;
   arquivoTamanho?: number;
+  /** TODOS os arquivos guardados deste pedido (frente/verso/correlatos). */
+  arquivos?: ArquivoDoPedido[];
   /** Data de EMISSÃO lida do documento no navegador do herdeiro (ISO
    *  yyyy-mm-dd) — em certidão, mais de 90 dias acende o alerta de validade
    *  nos dois lados. Ausente = não deu para validar (só "aguardando

@@ -585,17 +585,33 @@ export function DocumentosView({
       const docId =
         CATALOGO_DO_PEDIDO_PORTAL[d.id] ??
         (d.id.startsWith('caso-') ? d.id.slice(5) : 'outros');
-      (enviosDoCofre[docId] ??= []).push({
-        herdeiro: convite.nomeHerdeiro,
-        token: convite.token,
-        pedidoId: d.id,
-        nomeArquivo: d.nomeArquivo,
-        tipoDetectado: d.tipoDetectado,
-        status: d.status,
-        arquivoId: d.arquivoId,
-        arquivoTamanho: d.arquivoTamanho,
-        emitidaEm: d.emitidaEm,
-      });
+      // Um pedido aceita VÁRIOS arquivos (frente/verso/correlatos): uma
+      // linha por arquivo guardado; registro antigo sem lista vira uma só.
+      const guardados =
+        d.arquivos && d.arquivos.length > 0
+          ? d.arquivos
+          : [
+              {
+                arquivoId: d.arquivoId ?? '',
+                nome: d.nomeArquivo,
+                tamanho: d.arquivoTamanho ?? 0,
+                tipoDetectado: d.tipoDetectado,
+                emitidaEm: d.emitidaEm,
+              },
+            ];
+      for (const a of guardados) {
+        (enviosDoCofre[docId] ??= []).push({
+          herdeiro: convite.nomeHerdeiro,
+          token: convite.token,
+          pedidoId: d.id,
+          nomeArquivo: a.nome,
+          tipoDetectado: a.tipoDetectado,
+          status: d.status,
+          arquivoId: a.arquivoId || undefined,
+          arquivoTamanho: a.tamanho || undefined,
+          emitidaEm: a.emitidaEm,
+        });
+      }
     }
   }
 
@@ -873,6 +889,13 @@ export function DocumentosView({
                       </div>
                       {envios.map((envio, i) => {
                         const idade = diasDesdeEmissao(envio.emitidaEm);
+                        // Aprovar/recusar age no PEDIDO inteiro: com vários
+                        // arquivos do mesmo pedido, só a última linha decide.
+                        const decideAqui =
+                          onConviteAtualizado !== undefined &&
+                          !envios
+                            .slice(i + 1)
+                            .some((x) => x.token === envio.token && x.pedidoId === envio.pedidoId);
                         return (
                         <p className="anexo-linha cofre" key={`cofre-${envio.herdeiro}-${i}`}>
                           <span>
@@ -898,7 +921,7 @@ export function DocumentosView({
                             onAnexar={(file) => anexar(doc.id, [file])}
                             onSalvarNaPasta={onSalvarNaPasta}
                           />
-                          {onConviteAtualizado && (
+                          {onConviteAtualizado && decideAqui && (
                             <AcoesConferencia envio={envio} onConviteAtualizado={onConviteAtualizado} />
                           )}
                         </p>

@@ -2167,3 +2167,15 @@
   color: var(--bronze);
   font-size: var(--t-sm);
 }
+
+/* Portal: "apagar arquivo" ao lado de cada envio — texto discreto em lacre. */
+.sucessorista .apagar-arquivo {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 10px;
+  font-size: var(--t-xs);
+  color: var(--lacre);
+  text-decoration: underline;
+}
+.sucessorista .apagar-arquivo:disabled { opacity: 0.6; }

@@ -17,6 +17,7 @@ export type TipoEventoPortal =
   | 'DOC_RECEBIDO'
   | 'DOC_ACEITO'
   | 'DOC_RECUSADO'
+  | 'DOC_APAGADO'
   | 'PENDENCIA'
   | 'PUBLICACAO'
   | 'FASE'
@@ -85,6 +86,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   DOC_RECEBIDO: 'Documento recebido',
   DOC_ACEITO: 'Documento aprovado',
   DOC_RECUSADO: 'Documento devolvido para reenvio',
+  DOC_APAGADO: 'Arquivo apagado pelo herdeiro',
   PENDENCIA: 'Pendência atribuída pelo cofre',
   PUBLICACAO: 'Painel publicado para a família',
   FASE: 'Fase do inventário alterada',
