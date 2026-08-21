@@ -673,6 +673,10 @@ export default function SucessoristaClient({
 
   /* --- persistência local: CaseStore (pasta do processo ou portátil) --- */
   const [estadoPainel, setEstadoPainel] = useState<EstadoPainel>('carregando');
+  const estadoPainelRef = useRef<EstadoPainel>('carregando');
+  useEffect(() => {
+    estadoPainelRef.current = estadoPainel;
+  }, [estadoPainel]);
   const [store, setStore] = useState<CaseStore | null>(null);
   const [resumos, setResumos] = useState<ResumoCaso[] | null>(null);
   /* --- nuvem de casos: espelho do caso.json no servidor ---
@@ -720,14 +724,25 @@ export default function SucessoristaClient({
     casoAbertoRef.current = casoAberto;
   }, [casoAberto]);
 
+  /** Chegada por /caso/<id> ainda em restauração: segura a URL e mostra a
+   *  tela "reabrindo" no lugar do painel Meus casos — um F5 no meio da
+   *  restauração NÃO pode regredir para a lista. */
+  const [restaurandoCaso, setRestaurandoCaso] = useState(() => Boolean(casoInicialId));
+  const restaurandoCasoRef = useRef(restaurandoCaso);
+  useEffect(() => {
+    restaurandoCasoRef.current = restaurandoCaso;
+  }, [restaurandoCaso]);
+
   /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
      favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
-     volta à raiz (o ?etapa= antigo segue aceito na chegada). */
+     volta à raiz (o ?etapa= antigo segue aceito na chegada) — mas NUNCA
+     durante a restauração: apagar /caso/<id> antes de o caso abrir fazia o
+     F5 seguinte cair em Meus casos. */
   useEffect(() => {
     const id = casoAberto?.cabecalho.caseId;
     if (id) {
       window.history.replaceState(null, '', `/caso/${encodeURIComponent(id)}/${abaProc}`);
-    } else if (window.location.pathname.startsWith('/caso/')) {
+    } else if (!restaurandoCasoRef.current && window.location.pathname.startsWith('/caso/')) {
       window.history.replaceState(null, '', '/');
     }
   }, [casoAberto, abaProc]);
@@ -1075,7 +1090,7 @@ export default function SucessoristaClient({
     }
   };
 
-  const abrirCasoDoPainel = async (caseId: string) => {
+  const abrirCasoDoPainel = async (caseId: string): Promise<boolean> => {
     // Sem store local (outra máquina, pasta não configurada) o caso ainda
     // abre — direto da nuvem.
     const s = storeRef.current;
@@ -1112,13 +1127,13 @@ export default function SucessoristaClient({
         baseAtualizadoEmRef.current = daNuvem.cabecalho.atualizadoEm;
         setCasoAberto({ cabecalho: daNuvem.cabecalho });
         setSalvamento({ estado: 'salvo', quando: daNuvem.cabecalho.atualizadoEm });
-        return;
+        return true;
       }
     }
 
     if (!caso) {
       toast.error('Não consegui abrir o caso — a pasta foi movida?');
-      return;
+      return false;
     }
     if (caso.dados) aplicarSnapshot(caso.dados as CasoSalvo);
     manifestoRef.current = caso.manifesto;
@@ -1126,6 +1141,7 @@ export default function SucessoristaClient({
     setCasoAberto({ cabecalho: caso.cabecalho });
     setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
     if (s) void religarDocumentos(s, caso);
+    return true;
   };
 
   /* Chegada por /caso/<id>: abre o caso assim que o store local fica pronto
@@ -1137,10 +1153,21 @@ export default function SucessoristaClient({
     let vivo = true;
     const tentar = async (restantes: number) => {
       if (!vivo || casoInicialTratadoRef.current) return;
-      if (storeRef.current || restantes <= 0) {
+      // Pasta aguardando permissão (ou sem raiz): o store local NÃO vem sem
+      // um clique do usuário — não adianta esperar; o caso abre da nuvem.
+      const semStoreLocal =
+        estadoPainelRef.current === 'pasta-bloqueada' || estadoPainelRef.current === 'sem-raiz';
+      if (storeRef.current || semStoreLocal || restantes <= 0) {
         casoInicialTratadoRef.current = true;
-        await abrirCasoDoPainel(casoInicialId);
-        if (vivo && !casoAbertoRef.current) setCasoNaoEncontrado(true);
+        let abriu = false;
+        try {
+          abriu = await abrirCasoDoPainel(casoInicialId);
+        } finally {
+          if (vivo) {
+            setRestaurandoCaso(false);
+            if (!abriu) setCasoNaoEncontrado(true);
+          }
+        }
         return;
       }
       setTimeout(() => void tentar(restantes - 1), 300);
@@ -3501,6 +3528,16 @@ export default function SucessoristaClient({
         >
           Ir para Meus casos
         </Button>
+      </div>
+    ) : casoAberto === null && restaurandoCaso ? (
+      /* F5 dentro do caso: a folha está sendo reaberta — mostrar o painel
+         Meus casos aqui daria a impressão de ter "voltado" para a lista. */
+      <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
+        {menu}
+        <h1>Reabrindo o caso…</h1>
+        <p className="subtitulo">
+          Restaurando a folha e os documentos deste inventário. Um instante.
+        </p>
       </div>
     ) : casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
