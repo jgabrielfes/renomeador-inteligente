@@ -571,8 +571,10 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                 <p className="alerta">Advogado: {d.observacaoAdvogado}</p>
               )}
               {(d.status === 'PENDENTE' || d.status === 'REJEITADO') && (
+                /* Ordem na leitura = ordem da ação: primeiro escolher o
+                   arquivo, e o envio acontece na sequência (pedido do
+                   escritório — o rótulo vem DEPOIS do seletor). */
                 <label className="campo" style={{ marginTop: 8, maxWidth: 340 }}>
-                  Enviar arquivo
                   <input
                     type="file"
                     disabled={analisando !== null}
@@ -581,6 +583,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                       if (f) void enviarDocumento(d.id, f);
                     }}
                   />
+                  Enviar arquivo
                 </label>
               )}
               {d.nomeArquivo && d.status !== 'PENDENTE' && (
