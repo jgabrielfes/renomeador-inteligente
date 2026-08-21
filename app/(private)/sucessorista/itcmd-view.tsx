@@ -10,6 +10,8 @@
  * módulo — o painel do caso mostra os MESMOS números que esta aba detalha.
  */
 
+import { Fragment } from 'react';
+
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateInput } from '@/components/date-input';
@@ -46,6 +48,7 @@ import { Pilula } from './familia';
 import { montarIcs, linkGoogleAgenda, prazosDoItcmd } from '@/lib/partilha/calendario';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { Doutrina } from './doutrina';
+import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -199,28 +202,22 @@ export function ItcmdView({
         <>
           {/* ---------- espelho da declaração ---------- */}
           <h2>Espelho da declaração</h2>
-          <div className="espelho">
-            <div className="cabeca">
-              <span>De cujus</span>
-              <span />
-              <span />
-            </div>
-            <div className="lanc">
-              <span className="nome">{falecido.nome || '— informe no item I'}</span>
-              <span className="fracao num">{falecido.cpf || 'CPF —'}</span>
-              <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>
-                óbito {formatarData(falecido.dataObito)}
-              </span>
-            </div>
-            <div className="fund">
+          <Espelho colunas={['De cujus', '', '']}>
+            <LinhaEspelho
+              nome={falecido.nome || '— informe no item I'}
+              meio={falecido.cpf || 'CPF —'}
+              valor={<>óbito {formatarData(falecido.dataObito)}</>}
+              valorStyle={{ fontSize: 'var(--t-base)' }}
+            />
+            <FundEspelho>
               {falecido.ultimoDomicilio ? `Último domicílio: ${falecido.ultimoDomicilio} · ` : ''}
               {temSobrevivente
                 ? `deixa ${nomeSobrev || 'cônjuge/companheiro(a)'}${
                     falecido.dataCasamento ? ` (casamento/união desde ${formatarData(falecido.dataCasamento)})` : ''
                   }`
                 : 'não deixa cônjuge ou companheiro(a)'}
-            </div>
-          </div>
+            </FundEspelho>
+          </Espelho>
 
           <h2>Interessados e perguntas do sistema</h2>
           {perguntasPendentes && (
@@ -257,58 +254,49 @@ export function ItcmdView({
           </div>
 
           <h2>Bens e transmissão</h2>
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Bem declarado</span>
-              <span>Natureza</span>
-              <span style={{ textAlign: 'right' }}>Valor no óbito</span>
-            </div>
+          <Espelho colunas={['Bem declarado', 'Natureza', 'Valor no óbito']}>
             {bens.map((b) => (
-              <div className="lanc" key={b.id}>
-                <span className="nome">{b.descricao}</span>
-                <span className="fracao">{b.natureza === 'COMUM' ? 'comum' : 'particular'}</span>
-                <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(b.valor)}</span>
-              </div>
+              <LinhaEspelho
+                key={b.id}
+                nome={b.descricao}
+                meio={b.natureza === 'COMUM' ? 'comum' : 'particular'}
+                valor={brl(b.valor)}
+                valorStyle={{ fontSize: 'var(--t-base)' }}
+              />
             ))}
-            <div className="lanc">
-              <span className="nome">Total do acervo</span>
-              <span />
-              <span className="valor num">{brl(resultado.acervo.massaPartilhavel)}</span>
-            </div>
+            <LinhaEspelho nome="Total do acervo" valor={brl(resultado.acervo.massaPartilhavel)} />
             {resultado.meacao && (
               <>
-                <div className="lanc">
-                  <span className="nome">(−) Meação de {resultado.meacao.beneficiario}</span>
-                  <span className="fracao">não é herança — fora da base</span>
-                  <span className="valor num">{brl(resultado.meacao.valor)}</span>
-                </div>
-                <div className="fund">{resultado.meacao.fundamento} — a meação não é transmissão causa mortis.</div>
+                <LinhaEspelho
+                  nome={<>(−) Meação de {resultado.meacao.beneficiario}</>}
+                  meio="não é herança — fora da base"
+                  valor={brl(resultado.meacao.valor)}
+                />
+                <FundEspelho>
+                  {resultado.meacao.fundamento} — a meação não é transmissão causa mortis.
+                </FundEspelho>
               </>
             )}
-            <div className="lanc">
-              <span className="nome">Base de cálculo (herança transmitida)</span>
-              <span className="fracao">art. 9º — valor venal (mercado) na data do óbito</span>
-              <span className="valor num">{brl(resultado.heranca.total)}</span>
-            </div>
+            <LinhaEspelho
+              nome="Base de cálculo (herança transmitida)"
+              meio="art. 9º — valor venal (mercado) na data do óbito"
+              valor={brl(resultado.heranca.total)}
+            />
             {isencoes && isencoes.valorIsento > 0 && (
               <>
-                <div className="lanc">
-                  <span className="nome">(−) Isenções do art. 6º</span>
-                  <span className="fracao">aplicadas pela leitura automática</span>
-                  <span className="valor num" style={{ color: 'var(--verde-registro)' }}>
-                    {brl(isencoes.valorIsento)}
-                  </span>
-                </div>
-                <div className="lanc">
-                  <span className="nome">Base tributável líquida</span>
-                  <span />
-                  <span className="valor num">
-                    {brl(Math.max(0, Number(resultado.heranca.total) - isencoes.valorIsento))}
-                  </span>
-                </div>
+                <LinhaEspelho
+                  nome="(−) Isenções do art. 6º"
+                  meio="aplicadas pela leitura automática"
+                  valor={brl(isencoes.valorIsento)}
+                  valorStyle={{ color: 'var(--verde-registro)' }}
+                />
+                <LinhaEspelho
+                  nome="Base tributável líquida"
+                  valor={brl(Math.max(0, Number(resultado.heranca.total) - isencoes.valorIsento))}
+                />
               </>
             )}
-          </div>
+          </Espelho>
 
           <h2>Isenções (art. 6º da Lei 10.705/2000)</h2>
 
@@ -472,44 +460,39 @@ export function ItcmdView({
               </p>
             )}
 
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Parcela</span>
-              <span>Fundamento</span>
-              <span style={{ textAlign: 'right' }}>Valor</span>
-            </div>
-            <div className="lanc">
-              <span className="nome">Base atualizada pela UFESP</span>
-              <span className="fracao">art. 15</span>
-              <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(provisao.baseAtualizada)}</span>
-            </div>
-            <div className="fund">
+          <Espelho colunas={['Parcela', 'Fundamento', 'Valor']}>
+            <LinhaEspelho
+              nome="Base atualizada pela UFESP"
+              meio="art. 15"
+              valor={brl(provisao.baseAtualizada)}
+              valorStyle={{ fontSize: 'var(--t-base)' }}
+            />
+            <FundEspelho>
               {provisao.baseEmUfesps.toFixed(2)} UFESPs (UFESP do óbito {brl(provisao.ufespObito)} →
               {' '}{brl(provisao.ufespAtualizacao)} do exercício do vencimento, {provisao.anoAtualizacao}) ·
               alíquota de {ALIQUOTA_ITCMD_SP * 100}% (art. 16). A UFESP atualiza SÓ até o vencimento;
               depois a recomposição é dos juros Selic (art. 20).
-            </div>
+            </FundEspelho>
             {provisao.parcelas.map((p) => (
-              <div key={p.id}>
-                <div className="lanc">
-                  <span className="nome">{p.rotulo}</span>
-                  <span className="fracao">{p.fundamento.replace('Lei 10.705/2000, ', '')}</span>
-                  <span
-                    className="valor num"
-                    style={{ color: p.valor < 0 ? 'var(--verde-registro)' : undefined, fontSize: 'var(--t-base)' }}
-                  >
-                    {p.valor < 0 ? `− ${brl(-p.valor)}` : brl(p.valor)}
-                  </span>
-                </div>
-                {p.detalhe && <div className="fund">{p.detalhe}</div>}
-              </div>
+              <Fragment key={p.id}>
+                <LinhaEspelho
+                  nome={p.rotulo}
+                  meio={p.fundamento.replace('Lei 10.705/2000, ', '')}
+                  valor={p.valor < 0 ? `− ${brl(-p.valor)}` : brl(p.valor)}
+                  valorStyle={{
+                    color: p.valor < 0 ? 'var(--verde-registro)' : undefined,
+                    fontSize: 'var(--t-base)',
+                  }}
+                />
+                {p.detalhe && <FundEspelho>{p.detalhe}</FundEspelho>}
+              </Fragment>
             ))}
-            <div className="lanc">
-              <span className="nome">Provisão total em {formatarData(hoje)}</span>
-              <span />
-              <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>{brl(provisao.total)}</span>
-            </div>
-          </div>
+            <LinhaEspelho
+              nome={<>Provisão total em {formatarData(hoje)}</>}
+              valor={brl(provisao.total)}
+              valorStyle={{ fontSize: 'var(--t-lg)' }}
+            />
+          </Espelho>
 
           <div className="grade c2" style={{ marginTop: 14 }}>
             <div className="nota">
@@ -604,12 +587,10 @@ export function ItcmdView({
               </Select>
             </label>
           </div>
-          <div className="espelho" style={{ marginTop: 12 }}>
-            <div className="cabeca">
-              <span>Faixa do quinhão (UFESPs)</span>
-              <span>Em reais (UFESP atual)</span>
-              <span style={{ textAlign: 'right' }}>Alíquota %</span>
-            </div>
+          <Espelho
+            colunas={['Faixa do quinhão (UFESPs)', 'Em reais (UFESP atual)', 'Alíquota %']}
+            style={{ marginTop: 12 }}
+          >
             {fiscal.faixas.map((f, i) => {
               const de = i === 0 ? 0 : fiscal.faixas[i - 1].ateUfesps ?? 0;
               const rotulo =
@@ -621,10 +602,12 @@ export function ItcmdView({
                   ? `acima de ${brl(de * provisao.ufespReferencia)}`
                   : `até ${brl(f.ateUfesps * provisao.ufespReferencia)}`;
               return (
-                <div className="lanc" key={i}>
-                  <span className="nome" style={{ fontWeight: 400 }}>{rotulo}</span>
-                  <span className="fracao num">{reais}</span>
-                  <span className="valor" style={{ fontSize: 'var(--t-base)' }}>
+                <LinhaEspelho
+                  key={i}
+                  nome={rotulo}
+                  nomeStyle={{ fontWeight: 400 }}
+                  meio={reais}
+                  valor={
                     <Input
                       inputMode="decimal"
                       className="num ml-auto"
@@ -641,21 +624,17 @@ export function ItcmdView({
                         });
                       }}
                     />
-                  </span>
-                </div>
+                  }
+                  valorStyle={{ fontSize: 'var(--t-base)' }}
+                />
               );
             })}
-          </div>
+          </Espelho>
 
           <h3 style={{ margin: '18px 0 6px', fontSize: 'var(--t-base)' }}>
             Comparativo por herdeiro — hoje (4%) × tabela progressiva
           </h3>
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Herdeiro</span>
-              <span>Hoje (4%)</span>
-              <span style={{ textAlign: 'right' }}>Progressivo (diferença)</span>
-            </div>
+          <Espelho colunas={['Herdeiro', 'Hoje (4%)', 'Progressivo (diferença)']}>
             {(() => {
               const herancaBruta = Number(resultado.heranca.total);
               const baseLiquida = Math.max(0, herancaBruta - (isencoes?.valorIsento ?? 0));
@@ -672,42 +651,45 @@ export function ItcmdView({
               return (
                 <>
                   {linhas.map((l) => (
-                    <div className="lanc" key={l.nome}>
-                      <span className="nome">{l.nome}</span>
-                      <span className="fracao num">{brl(l.fixo)}</span>
-                      <span
-                        className="valor num"
-                        style={{
-                          fontSize: 'var(--t-base)',
-                          color: l.prog > l.fixo ? 'var(--lacre)' : 'var(--verde-registro)',
-                        }}
-                      >
-                        {brl(l.prog)} ({l.prog > l.fixo ? '+' : ''}
-                        {brl(l.prog - l.fixo)} · {l.efetiva.toFixed(2)}%)
-                      </span>
-                    </div>
+                    <LinhaEspelho
+                      key={l.nome}
+                      nome={l.nome}
+                      meio={brl(l.fixo)}
+                      valor={
+                        <>
+                          {brl(l.prog)} ({l.prog > l.fixo ? '+' : ''}
+                          {brl(l.prog - l.fixo)} · {l.efetiva.toFixed(2)}%)
+                        </>
+                      }
+                      valorStyle={{
+                        fontSize: 'var(--t-base)',
+                        color: l.prog > l.fixo ? 'var(--lacre)' : 'var(--verde-registro)',
+                      }}
+                    />
                   ))}
-                  <div className="lanc">
-                    <span className="nome">Total</span>
-                    <span className="fracao num">{brl(totalFixo)}</span>
-                    <span
-                      className="valor num"
-                      style={{ color: totalProg > totalFixo ? 'var(--lacre)' : 'var(--verde-registro)' }}
-                    >
-                      {brl(totalProg)} ({totalProg > totalFixo ? '+' : ''}
-                      {brl(totalProg - totalFixo)})
-                    </span>
-                  </div>
-                  <div className="fund">
+                  <LinhaEspelho
+                    nome="Total"
+                    meio={brl(totalFixo)}
+                    valor={
+                      <>
+                        {brl(totalProg)} ({totalProg > totalFixo ? '+' : ''}
+                        {brl(totalProg - totalFixo)})
+                      </>
+                    }
+                    valorStyle={{
+                      color: totalProg > totalFixo ? 'var(--lacre)' : 'var(--verde-registro)',
+                    }}
+                  />
+                  <FundEspelho>
                     Bases líquidas de isenção e atualizadas pela UFESP. Lei estadual publicada
                     em 2026 só produz efeito a partir de 01/01/2027 (anterioridades anual e
                     nonagesimal) — ajuste a vigência acima quando a lei sair e o motor aplica
                     sozinho aos óbitos posteriores.
-                  </div>
+                  </FundEspelho>
                 </>
               );
             })()}
-          </div>
+          </Espelho>
 
           {/* ---------- avaliação a valor de mercado ---------- */}
           <div className="nota exigencia" style={{ marginTop: 24 }}>

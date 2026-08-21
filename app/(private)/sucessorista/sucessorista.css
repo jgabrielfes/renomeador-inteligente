@@ -1152,33 +1152,9 @@
   .sucessorista .espelho-tabela .espelho-fundamento td { color: #000; }
 }
 
-/* ---------- espelho da partilha (assinatura visual) ---------- */
-
-.sucessorista .espelho { border-top: 2px solid var(--tinta); margin-top: 10px; }
-
-.sucessorista .espelho .cabeca, .sucessorista .espelho .lanc {
-  display: grid;
-  grid-template-columns: 1fr 120px 150px;
-  gap: 16px;
-  align-items: baseline;
-}
-
-.sucessorista .espelho .cabeca {
-  padding: 10px 0 8px;
-  border-bottom: 1px solid var(--fio-forte);
-  font-size: var(--t-xs);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tinta-media);
-}
-
-.sucessorista .espelho .lanc { padding: 12px 0 4px; }
-.sucessorista .espelho .lanc + .fund { padding-bottom: 12px; border-bottom: 1px solid var(--fio); }
-
-.sucessorista .espelho .nome { font-weight: 600; }
-.sucessorista .espelho .fracao { color: var(--tinta-media); font-size: var(--t-sm); }
-.sucessorista .espelho .valor { font-family: var(--display); font-size: var(--t-lg); text-align: right; }
+/* O antigo `.espelho` em div virou o `.espelho-tabela` semântico acima —
+   todo espelho do módulo agora é <table> pelas primitivas de
+   espelho-tabela.tsx; só o `.fund` (parágrafo de fundamento) segue vivo. */
 
 .sucessorista .fund {
   font-size: var(--t-xs);
@@ -1651,8 +1627,6 @@
      volta ao fluxo para não brigar com ela. */
   .sucessorista .rodape-acoes { position: static; border-top: none; padding: 0; }
   .sucessorista .grade.c2, .sucessorista .grade.c3, .sucessorista .grade.q-grid, .sucessorista .nota .cenarios { grid-template-columns: 1fr; }
-  .sucessorista .espelho .cabeca, .sucessorista .espelho .lanc { grid-template-columns: 1fr 90px; }
-  .sucessorista .espelho .cabeca span:nth-child(2), .sucessorista .espelho .lanc .fracao { display: none; }
 
   /* Painel do caso = gaveta que sobe sobre a folha. */
   .sucessorista .painel {
@@ -1688,7 +1662,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .sucessorista .nota, .sucessorista .espelho .lanc { animation: surgir 0.25s ease-out both; }
+  .sucessorista .nota { animation: surgir 0.25s ease-out both; }
   @keyframes surgir { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
 }
 

@@ -10,7 +10,7 @@
  * projeção. O total fecha com a provisão do ITCMD do item IV.
  */
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,6 +28,7 @@ import {
   type DespesaAdicional,
 } from '@/lib/partilha/orcamento';
 import { baixarBlob } from '@/lib/partilha/xlsx';
+import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import type { SucessaoCumulada } from './itcmd-view';
 
 const VALOR_PTBR = /^\d{1,3}(\.\d{3})*(,\d{2})?$|^\d+(,\d{2})?$/;
@@ -264,65 +265,63 @@ export function CustosView({
 
       {custos && (
         <>
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Parcela</span>
-              <span>Fundamento</span>
-              <span style={{ textAlign: 'right' }}>Valor</span>
-            </div>
+          <Espelho colunas={['Parcela', 'Fundamento', 'Valor']}>
             {custos.parcelas.map((p) => (
-              <div key={p.id}>
-                <div className="lanc">
-                  <span className="nome">
-                    {p.rotulo}
-                    {p.aproximado ? ' *' : ''}
-                  </span>
-                  <span className="fracao">{p.fundamento}</span>
-                  <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(p.valor)}</span>
-                </div>
-                {p.detalhe && <div className="fund">{p.detalhe}</div>}
-              </div>
+              <Fragment key={p.id}>
+                <LinhaEspelho
+                  nome={
+                    <>
+                      {p.rotulo}
+                      {p.aproximado ? ' *' : ''}
+                    </>
+                  }
+                  meio={p.fundamento}
+                  valor={brl(p.valor)}
+                  valorStyle={{ fontSize: 'var(--t-base)' }}
+                />
+                {p.detalhe && <FundEspelho>{p.detalhe}</FundEspelho>}
+              </Fragment>
             ))}
             {provisoesSucessoes.map(({ sucessao, base, provisao: pv }) => (
-              <div key={sucessao.id}>
-                <div className="lanc">
-                  <span className="nome">ITCMD — sucessão cumulada de {sucessao.nome}</span>
-                  <span className="fracao">fato gerador em {formatarData(sucessao.dataObito)}</span>
-                  <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(pv.total)}</span>
-                </div>
-                <div className="fund">
+              <Fragment key={sucessao.id}>
+                <LinhaEspelho
+                  nome={<>ITCMD — sucessão cumulada de {sucessao.nome}</>}
+                  meio={<>fato gerador em {formatarData(sucessao.dataObito)}</>}
+                  valor={brl(pv.total)}
+                  valorStyle={{ fontSize: 'var(--t-base)' }}
+                />
+                <FundEspelho>
                   Base de {brl(base)} (acervo por sucessão ou lançamento do item I) atualizada
                   para {brl(pv.baseAtualizada)};{' '}
                   {pv.diasDeAtraso > 0
                     ? `${pv.diasDeAtraso} dia(s) após o vencimento desta sucessão (encargos incluídos).`
                     : 'dentro do prazo desta sucessão.'}
-                </div>
-              </div>
+                </FundEspelho>
+              </Fragment>
             ))}
             {adicionais.map((a) => (
-              <div className="lanc" key={a.id}>
-                <span className="nome">{a.descricao || 'Despesa adicional'}</span>
-                <span className="fracao">custo adicional — lançamento do escritório</span>
-                <span className="valor num" style={{ fontSize: 'var(--t-base)' }}>{brl(Number(a.valor) || 0)}</span>
-              </div>
+              <LinhaEspelho
+                key={a.id}
+                nome={a.descricao || 'Despesa adicional'}
+                meio="custo adicional — lançamento do escritório"
+                valor={brl(Number(a.valor) || 0)}
+                valorStyle={{ fontSize: 'var(--t-base)' }}
+              />
             ))}
-            <div className="lanc">
-              <span className="nome">Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</span>
-              <span />
-              <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>{brl(custos.total + impostoSucessoes + totalAdicionais)}</span>
-            </div>
+            <LinhaEspelho
+              nome={<>Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</>}
+              valor={brl(custos.total + impostoSucessoes + totalAdicionais)}
+              valorStyle={{ fontSize: 'var(--t-lg)' }}
+            />
             {provisao && (
-              <div className="lanc">
-                <span className="nome">
-                  CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})
-                </span>
-                <span className="fracao">provisão do item IV</span>
-                <span className="valor num" style={{ fontSize: 'var(--t-lg)' }}>
-                  {brl(provisao.total + custos.total + impostoSucessoes + totalAdicionais)}
-                </span>
-              </div>
+              <LinhaEspelho
+                nome={<>CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})</>}
+                meio="provisão do item IV"
+                valor={brl(provisao.total + custos.total + impostoSucessoes + totalAdicionais)}
+                valorStyle={{ fontSize: 'var(--t-lg)' }}
+              />
             )}
-          </div>
+          </Espelho>
           <p className="fund" style={{ marginTop: 6 }}>
             * valor aproximado ou contagem de atos a confirmar — conferir a tabela vigente
             (anoregsp.org.br · registrodeimoveis.org.br · registrocivil.org.br) e os

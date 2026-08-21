@@ -141,6 +141,7 @@ import type {
 import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
+import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 
 /* ---------- helpers ---------- */
 
@@ -4403,23 +4404,14 @@ function PartilhaDeSucessao({
         {indice}ª sucessão — {sucessao.nome} · óbito em{' '}
         {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(base.toFixed(2))}
       </span>
-      <div className="espelho">
-        <div className="cabeca">
-          <span>Herdeiro</span>
-          <span>Fração</span>
-          <span style={{ textAlign: 'right' }}>Quinhão</span>
-        </div>
+      <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
         {resultado.quinhoes.map((q) => (
-          <div key={q.herdeiroId}>
-            <div className="lanc">
-              <span className="nome">{q.nome}</span>
-              <span className="fracao num">{q.fracaoHeranca}</span>
-              <span className="valor num">{brl(q.valor)}</span>
-            </div>
-            <div className="fund">{q.fundamento}</div>
-          </div>
+          <Fragment key={q.herdeiroId}>
+            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} valor={brl(q.valor)} />
+            <FundEspelho>{q.fundamento}</FundEspelho>
+          </Fragment>
         ))}
-      </div>
+      </Espelho>
       <p className="fund" style={{ marginTop: 8 }}>
         ITCMD, escritura e registros desta sucessão já somam no painel e no item V
         (Custos), pelo fato gerador próprio dela.
