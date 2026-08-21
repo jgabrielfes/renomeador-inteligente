@@ -55,6 +55,7 @@ export async function PaginaSucessorista({
         ehMaster={isMaster(session)}
         equipe={equipe}
         contaId={session?.user?.id ?? null}
+        nomeConta={session?.user?.name ?? null}
         casoInicialId={casoInicialId}
         etapaInicial={etapaInicial}
       />

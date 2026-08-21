@@ -170,6 +170,45 @@ model PortalArquivoParte {
   @@map("portal_arquivo_partes")
 }
 
+// Painel do Cliente — o ESPELHO PUBLICADO do caso para a família: uma linha
+// por caso, contendo SÓ o snapshot FILTRADO montado no navegador do advogado
+// (lib/portal/painel.ts — allowlist campo a campo, um painel por convite).
+// O caso completo NUNCA sobe; honorários/notas/folha ficam fora por
+// construção. Encerrar o compartilhamento apaga esta linha (cascade nos
+// eventos) e os convites do caso. NUNCA exibir em /admin.
+model PortalPainel {
+  casoId       String   @id
+  // Dono do espelho (quem publicou) — as actions validam dono OU equipe.
+  userId       String
+  // Record<token, PainelHerdeiro> — o recorte de cada herdeiro.
+  snapshot     Json
+  // VisibilidadePainel vigente (contato/custos/quinhão) — para reabrir a UI.
+  visibilidade Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  eventos      PortalEvento[]
+
+  @@map("portal_paineis")
+}
+
+// Registro de atendimento do Painel do Cliente: convites, acessos, fases,
+// documentos aceitos/recusados, notificações — o histórico que protege o
+// advogado (relatório de comunicação com a família). Rótulos e contagens,
+// nunca conteúdo de documento.
+model PortalEvento {
+  id        String       @id @default(cuid())
+  casoId    String
+  painel    PortalPainel @relation(fields: [casoId], references: [casoId], onDelete: Cascade)
+  // Convite relacionado, quando o evento é de um herdeiro específico.
+  token     String?
+  tipo      String
+  detalhe   Json?
+  createdAt DateTime     @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("portal_eventos")
+}
+
 model User {
   id           String    @id @default(cuid())
   name         String

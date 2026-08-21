@@ -85,8 +85,14 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const [preview, setPreview] = useState<File | null>(null);
 
   useEffect(() => {
-    fetch(`/api/portal/${token}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Convite não encontrado ou expirado.'))))
+    // ?visita=1 carimba o acesso do herdeiro (1º/último) para o advogado —
+    // só a página do portal manda; a revalidação do advogado não conta.
+    fetch(`/api/portal/${token}?visita=1`)
+      .then((r) => {
+        if (r.status === 410)
+          return Promise.reject(new Error('Este convite foi encerrado pelo advogado.'));
+        return r.ok ? r.json() : Promise.reject(new Error('Convite não encontrado ou expirado.'));
+      })
       .then(setConvite)
       .catch((e: Error) => setErro(e.message));
   }, [token]);

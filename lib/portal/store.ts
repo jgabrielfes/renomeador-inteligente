@@ -74,6 +74,14 @@ export interface ConviteHerdeiro {
   /** O herdeiro clicou "Salvar": confirmação de que o envio chegou à folha. */
   envioConfirmadoEm?: string;
   criadoEm: string;
+  /** Painel do Cliente — status do convite, visto pelo advogado. O carimbo
+   *  de acesso vem da VISITA do herdeiro (GET com ?visita=1), nunca da
+   *  revalidação de fundo do advogado. */
+  primeiroAcessoEm?: string;
+  ultimoAcessoEm?: string;
+  /** Convite revogado pelo advogado: o portal responde 410 e nada mais
+   *  entra por este token. O registro fica (histórico), o acesso morre. */
+  revogadoEm?: string;
 }
 
 export interface PortalStore {
@@ -89,6 +97,8 @@ export interface PortalStore {
     qualificacao: QualificacaoHerdeiro,
   ): Promise<ConviteHerdeiro | null>;
   confirmarEnvio(token: string): Promise<ConviteHerdeiro | null>;
+  /** Carimba a visita do herdeiro (1º acesso preservado, último atualizado). */
+  marcarAcesso(token: string, primeiro: string, ultimo: string): Promise<void>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -120,6 +130,12 @@ export const memoryStore: PortalStore = {
     if (!c) return null;
     c.envioConfirmadoEm = new Date().toISOString();
     return c;
+  },
+  async marcarAcesso(token, primeiro, ultimo) {
+    const c = mem.get(token);
+    if (!c) return;
+    c.primeiroAcessoEm = c.primeiroAcessoEm ?? primeiro;
+    c.ultimoAcessoEm = ultimo;
   },
 };
 

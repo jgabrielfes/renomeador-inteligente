@@ -97,4 +97,19 @@ export const store: PortalStore = {
     }
     return memoryStore.confirmarEnvio(token);
   },
+
+  async marcarAcesso(token, primeiro, ultimo) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        c.primeiroAcessoEm = c.primeiroAcessoEm ?? primeiro;
+        c.ultimoAcessoEm = ultimo;
+        await gravarNoBanco(c);
+        return;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    await memoryStore.marcarAcesso(token, primeiro, ultimo);
+  },
 };

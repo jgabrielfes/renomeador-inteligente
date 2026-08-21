@@ -7,13 +7,14 @@ import {
 import { store } from '@/lib/portal/store-prisma';
 import { registrarPortal } from '@/app/(private)/sucessorista/actions';
 import { foraDaPlataforma } from '@/lib/app';
+import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ token: string }> };
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
   // Rota do Sucessorista: no deploy do Renomeador ela não existe.
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
@@ -21,7 +22,39 @@ export async function GET(_req: Request, ctx: Ctx) {
   const { token } = await ctx.params;
   const convite = await store.obter(token);
   if (!convite) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
-  return Response.json(convite);
+  if (convite.revogadoEm) {
+    return Response.json({ erro: 'Este convite foi encerrado pelo advogado.' }, { status: 410 });
+  }
+
+  // Carimbo de acesso SÓ na visita do herdeiro (a página manda ?visita=1) —
+  // a revalidação de fundo do advogado não conta como acesso da família.
+  const visita = new URL(req.url).searchParams.get('visita') === '1';
+  if (visita) {
+    const agora = new Date().toISOString();
+    convite.primeiroAcessoEm = convite.primeiroAcessoEm ?? agora;
+    convite.ultimoAcessoEm = agora;
+    await store.marcarAcesso(token, convite.primeiroAcessoEm, agora);
+  }
+
+  // Painel do Cliente publicado para o caso: devolve SÓ o recorte deste
+  // token (o snapshot já nasce segmentado por convite no navegador do
+  // advogado — a rota não recorta nada além de escolher a chave). Só na
+  // visita do herdeiro: a revalidação do advogado não precisa do painel e
+  // não deve carregá-lo para dentro do snapshot do caso.
+  let painel: unknown = null;
+  if (visita) {
+    try {
+      const linha = await prisma.portalPainel.findUnique({
+        where: { casoId: convite.casoId },
+        select: { snapshot: true },
+      });
+      painel = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
+    } catch {
+      painel = null;
+    }
+  }
+
+  return Response.json(visita ? { ...convite, painel } : convite);
 }
 
 /**
@@ -35,6 +68,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (fora) return fora;
 
   const { token } = await ctx.params;
+  {
+    // Convite revogado: nada mais entra por este token.
+    const atual = await store.obter(token);
+    if (atual?.revogadoEm) {
+      return Response.json({ erro: 'Este convite foi encerrado pelo advogado.' }, { status: 410 });
+    }
+  }
   let body: {
     docId?: string;
     status?: string;

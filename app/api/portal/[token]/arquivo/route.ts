@@ -46,6 +46,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const { token } = await ctx.params;
   const convite = await store.obter(token);
   if (!convite) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+  if (convite.revogadoEm) {
+    return Response.json({ erro: 'Este convite foi encerrado pelo advogado.' }, { status: 410 });
+  }
 
   let form: FormData;
   try {

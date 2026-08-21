@@ -142,6 +142,11 @@ import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
 import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
+import {
+  PainelFamiliaCard,
+  PAINEL_FAMILIA_INICIAL,
+  type EstadoPainelFamilia,
+} from './painel-familia-card';
 
 /* ---------- helpers ---------- */
 
@@ -345,6 +350,8 @@ interface CasoSalvo {
   colacoes?: Colacao[];
   /** Custos adicionais lançados à mão na aba V (retrocompatível). */
   custosAdicionais?: DespesaAdicional[];
+  /** Painel do Cliente — config do espelho publicado (fase, visibilidades). */
+  painelFamilia?: EstadoPainelFamilia;
 }
 
 export default function SucessoristaClient({
@@ -354,6 +361,7 @@ export default function SucessoristaClient({
   ehMaster = false,
   equipe = null,
   contaId = null,
+  nomeConta = null,
   casoInicialId = null,
   etapaInicial = null,
 }: {
@@ -373,6 +381,8 @@ export default function SucessoristaClient({
   equipe?: import('./equipe-actions').InfoEquipe | null;
   /** Id do usuário logado — escopa a pasta-raiz e o cache POR CONTA. */
   contaId?: string | null;
+  /** Nome da conta (sessão) — cabeçalho do Painel da família. */
+  nomeConta?: string | null;
   /** Rota /caso/<id>/<etapa> (T1): o caso a abrir ao montar — F5, favorito
    *  e link colado entre membros da equipe voltam ao caso certo. */
   casoInicialId?: string | null;
@@ -441,6 +451,8 @@ export default function SucessoristaClient({
   const [anexosProcesso, setAnexosProcesso] = useState<AnexosProcesso>({});
   const [casoId, setCasoId] = useState(() => uid('caso') + Date.now().toString(36));
   const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
+  /* Painel do Cliente: config do espelho publicado (fase, visibilidades). */
+  const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
@@ -837,6 +849,11 @@ export default function SucessoristaClient({
     if (typeof salvo.notas === 'string') setNotasCaso(salvo.notas);
     if (Array.isArray(salvo.colacoes)) setColacoes(salvo.colacoes);
     if (Array.isArray(salvo.custosAdicionais)) setCustosAdicionais(salvo.custosAdicionais);
+    setPainelFamilia(
+      salvo.painelFamilia && typeof salvo.painelFamilia === 'object'
+        ? { ...PAINEL_FAMILIA_INICIAL, ...salvo.painelFamilia }
+        : PAINEL_FAMILIA_INICIAL,
+    );
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -862,6 +879,7 @@ export default function SucessoristaClient({
       notas: notasCaso,
       colacoes,
       custosAdicionais,
+      painelFamilia,
     };
   };
 
@@ -1881,6 +1899,58 @@ export default function SucessoristaClient({
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
+   * PAINEL DA FAMÍLIA — o que o espelho publicado PODE mostrar, já pronto:
+   * quinhão por herdeiro (só entra se o advogado liberar) e os custos
+   * AGREGADOS do caso (ITCMD + cartório/justiça + adicionais). Honorários
+   * NUNCA entram aqui — é a lista inteira que o card pode publicar.
+   */
+  const quinhoesPainel = useMemo(() => {
+    const mapa: Record<string, { valor: string; fracao?: string }> = {};
+    if (resultado && resultado.bloqueios.length === 0) {
+      for (const q of resultado.quinhoes) {
+        mapa[q.herdeiroId] = { valor: String(q.valor), fracao: q.fracaoHeranca };
+      }
+    }
+    return mapa;
+  }, [resultado]);
+  const custosVisiveisPainel = useMemo(() => {
+    const linhas: import('@/lib/portal/painel').CustoVisivel[] = [];
+    const pago = fiscal.itcmdSituacao === 'PAGO';
+    if (provisao) {
+      linhas.push({
+        rotulo: 'Imposto sobre a herança (ITCMD)',
+        valor: provisao.total.toFixed(2),
+        situacao: pago ? 'PAGO' : 'PREVISTO',
+      });
+    }
+    if (impostoSucessoes > 0) {
+      linhas.push({
+        rotulo: 'ITCMD das sucessões anteriores',
+        valor: impostoSucessoes.toFixed(2),
+        situacao: pago ? 'PAGO' : 'PREVISTO',
+      });
+    }
+    if (custos) {
+      linhas.push({
+        rotulo:
+          ritoEfetivo === 'JUDICIAL'
+            ? 'Custas judiciais, registros e certidões'
+            : 'Cartório, registros e certidões',
+        valor: custos.total.toFixed(2),
+        situacao: 'PREVISTO',
+      });
+    }
+    for (const a of custosAdicionais) {
+      linhas.push({
+        rotulo: a.descricao || 'Despesa adicional',
+        valor: (Number(a.valor) || 0).toFixed(2),
+        situacao: 'PREVISTO',
+      });
+    }
+    return linhas;
+  }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo]);
+
+  /**
    * Alertas da leitura: herdeiro DECLARADO na certidão de óbito sem
    * lançamento/qualificação, e frações ideais dos venais que não fecham
    * 100% (exceto unidade autônoma/apartamento, onde a fração é do terreno).
@@ -2216,7 +2286,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -3629,6 +3699,27 @@ export default function SucessoristaClient({
             setRito={(r) => setFiscal({ ...fiscal, rito: r })}
             ritoMotor={ritoMotor}
             equipe={equipe}
+            painelFamilia={
+              <PainelFamiliaCard
+                casoId={casoId}
+                nomeFalecido={falecido.nome || 'o inventário'}
+                nomeAdvogado={nomeConta || 'Advogado(a) responsável'}
+                rito={ritoEfetivo ?? 'EXTRAJUDICIAL'}
+                convites={Object.values(convites)}
+                quinhoes={quinhoesPainel}
+                custosVisiveis={custosVisiveisPainel}
+                estado={painelFamilia}
+                onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
+                onConviteAtualizado={(c) =>
+                  setConvites((prev) => {
+                    const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                    return chave ? { ...prev, [chave]: c } : prev;
+                  })
+                }
+                onEncerrado={() => setConvites({})}
+                irParaDocumentos={() => irPara('documentos')}
+              />
+            }
           />
         )}
 

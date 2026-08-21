@@ -1713,6 +1713,7 @@
   grid-template-areas:
     'cofre cofre'
     'rito rito'
+    'painel painel'
     'equipe inicio'
     'arquivo novidades';
   gap: 16px;
@@ -1721,6 +1722,7 @@
 .sucessorista .dash-pilha .cartao { margin: 0; }
 .sucessorista .area-cofre { grid-area: cofre; }
 .sucessorista .area-rito { grid-area: rito; }
+.sucessorista .area-painel { grid-area: painel; }
 .sucessorista .area-equipe { grid-area: equipe; min-width: 0; }
 .sucessorista .area-inicio { grid-area: inicio; }
 .sucessorista .area-arquivo { grid-area: arquivo; }
@@ -1781,7 +1783,7 @@
 @media (max-width: 1024px) {
   .sucessorista .dash-pilha {
     grid-template-columns: 1fr;
-    grid-template-areas: 'cofre' 'rito' 'equipe' 'inicio' 'arquivo' 'novidades';
+    grid-template-areas: 'cofre' 'rito' 'painel' 'equipe' 'inicio' 'arquivo' 'novidades';
   }
 }
 
