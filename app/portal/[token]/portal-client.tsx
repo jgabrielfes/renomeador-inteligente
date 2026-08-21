@@ -796,7 +796,11 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           herdeiro sempre sabe quem conduz e que pode ter advogado próprio. */}
       <footer className="rodape-etico">
         {advogado} conduz este inventário. Você pode constituir advogado(a) próprio(a) a
-        qualquer momento.
+        qualquer momento.{' '}
+        <a href="/portal/privacidade" target="_blank" rel="noopener noreferrer">
+          Como seus dados são tratados
+        </a>
+        .
       </footer>
 
       <LupaPreview file={preview} onClose={() => setPreview(null)} />
