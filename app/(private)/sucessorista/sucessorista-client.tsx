@@ -32,12 +32,7 @@ import {
 } from '@/components/ui/table';
 
 import { partilhar } from '@/lib/partilha/engine';
-import {
-  apurarAtribuicao,
-  TABELA_SP_2026,
-  type TitularidadeBem,
-  type TituloCessao,
-} from '@/lib/partilha/atribuicao';
+import { type TituloCessao } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { Caso, Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
@@ -143,6 +138,16 @@ import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
 import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import {
+  apurarCenario,
+  direitosDoResultado,
+  ehFracao,
+  fracaoBonita,
+  mmc,
+  participantesDoResultado,
+  pctNum,
+  temAlocacao,
+} from '@/lib/partilha/cenario';
+import {
   PainelFamiliaCard,
   PAINEL_FAMILIA_INICIAL,
   type EstadoPainelFamilia,
@@ -196,55 +201,6 @@ function preencherVazios(
   }
   return ficha;
 }
-
-/** Célula da matriz que é FRAÇÃO ("1/3", "2/5") em vez de percentual. */
-const ehFracao = (v: string | undefined): boolean => /^\s*\d+\s*\/\s*\d+\s*$/.test(v ?? '');
-
-/**
- * Célula da matriz da partilha → percentual numérico. Aceita percentual com
- * vírgula ("33,33") E fração exata ("1/3" = 33,333…%) — a fração existe para
- * a dízima não fabricar torna que a família não combinou.
- */
-const pctNum = (v: string | undefined): number => {
-  if (!v) return 0;
-  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (m && Number(m[2]) > 0) return (Number(m[1]) / Number(m[2])) * 100;
-  const n = Number(v.replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-
-/**
- * Célula como fração EXATA {n, d} do bem (1 = bem inteiro): "1/3" vira 1/3
- * de verdade; percentual vira n/1.000.000 (até 4 casas). É o que a
- * atribuição usa para montar titularidades sem erro de arredondamento.
- */
-const fracaoDaCelula = (v: string | undefined): { n: number; d: number } => {
-  if (!v) return { n: 0, d: 1 };
-  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (m && Number(m[2]) > 0) return { n: Number(m[1]), d: Number(m[2]) };
-  return { n: Math.round(pctNum(v) * 10000), d: 1_000_000 };
-};
-
-const mdc = (a: number, b: number): number => (b === 0 ? a : mdc(b, a % b));
-const mmc = (a: number, b: number): number => (a / mdc(a, b)) * b;
-
-/**
- * Percentual → fração "bonita" (denominador pequeno) quando o valor casa de
- * perto com uma — "33,33" e "33,34" viram "1/3", "50" vira "1/2". Sem
- * casamento limpo, devolve null (a célula fica como está).
- */
-const fracaoBonita = (pct: number): string | null => {
-  const v = pct / 100;
-  if (v <= 0 || v > 1) return null;
-  for (let d = 1; d <= 99; d++) {
-    const n = Math.round(v * d);
-    if (n > 0 && Math.abs(n / d - v) <= 0.0001) {
-      const g = mdc(n, d);
-      return `${n / g}/${d / g}`;
-    }
-  }
-  return null;
-};
 
 /** Descrição enxuta do bem para a matriz (o título completo fica no title). */
 const descricaoCurta = (s: string): string =>
@@ -1628,28 +1584,19 @@ export default function SucessoristaClient({
     return () => clearTimeout(t);
   }, [sociedades, falecido.nome, nomeSobrev, temSobrevivente, regime]);
 
-  /** Quem tem direito no caso (meação e/ou quinhão) — as opções do "fica com". */
-  const participantes = useMemo(() => {
-    if (!resultado || resultado.bloqueios.length > 0) return [];
-    const lista: { id: string; nome: string }[] = [];
-    if (resultado.meacao) {
-      lista.push({ id: '__sobrevivente__', nome: resultado.meacao.beneficiario });
-    }
-    for (const q of resultado.quinhoes) {
-      if (!lista.some((x) => x.id === q.herdeiroId)) lista.push({ id: q.herdeiroId, nome: q.nome });
-    }
-    return lista;
-  }, [resultado]);
+  /** Quem tem direito no caso (meação e/ou quinhão) — as opções do "fica com".
+   *  Derivações do motor de cenários (lib/partilha/cenario.ts) — o mesmo que
+   *  o Espaço do Espólio usa. */
+  const participantes = useMemo(
+    () => (!resultado || resultado.bloqueios.length > 0 ? [] : participantesDoResultado(resultado)),
+    [resultado],
+  );
 
   /** Quinhão de direito em R$ por participante (meação + quinhões). */
-  const direitoPorParticipante = useMemo(() => {
-    const mapa: Record<string, number> = {};
-    if (!resultado || resultado.bloqueios.length > 0) return mapa;
-    if (resultado.meacao) mapa['__sobrevivente__'] = Number(resultado.meacao.valor);
-    for (const q of resultado.quinhoes)
-      mapa[q.herdeiroId] = (mapa[q.herdeiroId] ?? 0) + Number(q.valor);
-    return mapa;
-  }, [resultado]);
+  const direitoPorParticipante = useMemo(
+    () => (!resultado || resultado.bloqueios.length > 0 ? {} : direitosDoResultado(resultado)),
+    [resultado],
+  );
 
   /** Pendências da minuta: o que ainda vira lacuna na escritura/petição. */
   const pendenciasMinuta = useMemo(
@@ -1692,81 +1639,30 @@ export default function SucessoristaClient({
   const atribuicao = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || bens.length === 0) return null;
     if (participantes.length === 0) return null;
+    if (!temAlocacao(matriz, bens, participantes)) return null; // tudo na proporção do direito
 
-    const linhas = bens.map((b, i) => {
-      const linha = matriz[b.id] ?? {};
-      const pcts = participantes.map((p) => pctNum(linha[p.id]));
-      return { bem: b, indice: i, pcts, total: pcts.reduce((a, v) => a + v, 0) };
+    // Apuração pelo MOTOR DE CENÁRIOS (lib/partilha/cenario.ts) — o mesmo do
+    // Espaço do Espólio: matriz → frações exatas → apurarAtribuicao. A
+    // isenção de doação por donatário/ano (art. 6º, II, "a") é 2.500 UFESPs.
+    const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
+    const cenario = apurarCenario({
+      caso,
+      resultado,
+      alocacoes: matriz,
+      titulo,
+      isencaoDoacaoAnual: 2500 * ufespAtual,
     });
-    if (!linhas.some((l) => l.total > 0)) return null; // tudo na proporção do direito
-
-    // Linha preenchida tem de fechar 100% (tolerância de dízima: ±0,05).
-    const invalidas = linhas.filter((l) => l.total > 0 && Math.abs(l.total - 100) > 0.05);
-    if (invalidas.length > 0) {
-      return {
+    if (!cenario.atribuicao && cenario.bloqueios.length === 0) return null;
+    return (
+      cenario.atribuicao ?? {
         posicoes: [],
         transferencias: [],
         totalTorna: '0.00',
         avisos: [],
-        bloqueios: invalidas.map(
-          (l) =>
-            `Bem ${l.indice + 1}: os percentuais somam ${l.total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% — a linha precisa fechar 100% (ou ficar toda vazia para seguir a proporção do direito).`,
-        ),
-      };
-    }
-
-    const direitoCents = new Map<string, number>();
-    for (const [id, v] of Object.entries(direitoPorParticipante)) {
-      direitoCents.set(id, Math.round(v * 100));
-    }
-    const totalCents = [...direitoCents.values()].reduce((a, v) => a + v, 0);
-    if (totalCents <= 0) return null;
-
-    const titularidades: TitularidadeBem[] = [];
-    for (const l of linhas) {
-      if (l.total === 0) {
-        for (const [id, cents] of direitoCents) {
-          if (cents <= 0) continue;
-          titularidades.push({
-            bemId: l.bem.id,
-            titularId: id,
-            direito: 'PLENA',
-            fracao: `${cents}/${totalCents}`,
-          });
-        }
-        continue;
+        bloqueios: cenario.bloqueios,
       }
-      // Frações EXATAS normalizadas pela PRÓPRIA soma (o motor exige soma 1
-      // por bem): "33,33" três vezes vira 3333/9999 = 1/3 de cada — a dízima
-      // é absorvida na proporção, sem despejar o resto numa das partes (era
-      // o ajuste a 10000 que fabricava uma torna de centavos que a família
-      // nunca combinou). Célula em fração ("1/3") já entra exata.
-      const celulas = participantes.map((p) => fracaoDaCelula((matriz[l.bem.id] ?? {})[p.id]));
-      const den = celulas.reduce((a, f) => (f.n > 0 ? mmc(a, f.d) : a), 1);
-      const pesos = celulas.map((f) => (f.n > 0 ? f.n * (den / f.d) : 0));
-      const somaPesos = pesos.reduce((a, v) => a + v, 0);
-      participantes.forEach((p, i) => {
-        if (pesos[i] > 0)
-          titularidades.push({
-            bemId: l.bem.id,
-            titularId: p.id,
-            direito: 'PLENA',
-            fracao: `${pesos[i]}/${somaPesos}`,
-          });
-      });
-    }
-
-    // Isenção de doação por donatário/ano (art. 6º, II, "a"): 2.500 UFESPs.
-    const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
-    return apurarAtribuicao(caso, resultado, {
-      titularidades,
-      titulosPorCedente: Object.fromEntries(participantes.map((p) => [p.id, titulo])),
-      tabela: {
-        ...TABELA_SP_2026,
-        isencaoDoacaoAnualPorDonatario: (2500 * ufespAtual).toFixed(2),
-      },
-    });
-  }, [resultado, titulo, caso, bens, matriz, participantes, direitoPorParticipante]);
+    );
+  }, [resultado, titulo, caso, bens, matriz, participantes]);
 
   // Espelho para a telemetria do caso (o retrato é montado antes daqui).
   useEffect(() => {
