@@ -3406,21 +3406,33 @@ export default function SucessoristaClient({
       const atuais = convitesRef.current;
       const proximos: Record<string, ConviteHerdeiro> = { ...atuais };
       const chegadas: string[] = [];
+      let mudou = false;
       for (const [herdeiroId, convite] of Object.entries(atuais)) {
         try {
           const r = await fetch(`/api/portal/${convite.token}`);
+          if (r.status === 410) {
+            // Revogado em outra tela/máquina: o estado aprende em silêncio —
+            // o cofre passa a oferecer "Gerar novo link" sem toast de chegada.
+            if (!convite.revogadoEm) {
+              proximos[herdeiroId] = { ...convite, revogadoEm: new Date().toISOString() };
+              mudou = true;
+            }
+            continue;
+          }
           if (!r.ok) continue;
           const novo = (await r.json()) as ConviteHerdeiro;
           if (JSON.stringify(novo) !== JSON.stringify(convite)) {
             proximos[herdeiroId] = novo;
             chegadas.push(novo.nomeHerdeiro || 'herdeiro');
+            mudou = true;
           }
         } catch {
           // rede fora — tenta no próximo ciclo
         }
       }
-      if (!ativo || chegadas.length === 0) return;
+      if (!ativo || !mudou) return;
       setConvites(proximos);
+      if (chegadas.length === 0) return;
       toast.info(
         chegadas.length === 1
           ? `Novidade no cofre: ${chegadas[0]} enviou documentos ou informações`
