@@ -25,7 +25,11 @@ export type TipoEventoPortal =
   | 'NOTIFICACAO'
   | 'ESPOLIO_ABERTO'
   | 'ESPOLIO_FECHADO'
-  | 'ESPOLIO_VISTO';
+  | 'ESPOLIO_VISTO'
+  | 'ESPOLIO_NOTA'
+  | 'ESPOLIO_SUGESTAO_DECIDIDA'
+  | 'ESPOLIO_DESPESA'
+  | 'ESPOLIO_DESPESA_DECIDIDA';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -99,4 +103,8 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_ABERTO: 'Espaço do espólio aberto para a família',
   ESPOLIO_FECHADO: 'Espaço do espólio fechado',
   ESPOLIO_VISTO: 'Herdeiro abriu o espaço do espólio (1º acesso)',
+  ESPOLIO_NOTA: 'Comentário/sugestão registrado no espólio',
+  ESPOLIO_SUGESTAO_DECIDIDA: 'Sugestão de valor decidida pelo escritório',
+  ESPOLIO_DESPESA: 'Despesa adiantada informada por herdeiro',
+  ESPOLIO_DESPESA_DECIDIDA: 'Despesa adiantada decidida pelo escritório',
 };

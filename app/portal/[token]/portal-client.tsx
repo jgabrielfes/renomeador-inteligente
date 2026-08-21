@@ -26,11 +26,61 @@ import type { EspolioCompartilhado } from '@/lib/portal/espolio';
 /** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
  *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
  *  no deploy (env-gated no servidor). */
+/** Fato do espólio como o GET devolve: compartilhado com TODA a família
+ *  (autor + conteúdo), com `minha` marcando o que saiu deste token. */
+interface NotaEspolioPortal {
+  id: string;
+  autor: string;
+  bemId: string;
+  tipo: string; // 'comentario' | 'sugestao_valor'
+  texto: string;
+  valorSugerido: string | null;
+  status: string; // 'pendente' | 'aceita' | 'recusada'
+  motivo: string | null;
+  criadaEm: string;
+  minha: boolean;
+}
+
+interface DespesaEspolioPortal {
+  id: string;
+  autor: string;
+  categoria: string;
+  valor: string;
+  data: string;
+  descricao: string;
+  status: string; // 'pendente' | 'reconhecida' | 'nao_reconhecida'
+  motivo: string | null;
+  tratamento: string; // 'ressarcir' | 'compensar'
+  criadaEm: string;
+  minha: boolean;
+}
+
 type ConviteComPainel = ConviteHerdeiro & {
   painel?: PainelHerdeiro | null;
   /** Espaço do Espólio: o snapshot COMPARTILHADO — igual para todos. */
   espolio?: EspolioCompartilhado | null;
+  espolioNotas?: NotaEspolioPortal[];
+  espolioDespesas?: DespesaEspolioPortal[];
   emailAtivo?: boolean;
+};
+
+const CATEGORIAS_DESPESA_PORTAL: { valor: string; rotulo: string }[] = [
+  { valor: 'funeral', rotulo: 'Funeral' },
+  { valor: 'iptu', rotulo: 'IPTU' },
+  { valor: 'condominio', rotulo: 'Condomínio' },
+  { valor: 'itcmd', rotulo: 'Imposto (ITCMD)' },
+  { valor: 'honorarios', rotulo: 'Honorários' },
+  { valor: 'certidoes', rotulo: 'Certidões' },
+  { valor: 'outra', rotulo: 'Outra despesa' },
+];
+
+const rotuloCategoria = (c: string) =>
+  CATEGORIAS_DESPESA_PORTAL.find((x) => x.valor === c)?.rotulo ?? c;
+
+/** "350.000,00" / "350000" → "350000.00" (o decimal que a rota valida). */
+const valorParaDecimal = (texto: string): string | null => {
+  const n = Number(texto.trim().replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n.toFixed(2) : null;
 };
 
 const ROTULO: Record<string, string> = {
@@ -163,8 +213,21 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       ...novo,
       painel: prev?.painel ?? null,
       espolio: prev?.espolio ?? null,
+      espolioNotas: prev?.espolioNotas ?? [],
+      espolioDespesas: prev?.espolioDespesas ?? [],
       emailAtivo: prev?.emailAtivo ?? false,
     }));
+
+  /** Fato novo do espólio criado nesta visita — entra na lista local na hora
+   *  (o GET seguinte traz o consolidado com os dos outros herdeiros). */
+  const registrarNotaLocal = (n: NotaEspolioPortal) =>
+    setConvite((prev) =>
+      prev ? { ...prev, espolioNotas: [...(prev.espolioNotas ?? []), n] } : prev,
+    );
+  const registrarDespesaLocal = (d: DespesaEspolioPortal) =>
+    setConvite((prev) =>
+      prev ? { ...prev, espolioDespesas: [...(prev.espolioDespesas ?? []), d] } : prev,
+    );
 
   const {
     register,
@@ -815,8 +878,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             <>
               <h3 style={{ marginTop: 14 }}>Bens do espólio</h3>
               <ul className="custos-portal">
-                {convite.espolio.bens.map((b, i) => (
-                  <li key={i}>
+                {convite.espolio.bens.map((b) => (
+                  <li key={b.id}>
                     <span>
                       {b.descricao}
                       <span className="fase-descricao">fonte do valor: {b.fonteAvaliacao}</span>
@@ -835,6 +898,25 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                   </li>
                 )}
               </ul>
+
+              {/* Comentários e sugestões de valor, POR BEM — todos veem;
+                  nada muda no inventário sem a conferência do escritório. */}
+              <h3 style={{ marginTop: 14 }}>Comentar os bens</h3>
+              <p className="fund" style={{ marginBottom: 4 }}>
+                Viu um valor diferente do que você conhece, ou tem algo a dizer sobre um
+                bem? Escreva aqui — toda a família e o escritório veem, e um valor
+                sugerido só entra no inventário depois que o advogado conferir e aceitar.
+              </p>
+              {convite.espolio.bens.map((b) => (
+                <NotasDoBem
+                  key={b.id}
+                  token={token}
+                  bemId={b.id}
+                  descricao={b.descricao}
+                  notas={(convite.espolioNotas ?? []).filter((n) => n.bemId === b.id)}
+                  onNova={registrarNotaLocal}
+                />
+              ))}
             </>
           )}
 
@@ -876,6 +958,45 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               </ul>
             </>
           )}
+
+          {/* ---------- despesas adiantadas (com comprovante obrigatório) ---------- */}
+          <h3 style={{ marginTop: 14 }}>Despesas adiantadas</h3>
+          <p className="fund" style={{ marginBottom: 4 }}>
+            Pagou algo do espólio do próprio bolso — funeral, IPTU, condomínio? Registre
+            aqui com o comprovante. O escritório confere e decide como a despesa entra
+            no acerto da família; todos veem os registros.
+          </p>
+          {(convite.espolioDespesas ?? []).length > 0 && (
+            <ul className="custos-portal">
+              {(convite.espolioDespesas ?? []).map((d) => (
+                <li key={d.id}>
+                  <span>
+                    {d.autor}
+                    {d.minha ? ' (você)' : ''} — {rotuloCategoria(d.categoria)} · {d.descricao}
+                    <span className="fase-descricao">
+                      pago em {dataLonga(d.data)} ·{' '}
+                      {d.status === 'pendente'
+                        ? 'aguardando conferência do escritório'
+                        : d.status === 'reconhecida'
+                          ? d.tratamento === 'compensar'
+                            ? 'reconhecida — será compensada no quinhão de quem pagou'
+                            : 'reconhecida — será ressarcida pelo espólio'
+                          : `não reconhecida${d.motivo ? `: ${d.motivo}` : ''}`}
+                    </span>
+                  </span>
+                  <span className="num">{brl(d.valor)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DespesaEspolioForm
+            token={token}
+            onRegistrada={(d, conviteNovo) => {
+              atualizarConvite(conviteNovo);
+              registrarDespesaLocal(d);
+            }}
+            enviarComprovante={enviarDocumento}
+          />
         </>
       )}
 
@@ -974,6 +1095,281 @@ function AvisosEmail({
         </button>
       </div>
     </>
+  );
+}
+
+/** Texto leigo do status de uma nota/sugestão do espólio. */
+const statusDaNota = (n: NotaEspolioPortal): string =>
+  n.status === 'pendente'
+    ? 'aguardando o escritório'
+    : n.status === 'aceita'
+      ? n.tipo === 'sugestao_valor'
+        ? 'aceita pelo escritório'
+        : 'lida pelo escritório'
+      : `recusada${n.motivo ? `: ${n.motivo}` : ''}`;
+
+/**
+ * Conversa sobre UM bem do espólio: os comentários/sugestões de toda a
+ * família (imutáveis — corrigir é escrever de novo) + o mini-form de envio.
+ */
+function NotasDoBem({
+  token,
+  bemId,
+  descricao,
+  notas,
+  onNova,
+}: {
+  token: string;
+  bemId: string;
+  descricao: string;
+  notas: NotaEspolioPortal[];
+  onNova: (n: NotaEspolioPortal) => void;
+}) {
+  const [tipo, setTipo] = useState<'comentario' | 'sugestao_valor'>('comentario');
+  const [texto, setTexto] = useState('');
+  const [valor, setValor] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+
+  const enviar = async () => {
+    setErroEnvio(null);
+    if (texto.trim() === '') {
+      setErroEnvio('Escreva o comentário antes de enviar.');
+      return;
+    }
+    const valorSugerido = tipo === 'sugestao_valor' ? valorParaDecimal(valor) : null;
+    if (tipo === 'sugestao_valor' && !valorSugerido) {
+      setErroEnvio('Informe o valor sugerido (ex.: 350.000,00).');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/portal/${token}/espolio`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          nota: { bemId, tipo, texto: texto.trim(), valorSugerido: valorSugerido ?? undefined },
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { nota?: NotaEspolioPortal; erro?: string }
+        | null;
+      if (r.ok && corpo?.nota) {
+        onNova({ ...corpo.nota, minha: true, criadaEm: corpo.nota.criadaEm ?? '' });
+        setTexto('');
+        setValor('');
+        setTipo('comentario');
+      } else {
+        setErroEnvio(corpo?.erro ?? 'Não foi possível enviar — tente de novo.');
+      }
+    } catch {
+      setErroEnvio('Não foi possível enviar — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <details className="nota" style={{ marginTop: 6 }}>
+      <summary style={{ cursor: 'pointer' }}>
+        {descricao}
+        {notas.length > 0 ? ` — ${notas.length} comentário(s)` : ' — comentar ou sugerir valor'}
+      </summary>
+      {notas.map((n) => (
+        <p key={n.id} style={{ margin: '6px 0 0' }}>
+          <strong>
+            {n.autor}
+            {n.minha ? ' (você)' : ''}
+          </strong>
+          {n.tipo === 'sugestao_valor' && n.valorSugerido
+            ? ` sugeriu ${brl(n.valorSugerido)}`
+            : ' comentou'}
+          : “{n.texto}”<span className="fase-descricao">{statusDaNota(n)}</span>
+        </p>
+      ))}
+      <div className="grade q-grid" style={{ marginTop: 8 }}>
+        <Campo rotulo="O que você quer fazer">
+          <select
+            value={tipo}
+            onChange={(e) =>
+              setTipo(e.target.value === 'sugestao_valor' ? 'sugestao_valor' : 'comentario')
+            }
+          >
+            <option value="comentario">Só comentar</option>
+            <option value="sugestao_valor">Sugerir outro valor para este bem</option>
+          </select>
+        </Campo>
+        {tipo === 'sugestao_valor' && (
+          <Campo rotulo="Valor sugerido (R$)">
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Ex.: 350.000,00"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+            />
+          </Campo>
+        )}
+      </div>
+      <Campo
+        rotulo={tipo === 'sugestao_valor' ? 'De onde vem esse valor?' : 'Seu comentário'}
+      >
+        <textarea
+          rows={2}
+          maxLength={600}
+          placeholder={
+            tipo === 'sugestao_valor'
+              ? 'Ex.: Tenho uma avaliação de corretor de março deste ano.'
+              : 'Ex.: Esse carro está na garagem da minha casa desde o falecimento.'
+          }
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+      </Campo>
+      {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+      <div style={{ marginTop: 8 }}>
+        <button className="acao" type="button" disabled={enviando} onClick={() => void enviar()}>
+          {enviando ? 'Enviando…' : 'Enviar para a família e o escritório'}
+        </button>
+      </div>
+      <p className="fund" style={{ marginTop: 6 }}>
+        O que você enviar fica registrado e não pode ser editado — para corrigir,
+        escreva um novo comentário. Um valor sugerido só muda o inventário se o
+        advogado aceitar.
+      </p>
+    </details>
+  );
+}
+
+/**
+ * Registro de despesa adiantada — comprovante OBRIGATÓRIO: a despesa cria um
+ * pedido próprio no seu convite e o arquivo sobe pelo mesmo fluxo seguro dos
+ * outros documentos (aparece na lista "O que falta de você" e no escritório).
+ */
+function DespesaEspolioForm({
+  token,
+  onRegistrada,
+  enviarComprovante,
+}: {
+  token: string;
+  onRegistrada: (d: DespesaEspolioPortal, convite: ConviteHerdeiro) => void;
+  enviarComprovante: (docId: string, file: File) => Promise<void>;
+}) {
+  const [categoria, setCategoria] = useState('funeral');
+  const [valor, setValor] = useState('');
+  const [data, setData] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [comprovante, setComprovante] = useState<File | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [feito, setFeito] = useState(false);
+
+  const enviar = async () => {
+    setErroEnvio(null);
+    setFeito(false);
+    const valorDecimal = valorParaDecimal(valor);
+    if (!valorDecimal) {
+      setErroEnvio('Informe o valor pago (ex.: 1.250,00).');
+      return;
+    }
+    if (!data) {
+      setErroEnvio('Informe a data do pagamento.');
+      return;
+    }
+    if (descricao.trim() === '') {
+      setErroEnvio('Descreva a despesa (ex.: "IPTU 2026 do apartamento — parcela única").');
+      return;
+    }
+    if (!comprovante) {
+      setErroEnvio('Anexe o comprovante — sem ele o escritório não consegue conferir.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/portal/${token}/espolio`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          despesa: { categoria, valor: valorDecimal, data, descricao: descricao.trim() },
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { despesa?: DespesaEspolioPortal; convite?: ConviteHerdeiro; erro?: string }
+        | null;
+      if (!r.ok || !corpo?.despesa || !corpo.convite) {
+        setErroEnvio(corpo?.erro ?? 'Não foi possível registrar — tente de novo.');
+        return;
+      }
+      onRegistrada({ ...corpo.despesa, minha: true }, corpo.convite);
+      // O comprovante segue pelo pedido recém-criado no seu convite.
+      await enviarComprovante(`despesa-${corpo.despesa.id}`, comprovante);
+      setValor('');
+      setData('');
+      setDescricao('');
+      setComprovante(null);
+      setFeito(true);
+    } catch {
+      setErroEnvio('Não foi possível registrar — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <details className="nota" style={{ marginTop: 6 }}>
+      <summary style={{ cursor: 'pointer' }}>Registrar uma despesa que você adiantou</summary>
+      <div className="grade q-grid" style={{ marginTop: 8 }}>
+        <Campo rotulo="Tipo de despesa">
+          <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            {CATEGORIAS_DESPESA_PORTAL.map((c) => (
+              <option key={c.valor} value={c.valor}>
+                {c.rotulo}
+              </option>
+            ))}
+          </select>
+        </Campo>
+        <Campo rotulo="Valor pago (R$)">
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="Ex.: 1.250,00"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+          />
+        </Campo>
+        <Campo rotulo="Data do pagamento">
+          <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Comprovante (obrigatório)">
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={(e: Ev) => setComprovante(e.target.files?.[0] ?? null)}
+          />
+        </Campo>
+      </div>
+      <Campo rotulo="Descreva a despesa">
+        <input
+          type="text"
+          maxLength={300}
+          placeholder='Ex.: "IPTU 2026 do apartamento — parcela única"'
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      </Campo>
+      {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+      {feito && (
+        <p className="fund" style={{ marginTop: 6 }}>
+          Despesa registrada e comprovante enviado — o escritório vai conferir e a
+          decisão aparece aqui para toda a família.
+        </p>
+      )}
+      <div style={{ marginTop: 8 }}>
+        <button className="acao" type="button" disabled={enviando} onClick={() => void enviar()}>
+          {enviando ? 'Registrando…' : 'Registrar despesa com comprovante'}
+        </button>
+      </div>
+    </details>
   );
 }
 

@@ -45,6 +45,9 @@ export interface ParticipanteEspolio {
 }
 
 export interface BemEspolio {
+  /** Id do bem no caso — âncora dos comentários/sugestões da família.
+   *  É o id ALEATÓRIO do lançamento (crypto.randomUUID), sem dado pessoal. */
+  id: string;
   descricao: string;
   /** Decimal como texto ("300000.00") — a UI formata. */
   valor: string;
@@ -86,7 +89,7 @@ export const AVISO_ESPOLIO =
 export interface EntradaEspolio {
   nomeFalecido: string;
   participantes: { nome: string; papel: PapelParticipante }[];
-  bens: { descricao: string; valor: string; fonteAvaliacao: string }[];
+  bens: { id: string; descricao: string; valor: string; fonteAvaliacao: string }[];
   /** Total do acervo (decimal texto) — soma dos bens visíveis. */
   totalAcervo?: string;
   dividas: { descricao: string; valor: string }[];
@@ -114,6 +117,7 @@ export function montarEspolioDoCaso(
     participantes: entrada.participantes.map((p) => ({ nome: p.nome, papel: p.papel })),
     bens: visibilidade.bens
       ? entrada.bens.map((b) => ({
+          id: b.id,
           descricao: b.descricao,
           valor: b.valor,
           fonteAvaliacao: b.fonteAvaliacao,

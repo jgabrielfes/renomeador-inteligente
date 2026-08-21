@@ -227,8 +227,11 @@ export async function encerrarPainel(
       prisma.portalConvite.deleteMany({ where: { casoId: id } }),
       prisma.portalPainel.delete({ where: { casoId: id } }),
       // Sem FK desde a migração registro_de_atendimento: o encerramento é
-      // quem apaga o histórico — "apagar tudo do servidor" inclui os eventos.
+      // quem apaga o histórico — "apagar tudo do servidor" inclui os eventos
+      // e os fatos do espólio (comentários, sugestões e despesas da família).
       prisma.portalEvento.deleteMany({ where: { casoId: id } }),
+      prisma.espolioNota.deleteMany({ where: { casoId: id } }),
+      prisma.espolioDespesa.deleteMany({ where: { casoId: id } }),
     ]);
     return { ok: true, convitesApagados: convites.count };
   } catch {
@@ -290,6 +293,235 @@ export async function revogarConvite(
     return { ok: true, convite };
   } catch {
     return { ok: false, erro: "Falha ao revogar — tente novamente." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Espaço do Espólio — fatos da família e a decisão do escritório      */
+/* ------------------------------------------------------------------ */
+
+export interface NotaEspolio {
+  id: string;
+  autor: string;
+  bemId: string;
+  tipo: string; // 'comentario' | 'sugestao_valor'
+  texto: string;
+  valorSugerido: string | null;
+  status: string; // 'pendente' | 'aceita' | 'recusada'
+  motivo: string | null;
+  criadaEm: string;
+}
+
+export interface DespesaEspolio {
+  id: string;
+  autor: string;
+  herdeiroId: string | null;
+  categoria: string;
+  valor: string;
+  data: string;
+  descricao: string;
+  status: string; // 'pendente' | 'reconhecida' | 'nao_reconhecida'
+  motivo: string | null;
+  tratamento: string; // 'ressarcir' | 'compensar'
+  criadaEm: string;
+}
+
+/** Mesma régua do relatório: dono do espelho ou colega de equipe; sem
+ *  espelho publicado, qualquer conta logada do site. */
+async function podeGerirCaso(
+  casoId: string,
+  eu: { id: string; equipeId: string | null },
+): Promise<boolean> {
+  const painel = await prisma.portalPainel.findUnique({
+    where: { casoId },
+    select: { userId: true },
+  });
+  return !painel || (await podeGerir(painel.userId, eu));
+}
+
+/** Lista os fatos do espólio de um caso (comentários, sugestões, despesas). */
+export async function fatosDoEspolio(
+  casoId: string,
+): Promise<{ ok: boolean; notas?: NotaEspolio[]; despesas?: DespesaEspolio[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const [notas, despesas] = await Promise.all([
+      prisma.espolioNota.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 300,
+      }),
+      prisma.espolioDespesa.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 300,
+      }),
+    ]);
+    return {
+      ok: true,
+      notas: notas.map((n) => ({
+        id: n.id,
+        autor: n.autor,
+        bemId: n.bemId,
+        tipo: n.tipo,
+        texto: n.texto,
+        valorSugerido: n.valorSugerido,
+        status: n.status,
+        motivo: n.motivo,
+        criadaEm: n.createdAt.toISOString(),
+      })),
+      despesas: despesas.map((d) => ({
+        id: d.id,
+        autor: d.autor,
+        herdeiroId: d.herdeiroId,
+        categoria: d.categoria,
+        valor: d.valor,
+        data: d.data,
+        descricao: d.descricao,
+        status: d.status,
+        motivo: d.motivo,
+        tratamento: d.tratamento,
+        criadaEm: d.createdAt.toISOString(),
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar os fatos do espólio." };
+  }
+}
+
+/**
+ * Decide uma sugestão de valor (ou arquiva um comentário). NADA muda no caso
+ * sem o aceite: quem aplica o valor ao acervo é o NAVEGADOR do advogado,
+ * depois desta gravação. O fato do herdeiro é imutável — a decisão só mexe
+ * em status/motivo/decididaEm.
+ */
+export async function decidirSugestao(
+  notaId: string,
+  aceitar: boolean,
+  motivo?: string,
+): Promise<{ ok: boolean; nota?: NotaEspolio; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(notaId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Nota sem identificação." };
+  const motivoLimpo = String(motivo ?? "").trim().slice(0, 300);
+  if (!aceitar && motivoLimpo === "") {
+    return { ok: false, erro: "Explique o motivo da recusa — o herdeiro vai ler." };
+  }
+  try {
+    const nota = await prisma.espolioNota.findUnique({ where: { id } });
+    if (!nota) return { ok: false, erro: "Nota não encontrada." };
+    if (!(await podeGerirCaso(nota.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const atualizada = await prisma.espolioNota.update({
+      where: { id },
+      data: {
+        status: aceitar ? "aceita" : "recusada",
+        motivo: motivoLimpo === "" ? null : motivoLimpo,
+        decididaEm: new Date(),
+      },
+    });
+    void registrarEventoPortal(
+      nota.casoId,
+      "ESPOLIO_SUGESTAO_DECIDIDA",
+      { herdeiro: nota.autor, motivo: aceitar ? undefined : motivoLimpo },
+      nota.token,
+    );
+    return {
+      ok: true,
+      nota: {
+        id: atualizada.id,
+        autor: atualizada.autor,
+        bemId: atualizada.bemId,
+        tipo: atualizada.tipo,
+        texto: atualizada.texto,
+        valorSugerido: atualizada.valorSugerido,
+        status: atualizada.status,
+        motivo: atualizada.motivo,
+        criadaEm: atualizada.createdAt.toISOString(),
+      },
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao decidir — tente novamente." };
+  }
+}
+
+/**
+ * Decide uma despesa adiantada: reconhecida (com o TRATAMENTO que o motor de
+ * cenários vai aplicar — ressarcir integral × compensar no quinhão) ou não
+ * reconhecida com motivo.
+ */
+export async function decidirDespesa(
+  despesaId: string,
+  decisao: "reconhecida" | "nao_reconhecida",
+  tratamento?: "ressarcir" | "compensar",
+  motivo?: string,
+): Promise<{ ok: boolean; despesa?: DespesaEspolio; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(despesaId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Despesa sem identificação." };
+  if (decisao !== "reconhecida" && decisao !== "nao_reconhecida") {
+    return { ok: false, erro: "Decisão inválida." };
+  }
+  const motivoLimpo = String(motivo ?? "").trim().slice(0, 300);
+  if (decisao === "nao_reconhecida" && motivoLimpo === "") {
+    return { ok: false, erro: "Explique o motivo — o herdeiro vai ler." };
+  }
+  const trat = tratamento === "compensar" ? "compensar" : "ressarcir";
+  try {
+    const despesa = await prisma.espolioDespesa.findUnique({ where: { id } });
+    if (!despesa) return { ok: false, erro: "Despesa não encontrada." };
+    if (!(await podeGerirCaso(despesa.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const atualizada = await prisma.espolioDespesa.update({
+      where: { id },
+      data: {
+        status: decisao,
+        tratamento: trat,
+        motivo: motivoLimpo === "" ? null : motivoLimpo,
+        decididaEm: new Date(),
+      },
+    });
+    void registrarEventoPortal(
+      despesa.casoId,
+      "ESPOLIO_DESPESA_DECIDIDA",
+      {
+        herdeiro: despesa.autor,
+        documento: despesa.descricao.slice(0, 160),
+        motivo: decisao === "nao_reconhecida" ? motivoLimpo : undefined,
+      },
+      despesa.token,
+    );
+    return {
+      ok: true,
+      despesa: {
+        id: atualizada.id,
+        autor: atualizada.autor,
+        herdeiroId: atualizada.herdeiroId,
+        categoria: atualizada.categoria,
+        valor: atualizada.valor,
+        data: atualizada.data,
+        descricao: atualizada.descricao,
+        status: atualizada.status,
+        motivo: atualizada.motivo,
+        tratamento: atualizada.tratamento,
+        criadaEm: atualizada.createdAt.toISOString(),
+      },
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao decidir — tente novamente." };
   }
 }
 

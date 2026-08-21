@@ -194,6 +194,59 @@ model PortalPainel {
   @@map("portal_paineis")
 }
 
+// FATOS VIVOS do Espaço do Espólio — imutáveis por desenho: o texto nunca é
+// editado nem apagado; a decisão do advogado só muda status/motivo, e
+// correção é uma LINHA NOVA. Sem FK (mesma lição de portal_eventos); quem
+// apaga é o Encerrar compartilhamento. Nomes de herdeiro são dado do
+// próprio escritório — NUNCA em /admin.
+
+// Comentário ou sugestão de valor de um HERDEIRO sobre um bem do espólio.
+// Nada muda no caso sem o advogado: sugestão aceita é aplicada por ELE no
+// acervo local (e só vale para a família após republicar).
+model EspolioNota {
+  id            String    @id @default(cuid())
+  casoId        String
+  // Convite autor + nome (os herdeiros veem uns aos outros no espólio).
+  token         String
+  autor         String
+  bemId         String
+  tipo          String    // 'comentario' | 'sugestao_valor'
+  texto         String
+  valorSugerido String?
+  status        String    @default("pendente") // pendente|aceita|recusada
+  motivo        String?
+  decididaEm    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_notas")
+}
+
+// Despesa ADIANTADA por um herdeiro (funeral, IPTU, condomínio, ITCMD…):
+// a maior fonte de ressentimento em inventário, agora contabilizada. O
+// comprovante é o pedido `despesa-<id>` do convite (reusa portal_arquivos).
+// Reconhecida entra nos cenários de partilha (ressarcir × compensar).
+model EspolioDespesa {
+  id         String    @id @default(cuid())
+  casoId     String
+  token      String
+  autor      String
+  // Herdeiro do caso (participanteId nos cenários) — vem do convite.
+  herdeiroId String?
+  categoria  String
+  valor      String
+  data       String
+  descricao  String
+  status     String    @default("pendente") // pendente|reconhecida|nao_reconhecida
+  motivo     String?
+  tratamento String    @default("ressarcir") // ressarcir|compensar
+  decididaEm DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_despesas")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:

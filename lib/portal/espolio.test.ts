@@ -36,8 +36,8 @@ const entradaBase = (): EntradaEspolio => ({
     { nome: 'Bruno Herdeiro', papel: 'herdeiro(a)' },
   ],
   bens: [
-    { descricao: 'Casa da Rua X', valor: '300000.00', fonteAvaliacao: 'valor venal (IPTU)' },
-    { descricao: 'Carro', valor: '60000.00', fonteAvaliacao: 'valor declarado pela família' },
+    { id: 'bem-1', descricao: 'Casa da Rua X', valor: '300000.00', fonteAvaliacao: 'valor venal (IPTU)' },
+    { id: 'bem-2', descricao: 'Carro', valor: '60000.00', fonteAvaliacao: 'valor declarado pela família' },
   ],
   totalAcervo: '360000.00',
   dividas: [{ descricao: 'Dívidas do espólio (total declarado)', valor: '12000.00' }],
@@ -58,6 +58,7 @@ eq('fechado por padrão devolve null', montarEspolioDoCaso(entradaBase(), VISIBI
   const e = montarEspolioDoCaso(entradaBase(), TUDO)!;
   eq('aberto: participantes com nome e papel', e.participantes.length, 3);
   eq('bens com fonte da avaliação', e.bens?.[0].fonteAvaliacao, 'valor venal (IPTU)');
+  eq('bem carrega o id (âncora dos comentários)', e.bens?.[0].id, 'bem-1');
   eq('total do acervo', e.totalAcervo, '360000.00');
   eq('dívidas visíveis', e.dividas?.length, 1);
   eq('quinhões de TODOS', e.quinhoes?.length, 3);
@@ -91,6 +92,7 @@ eq('fechado por padrão devolve null', montarEspolioDoCaso(entradaBase(), VISIBI
     ],
     bens: [
       {
+        id: 'bem-1',
         descricao: 'Casa da Rua X',
         valor: '300000.00',
         fonteAvaliacao: 'laudo',

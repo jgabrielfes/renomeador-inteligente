@@ -62,6 +62,8 @@ export async function GET(req: Request, ctx: Ctx) {
   // não deve carregá-lo para dentro do snapshot do caso.
   let painel: unknown = null;
   let espolio: unknown = null;
+  let espolioNotas: unknown[] = [];
+  let espolioDespesas: unknown[] = [];
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
@@ -81,6 +83,48 @@ export async function GET(req: Request, ctx: Ctx) {
           { herdeiro: convite.nomeHerdeiro },
           token,
         );
+      }
+      // Fatos do espólio são COMPARTILHADOS — o que um herdeiro comenta, os
+      // outros veem (com autor). O token de cada autor NUNCA sai daqui: é a
+      // credencial do convite dele; `minha` marca só os fatos deste token.
+      if (espolio) {
+        const [notas, despesas] = await Promise.all([
+          prisma.espolioNota.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+          }),
+          prisma.espolioDespesa.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+          }),
+        ]);
+        espolioNotas = notas.map((n) => ({
+          id: n.id,
+          autor: n.autor,
+          bemId: n.bemId,
+          tipo: n.tipo,
+          texto: n.texto,
+          valorSugerido: n.valorSugerido,
+          status: n.status,
+          motivo: n.motivo,
+          criadaEm: n.createdAt.toISOString().slice(0, 10),
+          minha: n.token === token,
+        }));
+        espolioDespesas = despesas.map((d) => ({
+          id: d.id,
+          autor: d.autor,
+          categoria: d.categoria,
+          valor: d.valor,
+          data: d.data,
+          descricao: d.descricao,
+          status: d.status,
+          motivo: d.motivo,
+          tratamento: d.tratamento,
+          criadaEm: d.createdAt.toISOString().slice(0, 10),
+          minha: d.token === token,
+        }));
       }
       const recorte = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
       if (recorte && typeof recorte === 'object') {
@@ -110,13 +154,24 @@ export async function GET(req: Request, ctx: Ctx) {
     } catch {
       painel = null;
       espolio = null;
+      espolioNotas = [];
+      espolioDespesas = [];
     }
   }
 
   // `emailAtivo` diz à página se a seção "avisos por e-mail" existe neste
   // deploy (env-gated) — o cliente não conhece as envs do servidor.
   return Response.json(
-    visita ? { ...convite, painel, espolio, emailAtivo: emailHabilitado() } : convite,
+    visita
+      ? {
+          ...convite,
+          painel,
+          espolio,
+          espolioNotas,
+          espolioDespesas,
+          emailAtivo: emailHabilitado(),
+        }
+      : convite,
   );
 }
 

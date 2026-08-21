@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -47,11 +48,16 @@ import { montarRelatorioComunicacaoPdf } from '@/lib/portal/relatorio-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 
 import {
+  decidirDespesa,
+  decidirSugestao,
   encerrarPainel,
   estadoPainel,
   eventosDoCaso,
+  fatosDoEspolio,
   publicarPainel,
   revogarConvite,
+  type DespesaEspolio,
+  type NotaEspolio,
 } from './painel-actions';
 
 /** Preferência do navegador: o card abre recolhido depois que o usuário o
@@ -99,6 +105,20 @@ export const PAINEL_FAMILIA_INICIAL: EstadoPainelFamilia = {
   espolioQuinhoes: false,
 };
 
+const brlCard = (v: string) =>
+  `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+/** Rótulo leigo das categorias de despesa adiantada (a lista fechada da rota). */
+export const CATEGORIA_DESPESA_ROTULO: Record<string, string> = {
+  funeral: 'Funeral',
+  iptu: 'IPTU',
+  condominio: 'Condomínio',
+  itcmd: 'ITCMD',
+  honorarios: 'Honorários',
+  certidoes: 'Certidões',
+  outra: 'Outra despesa',
+};
+
 const dataCurta = (iso?: string) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -122,6 +142,7 @@ export function PainelFamiliaCard({
   onEstado,
   onConviteAtualizado,
   onEncerrado,
+  onAplicarValor,
   irParaDocumentos,
 }: {
   casoId: string;
@@ -142,6 +163,9 @@ export function PainelFamiliaCard({
   onConviteAtualizado: (convite: ConviteHerdeiro) => void;
   /** Encerrou no servidor: o client limpa os convites do caso. */
   onEncerrado: () => void;
+  /** Sugestão de valor ACEITA: o client aplica no bem do acervo (nada muda
+   *  no caso sem este aceite explícito do advogado). */
+  onAplicarValor: (bemId: string, valor: string) => void;
   irParaDocumentos: () => void;
 }) {
   const [publicando, setPublicando] = useState(false);
@@ -150,6 +174,14 @@ export function PainelFamiliaCard({
   const [revogando, setRevogando] = useState<string | null>(null);
   const [confirmaRevogar, setConfirmaRevogar] = useState<ConviteHerdeiro | null>(null);
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+  /* Fatos do espólio (o que a família mandou): sugestões de valor,
+     comentários e despesas adiantadas, com a decisão do escritório aqui. */
+  const [notasEspolio, setNotasEspolio] = useState<NotaEspolio[]>([]);
+  const [despesasEspolio, setDespesasEspolio] = useState<DespesaEspolio[]>([]);
+  const [decidindo, setDecidindo] = useState<string | null>(null);
+  const [recusa, setRecusa] = useState<{ tipo: 'nota' | 'despesa'; id: string } | null>(null);
+  const [motivoRecusa, setMotivoRecusa] = useState('');
+  const [tratamentos, setTratamentos] = useState<Record<string, 'ressarcir' | 'compensar'>>({});
   /* Recolhível (é o primeiro bloco da Página Inicial): a preferência fica no
      navegador; a restauração é diferida para não brigar com a hidratação. */
   const [recolhido, setRecolhido] = useState(false);
@@ -194,6 +226,87 @@ export function PainelFamiliaCard({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [casoId]);
+
+  // Fatos do espólio: carrega quando o card está aberto com o espaço ligado
+  // (fatos só existem se o espaço já esteve aberto) — melhor-esforço.
+  useEffect(() => {
+    if (recolhido || !estado.espolioAberto) return;
+    let vivo = true;
+    void fatosDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setNotasEspolio(r.notas ?? []);
+      setDespesasEspolio(r.despesas ?? []);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [casoId, recolhido, estado.espolioAberto]);
+
+  const descricaoDoBem = (bemId: string) =>
+    espolioDados.bens.find((b) => b.id === bemId)?.descricao ?? 'bem não localizado no acervo atual';
+
+  const decidirNota = async (nota: NotaEspolio, aceitar: boolean, motivo?: string) => {
+    setDecidindo(nota.id);
+    try {
+      const r = await decidirSugestao(nota.id, aceitar, motivo);
+      if (!r.ok || !r.nota) {
+        toast.error('Não foi possível decidir', { description: r.erro });
+        return;
+      }
+      setNotasEspolio((prev) => prev.map((n) => (n.id === nota.id ? r.nota! : n)));
+      setRecusa(null);
+      setMotivoRecusa('');
+      if (aceitar && nota.tipo === 'sugestao_valor' && nota.valorSugerido) {
+        // O aceite é o que muda o caso — aplica o valor no bem AQUI, no
+        // navegador do advogado, nunca direto pelo herdeiro.
+        onAplicarValor(nota.bemId, nota.valorSugerido);
+        toast.success('Sugestão aceita e aplicada ao bem', {
+          description: 'Confira o acervo e publique de novo para a família ver o número atualizado.',
+        });
+      } else if (aceitar) {
+        toast.success('Comentário marcado como lido');
+      } else {
+        toast.success('Sugestão recusada', {
+          description: 'O herdeiro vê o motivo no espaço do espólio.',
+        });
+      }
+    } finally {
+      setDecidindo(null);
+    }
+  };
+
+  const decidirDespesaLocal = async (
+    despesa: DespesaEspolio,
+    decisao: 'reconhecida' | 'nao_reconhecida',
+    motivo?: string,
+  ) => {
+    setDecidindo(despesa.id);
+    try {
+      const tratamento = tratamentos[despesa.id] ?? 'ressarcir';
+      const r = await decidirDespesa(despesa.id, decisao, tratamento, motivo);
+      if (!r.ok || !r.despesa) {
+        toast.error('Não foi possível decidir', { description: r.erro });
+        return;
+      }
+      setDespesasEspolio((prev) => prev.map((d) => (d.id === despesa.id ? r.despesa! : d)));
+      setRecusa(null);
+      setMotivoRecusa('');
+      if (decisao === 'reconhecida') {
+        toast.success('Despesa reconhecida', {
+          description:
+            tratamento === 'compensar'
+              ? 'Entra nos cenários como adiantamento a compensar no quinhão de quem pagou.'
+              : 'Entra nos cenários como reembolso integral a quem pagou, rateado por todos.',
+        });
+      } else {
+        toast.success('Despesa não reconhecida', {
+          description: 'O herdeiro vê o motivo no espaço do espólio.',
+        });
+      }
+    } finally {
+      setDecidindo(null);
+    }
+  };
 
   const publicar = async () => {
     if (ativos.length === 0) {
@@ -485,6 +598,131 @@ export function PainelFamiliaCard({
             </label>
           </div>
         )}
+
+        {/* Fatos enviados pela família: nada muda no caso sem a decisão aqui. */}
+        {estado.espolioAberto &&
+          (notasEspolio.length > 0 || despesasEspolio.length > 0) && (
+            <div style={{ marginTop: 10 }}>
+              <span className="eyebrow">Chegou da família</span>
+              {notasEspolio.map((n) => (
+                <div className="linha-item" key={n.id}>
+                  <span>
+                    <strong>{n.autor}</strong>
+                    {n.tipo === 'sugestao_valor' ? (
+                      <>
+                        {' '}sugeriu <strong className="num">{brlCard(n.valorSugerido ?? '0')}</strong>{' '}
+                        para “{descricaoDoBem(n.bemId)}”
+                      </>
+                    ) : (
+                      <> comentou “{descricaoDoBem(n.bemId)}”</>
+                    )}
+                    <span className="fund" style={{ display: 'block' }}>
+                      “{n.texto}”
+                      {n.status === 'aceita' &&
+                        (n.tipo === 'sugestao_valor' ? ' · aceita e aplicada' : ' · lido')}
+                      {n.status === 'recusada' && ` · recusada${n.motivo ? `: ${n.motivo}` : ''}`}
+                    </span>
+                  </span>
+                  {n.status === 'pendente' && (
+                    <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        loading={decidindo === n.id}
+                        onClick={() => void decidirNota(n, true)}
+                      >
+                        {n.tipo === 'sugestao_valor' ? 'aceitar e aplicar' : 'marcar como lido'}
+                      </Button>
+                      {n.tipo === 'sugestao_valor' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={decidindo !== null}
+                          onClick={() => {
+                            setMotivoRecusa('');
+                            setRecusa({ tipo: 'nota', id: n.id });
+                          }}
+                        >
+                          recusar
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {despesasEspolio.map((d) => (
+                <div className="linha-item" key={d.id}>
+                  <span>
+                    <strong>{d.autor}</strong> adiantou{' '}
+                    <strong className="num">{brlCard(d.valor)}</strong> —{' '}
+                    {CATEGORIA_DESPESA_ROTULO[d.categoria] ?? d.categoria} · {d.descricao}
+                    <span className="fund" style={{ display: 'block' }}>
+                      pago em {d.data.split('-').reverse().join('/')} · comprovante na aba Documentos
+                      {d.status === 'reconhecida' &&
+                        ` · reconhecida (${d.tratamento === 'compensar' ? 'compensar no quinhão' : 'ressarcir pelo espólio'})`}
+                      {d.status === 'nao_reconhecida' &&
+                        ` · não reconhecida${d.motivo ? `: ${d.motivo}` : ''}`}
+                    </span>
+                  </span>
+                  {d.status === 'pendente' && (
+                    <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                      <Select
+                        value={tratamentos[d.id] ?? 'ressarcir'}
+                        onValueChange={(v) =>
+                          v &&
+                          setTratamentos((prev) => ({
+                            ...prev,
+                            [d.id]: v === 'compensar' ? 'compensar' : 'ressarcir',
+                          }))
+                        }
+                      >
+                        <SelectTrigger size="sm" aria-label="Tratamento da despesa nos cenários">
+                          <SelectValue>
+                            {(tratamentos[d.id] ?? 'ressarcir') === 'compensar'
+                              ? 'compensar no quinhão'
+                              : 'ressarcir pelo espólio'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ressarcir">
+                            ressarcir pelo espólio (reembolso integral, rateado por todos)
+                          </SelectItem>
+                          <SelectItem value="compensar">
+                            compensar no quinhão (abate do que quem pagou tem a receber)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        loading={decidindo === d.id}
+                        onClick={() => void decidirDespesaLocal(d, 'reconhecida')}
+                      >
+                        reconhecer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                        disabled={decidindo !== null}
+                        onClick={() => {
+                          setMotivoRecusa('');
+                          setRecusa({ tipo: 'despesa', id: d.id });
+                        }}
+                      >
+                        não reconhecer
+                      </Button>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -568,6 +806,54 @@ export function PainelFamiliaCard({
       </p>
       </>
       )}
+
+      {/* Recusa de sugestão / não-reconhecimento de despesa: motivo obrigatório
+          — o herdeiro lê exatamente este texto no espaço do espólio. */}
+      <Dialog open={recusa !== null} onOpenChange={(o) => decidindo === null && !o && setRecusa(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {recusa?.tipo === 'nota' ? 'Recusar a sugestão de valor?' : 'Não reconhecer a despesa?'}
+            </DialogTitle>
+            <DialogDescription>
+              Explique o motivo em linguagem simples — o herdeiro que enviou vai ler este
+              texto no espaço do espólio.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={motivoRecusa}
+            rows={3}
+            placeholder={
+              recusa?.tipo === 'nota'
+                ? 'Ex.: O valor de referência é o venal do IPTU na data do óbito, que já está lançado.'
+                : 'Ex.: O comprovante não identifica o pagamento — reenvie o recibo completo.'
+            }
+            onChange={(e) => setMotivoRecusa(e.target.value)}
+          />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button variant="outline" disabled={decidindo !== null} onClick={() => setRecusa(null)}>
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              loading={decidindo !== null}
+              disabled={motivoRecusa.trim() === ''}
+              onClick={() => {
+                if (!recusa) return;
+                if (recusa.tipo === 'nota') {
+                  const nota = notasEspolio.find((n) => n.id === recusa.id);
+                  if (nota) void decidirNota(nota, false, motivoRecusa);
+                } else {
+                  const despesa = despesasEspolio.find((d) => d.id === recusa.id);
+                  if (despesa) void decidirDespesaLocal(despesa, 'nao_reconhecida', motivoRecusa);
+                }
+              }}
+            >
+              {recusa?.tipo === 'nota' ? 'Recusar com este motivo' : 'Não reconhecer com este motivo'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmaEncerrar} onOpenChange={(o) => !encerrando && setConfirmaEncerrar(o)}>
         <DialogContent>

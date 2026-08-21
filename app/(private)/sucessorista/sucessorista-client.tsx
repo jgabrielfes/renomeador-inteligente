@@ -1909,6 +1909,7 @@ export default function SucessoristaClient({
         ? participantesDoResultado(resultado).map((p) => ({ nome: p.nome, papel: papelDe(p.id) }))
         : herdeiros.map((h) => ({ nome: h.nome, papel: papelDe(h.id) })),
       bens: bens.map((b) => ({
+        id: b.id,
         descricao: b.descricao,
         valor: String(b.valor ?? '0'),
         fonteAvaliacao: fonteDe(b),
@@ -3736,6 +3737,16 @@ export default function SucessoristaClient({
                   })
                 }
                 onEncerrado={() => setConvites({})}
+                onAplicarValor={(bemId, valor) =>
+                  // Sugestão de valor ACEITA pelo advogado: entra como
+                  // AVALIAÇÃO do bem (o venal do óbito segue sendo o
+                  // documento oficial; custas/ITCMD já usam o maior).
+                  setBens((prev) =>
+                    prev.map((b) =>
+                      b.id === bemId ? { ...b, valorAvaliacao: Number(valor).toFixed(2) } : b,
+                    ),
+                  )
+                }
                 irParaDocumentos={() => irPara('documentos')}
               />
             }
