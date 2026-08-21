@@ -4319,6 +4319,7 @@ export default function SucessoristaClient({
       </main>
 
       <PainelCaso
+        casoId={casoId}
         falecido={falecido}
         temSobrevivente={temSobrevivente}
         vinculo={vinculo}

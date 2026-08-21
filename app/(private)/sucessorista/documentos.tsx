@@ -93,14 +93,17 @@ function tamanhoLegivel(bytes: number): string {
 function AcoesEnvioCofre({
   envio,
   onAnexar,
+  onVisualizar,
   onSalvarNaPasta,
 }: {
   envio: EnvioDoCofre;
   onAnexar: (file: File) => void;
+  /** Abre o arquivo na lupa de pré-visualização (antes de baixar/anexar). */
+  onVisualizar?: (file: File) => void;
   /** Modo pasta: grava o arquivo em "Recebidos do cofre/" no caso (Explorer). */
   onSalvarNaPasta?: (file: File) => Promise<boolean>;
 }) {
-  const [agindo, setAgindo] = useState<'baixar' | 'anexar' | null>(null);
+  const [agindo, setAgindo] = useState<'ver' | 'baixar' | 'anexar' | null>(null);
   const [erro, setErro] = useState(false);
   const [anexado, setAnexado] = useState(false);
   const [naPasta, setNaPasta] = useState(false);
@@ -113,7 +116,7 @@ function AcoesEnvioCofre({
     return new File([blob], envio.nomeArquivo, { type: blob.type });
   };
 
-  const agir = async (acao: 'baixar' | 'anexar') => {
+  const agir = async (acao: 'ver' | 'baixar' | 'anexar') => {
     setAgindo(acao);
     setErro(false);
     try {
@@ -122,7 +125,9 @@ function AcoesEnvioCofre({
         setErro(true);
         return;
       }
-      if (acao === 'baixar') {
+      if (acao === 'ver') {
+        onVisualizar?.(file);
+      } else if (acao === 'baixar') {
         baixarBlob(file, envio.nomeArquivo);
       } else {
         onAnexar(file);
@@ -140,6 +145,18 @@ function AcoesEnvioCofre({
 
   return (
     <>
+      {onVisualizar && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          loading={agindo === 'ver'}
+          disabled={agindo !== null}
+          onClick={() => void agir('ver')}
+        >
+          visualizar
+        </Button>
+      )}
       <Button
         type="button"
         variant="ghost"
@@ -211,7 +228,10 @@ function AcoesConferencia({
     }
   };
 
-  if (envio.status === 'APROVADO') return null;
+  // A decisão é UMA: aprovar OU recusar. Decidido, os botões somem — o
+  // status na linha diz o resultado; recusado volta a decidir quando o
+  // herdeiro reenviar (o pedido reabre como ENVIADO).
+  if (envio.status !== 'ENVIADO') return null;
   return (
     <>
       <Button
@@ -224,18 +244,16 @@ function AcoesConferencia({
       >
         aprovar
       </Button>
-      {envio.status !== 'REJEITADO' && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-destructive"
-          disabled={agindo !== null}
-          onClick={() => setRecusando(true)}
-        >
-          recusar
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-destructive"
+        disabled={agindo !== null}
+        onClick={() => setRecusando(true)}
+      >
+        recusar
+      </Button>
       <Dialog open={recusando} onOpenChange={(o) => agindo === null && setRecusando(o)}>
         <DialogContent>
           <DialogHeader>
@@ -478,11 +496,22 @@ function ResponsavelDoc({
     }
   };
 
+  // Rótulo do valor selecionado no gatilho: o id do herdeiro nunca pode
+  // aparecer cru (o Base UI só conhece os rótulos com o popup montado).
+  const rotuloAtual =
+    valor === ''
+      ? 'Responsável…'
+      : valor === '__advogado__'
+        ? 'Escritório'
+        : valor === '__inventariante__'
+          ? 'Inventariante'
+          : (herdeiros.find((h) => h.id === valor)?.nome ?? 'Responsável…');
+
   return (
     <span className="doc-resp">
       <Select value={valor || '__ninguem__'} onValueChange={(v) => v && onMudar(v === '__ninguem__' ? '' : v)}>
         <SelectTrigger size="sm" aria-label={`Responsável por ${doc.titulo}`}>
-          <SelectValue />
+          <SelectValue>{rotuloAtual}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__ninguem__">Responsável…</SelectItem>
@@ -919,6 +948,7 @@ export function DocumentosView({
                           <AcoesEnvioCofre
                             envio={envio}
                             onAnexar={(file) => anexar(doc.id, [file])}
+                            onVisualizar={setPreview}
                             onSalvarNaPasta={onSalvarNaPasta}
                           />
                           {onConviteAtualizado && decideAqui && (

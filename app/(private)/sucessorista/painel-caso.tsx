@@ -8,7 +8,7 @@
  * resumo executivo que o advogado consulta o tempo todo.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
@@ -48,6 +48,7 @@ export function PainelCaso({
   setNotas,
   convites = {},
   onVerCofre,
+  casoId = '',
   aberto = false,
   onFechar,
   recolhido = false,
@@ -78,6 +79,8 @@ export function PainelCaso({
   convites?: Record<string, ConviteHerdeiro>;
   /** Abre a aba Documentos (onde cada envio aparece no card correlato). */
   onVerCofre?: () => void;
+  /** Id do caso — escopa o "visto" do sino no navegador (badge zera ao clicar). */
+  casoId?: string;
   /** Celular: o painel vira gaveta — aberto/fechado pelo botão flutuante. */
   aberto?: boolean;
   onFechar?: () => void;
@@ -113,6 +116,34 @@ export function PainelCaso({
     }
     return { total, aConferir, ultima };
   }, [convites]);
+
+  /* Badge do sino = chegadas NÃO VISTAS: clicar no sino marca tudo como
+     visto (por caso, no navegador) e o número some; chegada nova volta a
+     contar do zero. A restauração é diferida (convenção anti-hidratação). */
+  const [vistoAte, setVistoAte] = useState(0);
+  useEffect(() => {
+    if (!casoId) return;
+    const t = setTimeout(() => {
+      try {
+        const v = Number(localStorage.getItem(`sucessorista-sino-visto-${casoId}`) ?? '0');
+        if (Number.isFinite(v) && v > 0) setVistoAte(v);
+      } catch {
+        // modo restrito
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [casoId]);
+  const naoVistas = Math.max(0, notificacoesCofre.total - vistoAte);
+  const verCofre = () => {
+    setVistoAte(notificacoesCofre.total);
+    try {
+      if (casoId)
+        localStorage.setItem(`sucessorista-sino-visto-${casoId}`, String(notificacoesCofre.total));
+    } catch {
+      // modo restrito
+    }
+    onVerCofre?.();
+  };
 
   const incapaz = herdeiros.some((h) => h.menorOuIncapaz);
 
@@ -179,12 +210,12 @@ export function PainelCaso({
           o clique abre a aba Documentos, onde cada envio está no card
           correlato. */}
       {onVerCofre && (
-        <button type="button" className="sino-cofre" onClick={onVerCofre}>
+        <button type="button" className="sino-cofre" onClick={verCofre}>
           <span className="sino">
             <Bell size={18} aria-hidden />
-            {notificacoesCofre.total > 0 && (
+            {naoVistas > 0 && (
               <span className="badge num" aria-hidden>
-                {notificacoesCofre.total > 99 ? '99+' : notificacoesCofre.total}
+                {naoVistas > 99 ? '99+' : naoVistas}
               </span>
             )}
           </span>
