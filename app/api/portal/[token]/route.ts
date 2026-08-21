@@ -14,6 +14,8 @@ import {
   type DetalheEventoPortal,
 } from '@/lib/portal/eventos';
 import { registrarEventoPortal } from '@/lib/portal/eventos-server';
+import { emailHabilitado } from '@/lib/portal/email';
+import { notificarHerdeiro } from '@/lib/portal/notificar';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,7 +97,9 @@ export async function GET(req: Request, ctx: Ctx) {
     }
   }
 
-  return Response.json(visita ? { ...convite, painel } : convite);
+  // `emailAtivo` diz à página se a seção "avisos por e-mail" existe neste
+  // deploy (env-gated) — o cliente não conhece as envs do servidor.
+  return Response.json(visita ? { ...convite, painel, emailAtivo: emailHabilitado() } : convite);
 }
 
 /**
@@ -126,6 +130,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     qualificacao?: Record<string, unknown>;
     confirmarEnvio?: boolean;
     novoPedido?: { id?: string; titulo?: string; descricao?: string };
+    preferencias?: { email?: string; notificacoes?: string };
   };
   try {
     body = await req.json();
@@ -180,6 +185,23 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return Response.json(atualizado);
   }
 
+  // Avisos por e-mail: o herdeiro salva endereço e preferência no portal.
+  if (body?.preferencias && typeof body.preferencias === 'object') {
+    const email = String(body.preferencias.email ?? '').trim().slice(0, 200);
+    if (email !== '' && !/.+@.+\..+/.test(email)) {
+      return Response.json({ erro: 'E-mail inválido.' }, { status: 422 });
+    }
+    const pref = String(body.preferencias.notificacoes ?? '');
+    const atualizado = await store.salvarPreferencias(token, {
+      emailNotificacao: email,
+      ...(pref === 'tudo' || pref === 'fases' || pref === 'nada'
+        ? { notificacoes: pref }
+        : {}),
+    });
+    if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    return Response.json(atualizado);
+  }
+
   // Painel do Cliente: pendência atribuída pelo advogado DEPOIS do convite
   // (coluna "Responsável" da aba Documentos) — id repetido não duplica.
   if (body?.novoPedido && typeof body.novoPedido === 'object') {
@@ -199,6 +221,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
       'PENDENCIA',
       { herdeiro: atualizado.nomeHerdeiro, documento: titulo },
       token,
+    );
+    void notificarHerdeiro(
+      atualizado,
+      { tipo: 'PENDENCIA', documento: titulo },
+      new URL(req.url).origin,
     );
     return Response.json(atualizado);
   }
@@ -245,6 +272,20 @@ export async function PATCH(req: Request, ctx: Ctx) {
         },
         token,
       );
+      // Conferência do advogado avisa o herdeiro na hora (preferência 'tudo').
+      if (tipoEvento === 'DOC_ACEITO' || tipoEvento === 'DOC_RECUSADO') {
+        void notificarHerdeiro(
+          atualizado,
+          tipoEvento === 'DOC_ACEITO'
+            ? { tipo: 'DOC_ACEITO', documento: pedido?.titulo ?? 'documento' }
+            : {
+                tipo: 'DOC_RECUSADO',
+                documento: pedido?.titulo ?? 'documento',
+                motivo: patch.observacaoAdvogado?.slice(0, 300),
+              },
+          new URL(req.url).origin,
+        );
+      }
     }
   }
   if (patch.status === 'ENVIADO') {

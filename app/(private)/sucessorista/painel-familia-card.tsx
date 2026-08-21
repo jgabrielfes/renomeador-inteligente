@@ -251,6 +251,25 @@ export function PainelFamiliaCard({
     }
   };
 
+  /** Fallback que sempre funciona (sem depender de e-mail): o aviso pronto
+   *  para colar no WhatsApp da família — fase atual + próximo passo. */
+  const copiarAvisoWhatsApp = async () => {
+    const fase = fases.find((f) => f.id === faseAtual);
+    const texto =
+      `Olá! Atualização do inventário de ${nomeFalecido}: estamos na fase "${fase?.titulo ?? ''}".` +
+      (estado.proximoPasso.trim() ? ` Próximo passo: ${estado.proximoPasso.trim()}.` : '') +
+      ' Você pode acompanhar tudo pelo seu link do portal — qualquer dúvida, é só me chamar. — ' +
+      nomeAdvogado;
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast.success('Aviso copiado', {
+        description: 'Cole no WhatsApp da família — cada herdeiro já tem o próprio link.',
+      });
+    } catch {
+      toast.error('Não foi possível copiar o texto.');
+    }
+  };
+
   /** Registro de atendimento em papel: prova da comunicação com a família. */
   const gerarRelatorio = async () => {
     setGerandoRelatorio(true);
@@ -449,6 +468,9 @@ export function PainelFamiliaCard({
           onClick={() => void gerarRelatorio()}
         >
           Relatório de comunicação (PDF)
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void copiarAvisoWhatsApp()}>
+          copiar aviso (WhatsApp)
         </Button>
         {estado.publicadoEm && (
           <>

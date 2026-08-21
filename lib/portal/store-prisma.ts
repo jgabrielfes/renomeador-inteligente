@@ -128,4 +128,19 @@ export const store: PortalStore = {
     }
     return memoryStore.adicionarPedido(token, pedido);
   },
+
+  async salvarPreferencias(token, prefs) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
+        if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
+        await gravarNoBanco(c);
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.salvarPreferencias(token, prefs);
+  },
 };

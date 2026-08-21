@@ -16,9 +16,12 @@
 // Privacidade: dado do PRÓPRIO escritório e da família — NUNCA exibir em
 // /admin; telemetria só de contagens (registrarPortal), nunca conteúdo.
 
+import { headers } from "next/headers";
+
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { EH_SUCESSORISTA } from "@/lib/app";
+import { notificarMudancaDeFase, notificarQuinhaoLiberado } from "@/lib/portal/notificar";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
 import type { ConviteHerdeiro } from "@/lib/portal/store";
 import type { DetalheEventoPortal } from "@/lib/portal/eventos";
@@ -118,17 +121,33 @@ export async function publicarPainel(dados: {
     });
     void registrarEventoPortal(casoId, "PUBLICACAO", { convites: tokens.length });
     // Marcos do caso para o histórico do herdeiro: a FASE mudou entre as
-    // publicações, e o quinhão saiu de fechado para LIBERADO.
+    // publicações, e o quinhão saiu de fechado para LIBERADO. Com o e-mail
+    // habilitado (RESEND_API_KEY), cada marco também dispara o aviso — o
+    // advogado publica uma vez e a família inteira fica sabendo.
+    const origem = await (async () => {
+      try {
+        const h = await headers();
+        const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+        const proto = h.get("x-forwarded-proto") ?? "https";
+        return host ? `${proto}://${host}` : "";
+      } catch {
+        return "";
+      }
+    })();
+    const nomeFalecido =
+      Object.values(dados.paineis)[0]?.nomeFalecido ?? "";
     const faseNova = faseDoSnapshot(snapshot);
     const faseAnterior = existente ? faseDoSnapshot(existente.snapshot) : null;
     if (faseNova && faseNova !== faseAnterior) {
       void registrarEventoPortal(casoId, "FASE", { fase: faseNova });
+      if (existente) void notificarMudancaDeFase(casoId, nomeFalecido, faseNova, origem);
     }
     const quinhaoAntes = Boolean(
       (existente?.visibilidade as VisibilidadePainel | null)?.quinhao,
     );
     if (dados.visibilidade?.quinhao && !quinhaoAntes && existente) {
       void registrarEventoPortal(casoId, "QUINHAO_LIBERADO");
+      void notificarQuinhaoLiberado(casoId, nomeFalecido, origem);
     }
     return {
       publicado: true,

@@ -102,6 +102,10 @@ export interface ConviteHerdeiro {
   /** Convite revogado pelo advogado: o portal responde 410 e nada mais
    *  entra por este token. O registro fica (histórico), o acesso morre. */
   revogadoEm?: string;
+  /** Avisos por e-mail (Resend, env-gated): o herdeiro salva o e-mail e a
+   *  preferência no próprio portal. Sem e-mail válido, nada é enviado. */
+  emailNotificacao?: string;
+  notificacoes?: 'tudo' | 'fases' | 'nada';
 }
 
 export interface PortalStore {
@@ -124,6 +128,11 @@ export interface PortalStore {
   adicionarPedido(
     token: string,
     pedido: { id: string; titulo: string; descricao: string },
+  ): Promise<ConviteHerdeiro | null>;
+  /** Avisos por e-mail: preferência e endereço salvos pelo herdeiro. */
+  salvarPreferencias(
+    token: string,
+    prefs: { emailNotificacao?: string; notificacoes?: 'tudo' | 'fases' | 'nada' },
   ): Promise<ConviteHerdeiro | null>;
 }
 
@@ -169,6 +178,13 @@ export const memoryStore: PortalStore = {
     if (!c.documentos.some((d) => d.id === pedido.id)) {
       c.documentos.push({ ...pedido, status: 'PENDENTE' });
     }
+    return c;
+  },
+  async salvarPreferencias(token, prefs) {
+    const c = mem.get(token);
+    if (!c) return null;
+    if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
+    if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
     return c;
   },
 };

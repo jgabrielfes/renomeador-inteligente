@@ -21,7 +21,8 @@ export type TipoEventoPortal =
   | 'PENDENCIA'
   | 'PUBLICACAO'
   | 'FASE'
-  | 'QUINHAO_LIBERADO';
+  | 'QUINHAO_LIBERADO'
+  | 'NOTIFICACAO';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -91,4 +92,5 @@ export const ROTULO_EVENTO: Record<string, string> = {
   PUBLICACAO: 'Painel publicado para a família',
   FASE: 'Fase do inventário alterada',
   QUINHAO_LIBERADO: 'Quinhão liberado para consulta',
+  NOTIFICACAO: 'Aviso enviado por e-mail',
 };

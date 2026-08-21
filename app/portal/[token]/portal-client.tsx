@@ -23,8 +23,12 @@ import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { PainelHerdeiro } from '@/lib/portal/painel';
 
 /** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
- *  token (null enquanto o advogado não publicar). */
-type ConviteComPainel = ConviteHerdeiro & { painel?: PainelHerdeiro | null };
+ *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
+ *  no deploy (env-gated no servidor). */
+type ConviteComPainel = ConviteHerdeiro & {
+  painel?: PainelHerdeiro | null;
+  emailAtivo?: boolean;
+};
 
 const ROTULO: Record<string, string> = {
   PENDENTE: 'Aguardando você',
@@ -149,9 +153,14 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       .catch((e: Error) => setErro(e.message));
   }, [token]);
 
-  /** Respostas de PATCH/upload trazem só o convite — preserva o painel. */
+  /** Respostas de PATCH/upload trazem só o convite — preserva o painel e a
+   *  flag de e-mail do carregamento inicial. */
   const atualizarConvite = (novo: ConviteHerdeiro) =>
-    setConvite((prev) => ({ ...novo, painel: prev?.painel ?? null }));
+    setConvite((prev) => ({
+      ...novo,
+      painel: prev?.painel ?? null,
+      emailAtivo: prev?.emailAtivo ?? false,
+    }));
 
   const {
     register,
@@ -710,6 +719,17 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             : 'Salvar — confirmar meu envio'}
       </button>
 
+      {/* ---------- avisos por e-mail (env-gated no servidor) ---------- */}
+      {convite.emailAtivo && (
+        <AvisosEmail
+          key={convite.token}
+          token={token}
+          emailInicial={convite.emailNotificacao ?? convite.qualificacao?.email ?? ''}
+          prefInicial={convite.notificacoes ?? 'tudo'}
+          onAtualizado={atualizarConvite}
+        />
+      )}
+
       {/* ---------- custos (só o que o advogado marcou como visível) ---------- */}
       {painel?.custos && painel.custos.length > 0 && (
         <>
@@ -782,6 +802,83 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       <LupaPreview file={preview} onClose={() => setPreview(null)} />
     </main>
     </div>
+  );
+}
+
+/** Avisos por e-mail: o herdeiro escolhe o quanto quer saber sem perguntar
+ *  ao advogado — tudo, só as mudanças de fase, ou nada. */
+function AvisosEmail({
+  token,
+  emailInicial,
+  prefInicial,
+  onAtualizado,
+}: {
+  token: string;
+  emailInicial: string;
+  prefInicial: 'tudo' | 'fases' | 'nada';
+  onAtualizado: (c: ConviteHerdeiro) => void;
+}) {
+  const [email, setEmail] = useState(emailInicial);
+  const [pref, setPref] = useState<'tudo' | 'fases' | 'nada'>(prefInicial);
+  const [salvandoPref, setSalvandoPref] = useState(false);
+  const [feito, setFeito] = useState(false);
+  const [erroPref, setErroPref] = useState<string | null>(null);
+
+  const salvar = async () => {
+    setSalvandoPref(true);
+    setErroPref(null);
+    setFeito(false);
+    try {
+      const r = await fetch(`/api/portal/${token}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preferencias: { email: email.trim(), notificacoes: pref } }),
+      });
+      if (r.ok) {
+        onAtualizado((await r.json()) as ConviteHerdeiro);
+        setFeito(true);
+      } else {
+        const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+        setErroPref(corpo?.erro ?? 'Não foi possível salvar — tente de novo.');
+      }
+    } finally {
+      setSalvandoPref(false);
+    }
+  };
+
+  return (
+    <>
+      <h2>Avisos por e-mail</h2>
+      <p className="fund" style={{ marginBottom: 8 }}>
+        Receba um e-mail quando o inventário mudar de fase, quando um documento seu for
+        conferido ou quando algo novo for pedido a você — sem precisar perguntar.
+      </p>
+      <div className="grade q-grid">
+        <label className="campo">
+          Seu e-mail para os avisos
+          <input
+            type="text"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+        <label className="campo">
+          O que você quer receber
+          <select value={pref} onChange={(e) => setPref(e.target.value as typeof pref)}>
+            <option value="tudo">Tudo (fases, documentos e pedidos)</option>
+            <option value="fases">Só as mudanças de fase</option>
+            <option value="nada">Nada por e-mail</option>
+          </select>
+        </label>
+      </div>
+      {erroPref && <p className="mono-alerta">{erroPref}</p>}
+      <div style={{ marginTop: 10 }}>
+        <button className="acao" type="button" disabled={salvandoPref} onClick={() => void salvar()}>
+          {salvandoPref ? 'Salvando…' : feito ? 'Preferências salvas ✓' : 'Salvar preferências'}
+        </button>
+      </div>
+    </>
   );
 }
 
