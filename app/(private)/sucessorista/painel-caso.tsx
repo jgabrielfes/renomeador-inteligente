@@ -8,13 +8,14 @@
  * resumo executivo que o advogado consulta o tempo todo.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
 import type { ProvisaoItcmd, ResultadoIsencoes } from '@/lib/partilha/itcmd';
+import { faixaDoPrazo } from '@/lib/partilha/prazo';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 
 const brl = (v: number | string) =>
@@ -47,6 +48,7 @@ export function PainelCaso({
   setNotas,
   convites = {},
   onVerCofre,
+  casoId = '',
   aberto = false,
   onFechar,
   recolhido = false,
@@ -77,6 +79,8 @@ export function PainelCaso({
   convites?: Record<string, ConviteHerdeiro>;
   /** Abre a aba Documentos (onde cada envio aparece no card correlato). */
   onVerCofre?: () => void;
+  /** Id do caso — escopa o "visto" do sino no navegador (badge zera ao clicar). */
+  casoId?: string;
   /** Celular: o painel vira gaveta — aberto/fechado pelo botão flutuante. */
   aberto?: boolean;
   onFechar?: () => void;
@@ -113,6 +117,34 @@ export function PainelCaso({
     return { total, aConferir, ultima };
   }, [convites]);
 
+  /* Badge do sino = chegadas NÃO VISTAS: clicar no sino marca tudo como
+     visto (por caso, no navegador) e o número some; chegada nova volta a
+     contar do zero. A restauração é diferida (convenção anti-hidratação). */
+  const [vistoAte, setVistoAte] = useState(0);
+  useEffect(() => {
+    if (!casoId) return;
+    const t = setTimeout(() => {
+      try {
+        const v = Number(localStorage.getItem(`sucessorista-sino-visto-${casoId}`) ?? '0');
+        if (Number.isFinite(v) && v > 0) setVistoAte(v);
+      } catch {
+        // modo restrito
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [casoId]);
+  const naoVistas = Math.max(0, notificacoesCofre.total - vistoAte);
+  const verCofre = () => {
+    setVistoAte(notificacoesCofre.total);
+    try {
+      if (casoId)
+        localStorage.setItem(`sucessorista-sino-visto-${casoId}`, String(notificacoesCofre.total));
+    } catch {
+      // modo restrito
+    }
+    onVerCofre?.();
+  };
+
   const incapaz = herdeiros.some((h) => h.menorOuIncapaz);
 
   const travas: string[] = [];
@@ -135,9 +167,11 @@ export function PainelCaso({
 
   const custo10 = imposto * 0.1;
   const custo20 = imposto * 0.2;
-  // ITCMD PAGO: o relógio deixa de ameaçar — número e barra ficam VERDES e o
-  // rodapé informa a quitação (multas e juros pararam na data do pagamento).
-  const cls = itcmdPago ? '' : dias > 180 ? 'tarde' : dias > 60 ? 'meio' : '';
+  // Semântica de cor do prazo (lib/partilha/prazo.ts): ok → alerta →
+  // vencido → histórico (neutro, "multa já incidente"). ITCMD PAGO deixa
+  // tudo VERDE — o relógio parou de custar dinheiro.
+  const faixaPrazo = itcmdPago ? 'ok' : faixaDoPrazo(dias);
+  const cls = faixaPrazo === 'ok' ? '' : faixaPrazo;
   const largura = Math.min(100, Math.max(2, (dias / 240) * 100));
 
   return (
@@ -176,12 +210,12 @@ export function PainelCaso({
           o clique abre a aba Documentos, onde cada envio está no card
           correlato. */}
       {onVerCofre && (
-        <button type="button" className="sino-cofre" onClick={onVerCofre}>
+        <button type="button" className="sino-cofre" onClick={verCofre}>
           <span className="sino">
             <Bell size={18} aria-hidden />
-            {notificacoesCofre.total > 0 && (
+            {naoVistas > 0 && (
               <span className="badge num" aria-hidden>
-                {notificacoesCofre.total > 99 ? '99+' : notificacoesCofre.total}
+                {naoVistas > 99 ? '99+' : naoVistas}
               </span>
             )}
           </span>
@@ -214,7 +248,7 @@ export function PainelCaso({
           onChange={(e) => setNotas?.(e.target.value)}
           style={{
             marginTop: 6,
-            fontSize: 12.5,
+            fontSize: 'var(--t-xs)',
             minHeight: 120,
             background: 'var(--papel-alto, transparent)',
           }}
@@ -225,11 +259,16 @@ export function PainelCaso({
         <div className="metrica">
           <div className="k">Prazo do art. 611 do CPC</div>
           <div
-            className={`v num ${itcmdPago || dias <= 60 ? 'verde' : 'lacre'}`}
-            style={{ fontSize: 20 }}
+            className={`v num ${
+              faixaPrazo === 'ok' ? 'verde' : faixaPrazo === 'alerta' ? 'alerta' : faixaPrazo === 'historico' ? 'historico' : 'lacre'
+            }`}
+            style={{ fontSize: 'var(--t-lg)' }}
           >
             {dias} dia(s) desde o óbito
-            {itcmdPago && <span style={{ fontSize: 13 }}> · ITCMD pago</span>}
+            {itcmdPago && <span style={{ fontSize: 'var(--t-sm)' }}> · ITCMD pago</span>}
+            {!itcmdPago && faixaPrazo === 'historico' && (
+              <span style={{ fontSize: 'var(--t-sm)' }}> · multa já incidente</span>
+            )}
           </div>
           <div className="regua" aria-hidden>
             <div className="barra">

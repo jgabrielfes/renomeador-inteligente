@@ -446,7 +446,7 @@ function DeclaracaoFinalSecao({
           ))}
           {resultado.herdeiros.length > 0 && (
             <>
-              <h3 style={{ fontSize: 14, margin: '14px 0 6px' }}>Herdeiros e quinhões (para a DIRPF)</h3>
+              <h3 style={{ fontSize: 'var(--t-sm)', margin: '14px 0 6px' }}>Herdeiros e quinhões (para a DIRPF)</h3>
               {resultado.herdeiros.map((h, i) => (
                 <p key={i} className="fund num">
                   {h.nome}{h.cpf ? ` · CPF ${h.cpf}` : ''} · {brl(h.quinhao)}

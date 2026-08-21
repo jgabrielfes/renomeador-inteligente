@@ -5,7 +5,8 @@
  * arquivo enviado pelo link do convite repousa na tabela `portal_arquivos`
  * até o advogado baixá-lo/anexá-lo ao caso pela aba Documentos. O token é a
  * credencial (o herdeiro convidado não tem login), como nas demais rotas do
- * portal. UM arquivo por pedido — reenvio SUBSTITUI o anterior.
+ * portal. Um pedido aceita VÁRIOS arquivos (frente e verso, correlatos);
+ * o herdeiro apaga um envio seu pelo DELETE abaixo.
  *
  * Teto de 25 MB por arquivo. Cada REQUISIÇÃO fica sob os ~4,5 MB de corpo
  * das funções da Vercel: arquivo pequeno vem inteiro (uma chamada); maior
@@ -46,6 +47,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const { token } = await ctx.params;
   const convite = await store.obter(token);
   if (!convite) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+  if (convite.revogadoEm) {
+    return Response.json({ erro: 'Este convite foi encerrado pelo advogado.' }, { status: 410 });
+  }
 
   let form: FormData;
   try {
@@ -93,6 +97,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const nomeProposto = String(form.get('nomeArquivo') ?? nomeOriginal).slice(0, 200);
   const tipoDetectado = String(form.get('tipoDetectado') ?? '').slice(0, 80);
   const mime = String(form.get('mime') ?? arquivo.type) || 'application/octet-stream';
+  // Data de emissão lida no navegador do herdeiro (validade de certidão).
+  const emitidaBruta = String(form.get('emitidaEm') ?? '');
+  const emitidaEm = /^\d{4}-\d{2}-\d{2}$/.test(emitidaBruta) ? emitidaBruta : '';
 
   let conteudo: Uint8Array<ArrayBuffer>;
   try {
@@ -138,14 +145,13 @@ export async function POST(req: Request, ctx: Ctx) {
     return Response.json({ erro: 'Não foi possível guardar o arquivo agora.' }, { status: 503 });
   }
 
-  // Reenvio substitui o anterior — o id permanece o mesmo (o unique é
-  // token+docId), então o link de download do advogado continua valendo.
+  // Um pedido aceita VÁRIOS arquivos (frente e verso, correlatos): cada
+  // envio cria uma linha nova e entra na lista `arquivos` do pedido; os
+  // campos soltos do pedido espelham o ÚLTIMO envio (compatibilidade).
   let arquivoId: string;
   try {
-    const linha = await prisma.portalArquivo.upsert({
-      where: { token_docId: { token, docId } },
-      create: { token, docId, nome: nomeProposto, mime, tamanho: conteudo.byteLength, conteudo },
-      update: { nome: nomeProposto, mime, tamanho: conteudo.byteLength, conteudo },
+    const linha = await prisma.portalArquivo.create({
+      data: { token, docId, nome: nomeProposto, mime, tamanho: conteudo.byteLength, conteudo },
       select: { id: true },
     });
     arquivoId = linha.id;
@@ -155,15 +161,40 @@ export async function POST(req: Request, ctx: Ctx) {
     return Response.json({ erro: 'Não foi possível guardar o arquivo agora.' }, { status: 503 });
   }
 
+  const enviadoEm = new Date().toISOString();
   const atualizado = await store.atualizarDocumento(token, docId, {
     status: 'ENVIADO',
-    enviadoEm: new Date().toISOString(),
+    enviadoEm,
     nomeArquivo: nomeProposto,
     ...(tipoDetectado ? { tipoDetectado } : {}),
+    ...(emitidaEm ? { emitidaEm } : {}),
     arquivoId,
     arquivoTamanho: conteudo.byteLength,
+    arquivos: [
+      ...(doc.arquivos ?? []),
+      {
+        arquivoId,
+        nome: nomeProposto,
+        tamanho: conteudo.byteLength,
+        ...(tipoDetectado ? { tipoDetectado } : {}),
+        ...(emitidaEm ? { emitidaEm } : {}),
+        enviadoEm,
+      },
+    ],
   });
   if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+
+  // Registro de atendimento: documento REAL recebido pelo cofre.
+  {
+    const { registrarEventoPortal } = await import('@/lib/portal/eventos-server');
+    const pedido = atualizado.documentos.find((d) => d.id === docId);
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'DOC_RECEBIDO',
+      { herdeiro: atualizado.nomeHerdeiro, documento: pedido?.titulo },
+      token,
+    );
+  }
 
   // Telemetria: mesma da rota PATCH — tags e contagens, nunca o conteúdo
   // nem o nome do arquivo.
@@ -174,6 +205,72 @@ export async function POST(req: Request, ctx: Ctx) {
     tipoDetectado: tipoDetectado || null,
     comUsuario: false,
   });
+
+  return Response.json(atualizado);
+}
+
+/**
+ * DELETE /api/portal/[token]/arquivo?arquivo=<id> — o HERDEIRO apaga um
+ * envio SEU (mandou a foto errada, quer trocar o verso). Só arquivos do
+ * próprio token; pedido já APROVADO não se apaga (fale com o advogado).
+ * Sem arquivos restantes, o pedido volta a PENDENTE.
+ */
+export async function DELETE(req: Request, ctx: Ctx) {
+  const fora = foraDaPlataforma('SUCESSORISTA');
+  if (fora) return fora;
+
+  const { token } = await ctx.params;
+  const convite = await store.obter(token);
+  if (!convite) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+  if (convite.revogadoEm) {
+    return Response.json({ erro: 'Este convite foi encerrado pelo advogado.' }, { status: 410 });
+  }
+
+  const id = String(new URL(req.url).searchParams.get('arquivo') ?? '');
+  if (!id) return Response.json({ erro: 'Arquivo não indicado.' }, { status: 422 });
+
+  const doc = convite.documentos.find(
+    (d) => d.arquivoId === id || (d.arquivos ?? []).some((a) => a.arquivoId === id),
+  );
+  if (!doc) return Response.json({ erro: 'Arquivo não encontrado neste convite.' }, { status: 404 });
+  if (doc.status === 'APROVADO') {
+    return Response.json(
+      { erro: 'Este pedido já foi aprovado — fale com o escritório para alterar.' },
+      { status: 409 },
+    );
+  }
+
+  // A cláusula com o TOKEN é o que impede apagar arquivo de outro convite.
+  try {
+    const r = await prisma.portalArquivo.deleteMany({ where: { id, token } });
+    if (r.count === 0) {
+      return Response.json({ erro: 'Arquivo não encontrado.' }, { status: 404 });
+    }
+  } catch {
+    return Response.json({ erro: 'Não foi possível apagar agora.' }, { status: 503 });
+  }
+
+  const restantes = (doc.arquivos ?? []).filter((a) => a.arquivoId !== id);
+  const ultimo = restantes[restantes.length - 1];
+  const atualizado = await store.atualizarDocumento(token, doc.id, {
+    arquivos: restantes,
+    // Os campos soltos espelham o último envio restante (compatibilidade).
+    nomeArquivo: ultimo?.nome,
+    tipoDetectado: ultimo?.tipoDetectado,
+    emitidaEm: ultimo?.emitidaEm,
+    arquivoId: ultimo?.arquivoId,
+    arquivoTamanho: ultimo?.tamanho,
+    ...(restantes.length === 0 ? { status: 'PENDENTE' as const, enviadoEm: undefined } : {}),
+  });
+  if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+
+  const { registrarEventoPortal } = await import('@/lib/portal/eventos-server');
+  void registrarEventoPortal(
+    atualizado.casoId,
+    'DOC_APAGADO',
+    { herdeiro: atualizado.nomeHerdeiro, documento: doc.titulo },
+    token,
+  );
 
   return Response.json(atualizado);
 }

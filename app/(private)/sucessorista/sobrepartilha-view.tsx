@@ -33,6 +33,7 @@ import { tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
 import type { ModalidadeEscritura } from '@/lib/partilha/escritura';
 import type { Bem, Caso, Herdeiro, Regime, Resultado, Vinculo } from '@/lib/partilha/types';
 import { paraDecimal } from './acervo-view';
+import { Espelho, LinhaEspelho } from './espelho-tabela';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -282,27 +283,23 @@ export function SobrepartilhaView({
 
       {resultado && resultado.bloqueios.length === 0 && (
         <>
-          <div className="espelho" style={{ marginTop: 16 }}>
-            <div className="cabeca">
-              <span>Herdeiro</span>
-              <span>Fração</span>
-              <span style={{ textAlign: 'right' }}>Quinhão</span>
-            </div>
+          <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']} style={{ marginTop: 16 }}>
             {resultado.meacao && (
-              <div className="lanc">
-                <span className="nome">{resultado.meacao.beneficiario} (meação)</span>
-                <span className="fracao num">{resultado.meacao.fracao}</span>
-                <span className="valor num">{brl(resultado.meacao.valor)}</span>
-              </div>
+              <LinhaEspelho
+                nome={<>{resultado.meacao.beneficiario} (meação)</>}
+                meio={resultado.meacao.fracao}
+                valor={brl(resultado.meacao.valor)}
+              />
             )}
             {resultado.quinhoes.map((q) => (
-              <div className="lanc" key={q.herdeiroId}>
-                <span className="nome">{q.nome}</span>
-                <span className="fracao num">{q.fracaoHeranca}</span>
-                <span className="valor num">{brl(q.valor)}</span>
-              </div>
+              <LinhaEspelho
+                key={q.herdeiroId}
+                nome={q.nome}
+                meio={q.fracaoHeranca}
+                valor={brl(q.valor)}
+              />
             ))}
-          </div>
+          </Espelho>
 
           <div className="nota" style={{ marginTop: 12 }}>
             <span className="eyebrow">Impacto fiscal da sobrepartilha</span>

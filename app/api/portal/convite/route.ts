@@ -69,5 +69,14 @@ export async function POST(req: Request) {
   };
 
   await store.criar(convite);
+  // Registro de atendimento: convite emitido (nome do herdeiro é dado do
+  // próprio escritório — nunca vai a /admin).
+  const { registrarEventoPortal } = await import('@/lib/portal/eventos-server');
+  void registrarEventoPortal(
+    convite.casoId,
+    'CONVITE',
+    { herdeiro: convite.nomeHerdeiro },
+    convite.token,
+  );
   return Response.json({ token: convite.token, url: `/portal/${convite.token}` }, { status: 201 });
 }

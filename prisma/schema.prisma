@@ -133,11 +133,12 @@ model PortalConvite {
 
 // Arquivo REAL enviado pelo herdeiro pelo portal — exceção CONSCIENTE (opt-in
 // do escritório) à fronteira de dados: o documento repousa no banco até o
-// advogado baixá-lo/anexá-lo ao caso. UM arquivo por pedido do convite
-// (reenvio SUBSTITUI o anterior); excluir o convite apaga os arquivos em
-// cascata. Teto de 25 MB por arquivo — acima de ~3,5 MB o navegador do
-// herdeiro envia em FATIAS (PortalArquivoParte) e a última remonta aqui.
-// NUNCA exibir em /admin — conteúdo de documento não é telemetria.
+// advogado baixá-lo/anexá-lo ao caso. VÁRIOS arquivos por pedido (frente e
+// verso, correlatos — migração `varios_arquivos_por_pedido`); o herdeiro
+// pode APAGAR um envio seu enquanto o pedido não foi aprovado; excluir o
+// convite apaga os arquivos em cascata. Teto de 25 MB por arquivo — acima
+// de ~3,5 MB o navegador do herdeiro envia em FATIAS (PortalArquivoParte) e
+// a última remonta aqui. NUNCA exibir em /admin.
 model PortalArquivo {
   id        String        @id @default(cuid())
   token     String
@@ -151,7 +152,7 @@ model PortalArquivo {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  @@unique([token, docId])
+  @@index([token, docId])
   @@map("portal_arquivos")
 }
 
@@ -168,6 +169,46 @@ model PortalArquivoParte {
 
   @@id([envioId, indice])
   @@map("portal_arquivo_partes")
+}
+
+// Painel do Cliente — o ESPELHO PUBLICADO do caso para a família: uma linha
+// por caso, contendo SÓ o snapshot FILTRADO montado no navegador do advogado
+// (lib/portal/painel.ts — allowlist campo a campo, um painel por convite).
+// O caso completo NUNCA sobe; honorários/notas/folha ficam fora por
+// construção. Encerrar o compartilhamento apaga esta linha (cascade nos
+// eventos) e os convites do caso. NUNCA exibir em /admin.
+model PortalPainel {
+  casoId       String   @id
+  // Dono do espelho (quem publicou) — as actions validam dono OU equipe.
+  userId       String
+  // Record<token, PainelHerdeiro> — o recorte de cada herdeiro.
+  snapshot     Json
+  // VisibilidadePainel vigente (contato/custos/quinhão) — para reabrir a UI.
+  visibilidade Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("portal_paineis")
+}
+
+// Registro de atendimento do Painel do Cliente: convites, acessos, fases,
+// documentos aceitos/recusados, notificações — o histórico que protege o
+// advogado (relatório de comunicação com a família). SEM FK para o painel:
+// convite e acesso acontecem ANTES de publicar; quem apaga os eventos é o
+// "Encerrar compartilhamento" (deleteMany explícito). Rótulos, nomes de
+// herdeiro e motivos de recusa (dado do PRÓPRIO escritório) — nunca
+// conteúdo de documento e NUNCA em /admin.
+model PortalEvento {
+  id        String   @id @default(cuid())
+  casoId    String
+  // Convite relacionado, quando o evento é de um herdeiro específico.
+  token     String?
+  tipo      String
+  detalhe   Json?
+  createdAt DateTime @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("portal_eventos")
 }
 
 model User {

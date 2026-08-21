@@ -8,6 +8,17 @@
  * O upload real de arquivos pluga em Vercel Blob no mesmo ponto.
  */
 
+/** Um arquivo REAL guardado pelo portal para um pedido (frente, verso,
+ *  correlatos — um pedido aceita VÁRIOS). */
+export interface ArquivoDoPedido {
+  arquivoId: string;
+  nome: string;
+  tamanho: number;
+  tipoDetectado?: string;
+  emitidaEm?: string;
+  enviadoEm?: string;
+}
+
 export interface DocumentoPedido {
   id: string;
   titulo: string;
@@ -22,9 +33,18 @@ export interface DocumentoPedido {
    * ARQUIVO real recebido pelo portal (tabela `portal_arquivos`): id para o
    * advogado baixar/anexar ao caso. Ausente = só o registro chegou (arquivo
    * grande demais ou falha no envio — o herdeiro entrega por outro canal).
+   * Estes campos "soltos" espelham o ÚLTIMO envio (compatibilidade); a
+   * lista completa é `arquivos`.
    */
   arquivoId?: string;
   arquivoTamanho?: number;
+  /** TODOS os arquivos guardados deste pedido (frente/verso/correlatos). */
+  arquivos?: ArquivoDoPedido[];
+  /** Data de EMISSÃO lida do documento no navegador do herdeiro (ISO
+   *  yyyy-mm-dd) — em certidão, mais de 90 dias acende o alerta de validade
+   *  nos dois lados. Ausente = não deu para validar (só "aguardando
+   *  conferência"). */
+  emitidaEm?: string;
 }
 
 /** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso).
@@ -74,6 +94,18 @@ export interface ConviteHerdeiro {
   /** O herdeiro clicou "Salvar": confirmação de que o envio chegou à folha. */
   envioConfirmadoEm?: string;
   criadoEm: string;
+  /** Painel do Cliente — status do convite, visto pelo advogado. O carimbo
+   *  de acesso vem da VISITA do herdeiro (GET com ?visita=1), nunca da
+   *  revalidação de fundo do advogado. */
+  primeiroAcessoEm?: string;
+  ultimoAcessoEm?: string;
+  /** Convite revogado pelo advogado: o portal responde 410 e nada mais
+   *  entra por este token. O registro fica (histórico), o acesso morre. */
+  revogadoEm?: string;
+  /** Avisos por e-mail (Resend, env-gated): o herdeiro salva o e-mail e a
+   *  preferência no próprio portal. Sem e-mail válido, nada é enviado. */
+  emailNotificacao?: string;
+  notificacoes?: 'tudo' | 'fases' | 'nada';
 }
 
 export interface PortalStore {
@@ -89,6 +121,19 @@ export interface PortalStore {
     qualificacao: QualificacaoHerdeiro,
   ): Promise<ConviteHerdeiro | null>;
   confirmarEnvio(token: string): Promise<ConviteHerdeiro | null>;
+  /** Carimba a visita do herdeiro (1º acesso preservado, último atualizado). */
+  marcarAcesso(token: string, primeiro: string, ultimo: string): Promise<void>;
+  /** Painel do Cliente: pendência atribuída DEPOIS do convite (coluna
+   *  "Responsável" da aba Documentos). Id repetido é ignorado — não duplica. */
+  adicionarPedido(
+    token: string,
+    pedido: { id: string; titulo: string; descricao: string },
+  ): Promise<ConviteHerdeiro | null>;
+  /** Avisos por e-mail: preferência e endereço salvos pelo herdeiro. */
+  salvarPreferencias(
+    token: string,
+    prefs: { emailNotificacao?: string; notificacoes?: 'tudo' | 'fases' | 'nada' },
+  ): Promise<ConviteHerdeiro | null>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -119,6 +164,27 @@ export const memoryStore: PortalStore = {
     const c = mem.get(token);
     if (!c) return null;
     c.envioConfirmadoEm = new Date().toISOString();
+    return c;
+  },
+  async marcarAcesso(token, primeiro, ultimo) {
+    const c = mem.get(token);
+    if (!c) return;
+    c.primeiroAcessoEm = c.primeiroAcessoEm ?? primeiro;
+    c.ultimoAcessoEm = ultimo;
+  },
+  async adicionarPedido(token, pedido) {
+    const c = mem.get(token);
+    if (!c) return null;
+    if (!c.documentos.some((d) => d.id === pedido.id)) {
+      c.documentos.push({ ...pedido, status: 'PENDENTE' });
+    }
+    return c;
+  },
+  async salvarPreferencias(token, prefs) {
+    const c = mem.get(token);
+    if (!c) return null;
+    if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
+    if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
     return c;
   },
 };

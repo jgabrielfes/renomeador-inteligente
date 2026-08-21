@@ -15,8 +15,7 @@
 import { AccessTracker } from "@/components/access-tracker";
 import { UserMenu } from "@/components/user-menu";
 import { APP, IDENTIDADE } from "@/lib/app";
-import { isMaster, requireSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth";
 
 import { carregarLicoes } from "./renomeador/licoes-actions";
 
@@ -38,41 +37,10 @@ export default async function Home() {
   const licoes = await carregarLicoes();
 
   if (APP === "SUCESSORISTA") {
-    // Perfil de uso VINCULADO À CONTA (null = primeiro acesso pergunta).
-    // Falha de banco (ou migração ainda não aplicada) degrada para null.
-    let perfilConta: "ADVOGADO" | "ESCREVENTE" | null = null;
-    try {
-      const usuario = session?.user?.id
-        ? await prisma.user.findUnique({
-            where: { id: session.user.id },
-            select: { perfilSucessorista: true },
-          })
-        : null;
-      perfilConta = usuario?.perfilSucessorista ?? null;
-    } catch {
-      perfilConta = null;
-    }
-
-    // Equipe da conta (card "Minha equipe" do dashboard) — melhor-esforço.
-    const { minhaEquipe } = await import("./sucessorista/equipe-actions");
-    const equipe = await minhaEquipe();
-
-    const { default: SucessoristaClient } = await import(
-      "./sucessorista/sucessorista-client"
-    );
-    return (
-      <>
-        <AccessTracker modulo={IDENTIDADE.modulo} />
-        <SucessoristaClient
-          licoesRenomeador={licoes}
-          menu={<UserMenu />}
-          perfilConta={perfilConta}
-          ehMaster={isMaster(session)}
-          equipe={equipe}
-          contaId={session?.user?.id ?? null}
-        />
-      </>
-    );
+    // Montagem compartilhada com a rota /caso/<id>/<etapa> (T1): as cargas
+    // por conta (perfil, equipe, client) vivem em sucessorista/pagina.tsx.
+    const { PaginaSucessorista } = await import("./sucessorista/pagina");
+    return <PaginaSucessorista session={session} />;
   }
 
   const { default: RenomeadorClient } = await import(

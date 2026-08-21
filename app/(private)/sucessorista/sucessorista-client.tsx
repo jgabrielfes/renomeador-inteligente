@@ -14,7 +14,7 @@
  * escopada em .sucessorista, por cima dos componentes do shadcn.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import './sucessorista.css';
 
@@ -50,6 +50,7 @@ import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/co
 import { anteciparQualificacaoRegistral, ehImovelDeRegistro } from '@/lib/partilha/antecipador';
 import { fundirImoveisPorInscricao } from '@/lib/partilha/imoveis';
 import { nomeConstaEm, semQualificadoresDeNome } from '@/lib/partilha/nomes';
+import { faixaDoPrazo, rotuloDoPrazo } from '@/lib/partilha/prazo';
 import {
   avaliarQuotas,
   chaveSociedade,
@@ -139,11 +140,25 @@ import type {
 } from '@/lib/partilha/escritura';
 import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
+import { Doutrina } from './doutrina';
+import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
+import {
+  PainelFamiliaCard,
+  PAINEL_FAMILIA_INICIAL,
+  type EstadoPainelFamilia,
+} from './painel-familia-card';
 
 /* ---------- helpers ---------- */
 
 const brl = (v: string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+/** Percentual da massa partilhável no espelho da partilha (1 casa). */
+const pctFmtEspelho = (valor: string, massa: string): string => {
+  const m = Number(massa);
+  if (!(m > 0)) return '—';
+  return `${((Number(valor) / m) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+};
 
 // Aleatório (não sequencial): o caso é restaurado do sessionStorage e um
 // contador zerado no reload geraria ids que colidem com os restaurados.
@@ -240,6 +255,10 @@ function hojeIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Dias corridos desde uma data ISO — a contagem do relógio do art. 611. */
+const diasDesdeObito = (iso: string): number =>
+  Math.round((new Date(`${hojeIso()}T00:00`).getTime() - new Date(`${iso}T00:00`).getTime()) / 86_400_000);
+
 const FALECIDO_VAZIO: DadosFalecido = {
   nome: '',
   cpf: '',
@@ -331,6 +350,10 @@ interface CasoSalvo {
   colacoes?: Colacao[];
   /** Custos adicionais lançados à mão na aba V (retrocompatível). */
   custosAdicionais?: DespesaAdicional[];
+  /** Painel do Cliente — config do espelho publicado (fase, visibilidades). */
+  painelFamilia?: EstadoPainelFamilia;
+  /** Coluna "Responsável" da aba Documentos (docId → quem entrega). */
+  responsaveisDocs?: Record<string, string>;
 }
 
 export default function SucessoristaClient({
@@ -340,6 +363,9 @@ export default function SucessoristaClient({
   ehMaster = false,
   equipe = null,
   contaId = null,
+  nomeConta = null,
+  casoInicialId = null,
+  etapaInicial = null,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -357,12 +383,20 @@ export default function SucessoristaClient({
   equipe?: import('./equipe-actions').InfoEquipe | null;
   /** Id do usuário logado — escopa a pasta-raiz e o cache POR CONTA. */
   contaId?: string | null;
+  /** Nome da conta (sessão) — cabeçalho do Painel da família. */
+  nomeConta?: string | null;
+  /** Rota /caso/<id>/<etapa> (T1): o caso a abrir ao montar — F5, favorito
+   *  e link colado entre membros da equipe voltam ao caso certo. */
+  casoInicialId?: string | null;
+  etapaInicial?: string | null;
 }) {
-  // A etapa vive na URL (?etapa=…): sobrevive ao F5 e o recorte é
-  // compartilhável. A troca usa history.replaceState — atualização rasa, sem
-  // round-trip ao servidor nem barra de progresso a cada clique de aba.
+  // A etapa e o CASO vivem na URL (/caso/<id>/<etapa>; ?etapa= segue como
+  // compatibilidade): sobrevivem ao F5 e o recorte é compartilhável. A troca
+  // usa history.replaceState — atualização rasa, sem round-trip ao servidor.
   const searchParams = useSearchParams();
-  const [abaProc, setAbaProc] = useState<Aba>(() => abaValida(searchParams.get('etapa')));
+  const [abaProc, setAbaProc] = useState<Aba>(() =>
+    abaValida(etapaInicial ?? searchParams.get('etapa')),
+  );
 
   // Celular: o painel do caso vira uma GAVETA sobre a folha (botão
   // flutuante abre/fecha). Em tela larga o estado é inócuo — o painel é a
@@ -371,16 +405,15 @@ export default function SucessoristaClient({
   /* Desktop: painel do caso recolhido numa tira na margem direita — a
      setinha recolhe/reabre; a preferência fica no navegador e é restaurada
      no efeito diferido (não quebra a hidratação). */
-  const [painelRecolhido, setPainelRecolhido] = useState(false);
+  // FECHADO por padrão (V3 da auditoria): a barra de status no topo da
+  // folha mantém os números à vista; quem abrir o painel fica com ele.
+  const [painelRecolhido, setPainelRecolhido] = useState(true);
 
   const irPara = (aba: Aba) => {
     setAbaProc(aba);
     setPainelAberto(false);
-    const url = new URL(window.location.href);
-    url.searchParams.set('etapa', aba);
-    window.history.replaceState(null, '', url);
-    // Cada aba é uma "página" nova da folha: começa no topo, não onde a
-    // rolagem da aba anterior parou.
+    // A URL é gravada pelo efeito de rota (/caso/<id>/<etapa>) — aqui só a
+    // rolagem: cada aba é uma "página" nova da folha, começa no topo.
     window.scrollTo(0, 0);
   };
 
@@ -420,6 +453,10 @@ export default function SucessoristaClient({
   const [anexosProcesso, setAnexosProcesso] = useState<AnexosProcesso>({});
   const [casoId, setCasoId] = useState(() => uid('caso') + Date.now().toString(36));
   const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
+  /* Painel do Cliente: config do espelho publicado (fase, visibilidades). */
+  const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
+  /* Coluna "Responsável" por item do catálogo de documentos. */
+  const [responsaveisDocs, setResponsaveisDocs] = useState<Record<string, string>>({});
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
@@ -636,6 +673,10 @@ export default function SucessoristaClient({
 
   /* --- persistência local: CaseStore (pasta do processo ou portátil) --- */
   const [estadoPainel, setEstadoPainel] = useState<EstadoPainel>('carregando');
+  const estadoPainelRef = useRef<EstadoPainel>('carregando');
+  useEffect(() => {
+    estadoPainelRef.current = estadoPainel;
+  }, [estadoPainel]);
   const [store, setStore] = useState<CaseStore | null>(null);
   const [resumos, setResumos] = useState<ResumoCaso[] | null>(null);
   /* --- nuvem de casos: espelho do caso.json no servidor ---
@@ -682,6 +723,33 @@ export default function SucessoristaClient({
   useEffect(() => {
     casoAbertoRef.current = casoAberto;
   }, [casoAberto]);
+
+  /** Chegada por /caso/<id> ainda em restauração: segura a URL e mostra a
+   *  tela "reabrindo" no lugar do painel Meus casos — um F5 no meio da
+   *  restauração NÃO pode regredir para a lista. */
+  const [restaurandoCaso, setRestaurandoCaso] = useState(() => Boolean(casoInicialId));
+  const restaurandoCasoRef = useRef(restaurandoCaso);
+  useEffect(() => {
+    restaurandoCasoRef.current = restaurandoCaso;
+  }, [restaurandoCaso]);
+
+  /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
+     favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
+     volta à raiz (o ?etapa= antigo segue aceito na chegada) — mas NUNCA
+     durante a restauração: apagar /caso/<id> antes de o caso abrir fazia o
+     F5 seguinte cair em Meus casos. */
+  useEffect(() => {
+    const id = casoAberto?.cabecalho.caseId;
+    if (id) {
+      window.history.replaceState(null, '', `/caso/${encodeURIComponent(id)}/${abaProc}`);
+    } else if (!restaurandoCasoRef.current && window.location.pathname.startsWith('/caso/')) {
+      window.history.replaceState(null, '', '/');
+    }
+  }, [casoAberto, abaProc]);
+
+  /** Rota apontou um caso que não existe/não abriu: tela própria, nunca um
+   *  redirecionamento silencioso para a lista. */
+  const [casoNaoEncontrado, setCasoNaoEncontrado] = useState(false);
 
   /* --- telemetria (privacidade: nada de nome, CPF ou valor absoluto) --- */
 
@@ -800,6 +868,16 @@ export default function SucessoristaClient({
     if (typeof salvo.notas === 'string') setNotasCaso(salvo.notas);
     if (Array.isArray(salvo.colacoes)) setColacoes(salvo.colacoes);
     if (Array.isArray(salvo.custosAdicionais)) setCustosAdicionais(salvo.custosAdicionais);
+    setPainelFamilia(
+      salvo.painelFamilia && typeof salvo.painelFamilia === 'object'
+        ? { ...PAINEL_FAMILIA_INICIAL, ...salvo.painelFamilia }
+        : PAINEL_FAMILIA_INICIAL,
+    );
+    setResponsaveisDocs(
+      salvo.responsaveisDocs && typeof salvo.responsaveisDocs === 'object'
+        ? salvo.responsaveisDocs
+        : {},
+    );
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -825,6 +903,8 @@ export default function SucessoristaClient({
       notas: notasCaso,
       colacoes,
       custosAdicionais,
+      painelFamilia,
+      responsaveisDocs,
     };
   };
 
@@ -840,7 +920,7 @@ export default function SucessoristaClient({
           }
           const t = localStorage.getItem(CHAVE_TEMA);
           if (t === 'claro' || t === 'escuro') setTema(t);
-          if (localStorage.getItem(CHAVE_PAINEL_RECOLHIDO) === '1') setPainelRecolhido(true);
+          if (localStorage.getItem(CHAVE_PAINEL_RECOLHIDO) === '0') setPainelRecolhido(false);
         } catch {
           // modo restrito
         }
@@ -1010,7 +1090,7 @@ export default function SucessoristaClient({
     }
   };
 
-  const abrirCasoDoPainel = async (caseId: string) => {
+  const abrirCasoDoPainel = async (caseId: string): Promise<boolean> => {
     // Sem store local (outra máquina, pasta não configurada) o caso ainda
     // abre — direto da nuvem.
     const s = storeRef.current;
@@ -1047,13 +1127,13 @@ export default function SucessoristaClient({
         baseAtualizadoEmRef.current = daNuvem.cabecalho.atualizadoEm;
         setCasoAberto({ cabecalho: daNuvem.cabecalho });
         setSalvamento({ estado: 'salvo', quando: daNuvem.cabecalho.atualizadoEm });
-        return;
+        return true;
       }
     }
 
     if (!caso) {
       toast.error('Não consegui abrir o caso — a pasta foi movida?');
-      return;
+      return false;
     }
     if (caso.dados) aplicarSnapshot(caso.dados as CasoSalvo);
     manifestoRef.current = caso.manifesto;
@@ -1061,7 +1141,44 @@ export default function SucessoristaClient({
     setCasoAberto({ cabecalho: caso.cabecalho });
     setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
     if (s) void religarDocumentos(s, caso);
+    return true;
   };
+
+  /* Chegada por /caso/<id>: abre o caso assim que o store local fica pronto
+     (ou direto da nuvem). Caso inexistente vira a tela "caso não
+     encontrado" — nunca um redirecionamento silencioso. */
+  const casoInicialTratadoRef = useRef(false);
+  useEffect(() => {
+    if (!casoInicialId || casoInicialTratadoRef.current) return;
+    let vivo = true;
+    const tentar = async (restantes: number) => {
+      if (!vivo || casoInicialTratadoRef.current) return;
+      // Pasta aguardando permissão (ou sem raiz): o store local NÃO vem sem
+      // um clique do usuário — não adianta esperar; o caso abre da nuvem.
+      const semStoreLocal =
+        estadoPainelRef.current === 'pasta-bloqueada' || estadoPainelRef.current === 'sem-raiz';
+      if (storeRef.current || semStoreLocal || restantes <= 0) {
+        casoInicialTratadoRef.current = true;
+        let abriu = false;
+        try {
+          abriu = await abrirCasoDoPainel(casoInicialId);
+        } finally {
+          if (vivo) {
+            setRestaurandoCaso(false);
+            if (!abriu) setCasoNaoEncontrado(true);
+          }
+        }
+        return;
+      }
+      setTimeout(() => void tentar(restantes - 1), 300);
+    };
+    void tentar(20);
+    return () => {
+      vivo = false;
+    };
+    // abrirCasoDoPainel não é memoizada; o ref garante execução única.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casoInicialId]);
 
   const criarCasoDoPainel = async (tituloNovo: string) => {
     const s = storeRef.current;
@@ -1819,6 +1936,58 @@ export default function SucessoristaClient({
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
+   * PAINEL DA FAMÍLIA — o que o espelho publicado PODE mostrar, já pronto:
+   * quinhão por herdeiro (só entra se o advogado liberar) e os custos
+   * AGREGADOS do caso (ITCMD + cartório/justiça + adicionais). Honorários
+   * NUNCA entram aqui — é a lista inteira que o card pode publicar.
+   */
+  const quinhoesPainel = useMemo(() => {
+    const mapa: Record<string, { valor: string; fracao?: string }> = {};
+    if (resultado && resultado.bloqueios.length === 0) {
+      for (const q of resultado.quinhoes) {
+        mapa[q.herdeiroId] = { valor: String(q.valor), fracao: q.fracaoHeranca };
+      }
+    }
+    return mapa;
+  }, [resultado]);
+  const custosVisiveisPainel = useMemo(() => {
+    const linhas: import('@/lib/portal/painel').CustoVisivel[] = [];
+    const pago = fiscal.itcmdSituacao === 'PAGO';
+    if (provisao) {
+      linhas.push({
+        rotulo: 'Imposto sobre a herança (ITCMD)',
+        valor: provisao.total.toFixed(2),
+        situacao: pago ? 'PAGO' : 'PREVISTO',
+      });
+    }
+    if (impostoSucessoes > 0) {
+      linhas.push({
+        rotulo: 'ITCMD das sucessões anteriores',
+        valor: impostoSucessoes.toFixed(2),
+        situacao: pago ? 'PAGO' : 'PREVISTO',
+      });
+    }
+    if (custos) {
+      linhas.push({
+        rotulo:
+          ritoEfetivo === 'JUDICIAL'
+            ? 'Custas judiciais, registros e certidões'
+            : 'Cartório, registros e certidões',
+        valor: custos.total.toFixed(2),
+        situacao: 'PREVISTO',
+      });
+    }
+    for (const a of custosAdicionais) {
+      linhas.push({
+        rotulo: a.descricao || 'Despesa adicional',
+        valor: (Number(a.valor) || 0).toFixed(2),
+        situacao: 'PREVISTO',
+      });
+    }
+    return linhas;
+  }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo]);
+
+  /**
    * Alertas da leitura: herdeiro DECLARADO na certidão de óbito sem
    * lançamento/qualificação, e frações ideais dos venais que não fecham
    * 100% (exceto unidade autônoma/apartamento, onde a fração é do terreno).
@@ -2154,7 +2323,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -3264,21 +3433,33 @@ export default function SucessoristaClient({
       const atuais = convitesRef.current;
       const proximos: Record<string, ConviteHerdeiro> = { ...atuais };
       const chegadas: string[] = [];
+      let mudou = false;
       for (const [herdeiroId, convite] of Object.entries(atuais)) {
         try {
           const r = await fetch(`/api/portal/${convite.token}`);
+          if (r.status === 410) {
+            // Revogado em outra tela/máquina: o estado aprende em silêncio —
+            // o cofre passa a oferecer "Gerar novo link" sem toast de chegada.
+            if (!convite.revogadoEm) {
+              proximos[herdeiroId] = { ...convite, revogadoEm: new Date().toISOString() };
+              mudou = true;
+            }
+            continue;
+          }
           if (!r.ok) continue;
           const novo = (await r.json()) as ConviteHerdeiro;
           if (JSON.stringify(novo) !== JSON.stringify(convite)) {
             proximos[herdeiroId] = novo;
             chegadas.push(novo.nomeHerdeiro || 'herdeiro');
+            mudou = true;
           }
         } catch {
           // rede fora — tenta no próximo ciclo
         }
       }
-      if (!ativo || chegadas.length === 0) return;
+      if (!ativo || !mudou) return;
       setConvites(proximos);
+      if (chegadas.length === 0) return;
       toast.info(
         chegadas.length === 1
           ? `Novidade no cofre: ${chegadas[0]} enviou documentos ou informações`
@@ -3329,10 +3510,36 @@ export default function SucessoristaClient({
 
   return (
     <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
-    {/* Sem caso aberto, a tela inicial é o painel "Meus casos". Não há link
-        "← Módulos": este site É o Sucessorista e `/` já é esta tela — no
-        lugar dele, a faixa de sessão. */}
-    {casoAberto === null ? (
+    {/* Rota /caso/<id> que não abriu: tela própria com o caminho de volta
+        — nunca um redirecionamento silencioso (T1 da auditoria). */}
+    {casoAberto === null && casoNaoEncontrado ? (
+      <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
+        {menu}
+        <h1>Caso não encontrado</h1>
+        <p className="subtitulo">
+          O link aponta um caso que não está nesta máquina nem na sua nuvem — ele pode ter
+          sido arquivado, a pasta pode ter sido movida, ou o link veio de outra conta.
+        </p>
+        <Button
+          onClick={() => {
+            setCasoNaoEncontrado(false);
+            window.history.replaceState(null, '', '/');
+          }}
+        >
+          Ir para Meus casos
+        </Button>
+      </div>
+    ) : casoAberto === null && restaurandoCaso ? (
+      /* F5 dentro do caso: a folha está sendo reaberta — mostrar o painel
+         Meus casos aqui daria a impressão de ter "voltado" para a lista. */
+      <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
+        {menu}
+        <h1>Reabrindo o caso…</h1>
+        <p className="subtitulo">
+          Restaurando a folha e os documentos deste inventário. Um instante.
+        </p>
+      </div>
+    ) : casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {menu}
         <CasosView
@@ -3451,45 +3658,9 @@ export default function SucessoristaClient({
             {rotulo}
           </button>
         ))}
-        {/* Indicador de salvamento — o caso grava sozinho, nada sai da máquina. */}
-        <div
-          className={`rascunho-info${salvamento.estado === 'erro' || salvamento.estado === 'somente-leitura' ? ' problema' : ''}`}
-          title={
-            store?.modo === 'drive'
-              ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
-              : store?.modo === 'onedrive'
-                ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
-                : store?.modo === 'dropbox'
-                  ? 'Gravado no SEU Dropbox — acessível de qualquer dispositivo com o seu login'
-                  : store?.modo === 'pasta'
-                    ? 'Gravado direto na pasta do processo — nada sai desta máquina'
-                    : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
-          }
-        >
-          {salvamento.estado === 'salvando' && '● salvando…'}
-          {salvamento.estado === 'salvo' && (
-            <>
-              ● salvo às{' '}
-              {salvamento.quando
-                ? new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                : ''}
-            </>
-          )}
-          {salvamento.estado === 'erro' && (
-            <button className="religar" onClick={() => void salvarAgoraRef.current()}>
-              ● erro ao salvar — tentar de novo
-            </button>
-          )}
-          {salvamento.estado === 'somente-leitura' && (
-            <button className="religar" onClick={() => void desbloquearPasta()}>
-              ● somente leitura — reconectar pasta
-            </button>
-          )}
-          {salvamento.estado === 'ocioso' && '● salvamento automático ativo'}
-          <small>{store?.modo === 'drive' ? 'no seu Google Drive' : store?.modo === 'onedrive' ? 'no seu OneDrive' : store?.modo === 'dropbox' ? 'no seu Dropbox' : store?.modo === 'pasta' ? 'na pasta do processo' : 'neste navegador'}</small>
-        </div>
         {/* Faixa de sessão no pé da lombada: com um caso aberto, é daqui que
-            se chega à Administração e ao Sair. */}
+            se chega à Administração e ao Sair. (O indicador de salvamento
+            saiu daqui para a barra de status da folha — T2 da auditoria.) */}
         {menu && <div className="sessao">{menu}</div>}
         <div className="selo">
           Cálculo de apoio com fundamento legal.
@@ -3499,6 +3670,75 @@ export default function SucessoristaClient({
       </nav>
 
       <main className="folha">
+        {/* Barra de status FINA no topo da folha (V3): prazo do art. 611,
+            custo projetado e salvamento sempre à vista — o painel do caso
+            pode ficar recolhido sem o advogado perder os números. */}
+        <div className="barra-status num" role="status">
+          {falecido.dataObito ? (
+            <span
+              className={`bs-prazo ${
+                fiscal.itcmdSituacao === 'PAGO' ? 'ok' : faixaDoPrazo(diasDesdeObito(falecido.dataObito))
+              }`}
+            >
+              Art. 611: {diasDesdeObito(falecido.dataObito)} dia(s) —{' '}
+              {fiscal.itcmdSituacao === 'PAGO' ? 'ITCMD pago' : rotuloDoPrazo(diasDesdeObito(falecido.dataObito))}
+            </span>
+          ) : (
+            <span className="bs-prazo">Art. 611: informe a data do óbito</span>
+          )}
+          <span>
+            Custo projetado:{' '}
+            {provisao
+              ? brl(
+                  (
+                    provisao.total +
+                    (custos?.total ?? 0) +
+                    impostoSucessoes +
+                    somaAdicionais(custosAdicionais)
+                  ).toFixed(2),
+                )
+              : '—'}
+          </span>
+          <span
+            className="bs-salva"
+            title={
+              store?.modo === 'drive'
+                ? 'Gravado no SEU Google Drive — acessível de qualquer dispositivo com o seu login'
+                : store?.modo === 'onedrive'
+                  ? 'Gravado no SEU OneDrive — acessível de qualquer dispositivo com o seu login'
+                  : store?.modo === 'dropbox'
+                    ? 'Gravado no SEU Dropbox — acessível de qualquer dispositivo com o seu login'
+                    : store?.modo === 'pasta'
+                      ? 'Gravado direto na pasta do processo — nada sai desta máquina'
+                      : 'Gravado neste navegador (modo portátil) — nada sai desta máquina'
+            }
+          >
+            {salvamento.estado === 'erro' ? (
+              <button className="bs-acao" onClick={() => void salvarAgoraRef.current()}>
+                ● erro ao salvar — tentar de novo
+              </button>
+            ) : salvamento.estado === 'somente-leitura' ? (
+              <button className="bs-acao" onClick={() => void desbloquearPasta()}>
+                ● somente leitura — reconectar pasta
+              </button>
+            ) : salvamento.estado === 'salvando' ? (
+              '● salvando…'
+            ) : salvamento.estado === 'salvo' && salvamento.quando ? (
+              `● salvo às ${new Date(salvamento.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+            ) : (
+              '● salvamento automático'
+            )}{' '}
+            {store?.modo === 'drive'
+              ? 'no seu Google Drive'
+              : store?.modo === 'onedrive'
+                ? 'no seu OneDrive'
+                : store?.modo === 'dropbox'
+                  ? 'no seu Dropbox'
+                  : store?.modo === 'pasta'
+                    ? 'na pasta do processo'
+                    : 'neste navegador'}
+          </span>
+        </div>
         {abaProc === 'caso' && (
           <CasoView
             aplicarLeitura={aplicarLeitura}
@@ -3518,6 +3758,27 @@ export default function SucessoristaClient({
             setRito={(r) => setFiscal({ ...fiscal, rito: r })}
             ritoMotor={ritoMotor}
             equipe={equipe}
+            painelFamilia={
+              <PainelFamiliaCard
+                casoId={casoId}
+                nomeFalecido={falecido.nome || 'o inventário'}
+                nomeAdvogado={nomeConta || 'Advogado(a) responsável'}
+                rito={ritoEfetivo ?? 'EXTRAJUDICIAL'}
+                convites={Object.values(convites)}
+                quinhoes={quinhoesPainel}
+                custosVisiveis={custosVisiveisPainel}
+                estado={painelFamilia}
+                onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
+                onConviteAtualizado={(c) =>
+                  setConvites((prev) => {
+                    const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                    return chave ? { ...prev, [chave]: c } : prev;
+                  })
+                }
+                onEncerrado={() => setConvites({})}
+                irParaDocumentos={() => irPara('documentos')}
+              />
+            }
           />
         )}
 
@@ -3555,11 +3816,13 @@ export default function SucessoristaClient({
         {abaProc === 'partilha' && (
           <>
             <h1>Partilha</h1>
-            <p className="subtitulo">
-              O espelho da partilha com o fundamento legal de cada lançamento — e a apuração
-              de torna quando a família convenciona diferente do direito. O vínculo, o regime
-              e os herdeiros vêm do item I; os bens, do item II.
-            </p>
+            <Doutrina
+              id="partilha"
+              resumo="O espelho da partilha com o fundamento legal de cada lançamento."
+            >
+              A torna é apurada quando a família convenciona diferente do direito. O
+              vínculo, o regime e os herdeiros vêm do item I; os bens, do item II.
+            </Doutrina>
 
             <div className="passos" role="tablist" aria-label="Passos">
               {['Espelho da partilha', 'Partilha diferenciada'].map((t, i) => (
@@ -3910,6 +4173,17 @@ export default function SucessoristaClient({
               temSobrevivente={temSobrevivente}
               rito={ritoEfetivo}
               convites={convites}
+              onConviteAtualizado={(c) =>
+                setConvites((prev) => {
+                  const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                  return chave ? { ...prev, [chave]: c } : prev;
+                })
+              }
+              responsaveis={responsaveisDocs}
+              onResponsavel={(docId, valor) =>
+                setResponsaveisDocs((prev) => ({ ...prev, [docId]: valor }))
+              }
+              herdeirosCaso={herdeiros.map((h) => ({ id: h.id, nome: h.nome }))}
               onSalvarNaPasta={async (file) => {
                 // Modo pasta/Drive: o envio do cofre também vai ao armazenamento,
                 // em "Recebidos do cofre/" do caso (o manifesto religa sozinho).
@@ -4045,6 +4319,7 @@ export default function SucessoristaClient({
       </main>
 
       <PainelCaso
+        casoId={casoId}
         falecido={falecido}
         temSobrevivente={temSobrevivente}
         vinculo={vinculo}
@@ -4291,23 +4566,14 @@ function PartilhaDeSucessao({
         {indice}ª sucessão — {sucessao.nome} · óbito em{' '}
         {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(base.toFixed(2))}
       </span>
-      <div className="espelho">
-        <div className="cabeca">
-          <span>Herdeiro</span>
-          <span>Fração</span>
-          <span style={{ textAlign: 'right' }}>Quinhão</span>
-        </div>
+      <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
         {resultado.quinhoes.map((q) => (
-          <div key={q.herdeiroId}>
-            <div className="lanc">
-              <span className="nome">{q.nome}</span>
-              <span className="fracao num">{q.fracaoHeranca}</span>
-              <span className="valor num">{brl(q.valor)}</span>
-            </div>
-            <div className="fund">{q.fundamento}</div>
-          </div>
+          <Fragment key={q.herdeiroId}>
+            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} valor={brl(q.valor)} />
+            <FundEspelho>{q.fundamento}</FundEspelho>
+          </Fragment>
         ))}
-      </div>
+      </Espelho>
       <p className="fund" style={{ marginTop: 8 }}>
         ITCMD, escritura e registros desta sucessão já somam no painel e no item V
         (Custos), pelo fato gerador próprio dela.
@@ -4429,14 +4695,14 @@ function EspelhoView({
           <div className="grade c2" style={{ margin: '14px 0 6px' }}>
             <div>
               <span className="eyebrow">Massa partilhável</span>
-              <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 24 }}>
+              <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
                 {brl(resultado.acervo.massaPartilhavel)}
               </p>
             </div>
             {resultado.meacao && (
               <div>
                 <span className="eyebrow">Meação — {resultado.meacao.beneficiario}</span>
-                <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 24 }}>
+                <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
                   {brl(resultado.meacao.valor)}
                 </p>
                 <p className="fund">
@@ -4477,7 +4743,7 @@ function EspelhoView({
             {bens.map((b, i) => (
               <div className="check-item" key={b.id}>
                 <span className="prio num">{i + 1}.</span>
-                <p style={{ fontSize: 13.5 }}>
+                <p style={{ fontSize: 'var(--t-sm)' }}>
                   {b.descricao}
                   <span className="fracao num"> · {brl(b.valor)} · {b.natureza === 'COMUM' ? 'comum' : 'particular'}</span>
                 </p>
@@ -4486,44 +4752,88 @@ function EspelhoView({
             ))}
           </div>
 
-          <div className="espelho">
-            <div className="cabeca">
-              <span>Herdeiro</span>
-              <span>Fração da herança</span>
-              <span style={{ textAlign: 'right' }}>Quinhão</span>
-            </div>
-            {resultado.quinhoes.map((q) => {
-              // Fração ideal de CADA BEM (a que vai para a escritura): nos
-              // comuns já desconta a meação — 3 filhos + viúva meeira = 1/6.
-              const porBem = [
-                q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
-                q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
-              ]
-                .filter(Boolean)
-                .join(' · ');
-              return (
-                <div key={q.herdeiroId}>
-                  <div className="lanc">
-                    <span className="nome">
-                      {q.nome}
-                      {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
-                    </span>
-                    <span className="fracao num">{q.fracaoHeranca}</span>
-                    <span className="valor num">{brl(q.valor)}</span>
-                  </div>
-                  {porBem && (
-                    <div className="fund num" style={{ fontWeight: 600 }}>
-                      Fração ideal por bem: {porBem}
-                    </div>
-                  )}
-                  <div className="fund">
-                    {q.fundamento}
-                    {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* Tabela SEMÂNTICA (T4 da auditoria): thead/th com scope — números
+              tabulares alinhados à direita, seleção e cópia para Word/Excel
+              preservando as colunas, leitura correta por leitor de tela e a
+              repetição do cabeçalho por página na impressão. O fundamento
+              legal de cada lançamento fica visível na linha seguinte. */}
+          <Table className="espelho-tabela">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Herdeiro</TableHead>
+                <TableHead scope="col">Fração da herança</TableHead>
+                <TableHead scope="col" className="text-right">
+                  % da massa
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Quinhão
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {resultado.meacao && (
+                <>
+                  <TableRow>
+                    <TableCell className="espelho-nome">
+                      {resultado.meacao.beneficiario} · meação — não é herança
+                    </TableCell>
+                    <TableCell className="num">{resultado.meacao.fracao}</TableCell>
+                    <TableCell className="num text-right">
+                      {pctFmtEspelho(resultado.meacao.valor, resultado.acervo.massaPartilhavel)}
+                    </TableCell>
+                    <TableCell className="num text-right">{brl(resultado.meacao.valor)}</TableCell>
+                  </TableRow>
+                  <TableRow className="espelho-fundamento">
+                    <TableCell colSpan={4}>{resultado.meacao.fundamento}</TableCell>
+                  </TableRow>
+                </>
+              )}
+              {resultado.quinhoes.map((q) => {
+                // Fração ideal de CADA BEM (a que vai para a escritura): nos
+                // comuns já desconta a meação — 3 filhos + viúva meeira = 1/6.
+                const porBem = [
+                  q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+                  q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <Fragment key={q.herdeiroId}>
+                    <TableRow>
+                      <TableCell className="espelho-nome">
+                        {q.nome}
+                        {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
+                      </TableCell>
+                      <TableCell className="num">{q.fracaoHeranca}</TableCell>
+                      <TableCell className="num text-right">
+                        {pctFmtEspelho(q.valor, resultado.acervo.massaPartilhavel)}
+                      </TableCell>
+                      <TableCell className="num text-right">{brl(q.valor)}</TableCell>
+                    </TableRow>
+                    <TableRow className="espelho-fundamento">
+                      <TableCell colSpan={4}>
+                        {porBem && (
+                          <span className="num" style={{ fontWeight: 600 }}>
+                            Fração ideal por bem: {porBem} ·{' '}
+                          </span>
+                        )}
+                        {q.fundamento}
+                        {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell>Total (massa partilhável)</TableCell>
+                <TableCell />
+                <TableCell className="num text-right">100%</TableCell>
+                <TableCell className="num text-right">{brl(resultado.acervo.massaPartilhavel)}</TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
 
           {/* COLAÇÃO (CC 2.002): quadro ajustado — massa fictícia, abate do
               donatário e quinhão líquido a receber de cada herdeiro. */}
@@ -4532,23 +4842,31 @@ function EspelhoView({
               <span className="eyebrow">
                 Colação aplicada — {brl(colacao.totalColacionado.toFixed(2))} voltando à massa de cálculo
               </span>
-              <div className="espelho" style={{ marginTop: 8 }}>
-                <div className="cabeca">
-                  <span>Herdeiro</span>
-                  <span style={{ textAlign: 'right' }}>Quinhão − colacionado</span>
-                  <span style={{ textAlign: 'right' }}>Líquido a receber</span>
-                </div>
-                {colacao.quinhoes.map((q) => (
-                  <div key={q.herdeiroId} className="lanc">
-                    <span className="nome">{q.nome}</span>
-                    <span className="fracao num">
-                      {brl(q.valorComMassaFicticia.toFixed(2))}
-                      {q.colacionado > 0 ? ` − ${brl(q.colacionado.toFixed(2))}` : ''}
-                    </span>
-                    <span className="valor num">{brl(q.valorLiquido.toFixed(2))}</span>
-                  </div>
-                ))}
-              </div>
+              <Table className="espelho-tabela" style={{ marginTop: 8 }}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Herdeiro</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Quinhão − colacionado
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Líquido a receber
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {colacao.quinhoes.map((q) => (
+                    <TableRow key={q.herdeiroId}>
+                      <TableCell className="espelho-nome">{q.nome}</TableCell>
+                      <TableCell className="num text-right">
+                        {brl(q.valorComMassaFicticia.toFixed(2))}
+                        {q.colacionado > 0 ? ` − ${brl(q.colacionado.toFixed(2))}` : ''}
+                      </TableCell>
+                      <TableCell className="num text-right">{brl(q.valorLiquido.toFixed(2))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
               {colacao.avisos.map((a, i) => (
                 <p key={i} className="mono-alerta" style={{ marginTop: 6 }}>
                   {a}

@@ -54,8 +54,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         <InstallPrompt />
         {/* O app não tem modo escuro; sem o theme fixo, o sonner seguiria o
-            tema do sistema operacional e destoaria da interface. */}
-        <Toaster richColors theme="light" />
+            tema do sistema operacional e destoaria da interface. Toast some
+            sozinho em 4s e só UM fica visível — aviso não pode virar
+            cortina sobre o painel (V3 da auditoria visual). */}
+        <Toaster richColors theme="light" duration={4000} visibleToasts={1} />
       </body>
     </html>
   );

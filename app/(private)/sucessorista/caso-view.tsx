@@ -205,6 +205,7 @@ export function CasoView({
   setRito,
   ritoMotor = null,
   equipe = null,
+  painelFamilia = null,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -231,6 +232,9 @@ export function CasoView({
   ritoMotor?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
   /** Equipe da conta (card "Minha equipe") — null sem equipe. */
   equipe?: InfoEquipe | null;
+  /** Card "Painel da família" (Painel do Cliente) — vem pronto do client,
+   *  que tem o estado do caso; este dashboard só o posiciona no grid. */
+  painelFamilia?: React.ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -621,6 +625,8 @@ export function CasoView({
               )}
             </div>
           )}
+
+          {painelFamilia}
 
           {/* Equipe: contas individuais vinculadas por convite do chefe —
               membro faz tudo no módulo, gerir a equipe é só do chefe. */}

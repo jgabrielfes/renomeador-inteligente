@@ -97,4 +97,50 @@ export const store: PortalStore = {
     }
     return memoryStore.confirmarEnvio(token);
   },
+
+  async marcarAcesso(token, primeiro, ultimo) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        c.primeiroAcessoEm = c.primeiroAcessoEm ?? primeiro;
+        c.ultimoAcessoEm = ultimo;
+        await gravarNoBanco(c);
+        return;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    await memoryStore.marcarAcesso(token, primeiro, ultimo);
+  },
+
+  async adicionarPedido(token, pedido) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (!c.documentos.some((d) => d.id === pedido.id)) {
+          c.documentos.push({ ...pedido, status: 'PENDENTE' });
+          await gravarNoBanco(c);
+        }
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.adicionarPedido(token, pedido);
+  },
+
+  async salvarPreferencias(token, prefs) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
+        if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
+        await gravarNoBanco(c);
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.salvarPreferencias(token, prefs);
+  },
 };

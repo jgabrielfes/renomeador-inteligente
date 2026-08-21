@@ -74,6 +74,17 @@ export function CofreView({
     setErro(null);
     try {
       const r = await fetch(`/api/portal/${token}`);
+      if (r.status === 410) {
+        // Revogado em outra tela/máquina: o cofre aprende e oferece o novo link.
+        const atual = convites[h.id];
+        if (atual && !atual.revogadoEm) {
+          setConvites({
+            ...convites,
+            [h.id]: { ...atual, revogadoEm: new Date().toISOString() },
+          });
+        }
+        return;
+      }
       if (!r.ok) throw new Error('O convite não está mais disponível — gere um novo link.');
       setConvites({ ...convites, [h.id]: (await r.json()) as ConviteHerdeiro });
     } catch (e) {
@@ -121,13 +132,22 @@ export function CofreView({
           const enviados = convite
             ? convite.documentos.filter((d) => d.status !== 'PENDENTE').length
             : 0;
+          const revogado = Boolean(convite?.revogadoEm);
           return (
             <div className="check-item" key={h.id}>
-              <span className="prio">{convite ? (convite.qualificacao ? '✓' : '…') : '·'}</span>
+              <span className="prio">{convite && !revogado ? (convite.qualificacao ? '✓' : '…') : '·'}</span>
               <div>
                 <h4>{h.nome}</h4>
                 {!convite && <p>Nenhum link gerado ainda.</p>}
-                {convite && url && (
+                {convite && revogado && (
+                  <p>
+                    Link revogado em{' '}
+                    {new Date(convite.revogadoEm!).toLocaleDateString('pt-BR')} — o acesso
+                    deste herdeiro está encerrado. O que ele já enviou permanece no caso;
+                    gere um novo link para reabrir o portal dele.
+                  </p>
+                )}
+                {convite && !revogado && url && (
                   <>
                     <p className="num" style={{ wordBreak: 'break-all' }}>{url}</p>
                     <p>
@@ -155,17 +175,17 @@ export function CofreView({
                 )}
               </div>
               <span style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                {!convite && (
+                {(!convite || revogado) && (
                   <Button
                     variant="outline"
                     size="sm"
                     loading={ocupado === h.id}
                     onClick={() => gerarLink(h)}
                   >
-                    Gerar link
+                    {revogado ? 'Gerar novo link' : 'Gerar link'}
                   </Button>
                 )}
-                {convite && url && (
+                {convite && !revogado && url && (
                   <>
                     <Button variant="outline" size="sm" onClick={() => copiar(h, url)}>
                       {copiado === h.id ? 'Copiado ✓' : 'Copiar link'}

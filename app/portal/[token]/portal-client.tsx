@@ -20,6 +20,15 @@ import { LupaPreview } from '../../(private)/sucessorista/preview';
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
+import type { PainelHerdeiro } from '@/lib/portal/painel';
+
+/** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
+ *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
+ *  no deploy (env-gated no servidor). */
+type ConviteComPainel = ConviteHerdeiro & {
+  painel?: PainelHerdeiro | null;
+  emailAtivo?: boolean;
+};
 
 const ROTULO: Record<string, string> = {
   PENDENTE: 'Aguardando você',
@@ -27,6 +36,52 @@ const ROTULO: Record<string, string> = {
   APROVADO: 'Aprovado',
   REJEITADO: 'Precisa reenviar',
 };
+
+const brl = (v: string) =>
+  `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const dataLonga = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+};
+
+const MESES_PT: Record<string, number> = {
+  janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+};
+
+/**
+ * Data de EMISSÃO provável do documento: a data MAIS RECENTE que não seja
+ * futura encontrada no texto lido (numa certidão, as demais datas — óbito,
+ * casamento, nascimento — são sempre anteriores à emissão). Devolve ISO
+ * yyyy-mm-dd ou null quando não dá para validar.
+ */
+function extrairDataEmissao(texto: string): string | null {
+  const hoje = Date.now();
+  let melhor = 0;
+  const considerar = (dia: number, mes: number, ano: number) => {
+    if (ano < 1990 || mes < 1 || mes > 12 || dia < 1 || dia > 31) return;
+    const ts = new Date(ano, mes - 1, dia, 12).getTime();
+    if (Number.isNaN(ts) || ts > hoje) return;
+    if (ts > melhor) melhor = ts;
+  };
+  for (const m of texto.matchAll(/(\d{1,2})[/.](\d{1,2})[/.](\d{4})/g)) {
+    considerar(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  for (const m of texto.matchAll(/(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/gi)) {
+    const mes = MESES_PT[m[2].toLowerCase()];
+    if (mes) considerar(Number(m[1]), mes, Number(m[3]));
+  }
+  if (melhor === 0) return null;
+  const d = new Date(melhor);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const DIAS_VALIDADE_CERTIDAO = 90;
+
+const idadeEmDias = (iso: string): number =>
+  Math.floor((Date.now() - new Date(`${iso}T12:00:00`).getTime()) / 86_400_000);
 
 /** União estável NÃO é estado civil: a escolha é fechada e a união é a
  *  caixinha própria — marcada (ou casado), abre a qualificação do cônjuge/
@@ -75,21 +130,37 @@ type Qualificacao = z.infer<typeof esquemaQualificacao>;
 
 export default function PortalHerdeiro({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
-  const [convite, setConvite] = useState<ConviteHerdeiro | null>(null);
+  const [convite, setConvite] = useState<ConviteComPainel | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [apagando, setApagando] = useState<string | null>(null);
   /** Arquivos anexados nesta visita, por documento — permitem a lupa local. */
   const [arquivos, setArquivos] = useState<Record<string, File>>({});
   const [preview, setPreview] = useState<File | null>(null);
 
   useEffect(() => {
-    fetch(`/api/portal/${token}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Convite não encontrado ou expirado.'))))
+    // ?visita=1 carimba o acesso do herdeiro (1º/último) para o advogado —
+    // só a página do portal manda; a revalidação do advogado não conta.
+    fetch(`/api/portal/${token}?visita=1`)
+      .then((r) => {
+        if (r.status === 410)
+          return Promise.reject(new Error('Este convite foi encerrado pelo advogado.'));
+        return r.ok ? r.json() : Promise.reject(new Error('Convite não encontrado ou expirado.'));
+      })
       .then(setConvite)
       .catch((e: Error) => setErro(e.message));
   }, [token]);
+
+  /** Respostas de PATCH/upload trazem só o convite — preserva o painel e a
+   *  flag de e-mail do carregamento inicial. */
+  const atualizarConvite = (novo: ConviteHerdeiro) =>
+    setConvite((prev) => ({
+      ...novo,
+      painel: prev?.painel ?? null,
+      emailAtivo: prev?.emailAtivo ?? false,
+    }));
 
   const {
     register,
@@ -121,7 +192,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         qualificacao: { ...dados, uniaoEstavel: dados.uniaoEstavel ? 'sim' : '' },
       }),
     });
-    if (r.ok) setConvite(await r.json());
+    if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
   };
 
   /**
@@ -170,12 +241,13 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setArquivos((a) => ({ ...a, [docId]: file }));
     let nome = file.name;
     let tipo: string | undefined;
+    let texto = '';
     try {
       const [{ readDocument }, { proposeName }] = await Promise.all([
         import('@/lib/ocr'),
         import('@/lib/renamer'),
       ]);
-      const texto = await readDocument(file);
+      texto = await readDocument(file);
       if (texto.trim().length < 40) {
         setDicaQualidade(
           'O documento ficou pouco legível na leitura automática. Se for foto, tente de novo com boa iluminação, sem corte e sem inclinação — isso evita idas e vindas com o cartório.',
@@ -186,6 +258,23 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       tipo = proposta.docType !== 'Documento' ? proposta.docType : undefined;
     } catch {
       // Sem leitura local (formato não suportado etc.): segue com o nome original.
+    }
+
+    // Validade de certidão (comum: 90 dias): a data de emissão sai da mesma
+    // leitura local. Vencida ou na dúvida, o envio segue valendo — quem
+    // decide é o advogado; aqui é só o aviso que evita ida e volta.
+    let emitidaEm: string | undefined;
+    const ehCertidao = docId === 'certidao-estado-civil' || /certid/i.test(tipo ?? '');
+    if (ehCertidao && texto) {
+      emitidaEm = extrairDataEmissao(texto) ?? undefined;
+      if (emitidaEm) {
+        const idadeDias = idadeEmDias(emitidaEm);
+        if (idadeDias > DIAS_VALIDADE_CERTIDAO) {
+          setDicaQualidade(
+            `Esta certidão parece ter sido emitida em ${dataLonga(emitidaEm)} — pode estar vencida (a validade comum para cartório é de 90 dias). Você pode enviá-la mesmo assim; se tiver uma via mais recente, prefira-a.`,
+          );
+        }
+      }
     }
 
     // 1º: o arquivo em si, pela rota de upload do portal — inteiro numa
@@ -203,6 +292,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           form.set('mime', file.type || 'application/octet-stream');
           form.set('nomeArquivo', nome);
           if (tipo) form.set('tipoDetectado', tipo);
+          if (emitidaEm) form.set('emitidaEm', emitidaEm);
           if (total > 1) {
             form.set('envioId', envioId);
             form.set('indice', String(i));
@@ -212,7 +302,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           if (!resposta.ok) break;
         }
         if (resposta?.ok) {
-          setConvite(await resposta.json());
+          atualizarConvite((await resposta.json()) as ConviteHerdeiro);
           setAnalisando(null);
           return;
         }
@@ -228,10 +318,29 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     const r = await fetch(`/api/portal/${token}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ docId, status: 'ENVIADO', nomeArquivo: nome, tipoDetectado: tipo }),
+      body: JSON.stringify({ docId, status: 'ENVIADO', nomeArquivo: nome, tipoDetectado: tipo, emitidaEm }),
     });
-    if (r.ok) setConvite(await r.json());
+    if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
     setAnalisando(null);
+  };
+
+  /** Apaga um envio SEU (mandou errado, quer trocar) — some do caso na hora.
+   *  Pedido já aprovado não se apaga; fale com o escritório. */
+  const apagarArquivo = async (arquivoId: string) => {
+    setApagando(arquivoId);
+    setDicaQualidade(null);
+    try {
+      const r = await fetch(`/api/portal/${token}/arquivo?arquivo=${encodeURIComponent(arquivoId)}`, {
+        method: 'DELETE',
+      });
+      if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
+      else {
+        const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+        setDicaQualidade(corpo?.erro ?? 'Não foi possível apagar agora — tente de novo.');
+      }
+    } finally {
+      setApagando(null);
+    }
   };
 
   if (erro) {
@@ -258,20 +367,77 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   }
 
   const feitos = convite.documentos.filter((d) => d.status === 'APROVADO').length;
-  const advogado = convite.nomeAdvogado || 'o advogado responsável';
+  const painel = convite.painel ?? null;
+  const advogado = painel?.advogado.nome || convite.nomeAdvogado || 'o advogado responsável';
 
   return (
     <div className="sucessorista">
     <main className="folha" style={{ margin: '0 auto' }}>
-      <span className="eyebrow">Inventário de {convite.nomeFalecido}</span>
+      <span className="eyebrow">Inventário de {painel?.nomeFalecido || convite.nomeFalecido}</span>
       <h1>Olá, {convite.nomeHerdeiro}</h1>
+      {painel && (painel.advogado.telefone || painel.advogado.email) && (
+        <p className="contato-advogado">
+          Conduzido por <strong>{advogado}</strong>
+          {painel.advogado.telefone && (
+            <>
+              {' · '}
+              <a href={`tel:${painel.advogado.telefone.replace(/\D/g, '')}`}>
+                {painel.advogado.telefone}
+              </a>
+            </>
+          )}
+          {painel.advogado.email && (
+            <>
+              {' · '}
+              <a href={`mailto:${painel.advogado.email}`}>{painel.advogado.email}</a>
+            </>
+          )}
+        </p>
+      )}
       <p className="subtitulo">
         Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos)
         e os documentos da lista. Nada aqui é público: só você e {advogado} veem esta página.
       </p>
 
-      {/* ---------- 1. qualificação ---------- */}
-      <h2>1. Seus dados</h2>
+      {/* ---------- onde estamos (Painel do Cliente publicado) ---------- */}
+      {painel && (
+        <>
+          <h2>Onde estamos</h2>
+          <ol className="fase-lista">
+            {painel.fases.map((f, i) => (
+              <li
+                key={f.id}
+                className={`fase-item${f.atual ? ' atual' : ''}${f.concluida ? ' feita' : ''}`}
+              >
+                <span className="fase-ponto num" aria-hidden>
+                  {f.concluida ? '✓' : i + 1}
+                </span>
+                <span>
+                  <strong>{f.titulo}</strong>
+                  {f.atual && <em className="fase-agora"> — estamos aqui</em>}
+                  {f.atual && <span className="fase-descricao">{f.descricao}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {painel.proximoPasso && (
+            <div className="nota" style={{ marginTop: 10 }}>
+              <span className="eyebrow">Próximo passo</span>
+              <p>{painel.proximoPasso.texto}</p>
+              {painel.proximoPasso.dataEstimada && (
+                <p className="fund" style={{ marginTop: 4 }}>
+                  Estimativa: {dataLonga(painel.proximoPasso.dataEstimada)} — prazos de
+                  inventário dependem de cartórios e órgãos públicos e podem mudar.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ---------- o que falta de você ---------- */}
+      <h2>O que falta de você</h2>
+      <h3 style={{ marginTop: 8 }}>Seus dados (2 minutos)</h3>
       {convite.qualificacao ? (
         <div className="nota registro">
           <span className="eyebrow">Recebido</span>
@@ -410,8 +576,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         </div>
       </form>
 
-      {/* ---------- 2. documentos ---------- */}
-      <h2>2. Seus documentos</h2>
+      {/* ---------- documentos ---------- */}
+      <h3 style={{ marginTop: 20 }}>Seus documentos</h3>
       <p className="progresso num">
         {feitos} de {convite.documentos.length} documentos aprovados
       </p>
@@ -433,44 +599,83 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               {d.status === 'REJEITADO' && d.observacaoAdvogado && (
                 <p className="alerta">Advogado: {d.observacaoAdvogado}</p>
               )}
-              {(d.status === 'PENDENTE' || d.status === 'REJEITADO') && (
-                <label className="campo" style={{ marginTop: 8, maxWidth: 340 }}>
-                  Enviar arquivo
-                  <input
-                    type="file"
-                    disabled={analisando !== null}
-                    onChange={(e: Ev) => {
-                      const f = e.target.files?.[0];
-                      if (f) void enviarDocumento(d.id, f);
-                    }}
-                  />
-                </label>
-              )}
-              {d.nomeArquivo && d.status !== 'PENDENTE' && (
-                <p className="fund">
-                  Arquivo: {d.nomeArquivo}
-                  {d.tipoDetectado ? ` · lido como ${d.tipoDetectado}` : ''}
-                  {arquivos[d.id] && (
-                    <button
-                      type="button"
-                      className="lupa"
-                      title={`Pré-visualizar ${d.nomeArquivo}`}
-                      aria-label={`Pré-visualizar ${d.nomeArquivo}`}
-                      onClick={() => setPreview(arquivos[d.id])}
-                    >
-                      🔍
-                    </button>
-                  )}
-                </p>
-              )}
+              {(() => {
+                /* Envios REAIS deste pedido (frente/verso/correlatos). O
+                   registro antigo de arquivo único vira uma lista de um. */
+                const enviados =
+                  d.arquivos ??
+                  (d.arquivoId && d.nomeArquivo
+                    ? [
+                        {
+                          arquivoId: d.arquivoId,
+                          nome: d.nomeArquivo,
+                          tamanho: d.arquivoTamanho ?? 0,
+                          tipoDetectado: d.tipoDetectado,
+                        },
+                      ]
+                    : []);
+                return (
+                  <>
+                    {enviados.map((a) => (
+                      <p className="fund" key={a.arquivoId}>
+                        Enviado: {a.nome}
+                        {a.tipoDetectado ? ` · lido como ${a.tipoDetectado}` : ''}
+                        {arquivos[d.id]?.name === a.nome && (
+                          <button
+                            type="button"
+                            className="lupa"
+                            title={`Pré-visualizar ${a.nome}`}
+                            aria-label={`Pré-visualizar ${a.nome}`}
+                            onClick={() => setPreview(arquivos[d.id])}
+                          >
+                            🔍
+                          </button>
+                        )}
+                        {d.status !== 'APROVADO' && (
+                          <button
+                            type="button"
+                            className="apagar-arquivo"
+                            disabled={apagando !== null}
+                            onClick={() => void apagarArquivo(a.arquivoId)}
+                          >
+                            {apagando === a.arquivoId ? 'apagando…' : 'apagar arquivo'}
+                          </button>
+                        )}
+                      </p>
+                    ))}
+                    {enviados.length === 0 && d.nomeArquivo && d.status !== 'PENDENTE' && (
+                      <p className="fund">
+                        Arquivo: {d.nomeArquivo}
+                        {d.tipoDetectado ? ` · lido como ${d.tipoDetectado}` : ''}
+                      </p>
+                    )}
+                    {/* O seletor fica SEMPRE disponível fora do aprovado:
+                        primeiro envio, o verso ou um correlato — escolher o
+                        arquivo já dispara o envio. */}
+                    {d.status !== 'APROVADO' && (
+                      <label className="campo" style={{ marginTop: 8, maxWidth: 340 }}>
+                        <input
+                          type="file"
+                          aria-label={`Escolher arquivo para ${d.titulo}`}
+                          disabled={analisando !== null}
+                          onChange={(e: Ev) => {
+                            const f = e.target.files?.[0];
+                            if (f) void enviarDocumento(d.id, f);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             <span />
           </div>
         ))}
       </div>
 
-      {/* ---------- 3. salvar: a confirmação que o herdeiro entende ---------- */}
-      <h2>3. Salvar</h2>
+      {/* ---------- salvar: a confirmação que o herdeiro entende ---------- */}
+      <h2>Salvar</h2>
       <p className="fund" style={{ marginBottom: 8 }}>
         Cada dado e documento acima já entra na folha do inventário assim que você envia.
         O botão abaixo fecha a visita: registra que você terminou e confirma que está tudo
@@ -500,7 +705,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ confirmarEnvio: true }),
               });
-              if (r.ok) setConvite(await r.json());
+              if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
             } finally {
               setSalvando(false);
             }
@@ -514,13 +719,170 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             : 'Salvar — confirmar meu envio'}
       </button>
 
+      {/* ---------- avisos por e-mail (env-gated no servidor) ---------- */}
+      {convite.emailAtivo && (
+        <AvisosEmail
+          key={convite.token}
+          token={token}
+          emailInicial={convite.emailNotificacao ?? convite.qualificacao?.email ?? ''}
+          prefInicial={convite.notificacoes ?? 'tudo'}
+          onAtualizado={atualizarConvite}
+        />
+      )}
+
+      {/* ---------- custos (só o que o advogado marcou como visível) ---------- */}
+      {painel?.custos && painel.custos.length > 0 && (
+        <>
+          <h2>Custos do inventário</h2>
+          <p className="fund" style={{ marginBottom: 6 }}>
+            Valores do processo como um todo (impostos, cartório e despesas) — honorários
+            não entram nesta lista. São previsões: o valor final sai nas guias oficiais.
+          </p>
+          <ul className="custos-portal">
+            {painel.custos.map((c, i) => (
+              <li key={i}>
+                <span>{c.rotulo}</span>
+                <span className="num">
+                  {brl(c.valor)}{' '}
+                  <em className={`selo-custo${c.situacao === 'PAGO' ? ' pago' : ''}`}>
+                    {c.situacao === 'PAGO' ? 'pago' : 'previsto'}
+                  </em>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* ---------- quinhão (só quando o advogado liberar) ---------- */}
+      {painel?.quinhao && (
+        <>
+          <h2>Seu quinhão</h2>
+          <div className="nota registro">
+            <p>
+              Pela divisão em estudo, a sua parte na herança é de{' '}
+              <strong className="num">{brl(painel.quinhao.valor)}</strong>
+              {painel.quinhao.fracao ? (
+                <> ({painel.quinhao.fracao} da herança)</>
+              ) : null}
+              .
+            </p>
+            <p className="fund" style={{ marginTop: 4 }}>
+              {painel.quinhao.aviso}
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* ---------- histórico de atualizações ---------- */}
+      {painel && painel.historico.length > 0 && (
+        <>
+          <h2>Atualizações do caso</h2>
+          <ul className="historico-portal">
+            {painel.historico.map((e, i) => (
+              <li key={i}>
+                <span className="num">{dataLonga(e.data)}</span> — {e.texto}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <p className="fund" style={{ marginTop: 24 }}>
         Dúvidas sobre algum documento? Fale direto com {advogado}.
       </p>
 
+      {/* Aviso deontológico permanente (Provimento 205/2021 da OAB): o
+          herdeiro sempre sabe quem conduz e que pode ter advogado próprio. */}
+      <footer className="rodape-etico">
+        {advogado} conduz este inventário. Você pode constituir advogado(a) próprio(a) a
+        qualquer momento.{' '}
+        <a href="/portal/privacidade" target="_blank" rel="noopener noreferrer">
+          Como seus dados são tratados
+        </a>
+        .
+      </footer>
+
       <LupaPreview file={preview} onClose={() => setPreview(null)} />
     </main>
     </div>
+  );
+}
+
+/** Avisos por e-mail: o herdeiro escolhe o quanto quer saber sem perguntar
+ *  ao advogado — tudo, só as mudanças de fase, ou nada. */
+function AvisosEmail({
+  token,
+  emailInicial,
+  prefInicial,
+  onAtualizado,
+}: {
+  token: string;
+  emailInicial: string;
+  prefInicial: 'tudo' | 'fases' | 'nada';
+  onAtualizado: (c: ConviteHerdeiro) => void;
+}) {
+  const [email, setEmail] = useState(emailInicial);
+  const [pref, setPref] = useState<'tudo' | 'fases' | 'nada'>(prefInicial);
+  const [salvandoPref, setSalvandoPref] = useState(false);
+  const [feito, setFeito] = useState(false);
+  const [erroPref, setErroPref] = useState<string | null>(null);
+
+  const salvar = async () => {
+    setSalvandoPref(true);
+    setErroPref(null);
+    setFeito(false);
+    try {
+      const r = await fetch(`/api/portal/${token}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preferencias: { email: email.trim(), notificacoes: pref } }),
+      });
+      if (r.ok) {
+        onAtualizado((await r.json()) as ConviteHerdeiro);
+        setFeito(true);
+      } else {
+        const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+        setErroPref(corpo?.erro ?? 'Não foi possível salvar — tente de novo.');
+      }
+    } finally {
+      setSalvandoPref(false);
+    }
+  };
+
+  return (
+    <>
+      <h2>Avisos por e-mail</h2>
+      <p className="fund" style={{ marginBottom: 8 }}>
+        Receba um e-mail quando o inventário mudar de fase, quando um documento seu for
+        conferido ou quando algo novo for pedido a você — sem precisar perguntar.
+      </p>
+      <div className="grade q-grid">
+        <label className="campo">
+          Seu e-mail para os avisos
+          <input
+            type="text"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+        <label className="campo">
+          O que você quer receber
+          <select value={pref} onChange={(e) => setPref(e.target.value as typeof pref)}>
+            <option value="tudo">Tudo (fases, documentos e pedidos)</option>
+            <option value="fases">Só as mudanças de fase</option>
+            <option value="nada">Nada por e-mail</option>
+          </select>
+        </label>
+      </div>
+      {erroPref && <p className="mono-alerta">{erroPref}</p>}
+      <div style={{ marginTop: 10 }}>
+        <button className="acao" type="button" disabled={salvandoPref} onClick={() => void salvar()}>
+          {salvandoPref ? 'Salvando…' : feito ? 'Preferências salvas ✓' : 'Salvar preferências'}
+        </button>
+      </div>
+    </>
   );
 }
 

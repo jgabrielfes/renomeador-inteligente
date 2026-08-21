@@ -196,7 +196,7 @@ export function EquipeCard({ inicial }: { inicial: InfoEquipe | null }) {
                       ? 'Código de convite — ACESSO TOTAL aos casos (uso único)'
                       : 'Código de convite (uso único)'}
                   </span>
-                  <p className="num" style={{ fontSize: 16, letterSpacing: '0.06em', margin: '4px 0' }}>
+                  <p className="num" style={{ fontSize: 'var(--t-base)', letterSpacing: '0.06em', margin: '4px 0' }}>
                     {codigoGerado.codigo}
                   </p>
                   <p className="fund" style={{ margin: 0 }}>
