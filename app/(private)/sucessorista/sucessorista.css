@@ -2039,3 +2039,101 @@
 @media (max-width: 1024px) {
   .sucessorista .complexidade-grade { grid-template-columns: 1fr; justify-items: center; }
 }
+
+/* ---------- Painel do Cliente (portal do herdeiro) ---------- */
+
+/* Contato do advogado no cabeçalho — discreto, com links tocáveis. */
+.sucessorista .contato-advogado {
+  font-size: var(--t-sm);
+  color: var(--tinta-media);
+  margin: 2px 0 8px;
+}
+.sucessorista .contato-advogado a { text-decoration: underline; font-weight: 600; }
+
+/* Linha do tempo das fases: números/checks na margem, fase atual em
+   destaque com a explicação leiga logo abaixo do título. */
+.sucessorista .fase-lista { list-style: none; margin: 8px 0 0; padding: 0; }
+.sucessorista .fase-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--fio);
+  color: var(--tinta-media);
+}
+.sucessorista .fase-item:last-child { border-bottom: none; }
+.sucessorista .fase-ponto {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--fio-forte);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+.sucessorista .fase-item.feita { color: var(--tinta-media); }
+.sucessorista .fase-item.feita .fase-ponto {
+  border-color: var(--verde-registro);
+  color: var(--verde-registro);
+}
+.sucessorista .fase-item.atual { color: var(--tinta); }
+.sucessorista .fase-item.atual .fase-ponto {
+  background: var(--tinta);
+  border-color: var(--tinta);
+  color: var(--papel);
+}
+.sucessorista .fase-agora {
+  font-style: normal;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bronze);
+}
+.sucessorista .fase-descricao {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--tinta-media);
+  margin-top: 2px;
+}
+
+/* Lista de custos visíveis: rótulo × valor com selo pago/previsto. */
+.sucessorista .custos-portal { list-style: none; margin: 4px 0 0; padding: 0; }
+.sucessorista .custos-portal li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--fio);
+}
+.sucessorista .selo-custo {
+  font-style: normal;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-media);
+}
+.sucessorista .selo-custo.pago { color: var(--verde-registro); }
+
+/* Histórico de atualizações do caso. */
+.sucessorista .historico-portal { list-style: none; margin: 4px 0 0; padding: 0; }
+.sucessorista .historico-portal li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--fio);
+  font-size: var(--t-sm);
+}
+.sucessorista .historico-portal li:last-child { border-bottom: none; }
+
+/* Rodapé deontológico permanente (Provimento 205/2021 da OAB). */
+.sucessorista .rodape-etico {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fio);
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+}

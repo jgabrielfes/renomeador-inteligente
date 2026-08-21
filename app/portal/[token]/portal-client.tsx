@@ -20,12 +20,26 @@ import { LupaPreview } from '../../(private)/sucessorista/preview';
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
+import type { PainelHerdeiro } from '@/lib/portal/painel';
+
+/** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
+ *  token (null enquanto o advogado não publicar). */
+type ConviteComPainel = ConviteHerdeiro & { painel?: PainelHerdeiro | null };
 
 const ROTULO: Record<string, string> = {
   PENDENTE: 'Aguardando você',
   ENVIADO: 'Em revisão pelo advogado',
   APROVADO: 'Aprovado',
   REJEITADO: 'Precisa reenviar',
+};
+
+const brl = (v: string) =>
+  `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const dataLonga = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
 };
 
 /** União estável NÃO é estado civil: a escolha é fechada e a união é a
@@ -75,7 +89,7 @@ type Qualificacao = z.infer<typeof esquemaQualificacao>;
 
 export default function PortalHerdeiro({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
-  const [convite, setConvite] = useState<ConviteHerdeiro | null>(null);
+  const [convite, setConvite] = useState<ConviteComPainel | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
@@ -96,6 +110,10 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       .then(setConvite)
       .catch((e: Error) => setErro(e.message));
   }, [token]);
+
+  /** Respostas de PATCH/upload trazem só o convite — preserva o painel. */
+  const atualizarConvite = (novo: ConviteHerdeiro) =>
+    setConvite((prev) => ({ ...novo, painel: prev?.painel ?? null }));
 
   const {
     register,
@@ -127,7 +145,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         qualificacao: { ...dados, uniaoEstavel: dados.uniaoEstavel ? 'sim' : '' },
       }),
     });
-    if (r.ok) setConvite(await r.json());
+    if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
   };
 
   /**
@@ -218,7 +236,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           if (!resposta.ok) break;
         }
         if (resposta?.ok) {
-          setConvite(await resposta.json());
+          atualizarConvite((await resposta.json()) as ConviteHerdeiro);
           setAnalisando(null);
           return;
         }
@@ -236,7 +254,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ docId, status: 'ENVIADO', nomeArquivo: nome, tipoDetectado: tipo }),
     });
-    if (r.ok) setConvite(await r.json());
+    if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
     setAnalisando(null);
   };
 
@@ -264,20 +282,77 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   }
 
   const feitos = convite.documentos.filter((d) => d.status === 'APROVADO').length;
-  const advogado = convite.nomeAdvogado || 'o advogado responsável';
+  const painel = convite.painel ?? null;
+  const advogado = painel?.advogado.nome || convite.nomeAdvogado || 'o advogado responsável';
 
   return (
     <div className="sucessorista">
     <main className="folha" style={{ margin: '0 auto' }}>
-      <span className="eyebrow">Inventário de {convite.nomeFalecido}</span>
+      <span className="eyebrow">Inventário de {painel?.nomeFalecido || convite.nomeFalecido}</span>
       <h1>Olá, {convite.nomeHerdeiro}</h1>
+      {painel && (painel.advogado.telefone || painel.advogado.email) && (
+        <p className="contato-advogado">
+          Conduzido por <strong>{advogado}</strong>
+          {painel.advogado.telefone && (
+            <>
+              {' · '}
+              <a href={`tel:${painel.advogado.telefone.replace(/\D/g, '')}`}>
+                {painel.advogado.telefone}
+              </a>
+            </>
+          )}
+          {painel.advogado.email && (
+            <>
+              {' · '}
+              <a href={`mailto:${painel.advogado.email}`}>{painel.advogado.email}</a>
+            </>
+          )}
+        </p>
+      )}
       <p className="subtitulo">
         Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos)
         e os documentos da lista. Nada aqui é público: só você e {advogado} veem esta página.
       </p>
 
-      {/* ---------- 1. qualificação ---------- */}
-      <h2>1. Seus dados</h2>
+      {/* ---------- onde estamos (Painel do Cliente publicado) ---------- */}
+      {painel && (
+        <>
+          <h2>Onde estamos</h2>
+          <ol className="fase-lista">
+            {painel.fases.map((f, i) => (
+              <li
+                key={f.id}
+                className={`fase-item${f.atual ? ' atual' : ''}${f.concluida ? ' feita' : ''}`}
+              >
+                <span className="fase-ponto num" aria-hidden>
+                  {f.concluida ? '✓' : i + 1}
+                </span>
+                <span>
+                  <strong>{f.titulo}</strong>
+                  {f.atual && <em className="fase-agora"> — estamos aqui</em>}
+                  {f.atual && <span className="fase-descricao">{f.descricao}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {painel.proximoPasso && (
+            <div className="nota" style={{ marginTop: 10 }}>
+              <span className="eyebrow">Próximo passo</span>
+              <p>{painel.proximoPasso.texto}</p>
+              {painel.proximoPasso.dataEstimada && (
+                <p className="fund" style={{ marginTop: 4 }}>
+                  Estimativa: {dataLonga(painel.proximoPasso.dataEstimada)} — prazos de
+                  inventário dependem de cartórios e órgãos públicos e podem mudar.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ---------- o que falta de você ---------- */}
+      <h2>O que falta de você</h2>
+      <h3 style={{ marginTop: 8 }}>Seus dados (2 minutos)</h3>
       {convite.qualificacao ? (
         <div className="nota registro">
           <span className="eyebrow">Recebido</span>
@@ -416,8 +491,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         </div>
       </form>
 
-      {/* ---------- 2. documentos ---------- */}
-      <h2>2. Seus documentos</h2>
+      {/* ---------- documentos ---------- */}
+      <h3 style={{ marginTop: 20 }}>Seus documentos</h3>
       <p className="progresso num">
         {feitos} de {convite.documentos.length} documentos aprovados
       </p>
@@ -475,8 +550,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         ))}
       </div>
 
-      {/* ---------- 3. salvar: a confirmação que o herdeiro entende ---------- */}
-      <h2>3. Salvar</h2>
+      {/* ---------- salvar: a confirmação que o herdeiro entende ---------- */}
+      <h2>Salvar</h2>
       <p className="fund" style={{ marginBottom: 8 }}>
         Cada dado e documento acima já entra na folha do inventário assim que você envia.
         O botão abaixo fecha a visita: registra que você terminou e confirma que está tudo
@@ -506,7 +581,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ confirmarEnvio: true }),
               });
-              if (r.ok) setConvite(await r.json());
+              if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
             } finally {
               setSalvando(false);
             }
@@ -520,9 +595,74 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             : 'Salvar — confirmar meu envio'}
       </button>
 
+      {/* ---------- custos (só o que o advogado marcou como visível) ---------- */}
+      {painel?.custos && painel.custos.length > 0 && (
+        <>
+          <h2>Custos do inventário</h2>
+          <p className="fund" style={{ marginBottom: 6 }}>
+            Valores do processo como um todo (impostos, cartório e despesas) — honorários
+            não entram nesta lista. São previsões: o valor final sai nas guias oficiais.
+          </p>
+          <ul className="custos-portal">
+            {painel.custos.map((c, i) => (
+              <li key={i}>
+                <span>{c.rotulo}</span>
+                <span className="num">
+                  {brl(c.valor)}{' '}
+                  <em className={`selo-custo${c.situacao === 'PAGO' ? ' pago' : ''}`}>
+                    {c.situacao === 'PAGO' ? 'pago' : 'previsto'}
+                  </em>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* ---------- quinhão (só quando o advogado liberar) ---------- */}
+      {painel?.quinhao && (
+        <>
+          <h2>Seu quinhão</h2>
+          <div className="nota registro">
+            <p>
+              Pela divisão em estudo, a sua parte na herança é de{' '}
+              <strong className="num">{brl(painel.quinhao.valor)}</strong>
+              {painel.quinhao.fracao ? (
+                <> ({painel.quinhao.fracao} da herança)</>
+              ) : null}
+              .
+            </p>
+            <p className="fund" style={{ marginTop: 4 }}>
+              {painel.quinhao.aviso}
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* ---------- histórico de atualizações ---------- */}
+      {painel && painel.historico.length > 0 && (
+        <>
+          <h2>Atualizações do caso</h2>
+          <ul className="historico-portal">
+            {painel.historico.map((e, i) => (
+              <li key={i}>
+                <span className="num">{dataLonga(e.data)}</span> — {e.texto}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <p className="fund" style={{ marginTop: 24 }}>
         Dúvidas sobre algum documento? Fale direto com {advogado}.
       </p>
+
+      {/* Aviso deontológico permanente (Provimento 205/2021 da OAB): o
+          herdeiro sempre sabe quem conduz e que pode ter advogado próprio. */}
+      <footer className="rodape-etico">
+        {advogado} conduz este inventário. Você pode constituir advogado(a) próprio(a) a
+        qualquer momento.
+      </footer>
 
       <LupaPreview file={preview} onClose={() => setPreview(null)} />
     </main>
