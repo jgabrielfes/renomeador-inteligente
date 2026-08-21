@@ -352,6 +352,8 @@ interface CasoSalvo {
   custosAdicionais?: DespesaAdicional[];
   /** Painel do Cliente — config do espelho publicado (fase, visibilidades). */
   painelFamilia?: EstadoPainelFamilia;
+  /** Coluna "Responsável" da aba Documentos (docId → quem entrega). */
+  responsaveisDocs?: Record<string, string>;
 }
 
 export default function SucessoristaClient({
@@ -453,6 +455,8 @@ export default function SucessoristaClient({
   const [convites, setConvites] = useState<Record<string, ConviteHerdeiro>>({});
   /* Painel do Cliente: config do espelho publicado (fase, visibilidades). */
   const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
+  /* Coluna "Responsável" por item do catálogo de documentos. */
+  const [responsaveisDocs, setResponsaveisDocs] = useState<Record<string, string>>({});
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
@@ -854,6 +858,11 @@ export default function SucessoristaClient({
         ? { ...PAINEL_FAMILIA_INICIAL, ...salvo.painelFamilia }
         : PAINEL_FAMILIA_INICIAL,
     );
+    setResponsaveisDocs(
+      salvo.responsaveisDocs && typeof salvo.responsaveisDocs === 'object'
+        ? salvo.responsaveisDocs
+        : {},
+    );
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -880,6 +889,7 @@ export default function SucessoristaClient({
       colacoes,
       custosAdicionais,
       painelFamilia,
+      responsaveisDocs,
     };
   };
 
@@ -2286,7 +2296,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -4114,6 +4124,17 @@ export default function SucessoristaClient({
               temSobrevivente={temSobrevivente}
               rito={ritoEfetivo}
               convites={convites}
+              onConviteAtualizado={(c) =>
+                setConvites((prev) => {
+                  const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                  return chave ? { ...prev, [chave]: c } : prev;
+                })
+              }
+              responsaveis={responsaveisDocs}
+              onResponsavel={(docId, valor) =>
+                setResponsaveisDocs((prev) => ({ ...prev, [docId]: valor }))
+              }
+              herdeirosCaso={herdeiros.map((h) => ({ id: h.id, nome: h.nome }))}
               onSalvarNaPasta={async (file) => {
                 // Modo pasta/Drive: o envio do cofre também vai ao armazenamento,
                 // em "Recebidos do cofre/" do caso (o manifesto religa sozinho).

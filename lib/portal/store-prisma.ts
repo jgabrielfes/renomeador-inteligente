@@ -112,4 +112,20 @@ export const store: PortalStore = {
     }
     await memoryStore.marcarAcesso(token, primeiro, ultimo);
   },
+
+  async adicionarPedido(token, pedido) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (!c.documentos.some((d) => d.id === pedido.id)) {
+          c.documentos.push({ ...pedido, status: 'PENDENTE' });
+          await gravarNoBanco(c);
+        }
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.adicionarPedido(token, pedido);
+  },
 };

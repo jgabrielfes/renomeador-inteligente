@@ -81,8 +81,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
     nomeArquivo?: string;
     tipoDetectado?: string;
     observacaoAdvogado?: string;
+    emitidaEm?: string;
     qualificacao?: Record<string, unknown>;
     confirmarEnvio?: boolean;
+    novoPedido?: { id?: string; titulo?: string; descricao?: string };
   };
   try {
     body = await req.json();
@@ -125,6 +127,23 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return Response.json(atualizado);
   }
 
+  // Painel do Cliente: pendência atribuída pelo advogado DEPOIS do convite
+  // (coluna "Responsável" da aba Documentos) — id repetido não duplica.
+  if (body?.novoPedido && typeof body.novoPedido === 'object') {
+    const id = String(body.novoPedido.id ?? '').slice(0, 80);
+    const titulo = String(body.novoPedido.titulo ?? '').slice(0, 160);
+    if (!id || !titulo) {
+      return Response.json({ erro: 'Pedido sem id ou título.' }, { status: 422 });
+    }
+    const atualizado = await store.adicionarPedido(token, {
+      id,
+      titulo,
+      descricao: String(body.novoPedido.descricao ?? '').slice(0, 400),
+    });
+    if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    return Response.json(atualizado);
+  }
+
   if (!body?.docId) return Response.json({ erro: 'docId é obrigatório' }, { status: 422 });
 
   const patch: Record<string, string> = {};
@@ -135,6 +154,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (body.nomeArquivo) patch.nomeArquivo = body.nomeArquivo.slice(0, 200);
   if (body.tipoDetectado) patch.tipoDetectado = body.tipoDetectado.slice(0, 80);
   if (body.observacaoAdvogado !== undefined) patch.observacaoAdvogado = String(body.observacaoAdvogado);
+  // Data de emissão lida do documento (validade de certidão) — só ISO curta.
+  if (typeof body.emitidaEm === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.emitidaEm)) {
+    patch.emitidaEm = body.emitidaEm;
+  }
 
   const atualizado = await store.atualizarDocumento(token, body.docId, patch);
   if (!atualizado) return Response.json({ erro: 'Convite ou documento não encontrado' }, { status: 404 });

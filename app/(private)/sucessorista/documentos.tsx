@@ -18,6 +18,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import {
   CATALOGO_DOCUMENTOS,
   classificarNoCatalogo,
   ROTULO_GRUPO,
@@ -52,12 +60,24 @@ const ROTULO_STATUS_PORTAL: Record<string, string> = {
 
 interface EnvioDoCofre {
   herdeiro: string;
+  /** Token do convite + id do pedido: é o endereço do aceite/recusa. */
+  token: string;
+  pedidoId: string;
   nomeArquivo: string;
   tipoDetectado?: string;
   status: string;
   /** Arquivo REAL guardado pelo portal — habilita baixar/anexar ao caso. */
   arquivoId?: string;
   arquivoTamanho?: number;
+  /** Data de emissão lida no navegador do herdeiro (alerta de validade). */
+  emitidaEm?: string;
+}
+
+/** Certidão emitida há mais de 90 dias — o alerta dos dois lados. */
+function diasDesdeEmissao(iso?: string): number | null {
+  if (!iso) return null;
+  const t = new Date(`${iso}T12:00:00`).getTime();
+  return Number.isNaN(t) ? null : Math.floor((Date.now() - t) / 86_400_000);
 }
 
 function tamanhoLegivel(bytes: number): string {
@@ -142,6 +162,110 @@ function AcoesEnvioCofre({
       </Button>
       {naPasta && <span className="fund">salvo na pasta do caso</span>}
       {erro && <span className="mono-alerta">falha ao buscar o arquivo</span>}
+    </>
+  );
+}
+
+/**
+ * Conferência do envio do cofre: APROVAR (o herdeiro vê "Aprovado") ou
+ * RECUSAR com motivo ("foto cortada, reenvie por favor") — o portal reabre o
+ * envio daquele item e mostra o recado. A rota é a mesma PATCH do portal
+ * (o token é o endereço); o convite atualizado volta para o estado do caso.
+ */
+function AcoesConferencia({
+  envio,
+  onConviteAtualizado,
+}: {
+  envio: EnvioDoCofre;
+  onConviteAtualizado: (c: ConviteHerdeiro) => void;
+}) {
+  const [agindo, setAgindo] = useState<'aprovar' | 'recusar' | null>(null);
+  const [recusando, setRecusando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+
+  const decidir = async (status: 'APROVADO' | 'REJEITADO') => {
+    setAgindo(status === 'APROVADO' ? 'aprovar' : 'recusar');
+    try {
+      const r = await fetch(`/api/portal/${envio.token}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          docId: envio.pedidoId,
+          status,
+          observacaoAdvogado: status === 'REJEITADO' ? motivo.trim() : '',
+        }),
+      });
+      if (!r.ok) throw new Error();
+      onConviteAtualizado((await r.json()) as ConviteHerdeiro);
+      setRecusando(false);
+      setMotivo('');
+      toast.success(
+        status === 'APROVADO'
+          ? `Documento de ${envio.herdeiro} aprovado`
+          : `Devolvido para reenvio — ${envio.herdeiro} verá o motivo no portal`,
+      );
+    } catch {
+      toast.error('Não foi possível registrar a conferência — tente de novo.');
+    } finally {
+      setAgindo(null);
+    }
+  };
+
+  if (envio.status === 'APROVADO') return null;
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={agindo === 'aprovar'}
+        disabled={agindo !== null}
+        onClick={() => void decidir('APROVADO')}
+      >
+        aprovar
+      </Button>
+      {envio.status !== 'REJEITADO' && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          disabled={agindo !== null}
+          onClick={() => setRecusando(true)}
+        >
+          recusar
+        </Button>
+      )}
+      <Dialog open={recusando} onOpenChange={(o) => agindo === null && setRecusando(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Devolver o envio de {envio.herdeiro} para reenvio</DialogTitle>
+            <DialogDescription>
+              Escreva o motivo em linguagem simples — ele aparece para {envio.herdeiro} no
+              portal, junto do pedido reaberto. Ex.: &quot;A foto veio cortada — reenvie o
+              documento inteiro, sem sombra&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={motivo}
+            placeholder="Motivo da recusa (o herdeiro lê exatamente isto)"
+            onChange={(e) => setMotivo(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" disabled={agindo !== null} onClick={() => setRecusando(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              loading={agindo === 'recusar'}
+              disabled={motivo.trim() === ''}
+              onClick={() => void decidir('REJEITADO')}
+            >
+              Devolver com este motivo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -302,6 +426,91 @@ function BotaoAnexar({ onFiles, discreto = false }: { onFiles: (lista: FileList)
   );
 }
 
+/**
+ * Coluna "Responsável" do item do catálogo: advogado, inventariante ou um
+ * herdeiro específico. Responsável herdeiro COM convite do cofre ganha o
+ * "pedir pelo cofre" — o item entra como pendência no portal DELE (aparece
+ * em "O que falta de você"), com id `caso-<docId>` para o envio voltar ao
+ * card certo.
+ */
+function ResponsavelDoc({
+  doc,
+  valor,
+  onMudar,
+  herdeiros,
+  convites,
+  onConviteAtualizado,
+}: {
+  doc: (typeof CATALOGO_DOCUMENTOS)[number];
+  valor: string;
+  onMudar: (v: string) => void;
+  herdeiros: { id: string; nome: string }[];
+  convites: Record<string, ConviteHerdeiro>;
+  onConviteAtualizado?: (c: ConviteHerdeiro) => void;
+}) {
+  const [pedindo, setPedindo] = useState(false);
+  const convite = valor && convites[valor] && !convites[valor].revogadoEm ? convites[valor] : null;
+  const jaPedido =
+    convite?.documentos.some(
+      (d) => d.id === `caso-${doc.id}` || CATALOGO_DO_PEDIDO_PORTAL[d.id] === doc.id,
+    ) ?? false;
+
+  const pedirPeloCofre = async () => {
+    if (!convite || !onConviteAtualizado) return;
+    setPedindo(true);
+    try {
+      const r = await fetch(`/api/portal/${convite.token}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          novoPedido: { id: `caso-${doc.id}`, titulo: doc.titulo, descricao: doc.descricao },
+        }),
+      });
+      if (!r.ok) throw new Error();
+      onConviteAtualizado((await r.json()) as ConviteHerdeiro);
+      toast.success(`Pedido no portal de ${convite.nomeHerdeiro}`, {
+        description: `"${doc.titulo}" agora aparece em "O que falta de você" no link dele(a).`,
+      });
+    } catch {
+      toast.error('Não foi possível pedir pelo cofre — tente de novo.');
+    } finally {
+      setPedindo(false);
+    }
+  };
+
+  return (
+    <span className="doc-resp">
+      <Select value={valor || '__ninguem__'} onValueChange={(v) => v && onMudar(v === '__ninguem__' ? '' : v)}>
+        <SelectTrigger size="sm" aria-label={`Responsável por ${doc.titulo}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__ninguem__">Responsável…</SelectItem>
+          <SelectItem value="__advogado__">Escritório</SelectItem>
+          <SelectItem value="__inventariante__">Inventariante</SelectItem>
+          {herdeiros.map((h) => (
+            <SelectItem key={h.id} value={h.id}>
+              {h.nome}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {convite && !jaPedido && onConviteAtualizado && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          loading={pedindo}
+          onClick={() => void pedirPeloCofre()}
+        >
+          pedir pelo cofre
+        </Button>
+      )}
+      {convite && jaPedido && <span className="fund">no portal dele(a)</span>}
+    </span>
+  );
+}
+
 export function DocumentosView({
   anexos,
   setAnexos,
@@ -309,6 +518,10 @@ export function DocumentosView({
   temSobrevivente = true,
   rito = null,
   convites = {},
+  onConviteAtualizado,
+  responsaveis = {},
+  onResponsavel,
+  herdeirosCaso = [],
   onSalvarNaPasta,
   modoDrive = false,
   nuvemNome = 'Google Drive',
@@ -326,6 +539,14 @@ export function DocumentosView({
   rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
   /** Convites do cofre: o que cada herdeiro enviou aparece no card certo. */
   convites?: Record<string, ConviteHerdeiro>;
+  /** Conferência do advogado (aprovar/recusar) devolve o convite fresco. */
+  onConviteAtualizado?: (c: ConviteHerdeiro) => void;
+  /** Coluna "Responsável" por item do catálogo (persistida no caso):
+   *  '' | '__advogado__' | '__inventariante__' | herdeiroId. */
+  responsaveis?: Record<string, string>;
+  onResponsavel?: (docId: string, valor: string) => void;
+  /** Herdeiros do item I — as opções da coluna Responsável. */
+  herdeirosCaso?: { id: string; nome: string }[];
   /** Modo pasta: grava o envio do cofre em "Recebidos do cofre/" do caso. */
   onSalvarNaPasta?: (file: File) => Promise<boolean>;
   /** true = os anexos deste caso vivem na nuvem de arquivos do usuário. */
@@ -359,14 +580,21 @@ export function DocumentosView({
   for (const convite of Object.values(convites)) {
     for (const d of convite.documentos) {
       if (!d.nomeArquivo || d.status === 'PENDENTE') continue;
-      const docId = CATALOGO_DO_PEDIDO_PORTAL[d.id] ?? 'outros';
+      // Pedidos "caso-<docId>" nascem da coluna Responsável: o envio volta
+      // exatamente para o item do catálogo que o originou.
+      const docId =
+        CATALOGO_DO_PEDIDO_PORTAL[d.id] ??
+        (d.id.startsWith('caso-') ? d.id.slice(5) : 'outros');
       (enviosDoCofre[docId] ??= []).push({
         herdeiro: convite.nomeHerdeiro,
+        token: convite.token,
+        pedidoId: d.id,
         nomeArquivo: d.nomeArquivo,
         tipoDetectado: d.tipoDetectado,
         status: d.status,
         arquivoId: d.arquivoId,
         arquivoTamanho: d.arquivoTamanho,
+        emitidaEm: d.emitidaEm,
       });
     }
   }
@@ -631,9 +859,21 @@ export function DocumentosView({
                           ?
                         </span>
                         <span className="doc-linha-fio" aria-hidden />
+                        {onResponsavel && (
+                          <ResponsavelDoc
+                            doc={doc}
+                            valor={responsaveis[doc.id] ?? ''}
+                            onMudar={(v) => onResponsavel(doc.id, v)}
+                            herdeiros={herdeirosCaso}
+                            convites={convites}
+                            onConviteAtualizado={onConviteAtualizado}
+                          />
+                        )}
                         <BotaoAnexar discreto onFiles={(lista) => anexar(doc.id, lista)} />
                       </div>
-                      {envios.map((envio, i) => (
+                      {envios.map((envio, i) => {
+                        const idade = diasDesdeEmissao(envio.emitidaEm);
+                        return (
                         <p className="anexo-linha cofre" key={`cofre-${envio.herdeiro}-${i}`}>
                           <span>
                             🔗 <strong>{envio.herdeiro}</strong> enviou pelo cofre:{' '}
@@ -645,14 +885,25 @@ export function DocumentosView({
                             ) : (
                               ' · arquivo com o herdeiro (peça por outro canal)'
                             )}
+                            {idade !== null && idade > 90 && (
+                              <span className="mono-alerta" style={{ display: 'block', marginTop: 2 }}>
+                                Certidão possivelmente vencida: emissão lida em{' '}
+                                {new Date(`${envio.emitidaEm}T12:00:00`).toLocaleDateString('pt-BR')}{' '}
+                                ({idade} dias — validade comum: 90). Confira antes de aprovar.
+                              </span>
+                            )}
                           </span>
                           <AcoesEnvioCofre
                             envio={envio}
                             onAnexar={(file) => anexar(doc.id, [file])}
                             onSalvarNaPasta={onSalvarNaPasta}
                           />
+                          {onConviteAtualizado && (
+                            <AcoesConferencia envio={envio} onConviteAtualizado={onConviteAtualizado} />
+                          )}
                         </p>
-                      ))}
+                        );
+                      })}
                       {tem && (
                         <div className="doc-cards">
                           {arquivos.map((f, i) => (

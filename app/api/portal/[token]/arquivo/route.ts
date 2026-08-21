@@ -96,6 +96,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const nomeProposto = String(form.get('nomeArquivo') ?? nomeOriginal).slice(0, 200);
   const tipoDetectado = String(form.get('tipoDetectado') ?? '').slice(0, 80);
   const mime = String(form.get('mime') ?? arquivo.type) || 'application/octet-stream';
+  // Data de emissão lida no navegador do herdeiro (validade de certidão).
+  const emitidaBruta = String(form.get('emitidaEm') ?? '');
+  const emitidaEm = /^\d{4}-\d{2}-\d{2}$/.test(emitidaBruta) ? emitidaBruta : '';
 
   let conteudo: Uint8Array<ArrayBuffer>;
   try {
@@ -163,6 +166,7 @@ export async function POST(req: Request, ctx: Ctx) {
     enviadoEm: new Date().toISOString(),
     nomeArquivo: nomeProposto,
     ...(tipoDetectado ? { tipoDetectado } : {}),
+    ...(emitidaEm ? { emitidaEm } : {}),
     arquivoId,
     arquivoTamanho: conteudo.byteLength,
   });

@@ -2137,3 +2137,12 @@
   font-size: var(--t-xs);
   color: var(--tinta-media);
 }
+
+/* Coluna "Responsável" do item de documento (Painel do Cliente): o seletor
+   compacto convive com o fio e o botão de anexar na mesma linha. */
+.sucessorista .doc-resp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}

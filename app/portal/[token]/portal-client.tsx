@@ -42,6 +42,43 @@ const dataLonga = (iso?: string) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
 };
 
+const MESES_PT: Record<string, number> = {
+  janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+};
+
+/**
+ * Data de EMISSÃO provável do documento: a data MAIS RECENTE que não seja
+ * futura encontrada no texto lido (numa certidão, as demais datas — óbito,
+ * casamento, nascimento — são sempre anteriores à emissão). Devolve ISO
+ * yyyy-mm-dd ou null quando não dá para validar.
+ */
+function extrairDataEmissao(texto: string): string | null {
+  const hoje = Date.now();
+  let melhor = 0;
+  const considerar = (dia: number, mes: number, ano: number) => {
+    if (ano < 1990 || mes < 1 || mes > 12 || dia < 1 || dia > 31) return;
+    const ts = new Date(ano, mes - 1, dia, 12).getTime();
+    if (Number.isNaN(ts) || ts > hoje) return;
+    if (ts > melhor) melhor = ts;
+  };
+  for (const m of texto.matchAll(/(\d{1,2})[/.](\d{1,2})[/.](\d{4})/g)) {
+    considerar(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  for (const m of texto.matchAll(/(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/gi)) {
+    const mes = MESES_PT[m[2].toLowerCase()];
+    if (mes) considerar(Number(m[1]), mes, Number(m[3]));
+  }
+  if (melhor === 0) return null;
+  const d = new Date(melhor);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const DIAS_VALIDADE_CERTIDAO = 90;
+
+const idadeEmDias = (iso: string): number =>
+  Math.floor((Date.now() - new Date(`${iso}T12:00:00`).getTime()) / 86_400_000);
+
 /** União estável NÃO é estado civil: a escolha é fechada e a união é a
  *  caixinha própria — marcada (ou casado), abre a qualificação do cônjuge/
  *  convivente e a juntada dos documentos dele em "Outros documentos". */
@@ -194,12 +231,13 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setArquivos((a) => ({ ...a, [docId]: file }));
     let nome = file.name;
     let tipo: string | undefined;
+    let texto = '';
     try {
       const [{ readDocument }, { proposeName }] = await Promise.all([
         import('@/lib/ocr'),
         import('@/lib/renamer'),
       ]);
-      const texto = await readDocument(file);
+      texto = await readDocument(file);
       if (texto.trim().length < 40) {
         setDicaQualidade(
           'O documento ficou pouco legível na leitura automática. Se for foto, tente de novo com boa iluminação, sem corte e sem inclinação — isso evita idas e vindas com o cartório.',
@@ -210,6 +248,23 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       tipo = proposta.docType !== 'Documento' ? proposta.docType : undefined;
     } catch {
       // Sem leitura local (formato não suportado etc.): segue com o nome original.
+    }
+
+    // Validade de certidão (comum: 90 dias): a data de emissão sai da mesma
+    // leitura local. Vencida ou na dúvida, o envio segue valendo — quem
+    // decide é o advogado; aqui é só o aviso que evita ida e volta.
+    let emitidaEm: string | undefined;
+    const ehCertidao = docId === 'certidao-estado-civil' || /certid/i.test(tipo ?? '');
+    if (ehCertidao && texto) {
+      emitidaEm = extrairDataEmissao(texto) ?? undefined;
+      if (emitidaEm) {
+        const idadeDias = idadeEmDias(emitidaEm);
+        if (idadeDias > DIAS_VALIDADE_CERTIDAO) {
+          setDicaQualidade(
+            `Esta certidão parece ter sido emitida em ${dataLonga(emitidaEm)} — pode estar vencida (a validade comum para cartório é de 90 dias). Você pode enviá-la mesmo assim; se tiver uma via mais recente, prefira-a.`,
+          );
+        }
+      }
     }
 
     // 1º: o arquivo em si, pela rota de upload do portal — inteiro numa
@@ -227,6 +282,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           form.set('mime', file.type || 'application/octet-stream');
           form.set('nomeArquivo', nome);
           if (tipo) form.set('tipoDetectado', tipo);
+          if (emitidaEm) form.set('emitidaEm', emitidaEm);
           if (total > 1) {
             form.set('envioId', envioId);
             form.set('indice', String(i));
@@ -252,7 +308,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     const r = await fetch(`/api/portal/${token}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ docId, status: 'ENVIADO', nomeArquivo: nome, tipoDetectado: tipo }),
+      body: JSON.stringify({ docId, status: 'ENVIADO', nomeArquivo: nome, tipoDetectado: tipo, emitidaEm }),
     });
     if (r.ok) atualizarConvite((await r.json()) as ConviteHerdeiro);
     setAnalisando(null);

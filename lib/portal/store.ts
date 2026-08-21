@@ -25,6 +25,11 @@ export interface DocumentoPedido {
    */
   arquivoId?: string;
   arquivoTamanho?: number;
+  /** Data de EMISSÃO lida do documento no navegador do herdeiro (ISO
+   *  yyyy-mm-dd) — em certidão, mais de 90 dias acende o alerta de validade
+   *  nos dois lados. Ausente = não deu para validar (só "aguardando
+   *  conferência"). */
+  emitidaEm?: string;
 }
 
 /** Campos aceitos no formulário do herdeiro (espelham a qualificação do caso).
@@ -99,6 +104,12 @@ export interface PortalStore {
   confirmarEnvio(token: string): Promise<ConviteHerdeiro | null>;
   /** Carimba a visita do herdeiro (1º acesso preservado, último atualizado). */
   marcarAcesso(token: string, primeiro: string, ultimo: string): Promise<void>;
+  /** Painel do Cliente: pendência atribuída DEPOIS do convite (coluna
+   *  "Responsável" da aba Documentos). Id repetido é ignorado — não duplica. */
+  adicionarPedido(
+    token: string,
+    pedido: { id: string; titulo: string; descricao: string },
+  ): Promise<ConviteHerdeiro | null>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -136,6 +147,14 @@ export const memoryStore: PortalStore = {
     if (!c) return;
     c.primeiroAcessoEm = c.primeiroAcessoEm ?? primeiro;
     c.ultimoAcessoEm = ultimo;
+  },
+  async adicionarPedido(token, pedido) {
+    const c = mem.get(token);
+    if (!c) return null;
+    if (!c.documentos.some((d) => d.id === pedido.id)) {
+      c.documentos.push({ ...pedido, status: 'PENDENTE' });
+    }
+    return c;
   },
 };
 
