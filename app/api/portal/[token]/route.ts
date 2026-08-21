@@ -61,12 +61,27 @@ export async function GET(req: Request, ctx: Ctx) {
   // visita do herdeiro: a revalidação do advogado não precisa do painel e
   // não deve carregá-lo para dentro do snapshot do caso.
   let painel: unknown = null;
+  let espolio: unknown = null;
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
         where: { casoId: convite.casoId },
-        select: { snapshot: true },
+        select: { snapshot: true, espolio: true },
       });
+      // Espaço do Espólio: o snapshot é UM só — igual para todos os tokens
+      // do caso. O 1º acesso de cada herdeiro fica registrado.
+      espolio = linha?.espolio ?? null;
+      if (espolio && !convite.espolioVistoEm) {
+        const quando = new Date().toISOString();
+        convite.espolioVistoEm = quando;
+        await store.marcarEspolioVisto(token, quando);
+        void registrarEventoPortal(
+          convite.casoId,
+          'ESPOLIO_VISTO',
+          { herdeiro: convite.nomeHerdeiro },
+          token,
+        );
+      }
       const recorte = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
       if (recorte && typeof recorte === 'object') {
         // "Atualizações do caso" AO VIVO: eventos do caso inteiro (fase) +
@@ -94,12 +109,15 @@ export async function GET(req: Request, ctx: Ctx) {
       }
     } catch {
       painel = null;
+      espolio = null;
     }
   }
 
   // `emailAtivo` diz à página se a seção "avisos por e-mail" existe neste
   // deploy (env-gated) — o cliente não conhece as envs do servidor.
-  return Response.json(visita ? { ...convite, painel, emailAtivo: emailHabilitado() } : convite);
+  return Response.json(
+    visita ? { ...convite, painel, espolio, emailAtivo: emailHabilitado() } : convite,
+  );
 }
 
 /**

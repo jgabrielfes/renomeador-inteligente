@@ -1884,6 +1884,69 @@ export default function SucessoristaClient({
   }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo]);
 
   /**
+   * ESPAÇO DO ESPÓLIO — os fatos compartilháveis, já no formato de allowlist
+   * do motor (lib/portal/espolio.ts): participantes SÓ com nome+papel, bens
+   * com a fonte leiga da avaliação, dívidas e os quinhões de todos. O que
+   * não está aqui não tem como subir.
+   */
+  const espolioDadosPainel = useMemo((): import('@/lib/portal/espolio').EntradaEspolio => {
+    const papelDe = (id: string): import('@/lib/portal/espolio').PapelParticipante =>
+      id === '__sobrevivente__'
+        ? 'cônjuge meeiro(a)'
+        : id === familia.inventarianteId
+          ? 'inventariante'
+          : 'herdeiro(a)';
+    const fonteDe = (b: Bem): string =>
+      Number(b.valorAvaliacao) > 0
+        ? 'avaliação lançada no caso'
+        : Number(b.valorVenal) > 0 || Number(b.imovel?.valorVenalAtual) > 0
+          ? 'valor venal (IPTU/ITR)'
+          : 'valor declarado pela família';
+    const ok = resultado && resultado.bloqueios.length === 0;
+    return {
+      nomeFalecido: falecido.nome,
+      participantes: ok
+        ? participantesDoResultado(resultado).map((p) => ({ nome: p.nome, papel: papelDe(p.id) }))
+        : herdeiros.map((h) => ({ nome: h.nome, papel: papelDe(h.id) })),
+      bens: bens.map((b) => ({
+        descricao: b.descricao,
+        valor: String(b.valor ?? '0'),
+        fonteAvaliacao: fonteDe(b),
+      })),
+      totalAcervo: ok ? String(resultado.acervo.massaPartilhavel) : undefined,
+      dividas:
+        Number(dividasEspolio.replace(/\./g, '').replace(',', '.')) > 0
+          ? [
+              {
+                descricao: 'Dívidas do espólio (total declarado)',
+                valor: Number(dividasEspolio.replace(/\./g, '').replace(',', '.')).toFixed(2),
+              },
+            ]
+          : [],
+      quinhoes: ok
+        ? [
+            ...(resultado.meacao
+              ? [
+                  {
+                    nome: resultado.meacao.beneficiario,
+                    papel: 'cônjuge meeiro(a)' as const,
+                    valor: String(resultado.meacao.valor),
+                    fracao: 'meação (não é herança)',
+                  },
+                ]
+              : []),
+            ...resultado.quinhoes.map((q) => ({
+              nome: q.nome,
+              papel: papelDe(q.herdeiroId),
+              valor: String(q.valor),
+              fracao: q.fracaoHeranca,
+            })),
+          ]
+        : [],
+    };
+  }, [resultado, falecido.nome, familia.inventarianteId, herdeiros, bens, dividasEspolio]);
+
+  /**
    * Alertas da leitura: herdeiro DECLARADO na certidão de óbito sem
    * lançamento/qualificação, e frações ideais dos venais que não fecham
    * 100% (exceto unidade autônoma/apartamento, onde a fração é do terreno).
@@ -3663,6 +3726,7 @@ export default function SucessoristaClient({
                 convites={Object.values(convites)}
                 quinhoes={quinhoesPainel}
                 custosVisiveis={custosVisiveisPainel}
+                espolioDados={espolioDadosPainel}
                 estado={painelFamilia}
                 onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
                 onConviteAtualizado={(c) =>

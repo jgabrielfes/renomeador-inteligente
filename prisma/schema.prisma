@@ -185,6 +185,9 @@ model PortalPainel {
   snapshot     Json
   // VisibilidadePainel vigente (contato/custos/quinhão) — para reabrir a UI.
   visibilidade Json
+  // Espaço do Espólio (camada 2): o snapshot COMPARTILHADO — igual para
+  // todos os herdeiros do caso (lib/portal/espolio.ts). Null = fechado.
+  espolio      Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

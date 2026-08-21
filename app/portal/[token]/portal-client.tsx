@@ -21,12 +21,15 @@ type Ev = { target: { value: string; files?: FileList | null; checked?: boolean 
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { PainelHerdeiro } from '@/lib/portal/painel';
+import type { EspolioCompartilhado } from '@/lib/portal/espolio';
 
 /** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
  *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
  *  no deploy (env-gated no servidor). */
 type ConviteComPainel = ConviteHerdeiro & {
   painel?: PainelHerdeiro | null;
+  /** Espaço do Espólio: o snapshot COMPARTILHADO — igual para todos. */
+  espolio?: EspolioCompartilhado | null;
   emailAtivo?: boolean;
 };
 
@@ -159,6 +162,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setConvite((prev) => ({
       ...novo,
       painel: prev?.painel ?? null,
+      espolio: prev?.espolio ?? null,
       emailAtivo: prev?.emailAtivo ?? false,
     }));
 
@@ -785,6 +789,93 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               </li>
             ))}
           </ul>
+        </>
+      )}
+
+      {/* ---------- Espaço do Espólio: a MESMA visão para toda a família ---------- */}
+      {convite.espolio && (
+        <>
+          <h2>O espólio — visão da família</h2>
+          <p className="fund" style={{ marginBottom: 8 }}>
+            Todos os herdeiros convidados veem exatamente esta mesma seção: os mesmos
+            bens, as mesmas dívidas e os mesmos cálculos. {convite.espolio.aviso}
+          </p>
+
+          <h3 style={{ marginTop: 10 }}>Quem participa da sucessão</h3>
+          <ul className="custos-portal">
+            {convite.espolio.participantes.map((p, i) => (
+              <li key={i}>
+                <span>{p.nome}</span>
+                <span className="selo-custo">{p.papel}</span>
+              </li>
+            ))}
+          </ul>
+
+          {convite.espolio.bens && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Bens do espólio</h3>
+              <ul className="custos-portal">
+                {convite.espolio.bens.map((b, i) => (
+                  <li key={i}>
+                    <span>
+                      {b.descricao}
+                      <span className="fase-descricao">fonte do valor: {b.fonteAvaliacao}</span>
+                    </span>
+                    <span className="num">{brl(b.valor)}</span>
+                  </li>
+                ))}
+                {convite.espolio.totalAcervo && (
+                  <li>
+                    <span>
+                      <strong>Total do acervo</strong>
+                    </span>
+                    <span className="num">
+                      <strong>{brl(convite.espolio.totalAcervo)}</strong>
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </>
+          )}
+
+          {convite.espolio.dividas && convite.espolio.dividas.length > 0 && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Dívidas do espólio</h3>
+              <p className="fund" style={{ marginBottom: 4 }}>
+                As dívidas são pagas antes da divisão — por isso reduzem o quinhão de
+                todos, na mesma proporção.
+              </p>
+              <ul className="custos-portal">
+                {convite.espolio.dividas.map((d, i) => (
+                  <li key={i}>
+                    <span>{d.descricao}</span>
+                    <span className="num">{brl(d.valor)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {convite.espolio.quinhoes && (
+            <>
+              <h3 style={{ marginTop: 14 }}>O que cabe a cada um, pela lei</h3>
+              <p className="fund" style={{ marginBottom: 4 }}>
+                O cálculo é o da lei aplicado aos valores acima — não é a opinião de
+                ninguém da família.
+              </p>
+              <ul className="custos-portal">
+                {convite.espolio.quinhoes.map((q, i) => (
+                  <li key={i}>
+                    <span>
+                      {q.nome}
+                      {q.fracao ? <span className="fase-descricao">{q.fracao}</span> : null}
+                    </span>
+                    <span className="num">{brl(q.valor)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       )}
 

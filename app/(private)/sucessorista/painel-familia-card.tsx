@@ -41,6 +41,7 @@ import {
   type EntradaPainel,
   type RitoPainel,
 } from '@/lib/portal/painel';
+import { montarEspolioDoCaso, type EntradaEspolio } from '@/lib/portal/espolio';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { montarRelatorioComunicacaoPdf } from '@/lib/portal/relatorio-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
@@ -73,6 +74,12 @@ export interface EstadoPainelFamilia {
   /** Contato que o advogado OPTA por exibir no cabeçalho do painel. */
   telefoneContato: string;
   emailContato: string;
+  /** Espaço do Espólio (camada 2): o interruptor e o que ele libera —
+   *  o MESMO conteúdo para todos os herdeiros do caso. */
+  espolioAberto: boolean;
+  espolioBens: boolean;
+  espolioDividas: boolean;
+  espolioQuinhoes: boolean;
   /** Eco local da última publicação (a verdade é o servidor). */
   publicadoEm?: string;
 }
@@ -86,6 +93,10 @@ export const PAINEL_FAMILIA_INICIAL: EstadoPainelFamilia = {
   quinhao: false,
   telefoneContato: '',
   emailContato: '',
+  espolioAberto: false,
+  espolioBens: true,
+  espolioDividas: true,
+  espolioQuinhoes: false,
 };
 
 const dataCurta = (iso?: string) => {
@@ -106,6 +117,7 @@ export function PainelFamiliaCard({
   convites,
   quinhoes,
   custosVisiveis,
+  espolioDados,
   estado,
   onEstado,
   onConviteAtualizado,
@@ -121,6 +133,10 @@ export function PainelFamiliaCard({
   quinhoes: Record<string, { valor: string; fracao?: string }>;
   /** Custos agregados SEM honorários (ITCMD + cartório + adicionais). */
   custosVisiveis: CustoVisivel[];
+  /** Espaço do Espólio: os fatos compartilháveis, já em formato de
+   *  allowlist (bens com fonte, dívidas, quinhões de todos, participantes
+   *  só com nome+papel) — montados pelo client. */
+  espolioDados: EntradaEspolio;
   estado: EstadoPainelFamilia;
   onEstado: (patch: Partial<EstadoPainelFamilia>) => void;
   onConviteAtualizado: (convite: ConviteHerdeiro) => void;
@@ -214,10 +230,19 @@ export function PainelFamiliaCard({
         custos: estado.custos,
         quinhao: estado.quinhao,
       };
+      // Espaço do Espólio: UM snapshot para o caso inteiro (igual para
+      // todos os herdeiros), atrás do interruptor e das visibilidades.
+      const espolio = montarEspolioDoCaso(espolioDados, {
+        aberto: estado.espolioAberto,
+        bens: estado.espolioBens,
+        dividas: estado.espolioDividas,
+        quinhoes: estado.espolioQuinhoes,
+      });
       const r = await publicarPainel({
         casoId,
         paineis: montarPaineisDoCaso(entrada, visibilidade),
         visibilidade,
+        espolio,
       });
       if (r.publicado) {
         onEstado({ publicadoEm: r.publicadoEm });
@@ -418,6 +443,50 @@ export function PainelFamiliaCard({
         </label>
       </div>
 
+      {/* ---------- Espaço do Espólio (camada 2) ---------- */}
+      <div style={{ marginTop: 14 }}>
+        <span className="eyebrow">Espaço do espólio</span>
+        <p className="fund" style={{ margin: '4px 0 6px' }}>
+          O ambiente COMPARTILHADO: todos os herdeiros convidados veem os MESMOS fatos e
+          números — o mesmo acervo, as mesmas dívidas, os quinhões calculados pela lei.
+          Ver os números juntos é o que mais pacifica. Desligado por padrão.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Checkbox
+            checked={estado.espolioAberto}
+            onCheckedChange={(v) => onEstado({ espolioAberto: v === true })}
+          />
+          <span>
+            <strong>Abrir para a família</strong> (vale após Publicar)
+          </span>
+        </label>
+        {estado.espolioAberto && (
+          <div className="pilha" style={{ marginTop: 6, marginLeft: 24, gap: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Checkbox
+                checked={estado.espolioBens}
+                onCheckedChange={(v) => onEstado({ espolioBens: v === true })}
+              />
+              <span>Inventário de bens com valores e fonte da avaliação</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Checkbox
+                checked={estado.espolioDividas}
+                onCheckedChange={(v) => onEstado({ espolioDividas: v === true })}
+              />
+              <span>Dívidas do espólio (reduzem o quinhão de todos)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Checkbox
+                checked={estado.espolioQuinhoes}
+                onCheckedChange={(v) => onEstado({ espolioQuinhoes: v === true })}
+              />
+              <span>Quinhões calculados de TODOS (cada um vê o dos outros)</span>
+            </label>
+          </div>
+        )}
+      </div>
+
       <div style={{ marginTop: 12 }}>
         <span className="eyebrow">Convites</span>
         {convites.length === 0 ? (
@@ -438,6 +507,11 @@ export function PainelFamiliaCard({
                     : c.ultimoAcessoEm
                       ? ` · 1º acesso ${dataCurta(c.primeiroAcessoEm)} · último ${dataCurta(c.ultimoAcessoEm)}`
                       : ' · ainda não acessou'}
+                  {!c.revogadoEm && estado.espolioAberto
+                    ? c.espolioVistoEm
+                      ? ` · viu o espólio em ${dataCurta(c.espolioVistoEm)}`
+                      : ' · ainda não viu o espólio'
+                    : ''}
                 </span>
               </span>
               {!c.revogadoEm && (

@@ -22,7 +22,10 @@ export type TipoEventoPortal =
   | 'PUBLICACAO'
   | 'FASE'
   | 'QUINHAO_LIBERADO'
-  | 'NOTIFICACAO';
+  | 'NOTIFICACAO'
+  | 'ESPOLIO_ABERTO'
+  | 'ESPOLIO_FECHADO'
+  | 'ESPOLIO_VISTO';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -93,4 +96,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   FASE: 'Fase do inventário alterada',
   QUINHAO_LIBERADO: 'Quinhão liberado para consulta',
   NOTIFICACAO: 'Aviso enviado por e-mail',
+  ESPOLIO_ABERTO: 'Espaço do espólio aberto para a família',
+  ESPOLIO_FECHADO: 'Espaço do espólio fechado',
+  ESPOLIO_VISTO: 'Herdeiro abriu o espaço do espólio (1º acesso)',
 };

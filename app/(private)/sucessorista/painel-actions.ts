@@ -20,9 +20,11 @@ import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { EH_SUCESSORISTA } from "@/lib/app";
 import { notificarMudancaDeFase, notificarQuinhaoLiberado } from "@/lib/portal/notificar";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
+import type { EspolioCompartilhado } from "@/lib/portal/espolio";
 import type { ConviteHerdeiro } from "@/lib/portal/store";
 import type { DetalheEventoPortal } from "@/lib/portal/eventos";
 import { registrarEventoPortal } from "@/lib/portal/eventos-server";
@@ -88,6 +90,9 @@ export async function publicarPainel(dados: {
   casoId: string;
   paineis: Record<string, PainelHerdeiro>;
   visibilidade: VisibilidadePainel;
+  /** Espaço do Espólio: o snapshot COMPARTILHADO (igual para todos), já
+   *  montado pela allowlist no navegador do advogado — null = fechado. */
+  espolio?: EspolioCompartilhado | null;
 }): Promise<EstadoPainelPublicado> {
   if (!EH_SUCESSORISTA) return { publicado: false, erro: "Recurso de outro site." };
   const eu = await usuarioLogado();
@@ -102,23 +107,34 @@ export async function publicarPainel(dados: {
 
   const snapshot = JSON.parse(JSON.stringify(dados.paineis)) as object;
   const visibilidade = JSON.parse(JSON.stringify(dados.visibilidade ?? {})) as object;
+  const espolio = dados.espolio
+    ? (JSON.parse(JSON.stringify(dados.espolio)) as object)
+    : null;
   if (JSON.stringify(snapshot).length > TAMANHO_MAXIMO) {
     return { publicado: false, erro: "Espelho grande demais para publicar." };
+  }
+  if (espolio && JSON.stringify(espolio).length > TAMANHO_MAXIMO) {
+    return { publicado: false, erro: "Espaço do espólio grande demais para publicar." };
   }
 
   try {
     const existente = await prisma.portalPainel.findUnique({
       where: { casoId },
-      select: { userId: true, snapshot: true, visibilidade: true },
+      select: { userId: true, snapshot: true, visibilidade: true, espolio: true },
     });
     if (existente && !(await podeGerir(existente.userId, eu))) {
       return { publicado: false, erro: "Este painel foi publicado por outra conta." };
     }
     const linha = await prisma.portalPainel.upsert({
       where: { casoId },
-      create: { casoId, userId: eu.id, snapshot, visibilidade },
-      update: { snapshot, visibilidade },
+      create: { casoId, userId: eu.id, snapshot, visibilidade, espolio: espolio ?? Prisma.JsonNull },
+      update: { snapshot, visibilidade, espolio: espolio ?? Prisma.JsonNull },
     });
+    // Registro de atendimento: abertura/fechamento do Espaço do Espólio.
+    const espolioAntes = Boolean(existente && "espolio" in existente && existente.espolio);
+    if (Boolean(espolio) !== espolioAntes) {
+      void registrarEventoPortal(casoId, espolio ? "ESPOLIO_ABERTO" : "ESPOLIO_FECHADO");
+    }
     void registrarEventoPortal(casoId, "PUBLICACAO", { convites: tokens.length });
     // Marcos do caso para o histórico do herdeiro: a FASE mudou entre as
     // publicações, e o quinhão saiu de fechado para LIBERADO. Com o e-mail

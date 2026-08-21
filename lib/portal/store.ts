@@ -106,6 +106,9 @@ export interface ConviteHerdeiro {
    *  preferência no próprio portal. Sem e-mail válido, nada é enviado. */
   emailNotificacao?: string;
   notificacoes?: 'tudo' | 'fases' | 'nada';
+  /** Espaço do Espólio: 1º acesso deste herdeiro ao espaço compartilhado —
+   *  o advogado vê a confirmação de que cada um viu. */
+  espolioVistoEm?: string;
 }
 
 export interface PortalStore {
@@ -134,6 +137,8 @@ export interface PortalStore {
     token: string,
     prefs: { emailNotificacao?: string; notificacoes?: 'tudo' | 'fases' | 'nada' },
   ): Promise<ConviteHerdeiro | null>;
+  /** Espaço do Espólio: carimba o 1º acesso (idempotente). */
+  marcarEspolioVisto(token: string, quando: string): Promise<void>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -186,6 +191,10 @@ export const memoryStore: PortalStore = {
     if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
     if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
     return c;
+  },
+  async marcarEspolioVisto(token, quando) {
+    const c = mem.get(token);
+    if (c && !c.espolioVistoEm) c.espolioVistoEm = quando;
   },
 };
 

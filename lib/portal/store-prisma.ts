@@ -143,4 +143,20 @@ export const store: PortalStore = {
     }
     return memoryStore.salvarPreferencias(token, prefs);
   },
+
+  async marcarEspolioVisto(token, quando) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (!c.espolioVistoEm) {
+          c.espolioVistoEm = quando;
+          await gravarNoBanco(c);
+        }
+        return;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    await memoryStore.marcarEspolioVisto(token, quando);
+  },
 };
