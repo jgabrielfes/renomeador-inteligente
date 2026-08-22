@@ -51,10 +51,11 @@ export interface BensDaFamilia {
   veiculos: FaixaValor | null;
   /** Contas, investimentos, FGTS/PIS, verbas a receber. */
   financeiro: FaixaValor | null;
-  /** Participação em empresa (quotas/ações fechadas). */
+  /** Participação em empresa (quotas/ações fechadas) — derivado: escolher a
+   *  faixa marca a participação (o boolean sobrevive para respostas antigas). */
   empresa: boolean;
-  /** Faixa do capital social/patrimônio líquido da participação (só com
-   *  `empresa` marcada; null = a família não sabe informar). */
+  /** Faixa do capital social/patrimônio líquido da participação (null = não
+   *  há / não se aplica, como nas demais classes). */
   empresaValor: FaixaValor | null;
   outros: FaixaValor | null;
 }

@@ -50,10 +50,11 @@ export function sanitizarRespostas(bruto: unknown): RespostasFamilia | null {
         : [],
       veiculos: faixa(bens.veiculos),
       financeiro: faixa(bens.financeiro),
-      empresa: bens.empresa === true,
-      // A faixa da empresa só vale COM a caixinha marcada — corpo forjado
-      // com valor sem a flag não infla o acervo.
-      empresaValor: bens.empresa === true ? faixa(bens.empresaValor) : null,
+      // A empresa é tratada como os demais bens: escolher a faixa É marcar
+      // que havia participação. O boolean sobrevive para respostas antigas
+      // (da era da caixinha) e para quem marcou sem saber o valor.
+      empresa: bens.empresa === true || faixa(bens.empresaValor) !== null,
+      empresaValor: faixa(bens.empresaValor),
       outros: faixa(bens.outros),
     },
     dividas: opcao(b.dividas, ['sim', 'nao'] as const, 'nao'),

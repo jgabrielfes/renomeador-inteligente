@@ -172,22 +172,21 @@ console.log('\nPara famílias — triagem, estimativas e checklist\n');
 }
 
 {
-  // Empresa: a faixa só vale COM a caixinha marcada; observações são
-  // limitadas a 500 caracteres.
-  const comEmpresa = sanitizarRespostas(
+  // Empresa como os demais bens: escolher a faixa MARCA a participação;
+  // observações são limitadas a 500 caracteres.
+  const comFaixa = sanitizarRespostas(
     base({
-      bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: '200-500' },
+      bens: { ...RESPOSTAS_INICIAIS.bens, empresa: false, empresaValor: '200-500' },
       observacoes: `  ${'x'.repeat(600)}  `,
     }),
   )!;
-  eq('faixa da empresa atravessa com a flag', comEmpresa.bens.empresaValor, '200-500');
-  eq('observações aparadas em 500', comEmpresa.observacoes.length, 500);
-  const semFlag = sanitizarRespostas(
-    base({
-      bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: 'ate-50', empresa: false, empresaValor: '1000-2000' },
-    }),
+  eq('escolher a faixa marca a participação', comFaixa.bens.empresa, true);
+  eq('faixa da empresa atravessa', comFaixa.bens.empresaValor, '200-500');
+  eq('observações aparadas em 500', comFaixa.observacoes.length, 500);
+  const legado = sanitizarRespostas(
+    base({ bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: null } }),
   )!;
-  eq('faixa da empresa SEM a flag cai fora (corpo forjado)', semFlag.bens.empresaValor, null);
+  eq('resposta antiga (só a caixinha) segue valendo', legado.bens.empresa, true);
   eq(
     'faixa do acervo soma o valor da empresa',
     faixaDoAcervo(base({ bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: '200-500' } })),

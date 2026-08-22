@@ -204,19 +204,16 @@ function Opcao({
 function SeletorFaixa({
   valor,
   onMudar,
-  rotuloVazio = 'não há / não se aplica',
 }: {
   valor: FaixaValor | null;
   onMudar: (f: FaixaValor | null) => void;
-  /** Texto da opção nula (a empresa usa "não sei informar"). */
-  rotuloVazio?: string;
 }) {
   return (
     <select
       value={valor ?? ''}
       onChange={(e) => onMudar((e.target.value || null) as FaixaValor | null)}
     >
-      <option value="">{rotuloVazio}</option>
+      <option value="">não há / não se aplica</option>
       {FAIXAS.map((f) => (
         <option key={f} value={f}>
           {ROTULO_FAIXA[f]}
@@ -561,26 +558,13 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
               Dinheiro, contas, investimentos, FGTS/PIS, valores a receber
               <SeletorFaixa valor={r.bens.financeiro} onMudar={(f) => patchBens({ financeiro: f })} />
             </label>
-            <label className="marcar" style={{ marginTop: 10, fontWeight: 400 }}>
-              <input
-                type="checkbox"
-                checked={r.bens.empresa}
-                onChange={(e) =>
-                  patchBens({ empresa: e.target.checked, empresaValor: null })
-                }
+            <label className="campo" style={{ marginTop: 8 }}>
+              Participação em empresa (sociedade, quotas) — capital ou patrimônio aproximado
+              <SeletorFaixa
+                valor={r.bens.empresaValor}
+                onMudar={(f) => patchBens({ empresa: f !== null, empresaValor: f })}
               />
-              Tinha participação em empresa (sociedade, quotas)
             </label>
-            {r.bens.empresa && (
-              <label className="campo" style={{ marginTop: 8 }}>
-                Capital social ou patrimônio líquido da parte dele(a) — aproximado
-                <SeletorFaixa
-                  valor={r.bens.empresaValor}
-                  onMudar={(f) => patchBens({ empresaValor: f })}
-                  rotuloVazio="não sei informar"
-                />
-              </label>
-            )}
             <label className="campo" style={{ marginTop: 8 }}>
               Outros bens (joias, obras, semoventes…)
               <SeletorFaixa valor={r.bens.outros} onMudar={(f) => patchBens({ outros: f })} />
