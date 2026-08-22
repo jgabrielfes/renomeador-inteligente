@@ -28,7 +28,7 @@ import {
   notificarQuinhaoLiberado,
   notificarVotacao,
 } from "@/lib/portal/notificar";
-import { textoLeigoDoEvento, TIPOS_VISIVEIS_AO_HERDEIRO } from "@/lib/portal/eventos";
+import { MEIOS_DE_CONTATO, textoLeigoDoEvento, TIPOS_VISIVEIS_AO_HERDEIRO } from "@/lib/portal/eventos";
 import type { VotacaoDados } from "@/lib/portal/espolio";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
 import type { CenarioCompartilhado, EspolioCompartilhado } from "@/lib/portal/espolio";
@@ -1102,15 +1102,6 @@ export async function enviarDigest(
 /* ------------------------------------------------------------------ */
 /* Herdeiro ausente — registro de TENTATIVAS DE CONTATO                */
 /* ------------------------------------------------------------------ */
-
-export const MEIOS_DE_CONTATO = [
-  'telefone',
-  'whatsapp',
-  'e-mail',
-  'carta',
-  'pessoalmente',
-  'outro',
-] as const;
 
 /**
  * Registra uma tentativa de contato com um herdeiro que não responde —

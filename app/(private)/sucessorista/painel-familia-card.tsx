@@ -72,13 +72,13 @@ import {
   revogarConvite,
   tentativasDoCaso,
   votacoesDoEspolio,
-  MEIOS_DE_CONTATO,
   type CenarioDoCaso,
   type DespesaEspolio,
   type MensagemMural,
   type NotaEspolio,
   type VotacaoDoCaso,
 } from './painel-actions';
+import { MEIOS_DE_CONTATO } from '@/lib/portal/eventos';
 
 /** Preferência do navegador: o card abre recolhido depois que o usuário o
  *  recolheu uma vez (é o primeiro bloco da Página Inicial). */

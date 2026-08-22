@@ -64,6 +64,19 @@ export interface DetalheEventoPortal {
   meio?: string;
 }
 
+/** Meios da tentativa de contato com herdeiro ausente (lista fechada).
+ *  Vive AQUI (e não em painel-actions.ts) porque arquivo 'use server' só
+ *  pode exportar funções async — exportar a constante de lá derrubava o
+ *  módulo INTEIRO de actions do painel em runtime (500 em todas). */
+export const MEIOS_DE_CONTATO = [
+  'telefone',
+  'whatsapp',
+  'e-mail',
+  'carta',
+  'pessoalmente',
+  'outro',
+] as const;
+
 /** Tipos que o HERDEIRO pode ver nas "Atualizações do caso" — os demais são
  *  bastidores do escritório. Evento com token só aparece para AQUELE token
  *  (o filtro é de quem consulta). */
