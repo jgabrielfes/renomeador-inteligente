@@ -67,9 +67,12 @@ import {
   moderarMural,
   muralDoEspolio,
   publicarPainel,
+  registrarTentativaContato,
   retirarCenario,
   revogarConvite,
+  tentativasDoCaso,
   votacoesDoEspolio,
+  MEIOS_DE_CONTATO,
   type CenarioDoCaso,
   type DespesaEspolio,
   type MensagemMural,
@@ -158,6 +161,7 @@ export function PainelFamiliaCard({
   estado,
   onEstado,
   onConviteAtualizado,
+  onNovoConvite,
   onEncerrado,
   onAplicarValor,
   onLevarParaPartilha,
@@ -179,6 +183,8 @@ export function PainelFamiliaCard({
   estado: EstadoPainelFamilia;
   onEstado: (patch: Partial<EstadoPainelFamilia>) => void;
   onConviteAtualizado: (convite: ConviteHerdeiro) => void;
+  /** Convite NOVO criado pelo card (mediador) — entra no estado do caso. */
+  onNovoConvite: (convite: ConviteHerdeiro) => void;
   /** Encerrou no servidor: o client limpa os convites do caso. */
   onEncerrado: () => void;
   /** Sugestão de valor ACEITA: o client aplica no bem do acervo (nada muda
@@ -219,6 +225,16 @@ export function PainelFamiliaCard({
   /* Mural moderado + resumo por e-mail (digest). */
   const [mural, setMural] = useState<MensagemMural[]>([]);
   const [enviandoDigest, setEnviandoDigest] = useState(false);
+  /* Mediador(a) — papel próprio: acompanha sem deliberar. */
+  const [convidandoMediador, setConvidandoMediador] = useState(false);
+  const [nomeMediador, setNomeMediador] = useState('');
+  const [salvandoMediador, setSalvandoMediador] = useState(false);
+  /* Herdeiro ausente: registro de tentativas de contato (prova de diligência). */
+  const [tentativas, setTentativas] = useState<Record<string, number>>({});
+  const [tentativaConvite, setTentativaConvite] = useState<ConviteHerdeiro | null>(null);
+  const [meioTentativa, setMeioTentativa] = useState<string>('telefone');
+  const [obsTentativa, setObsTentativa] = useState('');
+  const [salvandoTentativa, setSalvandoTentativa] = useState(false);
   const [motivoRecusa, setMotivoRecusa] = useState('');
   const [tratamentos, setTratamentos] = useState<Record<string, 'ressarcir' | 'compensar'>>({});
   /* Recolhível (é o primeiro bloco da Página Inicial): a preferência fica no
@@ -250,6 +266,8 @@ export function PainelFamiliaCard({
     ? estado.faseAtual
     : fases[0].id;
   const ativos = convites.filter((c) => !c.revogadoEm);
+  /* Consenso e votação são dos HERDEIROS — mediador(a) acompanha, não conta. */
+  const ativosHerdeiros = ativos.filter((c) => c.papelConvite !== 'mediador');
 
   // Verdade do servidor sobre a publicação (outra máquina pode ter
   // publicado/encerrado) — melhor-esforço, uma vez por caso aberto.
@@ -310,6 +328,93 @@ export function PainelFamiliaCard({
       );
     } finally {
       setDecidindo(null);
+    }
+  };
+
+  // Tentativas de contato: contagem por convite (prova de diligência).
+  useEffect(() => {
+    if (recolhido) return;
+    let vivo = true;
+    void tentativasDoCaso(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setTentativas(r.porToken ?? {});
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [casoId, recolhido]);
+
+  const convidarMediador = async () => {
+    setSalvandoMediador(true);
+    try {
+      const r = await fetch('/api/portal/convite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          casoId,
+          nomeHerdeiro: nomeMediador.trim(),
+          nomeFalecido,
+          nomeAdvogado,
+          papel: 'mediador',
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { token?: string; url?: string; erro?: string }
+        | null;
+      if (!r.ok || !corpo?.token) {
+        toast.error('Não foi possível convidar', { description: corpo?.erro });
+        return;
+      }
+      onNovoConvite({
+        token: corpo.token,
+        casoId,
+        nomeHerdeiro: nomeMediador.trim(),
+        nomeFalecido,
+        nomeAdvogado,
+        documentos: [],
+        criadoEm: agoraIso(),
+        papelConvite: 'mediador',
+      });
+      try {
+        await navigator.clipboard.writeText(`${location.origin}${corpo.url ?? `/portal/${corpo.token}`}`);
+      } catch {
+        // sem clipboard — o link fica no cofre como os demais
+      }
+      setConvidandoMediador(false);
+      setNomeMediador('');
+      toast.success('Mediador(a) convidado(a) — link copiado', {
+        description:
+          'Pelo link, acompanha números, cenários, votações e mural — sem votar nem aderir.',
+      });
+    } finally {
+      setSalvandoMediador(false);
+    }
+  };
+
+  const registrarTentativa = async () => {
+    if (!tentativaConvite) return;
+    setSalvandoTentativa(true);
+    try {
+      const r = await registrarTentativaContato(
+        tentativaConvite.token,
+        meioTentativa,
+        obsTentativa,
+      );
+      if (!r.ok) {
+        toast.error('Não foi possível registrar', { description: r.erro });
+        return;
+      }
+      setTentativas((prev) => ({
+        ...prev,
+        [tentativaConvite.token]: (prev[tentativaConvite.token] ?? 0) + 1,
+      }));
+      setTentativaConvite(null);
+      setObsTentativa('');
+      toast.success('Tentativa de contato registrada', {
+        description: 'Entra no registro de atendimento e no relatório de comunicação (PDF).',
+      });
+    } finally {
+      setSalvandoTentativa(false);
     }
   };
 
@@ -931,7 +1036,7 @@ export function PainelFamiliaCard({
                       <span className="fracao num">
                         {c.status === 'congelado'
                           ? ' · CONSENSO (congelado)'
-                          : ` · em conversa — ${aceitos} de ${ativos.length} aceitaram`}
+                          : ` · em conversa — ${aceitos} de ${ativosHerdeiros.length} aceitaram`}
                       </span>
                       {atuais.length > 0 && (
                         <span className="fund" style={{ display: 'block' }}>
@@ -1012,7 +1117,7 @@ export function PainelFamiliaCard({
                     <strong>{v.dados.pergunta}</strong>
                     <span className="fracao num">
                       {v.status === 'aberta'
-                        ? ` · ABERTA — ${validos.length} de ${ativos.length} votaram`
+                        ? ` · ABERTA — ${validos.length} de ${ativosHerdeiros.length} votaram`
                         : ` · encerrada em ${dataCurta(v.encerradaEm ?? undefined)}`}
                     </span>
                     <span className="fund" style={{ display: 'block' }}>
@@ -1150,6 +1255,9 @@ export function PainelFamiliaCard({
             <div className="linha-item" key={c.token}>
               <span>
                 <strong>{c.nomeHerdeiro}</strong>
+                {c.papelConvite === 'mediador' && (
+                  <span className="fracao"> · mediador(a)</span>
+                )}
                 <span className="fracao num">
                   {c.revogadoEm
                     ? ` · revogado em ${dataCurta(c.revogadoEm)}`
@@ -1161,22 +1269,48 @@ export function PainelFamiliaCard({
                       ? ` · viu o espólio em ${dataCurta(c.espolioVistoEm)}`
                       : ' · ainda não viu o espólio'
                     : ''}
+                  {(tentativas[c.token] ?? 0) > 0 &&
+                    ` · ${tentativas[c.token]} tentativa(s) de contato`}
                 </span>
               </span>
               {!c.revogadoEm && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-destructive"
-                  onClick={() => setConfirmaRevogar(c)}
-                >
-                  revogar
-                </Button>
+                <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setMeioTentativa('telefone');
+                      setObsTentativa('');
+                      setTentativaConvite(c);
+                    }}
+                  >
+                    registrar contato
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => setConfirmaRevogar(c)}
+                  >
+                    revogar
+                  </Button>
+                </span>
               )}
             </div>
           ))
         )}
+        <div style={{ marginTop: 6 }}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setConvidandoMediador(true)}
+          >
+            + convidar mediador(a)
+          </Button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
@@ -1217,6 +1351,104 @@ export function PainelFamiliaCard({
       </p>
       </>
       )}
+
+      {/* Convite de MEDIADOR(A): acompanha tudo, não delibera. */}
+      <Dialog
+        open={convidandoMediador}
+        onOpenChange={(o) => !salvandoMediador && setConvidandoMediador(o)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Convidar mediador(a)</DialogTitle>
+            <DialogDescription>
+              Um papel próprio para quem ajuda a família a conversar — mediador(a)
+              profissional, pessoa de confiança comum. Pelo link, acompanha os números,
+              os cenários, as votações e o mural, e pode comentar; não vota, não adere
+              a cenário, não conta para consenso e não tem lista de documentos.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="campo">
+            Nome do(a) mediador(a)
+            <Input
+              value={nomeMediador}
+              placeholder="Ex.: Dra. Cláudia Mendes (mediadora)"
+              onChange={(e) => setNomeMediador(e.target.value)}
+            />
+          </label>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={salvandoMediador}
+              onClick={() => setConvidandoMediador(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              loading={salvandoMediador}
+              disabled={nomeMediador.trim() === ''}
+              onClick={() => void convidarMediador()}
+            >
+              Gerar link de mediador(a)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Herdeiro ausente: registrar tentativa de contato (prova de diligência). */}
+      <Dialog
+        open={tentativaConvite !== null}
+        onOpenChange={(o) => !salvandoTentativa && !o && setTentativaConvite(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Registrar tentativa de contato com {tentativaConvite?.nomeHerdeiro}
+            </DialogTitle>
+            <DialogDescription>
+              Cada tentativa fica no registro de atendimento com data e hora e entra no
+              relatório de comunicação (PDF) — a prova de diligência com quem não
+              responde. O registro é imutável.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="campo">
+            Por onde tentou
+            <Select value={meioTentativa} onValueChange={(v) => v && setMeioTentativa(v)}>
+              <SelectTrigger aria-label="Meio da tentativa de contato">
+                <SelectValue>
+                  {meioTentativa.charAt(0).toUpperCase() + meioTentativa.slice(1)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {MEIOS_DE_CONTATO.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="campo">
+            Observação (opcional)
+            <Input
+              value={obsTentativa}
+              placeholder="Ex.: Caixa postal às 14h30; recado com a filha."
+              onChange={(e) => setObsTentativa(e.target.value)}
+            />
+          </label>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={salvandoTentativa}
+              onClick={() => setTentativaConvite(null)}
+            >
+              Cancelar
+            </Button>
+            <Button loading={salvandoTentativa} onClick={() => void registrarTentativa()}>
+              Registrar tentativa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 1ª etapa da deliberação: abrir a votação (pergunta + opções). */}
       <Dialog open={abrindoVotacao} onOpenChange={(o) => !salvandoVotacao && setAbrindoVotacao(o)}>
@@ -1308,8 +1540,8 @@ export function PainelFamiliaCard({
             <DialogTitle>Encerrar a votação “{confirmaEncerrarVotacao?.dados.pergunta}”?</DialogTitle>
             <DialogDescription>
               A apuração fecha com os votos atuais (
-              {confirmaEncerrarVotacao?.votos.filter((v) => v.atual).length ?? 0} de {ativos.length}{' '}
-              herdeiro(s) votaram) e ninguém mais vota — encerrada não reabre; para
+              {confirmaEncerrarVotacao?.votos.filter((v) => v.atual).length ?? 0} de{' '}
+              {ativosHerdeiros.length} herdeiro(s) votaram) e ninguém mais vota — encerrada não reabre; para
               deliberar de novo, abra outra votação. A família é avisada do resultado.
             </DialogDescription>
           </DialogHeader>

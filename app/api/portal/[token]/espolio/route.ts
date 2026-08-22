@@ -74,6 +74,14 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const autor = convite.nomeHerdeiro;
+  // MEDIADOR(A) acompanha e conversa (comentário/mural), mas não delibera
+  // nem move dinheiro: adesão, voto e despesa são atos de herdeiro.
+  const mediador = convite.papelConvite === 'mediador';
+  const soHerdeiro = () =>
+    Response.json(
+      { erro: 'Mediador(a) acompanha a conversa — este ato é dos herdeiros.' },
+      { status: 403 },
+    );
 
   /* ---------- comentário / sugestão de valor por bem ---------- */
   if (body?.nota && typeof body.nota === 'object') {
@@ -107,6 +115,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   /* ---------- despesa adiantada (o comprovante sobe pelo pedido criado) ---------- */
   if (body?.despesa && typeof body.despesa === 'object') {
+    if (mediador) return soHerdeiro();
     const categoria = String(body.despesa.categoria ?? '');
     const valor = String(body.despesa.valor ?? '').trim();
     const data = String(body.despesa.data ?? '').trim();
@@ -155,6 +164,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   /* ---------- adesão a um cenário de divisão ---------- */
   if (body?.adesao && typeof body.adesao === 'object') {
+    if (mediador) return soHerdeiro();
     const cenarioId = String(body.adesao.cenarioId ?? '').slice(0, 80);
     const resposta = String(body.adesao.resposta ?? '');
     const comentario = String(body.adesao.comentario ?? '').trim().slice(0, 400);
@@ -203,9 +213,11 @@ export async function POST(req: Request, ctx: Ctx) {
           select: { token: true, resposta: true },
         }),
       ]);
-      const ativos = convitesDoCaso.filter(
-        (c) => !(c.dados as { revogadoEm?: string } | null)?.revogadoEm,
-      );
+      // Consenso é dos HERDEIROS: convite revogado e mediador(a) ficam fora.
+      const ativos = convitesDoCaso.filter((c) => {
+        const d = c.dados as { revogadoEm?: string; papelConvite?: string } | null;
+        return !d?.revogadoEm && d?.papelConvite !== 'mediador';
+      });
       const ultimaPorToken = new Map<string, string>();
       for (const a of adesoes) ultimaPorToken.set(a.token, a.resposta);
       consenso =
@@ -228,6 +240,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   /* ---------- voto em uma votação formal ---------- */
   if (body?.voto && typeof body.voto === 'object') {
+    if (mediador) return soHerdeiro();
     const votacaoId = String(body.voto.votacaoId ?? '').slice(0, 80);
     const opcaoId = String(body.voto.opcaoId ?? '').slice(0, 40);
     const comentario = String(body.voto.comentario ?? '').trim().slice(0, 400);

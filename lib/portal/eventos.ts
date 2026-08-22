@@ -39,7 +39,8 @@ export type TipoEventoPortal =
   | 'ESPOLIO_VOTACAO_ENCERRADA'
   | 'ESPOLIO_MURAL'
   | 'ESPOLIO_MURAL_MODERADA'
-  | 'ESPOLIO_DIGEST';
+  | 'ESPOLIO_DIGEST'
+  | 'CONTATO_TENTATIVA';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -58,6 +59,8 @@ export interface DetalheEventoPortal {
   resposta?: string;
   /** Votações do espólio: a pergunta deliberada. */
   votacao?: string;
+  /** CONTATO_TENTATIVA: por onde se tentou falar (telefone, WhatsApp…). */
+  meio?: string;
 }
 
 /** Tipos que o HERDEIRO pode ver nas "Atualizações do caso" — os demais são
@@ -153,4 +156,5 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_MURAL: 'Mensagem enviada ao mural da família',
   ESPOLIO_MURAL_MODERADA: 'Mensagem do mural moderada pelo escritório',
   ESPOLIO_DIGEST: 'Resumo do caso enviado à família por e-mail',
+  CONTATO_TENTATIVA: 'Tentativa de contato com herdeiro registrada',
 };

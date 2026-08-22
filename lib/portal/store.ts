@@ -109,6 +109,11 @@ export interface ConviteHerdeiro {
   /** Espaço do Espólio: 1º acesso deste herdeiro ao espaço compartilhado —
    *  o advogado vê a confirmação de que cada um viu. */
   espolioVistoEm?: string;
+  /** Papel do convite (ausente = 'herdeiro'). MEDIADOR(A) acompanha tudo do
+   *  espaço — números, cenários, votações, mural — mas NÃO delibera: não
+   *  vota, não adere a cenário, não conta para consenso, não lança despesa
+   *  e não tem pedidos de documentos nem quinhão. */
+  papelConvite?: 'herdeiro' | 'mediador';
 }
 
 export interface PortalStore {

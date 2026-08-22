@@ -1099,6 +1099,91 @@ export async function enviarDigest(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Herdeiro ausente — registro de TENTATIVAS DE CONTATO                */
+/* ------------------------------------------------------------------ */
+
+export const MEIOS_DE_CONTATO = [
+  'telefone',
+  'whatsapp',
+  'e-mail',
+  'carta',
+  'pessoalmente',
+  'outro',
+] as const;
+
+/**
+ * Registra uma tentativa de contato com um herdeiro que não responde —
+ * prova de diligência do escritório (entra no relatório de comunicação).
+ * Vira evento CONTATO_TENTATIVA, imutável como os demais.
+ */
+export async function registrarTentativaContato(
+  token: string,
+  meio: string,
+  observacao?: string,
+): Promise<{ ok: boolean; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const t = String(token ?? "").slice(0, 120);
+  if (!t) return { ok: false, erro: "Convite sem identificação." };
+  if (!(MEIOS_DE_CONTATO as readonly string[]).includes(meio)) {
+    return { ok: false, erro: "Informe por onde tentou o contato." };
+  }
+  try {
+    const linha = await prisma.portalConvite.findUnique({ where: { token: t } });
+    if (!linha) return { ok: false, erro: "Convite não encontrado." };
+    if (!(await podeGerirCaso(linha.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const convite = linha.dados as unknown as ConviteHerdeiro;
+    await registrarEventoPortal(
+      linha.casoId,
+      "CONTATO_TENTATIVA",
+      {
+        herdeiro: convite.nomeHerdeiro,
+        meio,
+        ...(String(observacao ?? "").trim() !== ""
+          ? { motivo: String(observacao).trim().slice(0, 300) }
+          : {}),
+      },
+      t,
+    );
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: "Falha ao registrar — tente novamente." };
+  }
+}
+
+/** Contagem de tentativas de contato por convite (para o card). */
+export async function tentativasDoCaso(
+  casoId: string,
+): Promise<{ ok: boolean; porToken?: Record<string, number>; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const linhas = await prisma.portalEvento.findMany({
+      where: { casoId: id, tipo: "CONTATO_TENTATIVA" },
+      select: { token: true },
+      take: 2000,
+    });
+    const porToken: Record<string, number> = {};
+    for (const l of linhas) {
+      if (!l.token) continue;
+      porToken[l.token] = (porToken[l.token] ?? 0) + 1;
+    }
+    return { ok: true, porToken };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar as tentativas." };
+  }
+}
+
 export interface EventoDoCaso {
   quando: string;
   tipo: string;

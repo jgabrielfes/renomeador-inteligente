@@ -19,6 +19,9 @@ interface Body {
   nomeFalecido: string;
   nomeAdvogado: string;
   documentosExtras?: { id: string; titulo: string; descricao: string }[];
+  /** 'mediador' cria o convite de MEDIADOR(A): acompanha o espaço do
+   *  espólio sem deliberar — sem pedidos de documentos nem qualificação. */
+  papel?: string;
 }
 
 export async function POST(req: Request) {
@@ -54,18 +57,23 @@ export async function POST(req: Request) {
     .replace(/[^a-z0-9]/g, '')
     .slice(0, 24);
 
+  const mediador = body.papel === 'mediador';
   const convite: ConviteHerdeiro = {
     token: primeiroNome ? `${primeiroNome}-${gerarToken()}` : gerarToken(),
     casoId: body.casoId,
-    herdeiroId: body.herdeiroId,
+    herdeiroId: mediador ? undefined : body.herdeiroId,
     nomeHerdeiro: body.nomeHerdeiro,
     nomeFalecido: body.nomeFalecido ?? '',
     nomeAdvogado: body.nomeAdvogado ?? '',
     criadoEm: new Date().toISOString(),
-    documentos: [
-      ...DOCUMENTOS_PADRAO_HERDEIRO.map((d) => ({ ...d, status: 'PENDENTE' as const })),
-      ...(body.documentosExtras ?? []).map((d) => ({ ...d, status: 'PENDENTE' as const })),
-    ],
+    ...(mediador ? { papelConvite: 'mediador' as const } : {}),
+    // Mediador(a) acompanha — não tem lista de documentos a enviar.
+    documentos: mediador
+      ? []
+      : [
+          ...DOCUMENTOS_PADRAO_HERDEIRO.map((d) => ({ ...d, status: 'PENDENTE' as const })),
+          ...(body.documentosExtras ?? []).map((d) => ({ ...d, status: 'PENDENTE' as const })),
+        ],
   };
 
   await store.criar(convite);

@@ -3815,6 +3815,11 @@ export default function SucessoristaClient({
                     return chave ? { ...prev, [chave]: c } : prev;
                   })
                 }
+                onNovoConvite={(c) =>
+                  // Convite de mediador(a) nasce no card — chave pelo token
+                  // (os de herdeiro são chaveados pelo herdeiroId no cofre).
+                  setConvites((prev) => ({ ...prev, [c.token]: c }))
+                }
                 onEncerrado={() => setConvites({})}
                 onLevarParaPartilha={(alocacoes) => {
                   // Consenso vira partilha: as alocações do cenário são o

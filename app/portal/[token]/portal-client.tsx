@@ -552,6 +552,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   const feitos = convite.documentos.filter((d) => d.status === 'APROVADO').length;
   const painel = convite.painel ?? null;
   const advogado = painel?.advogado.nome || convite.nomeAdvogado || 'o advogado responsável';
+  /** MEDIADOR(A): acompanha tudo e conversa, mas não delibera — sem
+   *  formulário, sem documentos, sem voto/adesão/despesa. */
+  const ehMediador = convite.papelConvite === 'mediador';
 
   return (
     <div className="sucessorista">
@@ -578,8 +581,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         </p>
       )}
       <p className="subtitulo">
-        Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos)
-        e os documentos da lista. Nada aqui é público: só você e {advogado} veem esta página.
+        {ehMediador
+          ? `Você acompanha este inventário como mediador(a), a convite de ${advogado}. Nada aqui é público: só quem recebeu um link vê estas informações.`
+          : `Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos) e os documentos da lista. Nada aqui é público: só você e ${advogado} veem esta página.`}
       </p>
 
       {/* ---------- onde estamos (Painel do Cliente publicado) ---------- */}
@@ -618,7 +622,20 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         </>
       )}
 
-      {/* ---------- o que falta de você ---------- */}
+      {ehMediador && (
+        <div className="nota" style={{ marginTop: 10 }}>
+          <span className="eyebrow">Você acompanha como mediador(a)</span>
+          <p>
+            Este acesso mostra a você o mesmo que a família vê — números, cenários,
+            votações e mural — e permite comentar. Decisões (votos e adesões) são dos
+            herdeiros; o seu papel aqui é ajudar a conversa.
+          </p>
+        </div>
+      )}
+
+      {/* ---------- o que falta de você (só herdeiro) ---------- */}
+      {!ehMediador && (
+      <>
       <h2>O que falta de você</h2>
       <h3 style={{ marginTop: 8 }}>Seus dados (2 minutos)</h3>
       {convite.qualificacao ? (
@@ -901,6 +918,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             ? 'Salvar de novo'
             : 'Salvar — confirmar meu envio'}
       </button>
+      </>
+      )}
 
       {/* ---------- avisos por e-mail (env-gated no servidor) ---------- */}
       {convite.emailAtivo && (
@@ -1105,14 +1124,16 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               ))}
             </ul>
           )}
-          <DespesaEspolioForm
-            token={token}
-            onRegistrada={(d, conviteNovo) => {
-              atualizarConvite(conviteNovo);
-              registrarDespesaLocal(d);
-            }}
-            enviarComprovante={enviarDocumento}
-          />
+          {!ehMediador && (
+            <DespesaEspolioForm
+              token={token}
+              onRegistrada={(d, conviteNovo) => {
+                atualizarConvite(conviteNovo);
+                registrarDespesaLocal(d);
+              }}
+              enviarComprovante={enviarDocumento}
+            />
+          )}
 
           {/* ---------- cenários de divisão propostos ---------- */}
           {(convite.espolioCenarios ?? []).length > 0 && (
@@ -1130,6 +1151,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                   key={c.id}
                   token={token}
                   cenario={c}
+                  somenteAcompanha={ehMediador}
                   onRespondida={registrarAdesaoLocal}
                 />
               ))}
@@ -1154,6 +1176,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                   key={v.id}
                   token={token}
                   votacao={v}
+                  somenteAcompanha={ehMediador}
                   onVotou={registrarVotoLocal}
                 />
               ))}
@@ -1562,10 +1585,13 @@ const ROTULO_RESPOSTA: Record<string, string> = {
 function CenarioDoEspolio({
   token,
   cenario,
+  somenteAcompanha = false,
   onRespondida,
 }: {
   token: string;
   cenario: CenarioEspolioPortal;
+  /** Mediador(a): vê tudo, não responde (a resposta é dos herdeiros). */
+  somenteAcompanha?: boolean;
   onRespondida: (cenarioId: string, resposta: string, comentario: string, consenso: boolean) => void;
 }) {
   const [comentario, setComentario] = useState('');
@@ -1673,6 +1699,10 @@ function CenarioDoEspolio({
           Este cenário fechou como consenso da família — o escritório dá sequência a
           partir dele.
         </p>
+      ) : somenteAcompanha ? (
+        <p className="fund" style={{ marginTop: 8 }}>
+          Como mediador(a), você acompanha as respostas — a decisão é dos herdeiros.
+        </p>
       ) : (
         <>
           <p style={{ margin: '10px 0 2px' }}>
@@ -1736,10 +1766,13 @@ function CenarioDoEspolio({
 function VotacaoDoEspolio({
   token,
   votacao,
+  somenteAcompanha = false,
   onVotou,
 }: {
   token: string;
   votacao: VotacaoEspolioPortal;
+  /** Mediador(a): vê a apuração, não vota. */
+  somenteAcompanha?: boolean;
   onVotou: (votacaoId: string, opcaoId: string, comentario: string) => void;
 }) {
   const [opcao, setOpcao] = useState(votacao.meuVoto ?? '');
@@ -1817,7 +1850,12 @@ function VotacaoDoEspolio({
         </ul>
       )}
 
-      {votacao.status === 'aberta' && (
+      {votacao.status === 'aberta' && somenteAcompanha && (
+        <p className="fund" style={{ marginTop: 8 }}>
+          Como mediador(a), você acompanha a votação — o voto é dos herdeiros.
+        </p>
+      )}
+      {votacao.status === 'aberta' && !somenteAcompanha && (
         <>
           <p style={{ margin: '10px 0 2px' }}>
             <strong>
