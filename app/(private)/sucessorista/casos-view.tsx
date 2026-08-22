@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -65,6 +66,7 @@ const esquemaNovo = z.object({
 });
 
 export function CasosView({
+  radarHref = null,
   estado,
   resumos,
   comNuvem = false,
@@ -93,6 +95,8 @@ export function CasosView({
   onImportar,
   onMigrarRascunho,
 }: {
+  /** Rota do Radar de famílias quando ligado (env) — atalho no cabeçalho. */
+  radarHref?: string | null;
   estado: EstadoPainel;
   /** null = cache ainda não pintou. */
   resumos: ResumoCaso[] | null;
@@ -223,6 +227,11 @@ export function CasosView({
         </div>
         {(estado === 'pasta' || estado === 'portatil' || estado === 'drive' || estado === 'onedrive' || estado === 'dropbox') && (
           <div className="escolha">
+            {radarHref && (
+              <Button variant="outline" render={<Link href={radarHref} />} nativeButton={false}>
+                Radar de famílias
+              </Button>
+            )}
             {onEnviarNuvem && (
               <Button
                 variant="outline"

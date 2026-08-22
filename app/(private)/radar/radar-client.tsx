@@ -1,0 +1,503 @@
+'use client';
+
+/**
+ * Radar de famílias — client do(a) advogado(a).
+ *
+ * Fluxo de habilitação: OAB (verificação MANUAL) → quiz deontológico (10 de
+ * 10) → assinatura mensal por UF (marcada à mão pela administração). Depois,
+ * a lista de casos anônimos em ordem única por data — sem ranking, sem
+ * honorários na resposta, contato da família só quando ELA abrir a conversa.
+ */
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { toast } from 'sonner';
+
+import '../sucessorista/sucessorista.css';
+
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Toaster } from '@/components/ui/sonner';
+
+import { UFS } from '@/lib/familias/tipos';
+import { QUESTOES_RADAR, type CorrecaoQuiz } from '@/lib/radar/quiz';
+import { ROTULO_VIA, dataBr } from '../../familias/resultado-view';
+import {
+  conversaRadar,
+  enviarMensagemRadar,
+  responderCasoRadar,
+  responderQuizRadar,
+  salvarPerfilOab,
+  salvarPreferenciasRadar,
+  type CasoRadar,
+  type ConversaRadar,
+  type EstadoAdvogado,
+} from './radar-actions';
+
+const AVISO_LEGAL =
+  'Esta plataforma não intermedeia honorários nem indica advogados. A escolha é sempre da família; honorários são tratados fora da plataforma, diretamente entre advogado(a) e cliente.';
+
+const esquemaOab = z.object({
+  oab: z.string().trim().min(2, 'Informe o número de inscrição.').max(20, 'Número longo demais.'),
+  uf: z.string().min(2, 'Escolha a seccional (UF).'),
+});
+
+function FormOab({ aoSalvar }: { aoSalvar: () => void }) {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<z.infer<typeof esquemaOab>>({
+    resolver: zodResolver(esquemaOab),
+    defaultValues: { oab: '', uf: '' },
+  });
+  return (
+    <form
+      noValidate
+      onSubmit={handleSubmit(async (v) => {
+        const r = await salvarPerfilOab(v.oab, v.uf);
+        if (r.ok) {
+          toast.success('Inscrição enviada — a verificação é manual e você será avisado(a).');
+          aoSalvar();
+        } else toast.error(r.erro ?? 'Não foi possível salvar.');
+      })}
+      style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}
+    >
+      <Field data-invalid={errors.oab ? true : undefined} style={{ maxWidth: 220 }}>
+        <FieldLabel>Inscrição na OAB</FieldLabel>
+        <Input placeholder="ex.: 123.456" aria-invalid={!!errors.oab} {...register('oab')} />
+        <FieldError errors={[errors.oab]} />
+      </Field>
+      <Field data-invalid={errors.uf ? true : undefined} style={{ maxWidth: 120 }}>
+        <FieldLabel>Seccional</FieldLabel>
+        <select {...register('uf')}>
+          <option value="">UF…</option>
+          {UFS.map((u) => (
+            <option key={u}>{u}</option>
+          ))}
+        </select>
+        <FieldError errors={[errors.uf]} />
+      </Field>
+      <Button type="submit" loading={isSubmitting}>
+        Enviar para verificação
+      </Button>
+    </form>
+  );
+}
+
+function Quiz({ aoAprovar }: { aoAprovar: () => void }) {
+  const [respostas, setRespostas] = useState<Record<string, number>>({});
+  const [correcao, setCorrecao] = useState<CorrecaoQuiz | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const corrigir = async () => {
+    setEnviando(true);
+    try {
+      const r = await responderQuizRadar(respostas);
+      if (!r.ok || !r.correcao) {
+        toast.error(r.erro ?? 'Não foi possível corrigir.');
+        return;
+      }
+      setCorrecao(r.correcao);
+      if (r.correcao.aprovado) {
+        toast.success('Aprovado(a) — as regras do Radar valem para todas as suas respostas.');
+        aoAprovar();
+      }
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="nota" style={{ marginTop: 12 }}>
+      <span className="eyebrow">Questionário deontológico</span>
+      <h3>Antes de responder famílias: 10 perguntas sobre as regras</h3>
+      <p className="fund">
+        A aprovação exige as 10 corretas — pode refazer quantas vezes precisar. É o
+        compromisso com o Provimento 205/2021 e com o Código de Ética que sustenta o
+        Radar.
+      </p>
+      {QUESTOES_RADAR.map((q, i) => (
+        <fieldset key={q.id} style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
+          <legend style={{ fontWeight: 600 }}>
+            {i + 1}. {q.enunciado}
+            {correcao && (
+              <span className={correcao.erradas.includes(q.id) ? 'mono-alerta' : ''} style={{ marginLeft: 6 }}>
+                {correcao.erradas.includes(q.id) ? '✗ rever' : '✓'}
+              </span>
+            )}
+          </legend>
+          {q.opcoes.map((op, j) => (
+            <label key={j} className="marcar" style={{ fontWeight: 400, display: 'flex', marginTop: 4 }}>
+              <input
+                type="radio"
+                name={`quiz-${q.id}`}
+                checked={respostas[q.id] === j}
+                onChange={() => setRespostas((prev) => ({ ...prev, [q.id]: j }))}
+              />
+              {op}
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      <div style={{ marginTop: 14 }}>
+        <Button loading={enviando} onClick={() => void corrigir()}>
+          Corrigir
+        </Button>
+        {correcao && !correcao.aprovado && (
+          <p className="mono-alerta" style={{ marginTop: 8 }}>
+            {correcao.acertos} de {correcao.total} — reveja as marcadas com ✗ e corrija de novo.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ROTULO_FLAG: Record<string, string> = {
+  testamento: 'testamento',
+  menorOuIncapaz: 'menor/incapaz',
+  semConsenso: 'sem consenso',
+  herdeiroExterior: 'herdeiro no exterior',
+  empresa: 'empresa',
+  dividas: 'dívidas',
+  pequenoValor: 'pequeno valor',
+};
+
+function CardCaso({ item, aoResponder, aoConversar }: {
+  item: CasoRadar;
+  aoResponder: () => void;
+  aoConversar: () => void;
+}) {
+  const c = item.caso;
+  const flags = Object.entries(c.flags).filter(([, v]) => v).map(([k]) => ROTULO_FLAG[k] ?? k);
+  return (
+    <section className="nota" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <span className="eyebrow">
+        {c.cidade ? `${c.cidade}/` : ''}{c.uf} · publicado em {dataBr(c.publicadoEm)}
+      </span>
+      <h3 style={{ margin: 0 }}>
+        {ROTULO_VIA[c.via as keyof typeof ROTULO_VIA] ?? c.via} · acervo {c.faixaAcervo}
+      </h3>
+      <p style={{ margin: 0 }}>
+        {c.qtdHerdeiros} herdeiro(s){c.ufsBens.length > 1 ? ` · bens em ${c.ufsBens.join(', ')}` : ''}
+        {flags.length > 0 ? ` · ${flags.join(' · ')}` : ''}
+      </p>
+      <p className="fund" style={{ margin: 0 }}>
+        {item.respostas} de 5 respostas{item.minhaResposta ? ' — a sua entre elas' : ''}
+      </p>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        {item.conversaComigo ? (
+          <Button onClick={aoConversar}>Conversa aberta — responder</Button>
+        ) : item.minhaResposta ? (
+          <Button variant="outline" disabled>
+            Aguardando a família
+          </Button>
+        ) : (
+          <Button onClick={aoResponder} disabled={item.respostas >= 5}>
+            {item.respostas >= 5 ? 'Teto de respostas atingido' : 'Apresentar-se à família'}
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; casos: CasoRadar[] }) {
+  const router = useRouter();
+  const [filtroUf, setFiltroUf] = useState('');
+  const [respondendo, setRespondendo] = useState<CasoRadar | null>(null);
+  const [apresentacao, setApresentacao] = useState('');
+  const [conducao, setConducao] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [conversaDe, setConversaDe] = useState<CasoRadar | null>(null);
+  const [conversa, setConversa] = useState<ConversaRadar | null>(null);
+  const [mensagem, setMensagem] = useState('');
+
+  const visiveis = useMemo(
+    () => casos.filter((c) => !filtroUf || c.caso.uf === filtroUf),
+    [casos, filtroUf],
+  );
+
+  const enviarResposta = async () => {
+    if (!respondendo) return;
+    setEnviando(true);
+    try {
+      const r = await responderCasoRadar(respondendo.caso.id, apresentacao, conducao);
+      if (r.ok) {
+        toast.success('Resposta enviada — a família decide se quer conversar.');
+        setRespondendo(null);
+        setApresentacao('');
+        setConducao('');
+        router.refresh();
+      } else toast.error(r.erro ?? 'Não foi possível enviar.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const abrirConversa = async (item: CasoRadar) => {
+    setConversaDe(item);
+    setConversa(null);
+    const r = await conversaRadar(item.caso.id);
+    if (r.ok) setConversa(r.conversa);
+    else {
+      toast.error(r.erro);
+      setConversaDe(null);
+    }
+  };
+
+  const enviarMensagem = async () => {
+    if (!conversaDe || !mensagem.trim()) return;
+    setEnviando(true);
+    try {
+      const r = await enviarMensagemRadar(conversaDe.caso.id, mensagem);
+      if (r.ok) {
+        setMensagem('');
+        const c = await conversaRadar(conversaDe.caso.id);
+        if (c.ok) setConversa(c.conversa);
+      } else toast.error(r.erro ?? 'Não foi possível enviar.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const perfil = estado?.perfil ?? null;
+
+  return (
+    <div className="sucessorista">
+      <Toaster position="bottom-right" duration={4000} visibleToasts={1} />
+      <main className="folha" style={{ margin: '0 auto', maxWidth: 860 }}>
+        <span className="eyebrow">O Sucessorista</span>
+        <h1>Radar de famílias</h1>
+        <p className="subtitulo">
+          Famílias publicam o caso ANÔNIMO e escolhem com quem conversar. {AVISO_LEGAL}
+        </p>
+        <p style={{ marginTop: -18 }}>
+          <Link href="/">← Meus casos</Link>
+        </p>
+
+        {!estado && (
+          <div className="nota exigencia">
+            <p>Não foi possível carregar o seu estado no Radar — recarregue a página.</p>
+          </div>
+        )}
+
+        {estado && !perfil && !estado.master && (
+          <div className="nota" style={{ marginTop: 8 }}>
+            <span className="eyebrow">Passo 1 de 3</span>
+            <h3>Identifique-se: inscrição na OAB</h3>
+            <p className="fund">
+              A verificação é MANUAL, feita pela administração — anonimato aqui é só da
+              família, nunca do(a) advogado(a).
+            </p>
+            <FormOab aoSalvar={() => router.refresh()} />
+          </div>
+        )}
+
+        {perfil && perfil.situacao === 'pendente' && (
+          <div className="nota registro" style={{ marginTop: 8 }}>
+            <p>
+              Inscrição OAB/{perfil.oabUf} {perfil.oab} enviada — <strong>verificação manual em
+              andamento</strong>. Você já pode adiantar o questionário abaixo.
+            </p>
+          </div>
+        )}
+
+        {perfil && perfil.situacao === 'recusado' && (
+          <div className="nota exigencia" style={{ marginTop: 8 }}>
+            <p>
+              A verificação não foi concluída{perfil.motivoRecusa ? `: ${perfil.motivoRecusa}` : '.'}{' '}
+              Confira os dados e reenvie.
+            </p>
+            <FormOab aoSalvar={() => router.refresh()} />
+          </div>
+        )}
+
+        {perfil && perfil.situacao === 'suspenso' && (
+          <div className="nota exigencia" style={{ marginTop: 8 }}>
+            <p>Perfil suspenso — fale com a administração da plataforma.</p>
+          </div>
+        )}
+
+        {((perfil && !perfil.quizOk && perfil.situacao !== 'suspenso') ||
+          (estado?.master && perfil && !perfil.quizOk)) && (
+          <Quiz aoAprovar={() => router.refresh()} />
+        )}
+
+        {perfil && perfil.situacao === 'aprovado' && perfil.quizOk && estado &&
+          estado.ufsAssinadas.length === 0 && !estado.master && (
+          <div className="nota" style={{ marginTop: 8 }}>
+            <span className="eyebrow">Passo 3 de 3</span>
+            <h3>Assinatura por UF</h3>
+            <p>
+              O acesso aos casos é por <strong>assinatura mensal</strong>, por estado —
+              nunca comissão por caso (é o que mantém o Radar dentro da ética). A
+              liberação é feita pela administração: fale com a plataforma indicando a(s)
+              UF(s) de atuação.
+            </p>
+          </div>
+        )}
+
+        {estado?.habilitado && (
+          <>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+              <h2 style={{ margin: 0 }}>Casos abertos</h2>
+              <select value={filtroUf} onChange={(e) => setFiltroUf(e.target.value)} style={{ maxWidth: 160 }}>
+                <option value="">
+                  {estado.master ? 'Todas as UFs' : `Minhas UFs (${estado.ufsAssinadas.join(', ')})`}
+                </option>
+                {(estado.master ? UFS : estado.ufsAssinadas).map((u) => (
+                  <option key={u}>{u}</option>
+                ))}
+              </select>
+              {perfil && (
+                <label className="marcar" style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={perfil.aceitaPequenoValor}
+                    onChange={(e) => {
+                      void salvarPreferenciasRadar({ aceitaPequenoValor: e.target.checked }).then((r) => {
+                        if (r.ok) router.refresh();
+                        else toast.error(r.erro ?? 'Não foi possível salvar.');
+                      });
+                    }}
+                  />
+                  aceito casos de pequeno valor (alvará)
+                </label>
+              )}
+            </div>
+            <p className="fund" style={{ marginTop: 4 }}>
+              Ordem única: mais recentes primeiro. Sem ranking, sem destaque pago.
+            </p>
+            {visiveis.length === 0 && (
+              <p style={{ marginTop: 8 }}>Nenhum caso aberto nas suas UFs neste momento.</p>
+            )}
+            <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+              {visiveis.map((item) => (
+                <CardCaso
+                  key={item.caso.id}
+                  item={item}
+                  aoResponder={() => setRespondendo(item)}
+                  aoConversar={() => void abrirConversa(item)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="fund" style={{ marginTop: 24 }}>{AVISO_LEGAL}</p>
+      </main>
+
+      {/* Responder: apresentação + condução — SEM honorários, por desenho. */}
+      <Dialog open={respondendo !== null} onOpenChange={(v) => !v && setRespondendo(null)}>
+        <DialogContent className="sucessorista">
+          <DialogHeader>
+            <DialogTitle>Apresentar-se à família</DialogTitle>
+            <DialogDescription>
+              Sóbrio e informativo (Provimento 205/2021): quem é você e como conduziria.
+              Sem promessa de resultado e sem valores — honorários são tratados fora da
+              plataforma, se a família escolher conversar.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="campo">
+            Apresentação profissional ({apresentacao.length}/600)
+            <Textarea
+              rows={4}
+              maxLength={600}
+              value={apresentacao}
+              onChange={(e) => setApresentacao(e.target.value)}
+              placeholder="Qualificação, experiência com inventários, forma de trabalho…"
+            />
+          </label>
+          <label className="campo">
+            Como conduziria este caso ({conducao.length}/800)
+            <Textarea
+              rows={5}
+              maxLength={800}
+              value={conducao}
+              onChange={(e) => setConducao(e.target.value)}
+              placeholder="Visão técnica a partir do resumo anônimo: via, passos, prazos, pontos de atenção…"
+            />
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRespondendo(null)}>
+              Cancelar
+            </Button>
+            <Button loading={enviando} onClick={() => void enviarResposta()}>
+              Enviar resposta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Conversa 1:1 — aberta pela família; o contato dela aparece aqui. */}
+      <Dialog open={conversaDe !== null} onOpenChange={(v) => !v && setConversaDe(null)}>
+        <DialogContent className="sucessorista">
+          <DialogHeader>
+            <DialogTitle>Conversa com a família</DialogTitle>
+            <DialogDescription>
+              {conversa
+                ? `Contato liberado pela família: ${[conversa.familia.nome, conversa.familia.email].filter(Boolean).join(' · ') || '(sem contato informado)'}`
+                : 'Carregando…'}
+            </DialogDescription>
+          </DialogHeader>
+          {conversa && (
+            <>
+              {conversa.status === 'contratado' && (
+                <p className="nota registro" style={{ margin: 0 }}>
+                  A família confirmou a contratação — o código do caso está na conversa.
+                </p>
+              )}
+              <div style={{ display: 'grid', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
+                {conversa.mensagens.length === 0 && (
+                  <p className="fund">A família abriu a conversa — apresente o próximo passo.</p>
+                )}
+                {conversa.mensagens.map((m, i) => (
+                  <p
+                    key={i}
+                    style={{
+                      margin: 0,
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      background: m.autor === 'advogado' ? 'var(--papel-alto, #eee)' : 'transparent',
+                      border: '1px solid var(--border, #ddd)',
+                    }}
+                  >
+                    <strong>{m.autor === 'advogado' ? 'Você' : 'Família'}:</strong> {m.texto}
+                  </p>
+                ))}
+              </div>
+              <label className="campo">
+                Mensagem
+                <Textarea rows={2} maxLength={2000} value={mensagem} onChange={(e) => setMensagem(e.target.value)} />
+              </label>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConversaDe(null)}>
+                  Fechar
+                </Button>
+                <Button loading={enviando} onClick={() => void enviarMensagem()}>
+                  Enviar
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -326,6 +326,7 @@ export default function SucessoristaClient({
   nomeConta = null,
   casoInicialId = null,
   etapaInicial = null,
+  radarAtivo = false,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -349,6 +350,9 @@ export default function SucessoristaClient({
    *  e link colado entre membros da equipe voltam ao caso certo. */
   casoInicialId?: string | null;
   etapaInicial?: string | null;
+  /** Radar de famílias ligado neste deploy (env) — mostra o atalho /radar
+   *  no painel Meus casos para o perfil Advogado(a). */
+  radarAtivo?: boolean;
 }) {
   // A etapa e o CASO vivem na URL (/caso/<id>/<etapa>; ?etapa= segue como
   // compatibilidade): sobrevivem ao F5 e o recorte é compartilhável. A troca
@@ -3603,6 +3607,7 @@ export default function SucessoristaClient({
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {menu}
         <CasosView
+          radarHref={radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null}
           estado={estadoPainel}
           resumos={(() => {
             // A nuvem entra no painel junto dos casos locais; caso

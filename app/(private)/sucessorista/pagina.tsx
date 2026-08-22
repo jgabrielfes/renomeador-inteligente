@@ -7,6 +7,7 @@ import { AccessTracker } from "@/components/access-tracker";
 import { UserMenu } from "@/components/user-menu";
 import { IDENTIDADE } from "@/lib/app";
 import { isMaster } from "@/lib/auth";
+import { radarAtivo } from "@/lib/radar/config";
 import { prisma } from "@/lib/prisma";
 import type { Session } from "next-auth";
 
@@ -56,6 +57,7 @@ export async function PaginaSucessorista({
         equipe={equipe}
         contaId={session?.user?.id ?? null}
         nomeConta={session?.user?.name ?? null}
+        radarAtivo={radarAtivo()}
         casoInicialId={casoInicialId}
         etapaInicial={etapaInicial}
       />
