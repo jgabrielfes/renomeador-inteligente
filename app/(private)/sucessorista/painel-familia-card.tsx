@@ -22,6 +22,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -49,21 +50,27 @@ import { baixarBlob } from '@/lib/partilha/xlsx';
 
 import type { Alocacoes } from '@/lib/partilha/cenario';
 
+import { montarTermoVotacaoPdf } from '@/lib/portal/termo-votacao-pdf';
+
 import {
+  abrirVotacao,
   cenariosDoEspolio,
   congelarCenario,
   decidirDespesa,
   decidirSugestao,
   encerrarPainel,
+  encerrarVotacao,
   estadoPainel,
   eventosDoCaso,
   fatosDoEspolio,
   publicarPainel,
   retirarCenario,
   revogarConvite,
+  votacoesDoEspolio,
   type CenarioDoCaso,
   type DespesaEspolio,
   type NotaEspolio,
+  type VotacaoDoCaso,
 } from './painel-actions';
 
 /** Preferência do navegador: o card abre recolhido depois que o usuário o
@@ -191,6 +198,16 @@ export function PainelFamiliaCard({
   const [cenarios, setCenarios] = useState<CenarioDoCaso[]>([]);
   const [mudandoCenario, setMudandoCenario] = useState<string | null>(null);
   const [confirmaRetirar, setConfirmaRetirar] = useState<CenarioDoCaso | null>(null);
+  /* Votações formais (deliberação em duas etapas). */
+  const [votacoes, setVotacoes] = useState<VotacaoDoCaso[]>([]);
+  const [abrindoVotacao, setAbrindoVotacao] = useState(false);
+  const [perguntaVotacao, setPerguntaVotacao] = useState('');
+  const [descricaoVotacao, setDescricaoVotacao] = useState('');
+  const [opcoesVotacao, setOpcoesVotacao] = useState<string[]>(['', '']);
+  const [salvandoVotacao, setSalvandoVotacao] = useState(false);
+  const [confirmaEncerrarVotacao, setConfirmaEncerrarVotacao] = useState<VotacaoDoCaso | null>(null);
+  const [encerrandoVotacao, setEncerrandoVotacao] = useState(false);
+  const [gerandoTermo, setGerandoTermo] = useState<string | null>(null);
   const [decidindo, setDecidindo] = useState<string | null>(null);
   const [recusa, setRecusa] = useState<{ tipo: 'nota' | 'despesa'; id: string } | null>(null);
   const [motivoRecusa, setMotivoRecusa] = useState('');
@@ -253,6 +270,10 @@ export function PainelFamiliaCard({
     void cenariosDoEspolio(casoId).then((r) => {
       if (!vivo || !r.ok) return;
       setCenarios(r.cenarios ?? []);
+    });
+    void votacoesDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setVotacoes(r.votacoes ?? []);
     });
     return () => {
       vivo = false;
@@ -359,6 +380,72 @@ export function PainelFamiliaCard({
       }
     } finally {
       setDecidindo(null);
+    }
+  };
+
+  const abrirVotacaoLocal = async () => {
+    setSalvandoVotacao(true);
+    try {
+      const r = await abrirVotacao({
+        casoId,
+        pergunta: perguntaVotacao,
+        descricao: descricaoVotacao,
+        opcoes: opcoesVotacao,
+        nomeFalecido,
+      });
+      if (!r.ok) {
+        toast.error('Não foi possível abrir a votação', { description: r.erro });
+        return;
+      }
+      setAbrindoVotacao(false);
+      setPerguntaVotacao('');
+      setDescricaoVotacao('');
+      setOpcoesVotacao(['', '']);
+      const lista = await votacoesDoEspolio(casoId);
+      if (lista.ok) setVotacoes(lista.votacoes ?? []);
+      toast.success('Votação aberta à família', {
+        description:
+          'Cada herdeiro vota pelo próprio link; com e-mail configurado, todos recebem o aviso agora.',
+      });
+    } finally {
+      setSalvandoVotacao(false);
+    }
+  };
+
+  const encerrarVotacaoLocal = async (votacao: VotacaoDoCaso) => {
+    setEncerrandoVotacao(true);
+    try {
+      const r = await encerrarVotacao(votacao.id, nomeFalecido);
+      if (!r.ok || !r.votacao) {
+        toast.error('Não foi possível encerrar', { description: r.erro });
+        return;
+      }
+      setConfirmaEncerrarVotacao(null);
+      setVotacoes((prev) => prev.map((v) => (v.id === votacao.id ? r.votacao! : v)));
+      toast.success('Votação encerrada e apurada', {
+        description:
+          'O resultado já aparece no portal da família; baixe o termo de deliberação em PDF.',
+      });
+    } finally {
+      setEncerrandoVotacao(false);
+    }
+  };
+
+  const gerarTermo = async (votacao: VotacaoDoCaso) => {
+    setGerandoTermo(votacao.id);
+    try {
+      const blob = await montarTermoVotacaoPdf({
+        nomeFalecido,
+        nomeAdvogado,
+        agora: agoraIso(),
+        votacao,
+      });
+      baixarBlob(
+        blob,
+        `Termo de deliberacao - ${votacao.dados.pergunta.slice(0, 60) || 'votacao'}.pdf`,
+      );
+    } finally {
+      setGerandoTermo(null);
     }
   };
 
@@ -859,6 +946,77 @@ export function PainelFamiliaCard({
             </p>
           </div>
         )}
+
+        {/* Votações formais — deliberação em DUAS etapas: abrir (com aviso
+            por e-mail) e encerrar (apuração + termo em PDF). */}
+        {estado.espolioAberto && (
+          <div style={{ marginTop: 10 }}>
+            <span className="eyebrow">Votações da família</span>
+            {votacoes.map((v) => {
+              const validos = v.votos.filter((x) => x.atual);
+              const resumo = v.dados.opcoes
+                .map((o) => `${o.texto}: ${validos.filter((x) => x.opcaoId === o.id).length}`)
+                .join(' · ');
+              return (
+                <div className="linha-item" key={v.id}>
+                  <span>
+                    <strong>{v.dados.pergunta}</strong>
+                    <span className="fracao num">
+                      {v.status === 'aberta'
+                        ? ` · ABERTA — ${validos.length} de ${ativos.length} votaram`
+                        : ` · encerrada em ${dataCurta(v.encerradaEm ?? undefined)}`}
+                    </span>
+                    <span className="fund" style={{ display: 'block' }}>
+                      {resumo}
+                      {validos.length > 0 &&
+                        ` — ${validos
+                          .map(
+                            (x) =>
+                              `${x.autor}: ${
+                                v.dados.opcoes.find((o) => o.id === x.opcaoId)?.texto ?? x.opcaoId
+                              }`,
+                          )
+                          .join(' · ')}`}
+                    </span>
+                  </span>
+                  <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    {v.status === 'aberta' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={encerrandoVotacao}
+                        onClick={() => setConfirmaEncerrarVotacao(v)}
+                      >
+                        encerrar e apurar
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        loading={gerandoTermo === v.id}
+                        onClick={() => void gerarTermo(v)}
+                      >
+                        termo de deliberação (PDF)
+                      </Button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            <div style={{ marginTop: 6 }}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAbrindoVotacao(true)}
+              >
+                Abrir votação para a família
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -942,6 +1100,122 @@ export function PainelFamiliaCard({
       </p>
       </>
       )}
+
+      {/* 1ª etapa da deliberação: abrir a votação (pergunta + opções). */}
+      <Dialog open={abrindoVotacao} onOpenChange={(o) => !salvandoVotacao && setAbrindoVotacao(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Abrir votação para a família</DialogTitle>
+            <DialogDescription>
+              Cada herdeiro vota pelo próprio link e pode mudar o voto enquanto a
+              votação estiver aberta (vale o mais recente). Com o e-mail configurado,
+              todos recebem o aviso na abertura e no resultado.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="campo">
+            Pergunta (em linguagem simples)
+            <Input
+              value={perguntaVotacao}
+              placeholder="Ex.: Vendemos o apartamento da Rua X ou mantemos alugado?"
+              onChange={(e) => setPerguntaVotacao(e.target.value)}
+            />
+          </label>
+          <label className="campo">
+            Contexto (opcional)
+            <Input
+              value={descricaoVotacao}
+              placeholder="Ex.: A proposta de compra recebida vale até o fim do mês."
+              onChange={(e) => setDescricaoVotacao(e.target.value)}
+            />
+          </label>
+          {opcoesVotacao.map((op, i) => (
+            <label className="campo" key={i}>
+              Opção {i + 1}
+              <span style={{ display: 'flex', gap: 6 }}>
+                <Input
+                  value={op}
+                  placeholder={i === 0 ? 'Ex.: Vender pelo valor proposto' : 'Ex.: Manter alugado'}
+                  onChange={(e) =>
+                    setOpcoesVotacao((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+                  }
+                />
+                {opcoesVotacao.length > 2 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Remover opção ${i + 1}`}
+                    onClick={() => setOpcoesVotacao((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </Button>
+                )}
+              </span>
+            </label>
+          ))}
+          {opcoesVotacao.length < 6 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpcoesVotacao((prev) => [...prev, ''])}
+            >
+              + adicionar opção
+            </Button>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={salvandoVotacao} onClick={() => setAbrindoVotacao(false)}>
+              Cancelar
+            </Button>
+            <Button
+              loading={salvandoVotacao}
+              disabled={
+                perguntaVotacao.trim() === '' ||
+                opcoesVotacao.filter((o) => o.trim() !== '').length < 2
+              }
+              onClick={() => void abrirVotacaoLocal()}
+            >
+              Abrir votação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2ª etapa: encerrar e apurar — irreversível (deliberação nova é outra votação). */}
+      <Dialog
+        open={confirmaEncerrarVotacao !== null}
+        onOpenChange={(o) => !encerrandoVotacao && !o && setConfirmaEncerrarVotacao(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Encerrar a votação “{confirmaEncerrarVotacao?.dados.pergunta}”?</DialogTitle>
+            <DialogDescription>
+              A apuração fecha com os votos atuais (
+              {confirmaEncerrarVotacao?.votos.filter((v) => v.atual).length ?? 0} de {ativos.length}{' '}
+              herdeiro(s) votaram) e ninguém mais vota — encerrada não reabre; para
+              deliberar de novo, abra outra votação. A família é avisada do resultado.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="outline"
+              disabled={encerrandoVotacao}
+              onClick={() => setConfirmaEncerrarVotacao(null)}
+            >
+              Manter aberta
+            </Button>
+            <Button
+              variant="destructive"
+              loading={encerrandoVotacao}
+              onClick={() =>
+                confirmaEncerrarVotacao && void encerrarVotacaoLocal(confirmaEncerrarVotacao)
+              }
+            >
+              Encerrar e apurar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={confirmaRetirar !== null}

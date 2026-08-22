@@ -217,6 +217,22 @@ export function montarCenarioCompartilhado(
   };
 }
 
+/* ---------- votações formais (deliberação em duas etapas, Etapa 5) ---------- */
+
+export interface OpcaoVotacao {
+  id: string;
+  texto: string;
+}
+
+/** Conteúdo LEIGO de uma votação — pergunta e opções fechadas; a apuração
+ *  sai dos votos (a resposta mais recente de cada herdeiro vale). */
+export interface VotacaoDados {
+  v: 1;
+  pergunta: string;
+  descricao?: string;
+  opcoes: OpcaoVotacao[];
+}
+
 export function montarEspolioDoCaso(
   entrada: EntradaEspolio,
   visibilidade: VisibilidadeEspolio,

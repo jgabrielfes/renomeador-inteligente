@@ -64,6 +64,7 @@ export async function POST(req: Request, ctx: Ctx) {
     nota?: { bemId?: string; tipo?: string; texto?: string; valorSugerido?: string };
     despesa?: { categoria?: string; valor?: string; data?: string; descricao?: string };
     adesao?: { cenarioId?: string; resposta?: string; comentario?: string };
+    voto?: { votacaoId?: string; opcaoId?: string; comentario?: string };
   };
   try {
     body = await req.json();
@@ -222,6 +223,50 @@ export async function POST(req: Request, ctx: Ctx) {
       consenso = false;
     }
     return Response.json({ adesao: { id: adesao.id, resposta, comentario }, consenso });
+  }
+
+  /* ---------- voto em uma votação formal ---------- */
+  if (body?.voto && typeof body.voto === 'object') {
+    const votacaoId = String(body.voto.votacaoId ?? '').slice(0, 80);
+    const opcaoId = String(body.voto.opcaoId ?? '').slice(0, 40);
+    const comentario = String(body.voto.comentario ?? '').trim().slice(0, 400);
+    if (!votacaoId || !opcaoId) {
+      return Response.json({ erro: 'Voto sem votação ou sem opção.' }, { status: 422 });
+    }
+    const votacao = await prisma.espolioVotacao.findUnique({ where: { id: votacaoId } });
+    if (!votacao || votacao.casoId !== convite.casoId) {
+      return Response.json({ erro: 'Votação não encontrada.' }, { status: 404 });
+    }
+    if (votacao.status !== 'aberta') {
+      return Response.json(
+        { erro: 'Esta votação foi encerrada — o voto não muda mais.' },
+        { status: 409 },
+      );
+    }
+    const opcoes = (votacao.dados as { opcoes?: { id?: string }[] } | null)?.opcoes ?? [];
+    if (!opcoes.some((o) => o?.id === opcaoId)) {
+      return Response.json({ erro: 'Opção inválida para esta votação.' }, { status: 422 });
+    }
+    const voto = await prisma.espolioVoto.create({
+      data: {
+        votacaoId,
+        casoId: convite.casoId,
+        token,
+        autor,
+        opcaoId,
+        comentario: comentario === '' ? null : comentario,
+      },
+    });
+    void registrarEventoPortal(
+      convite.casoId,
+      'ESPOLIO_VOTO',
+      {
+        herdeiro: autor,
+        votacao: (votacao.dados as { pergunta?: string } | null)?.pergunta?.slice(0, 160),
+      },
+      token,
+    );
+    return Response.json({ voto: { id: voto.id, opcaoId, comentario } });
   }
 
   return Response.json({ erro: 'Nada para registrar.' }, { status: 422 });

@@ -33,7 +33,10 @@ export type TipoEventoPortal =
   | 'ESPOLIO_CENARIO'
   | 'ESPOLIO_CENARIO_RETIRADO'
   | 'ESPOLIO_ADESAO'
-  | 'ESPOLIO_CONSENSO';
+  | 'ESPOLIO_CONSENSO'
+  | 'ESPOLIO_VOTACAO_ABERTA'
+  | 'ESPOLIO_VOTO'
+  | 'ESPOLIO_VOTACAO_ENCERRADA';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -50,6 +53,8 @@ export interface DetalheEventoPortal {
   cenario?: string;
   /** ESPOLIO_ADESAO: resposta dada (aceito|nao_aceito|conversar). */
   resposta?: string;
+  /** Votações do espólio: a pergunta deliberada. */
+  votacao?: string;
 }
 
 /** Tipos que o HERDEIRO pode ver nas "Atualizações do caso" — os demais são
@@ -63,6 +68,8 @@ export const TIPOS_VISIVEIS_AO_HERDEIRO: TipoEventoPortal[] = [
   'QUINHAO_LIBERADO',
   'ESPOLIO_CENARIO',
   'ESPOLIO_CONSENSO',
+  'ESPOLIO_VOTACAO_ABERTA',
+  'ESPOLIO_VOTACAO_ENCERRADA',
 ];
 
 /** Texto LEIGO de um evento para o histórico do herdeiro — null = não exibir. */
@@ -97,6 +104,14 @@ export function textoLeigoDoEvento(
       return detalhe?.cenario
         ? `A família fechou consenso no cenário: ${detalhe.cenario}`
         : 'A família fechou consenso em um cenário de divisão';
+    case 'ESPOLIO_VOTACAO_ABERTA':
+      return detalhe?.votacao
+        ? `Nova votação aberta à família: ${detalhe.votacao}`
+        : 'Uma nova votação foi aberta à família';
+    case 'ESPOLIO_VOTACAO_ENCERRADA':
+      return detalhe?.votacao
+        ? `Votação encerrada com o resultado apurado: ${detalhe.votacao}`
+        : 'Uma votação da família foi encerrada';
     default:
       return null;
   }
@@ -129,4 +144,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_CENARIO_RETIRADO: 'Cenário de divisão retirado da conversa',
   ESPOLIO_ADESAO: 'Resposta de herdeiro a um cenário',
   ESPOLIO_CONSENSO: 'Consenso da família em um cenário (congelado)',
+  ESPOLIO_VOTACAO_ABERTA: 'Votação aberta à família',
+  ESPOLIO_VOTO: 'Voto de herdeiro em votação',
+  ESPOLIO_VOTACAO_ENCERRADA: 'Votação encerrada (resultado apurado)',
 };

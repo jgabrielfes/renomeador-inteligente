@@ -65,6 +65,7 @@ export async function GET(req: Request, ctx: Ctx) {
   let espolioNotas: unknown[] = [];
   let espolioDespesas: unknown[] = [];
   let espolioCenarios: unknown[] = [];
+  let espolioVotacoes: unknown[] = [];
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
@@ -89,7 +90,7 @@ export async function GET(req: Request, ctx: Ctx) {
       // outros veem (com autor). O token de cada autor NUNCA sai daqui: é a
       // credencial do convite dele; `minha` marca só os fatos deste token.
       if (espolio) {
-        const [notas, despesas, cenarios, adesoes] = await Promise.all([
+        const [notas, despesas, cenarios, adesoes, votacoes, votos] = await Promise.all([
           prisma.espolioNota.findMany({
             where: { casoId: convite.casoId },
             orderBy: { createdAt: 'asc' },
@@ -110,7 +111,40 @@ export async function GET(req: Request, ctx: Ctx) {
             orderBy: { createdAt: 'asc' },
             take: 1000,
           }),
+          prisma.espolioVotacao.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+          }),
+          prisma.espolioVoto.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 2000,
+          }),
         ]);
+        // Votações formais: mesma disciplina dos cenários — o voto mais
+        // recente de cada herdeiro vale; tokens alheios nunca saem.
+        espolioVotacoes = votacoes.map((v) => {
+          const daVotacao = votos.filter((x) => x.votacaoId === v.id);
+          const ultimaPorToken = new Map<string, number>();
+          daVotacao.forEach((x, i) => ultimaPorToken.set(x.token, i));
+          const meu = [...daVotacao].reverse().find((x) => x.token === token);
+          return {
+            id: v.id,
+            status: v.status,
+            dados: v.dados,
+            encerradaEm: v.encerradaEm ? v.encerradaEm.toISOString().slice(0, 10) : null,
+            votos: daVotacao.map((x, i) => ({
+              autor: x.autor,
+              opcaoId: x.opcaoId,
+              comentario: x.comentario,
+              em: x.createdAt.toISOString().slice(0, 10),
+              atual: ultimaPorToken.get(x.token) === i,
+              minha: x.token === token,
+            })),
+            meuVoto: meu?.opcaoId ?? null,
+          };
+        });
         // Cenários de divisão: a família vê os mesmos números; a resposta
         // mais recente de cada herdeiro é a que vale (append-only).
         espolioCenarios = cenarios.map((c) => {
@@ -190,6 +224,7 @@ export async function GET(req: Request, ctx: Ctx) {
       espolioNotas = [];
       espolioDespesas = [];
       espolioCenarios = [];
+      espolioVotacoes = [];
     }
   }
 
@@ -204,6 +239,7 @@ export async function GET(req: Request, ctx: Ctx) {
           espolioNotas,
           espolioDespesas,
           espolioCenarios,
+          espolioVotacoes,
           emailAtivo: emailHabilitado(),
         }
       : convite,

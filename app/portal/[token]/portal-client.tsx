@@ -21,7 +21,11 @@ type Ev = { target: { value: string; files?: FileList | null; checked?: boolean 
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { PainelHerdeiro } from '@/lib/portal/painel';
-import type { CenarioCompartilhado, EspolioCompartilhado } from '@/lib/portal/espolio';
+import type {
+  CenarioCompartilhado,
+  EspolioCompartilhado,
+  VotacaoDados,
+} from '@/lib/portal/espolio';
 
 /** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
  *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
@@ -73,6 +77,24 @@ interface CenarioEspolioPortal {
   minhaResposta: string | null;
 }
 
+interface VotoPortal {
+  autor: string;
+  opcaoId: string;
+  comentario: string | null;
+  em: string;
+  atual: boolean;
+  minha: boolean;
+}
+
+interface VotacaoEspolioPortal {
+  id: string;
+  status: string; // aberta | encerrada
+  dados: VotacaoDados;
+  encerradaEm: string | null;
+  votos: VotoPortal[];
+  meuVoto: string | null;
+}
+
 type ConviteComPainel = ConviteHerdeiro & {
   painel?: PainelHerdeiro | null;
   /** Espaço do Espólio: o snapshot COMPARTILHADO — igual para todos. */
@@ -80,6 +102,7 @@ type ConviteComPainel = ConviteHerdeiro & {
   espolioNotas?: NotaEspolioPortal[];
   espolioDespesas?: DespesaEspolioPortal[];
   espolioCenarios?: CenarioEspolioPortal[];
+  espolioVotacoes?: VotacaoEspolioPortal[];
   emailAtivo?: boolean;
 };
 
@@ -235,6 +258,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       espolioNotas: prev?.espolioNotas ?? [],
       espolioDespesas: prev?.espolioDespesas ?? [],
       espolioCenarios: prev?.espolioCenarios ?? [],
+      espolioVotacoes: prev?.espolioVotacoes ?? [],
       emailAtivo: prev?.emailAtivo ?? false,
     }));
 
@@ -248,6 +272,28 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setConvite((prev) =>
       prev ? { ...prev, espolioDespesas: [...(prev.espolioDespesas ?? []), d] } : prev,
     );
+  /** Voto enviado nesta visita — atualiza a votação local (vale o mais recente). */
+  const registrarVotoLocal = (votacaoId: string, opcaoId: string, comentario: string) =>
+    setConvite((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        espolioVotacoes: (prev.espolioVotacoes ?? []).map((v) => {
+          if (v.id !== votacaoId) return v;
+          const votos = v.votos.map((x) => (x.minha ? { ...x, atual: false } : x));
+          votos.push({
+            autor: prev.nomeHerdeiro,
+            opcaoId,
+            comentario: comentario === '' ? null : comentario,
+            em: '',
+            atual: true,
+            minha: true,
+          });
+          return { ...v, votos, meuVoto: opcaoId };
+        }),
+      };
+    });
+
   /** Resposta a um cenário enviada nesta visita — atualiza a lista local;
    *  com consenso, o cenário já aparece congelado. */
   const registrarAdesaoLocal = (
@@ -1074,6 +1120,27 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               )}
             </>
           )}
+
+          {/* ---------- votações formais da família ---------- */}
+          {(convite.espolioVotacoes ?? []).length > 0 && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Votações da família</h3>
+              <p className="fund" style={{ marginBottom: 4 }}>
+                Decisões práticas do inventário postas em votação pelo escritório. Seu
+                voto fica registrado com data — você pode mudá-lo enquanto a votação
+                estiver aberta (vale o mais recente) — e o resultado é apurado para
+                todos verem.
+              </p>
+              {(convite.espolioVotacoes ?? []).map((v) => (
+                <VotacaoDoEspolio
+                  key={v.id}
+                  token={token}
+                  votacao={v}
+                  onVotou={registrarVotoLocal}
+                />
+              ))}
+            </>
+          )}
         </>
       )}
 
@@ -1625,6 +1692,141 @@ function CenarioDoEspolio({
             o cenário fecha como consenso.
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * UMA votação formal: pergunta, opções, o quadro de votos válidos e o SEU
+ * voto (mutável enquanto aberta — vale o mais recente). Encerrada mostra a
+ * apuração final.
+ */
+function VotacaoDoEspolio({
+  token,
+  votacao,
+  onVotou,
+}: {
+  token: string;
+  votacao: VotacaoEspolioPortal;
+  onVotou: (votacaoId: string, opcaoId: string, comentario: string) => void;
+}) {
+  const [opcao, setOpcao] = useState(votacao.meuVoto ?? '');
+  const [comentario, setComentario] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const validos = votacao.votos.filter((v) => v.atual);
+  const textoDaOpcao = (id: string) =>
+    votacao.dados.opcoes.find((o) => o.id === id)?.texto ?? id;
+
+  const votar = async () => {
+    setErroEnvio(null);
+    if (!opcao) {
+      setErroEnvio('Escolha uma opção antes de votar.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/portal/${token}/espolio`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          voto: { votacaoId: votacao.id, opcaoId: opcao, comentario: comentario.trim() },
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+      if (r.ok) {
+        onVotou(votacao.id, opcao, comentario.trim());
+        setComentario('');
+      } else {
+        setErroEnvio(corpo?.erro ?? 'Não foi possível votar — tente de novo.');
+      }
+    } catch {
+      setErroEnvio('Não foi possível votar — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className={`nota ${votacao.status === 'encerrada' ? 'registro' : ''}`} style={{ marginTop: 8 }}>
+      <span className="eyebrow">
+        {votacao.status === 'encerrada'
+          ? `Votação encerrada${votacao.encerradaEm ? ` em ${dataLonga(votacao.encerradaEm)}` : ''}`
+          : 'Votação aberta'}
+      </span>
+      <h3 style={{ marginTop: 2 }}>{votacao.dados.pergunta}</h3>
+      {votacao.dados.descricao && <p className="fund">{votacao.dados.descricao}</p>}
+
+      <p style={{ margin: '8px 0 2px' }}>
+        <strong>{votacao.status === 'encerrada' ? 'Resultado apurado' : 'Votos até agora'}</strong>
+      </p>
+      <ul className="custos-portal">
+        {votacao.dados.opcoes.map((o) => (
+          <li key={o.id}>
+            <span>{o.texto}</span>
+            <span className="num">
+              {validos.filter((v) => v.opcaoId === o.id).length} voto(s)
+            </span>
+          </li>
+        ))}
+      </ul>
+      {validos.length > 0 && (
+        <ul className="custos-portal" style={{ marginTop: 4 }}>
+          {validos.map((v, i) => (
+            <li key={i}>
+              <span>
+                {v.autor}
+                {v.minha ? ' (você)' : ''}
+                {v.comentario && <span className="fase-descricao">“{v.comentario}”</span>}
+              </span>
+              <span>{textoDaOpcao(v.opcaoId)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {votacao.status === 'aberta' && (
+        <>
+          <p style={{ margin: '10px 0 2px' }}>
+            <strong>
+              {votacao.meuVoto
+                ? `Seu voto atual: "${textoDaOpcao(votacao.meuVoto)}" — mudou de ideia? Vote de novo.`
+                : 'Seu voto'}
+            </strong>
+          </p>
+          {votacao.dados.opcoes.map((o) => (
+            <label className="marcar" key={o.id} style={{ fontWeight: 400, display: 'block' }}>
+              <input
+                type="radio"
+                name={`votacao-${votacao.id}`}
+                checked={opcao === o.id}
+                onChange={() => setOpcao(o.id)}
+              />{' '}
+              {o.texto}
+            </label>
+          ))}
+          <Campo rotulo="Comentário (opcional — a família e o escritório leem)">
+            <input
+              type="text"
+              maxLength={400}
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+            />
+          </Campo>
+          {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+          <div style={{ marginTop: 8 }}>
+            <button className="acao" type="button" disabled={enviando} onClick={() => void votar()}>
+              {enviando ? 'Registrando…' : votacao.meuVoto ? 'Registrar novo voto' : 'Registrar meu voto'}
+            </button>
+          </div>
+        </>
+      )}
+      {votacao.status === 'encerrada' && (
+        <p className="fund" style={{ marginTop: 8 }}>
+          A deliberação orienta o trabalho do escritório; o ato formal continua sendo a
+          escritura ou a decisão judicial, com a assinatura de todos.
+        </p>
       )}
     </div>
   );

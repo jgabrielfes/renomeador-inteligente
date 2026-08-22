@@ -22,7 +22,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { EH_SUCESSORISTA } from "@/lib/app";
-import { notificarMudancaDeFase, notificarQuinhaoLiberado } from "@/lib/portal/notificar";
+import {
+  notificarMudancaDeFase,
+  notificarQuinhaoLiberado,
+  notificarVotacao,
+} from "@/lib/portal/notificar";
+import type { VotacaoDados } from "@/lib/portal/espolio";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
 import type { CenarioCompartilhado, EspolioCompartilhado } from "@/lib/portal/espolio";
 import type { ConviteHerdeiro } from "@/lib/portal/store";
@@ -234,6 +239,8 @@ export async function encerrarPainel(
       prisma.espolioDespesa.deleteMany({ where: { casoId: id } }),
       prisma.espolioCenario.deleteMany({ where: { casoId: id } }),
       prisma.espolioAdesao.deleteMany({ where: { casoId: id } }),
+      prisma.espolioVotacao.deleteMany({ where: { casoId: id } }),
+      prisma.espolioVoto.deleteMany({ where: { casoId: id } }),
     ]);
     return { ok: true, convitesApagados: convites.count };
   } catch {
@@ -718,6 +725,215 @@ export async function congelarCenario(
     return { ok: true };
   } catch {
     return { ok: false, erro: "Falha ao alterar o cenário — tente novamente." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Espaço do Espólio — votações formais (deliberação em duas etapas)   */
+/* ------------------------------------------------------------------ */
+
+export interface VotoDaVotacao {
+  autor: string;
+  opcaoId: string;
+  comentario: string | null;
+  em: string;
+  /** true = o voto MAIS RECENTE daquele herdeiro (o que vale na apuração). */
+  atual: boolean;
+}
+
+export interface VotacaoDoCaso {
+  id: string;
+  status: string; // aberta | encerrada
+  dados: VotacaoDados;
+  abertaEm: string;
+  encerradaEm: string | null;
+  votos: VotoDaVotacao[];
+}
+
+async function origemDaRequisicao(): Promise<string> {
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    return host ? `${proto}://${host}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function marcarVotosAtuais(
+  linhas: { token: string; autor: string; opcaoId: string; comentario: string | null; createdAt: Date }[],
+): VotoDaVotacao[] {
+  const ultimaPorToken = new Map<string, number>();
+  linhas.forEach((l, i) => ultimaPorToken.set(l.token, i));
+  return linhas.map((l, i) => ({
+    autor: l.autor,
+    opcaoId: l.opcaoId,
+    comentario: l.comentario,
+    em: l.createdAt.toISOString(),
+    atual: ultimaPorToken.get(l.token) === i,
+  }));
+}
+
+/** Votações do caso com os votos (para o card e o termo em PDF). */
+export async function votacoesDoEspolio(
+  casoId: string,
+): Promise<{ ok: boolean; votacoes?: VotacaoDoCaso[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const [votacoes, votos] = await Promise.all([
+      prisma.espolioVotacao.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 50,
+      }),
+      prisma.espolioVoto.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 2000,
+      }),
+    ]);
+    return {
+      ok: true,
+      votacoes: votacoes.map((v) => ({
+        id: v.id,
+        status: v.status,
+        dados: v.dados as unknown as VotacaoDados,
+        abertaEm: v.createdAt.toISOString(),
+        encerradaEm: v.encerradaEm?.toISOString() ?? null,
+        votos: marcarVotosAtuais(votos.filter((x) => x.votacaoId === v.id)),
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar as votações." };
+  }
+}
+
+/**
+ * PRIMEIRA etapa da deliberação: abre a votação (pergunta + opções fechadas)
+ * e avisa a família por e-mail (env-gated). A votação some do portal com o
+ * espólio fechado; encerrada não reabre — deliberação nova é outra votação.
+ */
+export async function abrirVotacao(dados: {
+  casoId: string;
+  pergunta: string;
+  descricao?: string;
+  opcoes: string[];
+  nomeFalecido?: string;
+}): Promise<{ ok: boolean; votacaoId?: string; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const casoId = String(dados.casoId ?? "").slice(0, 80);
+  if (!casoId) return { ok: false, erro: "Caso sem identificação." };
+  const pergunta = String(dados.pergunta ?? "").trim().slice(0, 300);
+  if (!pergunta) return { ok: false, erro: "Escreva a pergunta da votação." };
+  const opcoes = (Array.isArray(dados.opcoes) ? dados.opcoes : [])
+    .map((o) => String(o ?? "").trim().slice(0, 200))
+    .filter((o) => o !== "")
+    .slice(0, 6);
+  if (opcoes.length < 2) {
+    return { ok: false, erro: "A votação precisa de ao menos duas opções." };
+  }
+  const descricao = String(dados.descricao ?? "").trim().slice(0, 600);
+  try {
+    if (!(await podeGerirCaso(casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const conteudo: VotacaoDados = {
+      v: 1,
+      pergunta,
+      descricao: descricao === "" ? undefined : descricao,
+      opcoes: opcoes.map((texto, i) => ({ id: `op-${i + 1}`, texto })),
+    };
+    const criada = await prisma.espolioVotacao.create({
+      data: { casoId, dados: JSON.parse(JSON.stringify(conteudo)) as object },
+    });
+    void registrarEventoPortal(casoId, "ESPOLIO_VOTACAO_ABERTA", { votacao: pergunta });
+    void notificarVotacao(
+      casoId,
+      String(dados.nomeFalecido ?? "").slice(0, 160),
+      pergunta,
+      "aberta",
+      undefined,
+      await origemDaRequisicao(),
+    );
+    return { ok: true, votacaoId: criada.id };
+  } catch {
+    return { ok: false, erro: "Falha ao abrir a votação — tente novamente." };
+  }
+}
+
+/**
+ * SEGUNDA etapa: encerra a votação, apura o resultado (voto mais recente de
+ * cada herdeiro) e avisa a família por e-mail. Encerrada não reabre.
+ */
+export async function encerrarVotacao(
+  votacaoId: string,
+  nomeFalecido?: string,
+): Promise<{ ok: boolean; votacao?: VotacaoDoCaso; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(votacaoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Votação sem identificação." };
+  try {
+    const votacao = await prisma.espolioVotacao.findUnique({ where: { id } });
+    if (!votacao) return { ok: false, erro: "Votação não encontrada." };
+    if (votacao.status !== "aberta") return { ok: false, erro: "Esta votação já foi encerrada." };
+    if (!(await podeGerirCaso(votacao.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const encerrada = await prisma.espolioVotacao.update({
+      where: { id },
+      data: { status: "encerrada", encerradaEm: new Date() },
+    });
+    const votos = marcarVotosAtuais(
+      await prisma.espolioVoto.findMany({
+        where: { votacaoId: id },
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+    const conteudo = encerrada.dados as unknown as VotacaoDados;
+    // Resultado leigo para o e-mail: contagem dos votos válidos por opção.
+    const contagem = new Map<string, number>();
+    for (const v of votos.filter((x) => x.atual)) {
+      contagem.set(v.opcaoId, (contagem.get(v.opcaoId) ?? 0) + 1);
+    }
+    const resultado = conteudo.opcoes
+      .map((o) => `"${o.texto}": ${contagem.get(o.id) ?? 0} voto(s)`)
+      .join("; ");
+    void registrarEventoPortal(votacao.casoId, "ESPOLIO_VOTACAO_ENCERRADA", {
+      votacao: conteudo.pergunta,
+    });
+    void notificarVotacao(
+      votacao.casoId,
+      String(nomeFalecido ?? "").slice(0, 160),
+      conteudo.pergunta,
+      "encerrada",
+      resultado,
+      await origemDaRequisicao(),
+    );
+    return {
+      ok: true,
+      votacao: {
+        id: encerrada.id,
+        status: encerrada.status,
+        dados: conteudo,
+        abertaEm: encerrada.createdAt.toISOString(),
+        encerradaEm: encerrada.encerradaEm?.toISOString() ?? null,
+        votos,
+      },
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao encerrar a votação — tente novamente." };
   }
 }
 

@@ -285,6 +285,42 @@ model EspolioAdesao {
   @@map("espolio_adesoes")
 }
 
+// VOTAÇÃO formal do espólio (deliberação em duas etapas): o advogado ABRE
+// (pergunta + opções fechadas em `dados`, com aviso por e-mail) e ENCERRA
+// (apuração + termo de deliberação em PDF no navegador). `dados` é leigo,
+// montado no cliente; encerrada não reabre — deliberação nova é outra linha.
+// Sem FK; quem apaga é o Encerrar compartilhamento.
+model EspolioVotacao {
+  id          String    @id @default(cuid())
+  casoId      String
+  dados       Json
+  status      String    @default("aberta") // aberta|encerrada
+  encerradaEm DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([casoId, createdAt])
+  @@map("espolio_votacoes")
+}
+
+// VOTO de um herdeiro — imutável e append-only: mudar o voto é linha nova
+// enquanto a votação está aberta (a mais recente vale); o histórico inteiro
+// fica para o termo e o registro de atendimento.
+model EspolioVoto {
+  id         String   @id @default(cuid())
+  votacaoId  String
+  casoId     String
+  token      String
+  autor      String
+  opcaoId    String
+  comentario String?
+  createdAt  DateTime @default(now())
+
+  @@index([votacaoId, createdAt])
+  @@index([casoId, createdAt])
+  @@map("espolio_votos")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:
