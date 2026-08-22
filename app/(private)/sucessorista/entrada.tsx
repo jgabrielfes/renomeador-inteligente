@@ -9,7 +9,7 @@ import Link from 'next/link';
 import './sucessorista.css';
 
 const cartao: CSSProperties = {
-  flex: '1 1 320px',
+  flex: '1 1 260px',
   display: 'flex',
   flexDirection: 'column',
   gap: 10,
@@ -23,23 +23,44 @@ export function EntradaSucessorista() {
     <div className="sucessorista">
       <main className="folha" style={{ margin: '0 auto', maxWidth: 960 }}>
         <span className="eyebrow">O Sucessorista</span>
-        <h1>O inventário, do primeiro dia à escritura</h1>
+        <h1>O inventário, do primeiro dia ao encerramento</h1>
         <p className="subtitulo">
-          Duas portas, um mesmo cuidado — escolha a sua:
+          Três portas, um mesmo cuidado — escolha a sua:
         </p>
 
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'stretch', marginTop: 8 }}>
           <section className="nota" style={cartao}>
-            <span className="eyebrow">Para advogados e escreventes</span>
-            <h3 style={{ margin: 0 }}>A ferramenta profissional</h3>
+            <span className="eyebrow">Para advogados(as)</span>
+            <h3 style={{ margin: 0 }}>Do primeiro atendimento ao registro</h3>
             <p style={{ margin: 0 }}>
-              O caderno digital do inventário: leitura dos documentos do caso com IA,
-              partilha, custas e ITCMD calculados com fundamento legal, minutas de
-              escritura e petições, e um portal para a família acompanhar o processo.
+              Leitura dos documentos do caso com IA, partilha e ITCMD com fundamento
+              legal, honorários e petições, minuta ao Tabelionato — e um portal para a
+              família acompanhar o processo.
             </p>
             <p className="fund" style={{ margin: 0 }}>
               Os documentos são processados no seu navegador — nada sai da sua máquina
               sem a sua ordem.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 6 }}>
+              <Link className="acao" href="/login" style={botao}>
+                Entrar
+              </Link>
+              <Link className="acao secundaria" href="/cadastro" style={botao}>
+                Criar conta
+              </Link>
+            </div>
+          </section>
+
+          <section className="nota" style={cartao}>
+            <span className="eyebrow">Para escreventes e tabeliães</span>
+            <h3 style={{ margin: 0 }}>A escritura do jeito do balcão</h3>
+            <p style={{ margin: 0 }}>
+              Minuta de escritura calibrada por atos reais — qualificação completa,
+              partilha em tabelas, sobrepartilha e dois óbitos — com emolumentos,
+              custas e a conferência registral do caso.
+            </p>
+            <p className="fund" style={{ margin: 0 }}>
+              O perfil Escrevente é escolhido dentro da conta, no primeiro acesso.
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 6 }}>
               <Link className="acao" href="/login" style={botao}>
