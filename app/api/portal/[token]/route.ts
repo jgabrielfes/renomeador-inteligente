@@ -64,6 +64,7 @@ export async function GET(req: Request, ctx: Ctx) {
   let espolio: unknown = null;
   let espolioNotas: unknown[] = [];
   let espolioDespesas: unknown[] = [];
+  let espolioCenarios: unknown[] = [];
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
@@ -88,7 +89,7 @@ export async function GET(req: Request, ctx: Ctx) {
       // outros veem (com autor). O token de cada autor NUNCA sai daqui: é a
       // credencial do convite dele; `minha` marca só os fatos deste token.
       if (espolio) {
-        const [notas, despesas] = await Promise.all([
+        const [notas, despesas, cenarios, adesoes] = await Promise.all([
           prisma.espolioNota.findMany({
             where: { casoId: convite.casoId },
             orderBy: { createdAt: 'asc' },
@@ -99,7 +100,39 @@ export async function GET(req: Request, ctx: Ctx) {
             orderBy: { createdAt: 'asc' },
             take: 200,
           }),
+          prisma.espolioCenario.findMany({
+            where: { casoId: convite.casoId, status: { not: 'retirado' } },
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+          }),
+          prisma.espolioAdesao.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 1000,
+          }),
         ]);
+        // Cenários de divisão: a família vê os mesmos números; a resposta
+        // mais recente de cada herdeiro é a que vale (append-only).
+        espolioCenarios = cenarios.map((c) => {
+          const doCenario = adesoes.filter((a) => a.cenarioId === c.id);
+          const ultimaPorToken = new Map<string, number>();
+          doCenario.forEach((a, i) => ultimaPorToken.set(a.token, i));
+          const minha = [...doCenario].reverse().find((a) => a.token === token);
+          return {
+            id: c.id,
+            status: c.status,
+            dados: c.dados,
+            adesoes: doCenario.map((a, i) => ({
+              autor: a.autor,
+              resposta: a.resposta,
+              comentario: a.comentario,
+              em: a.createdAt.toISOString().slice(0, 10),
+              atual: ultimaPorToken.get(a.token) === i,
+              minha: a.token === token,
+            })),
+            minhaResposta: minha?.resposta ?? null,
+          };
+        });
         espolioNotas = notas.map((n) => ({
           id: n.id,
           autor: n.autor,
@@ -156,6 +189,7 @@ export async function GET(req: Request, ctx: Ctx) {
       espolio = null;
       espolioNotas = [];
       espolioDespesas = [];
+      espolioCenarios = [];
     }
   }
 
@@ -169,6 +203,7 @@ export async function GET(req: Request, ctx: Ctx) {
           espolio,
           espolioNotas,
           espolioDespesas,
+          espolioCenarios,
           emailAtivo: emailHabilitado(),
         }
       : convite,

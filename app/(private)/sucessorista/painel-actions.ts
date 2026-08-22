@@ -24,7 +24,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { EH_SUCESSORISTA } from "@/lib/app";
 import { notificarMudancaDeFase, notificarQuinhaoLiberado } from "@/lib/portal/notificar";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
-import type { EspolioCompartilhado } from "@/lib/portal/espolio";
+import type { CenarioCompartilhado, EspolioCompartilhado } from "@/lib/portal/espolio";
 import type { ConviteHerdeiro } from "@/lib/portal/store";
 import type { DetalheEventoPortal } from "@/lib/portal/eventos";
 import { registrarEventoPortal } from "@/lib/portal/eventos-server";
@@ -232,6 +232,8 @@ export async function encerrarPainel(
       prisma.portalEvento.deleteMany({ where: { casoId: id } }),
       prisma.espolioNota.deleteMany({ where: { casoId: id } }),
       prisma.espolioDespesa.deleteMany({ where: { casoId: id } }),
+      prisma.espolioCenario.deleteMany({ where: { casoId: id } }),
+      prisma.espolioAdesao.deleteMany({ where: { casoId: id } }),
     ]);
     return { ok: true, convitesApagados: convites.count };
   } catch {
@@ -522,6 +524,200 @@ export async function decidirDespesa(
     };
   } catch {
     return { ok: false, erro: "Falha ao decidir — tente novamente." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Espaço do Espólio — cenários de divisão (simulador, Etapa 4)        */
+/* ------------------------------------------------------------------ */
+
+export interface AdesaoDoCenario {
+  autor: string;
+  resposta: string; // aceito | nao_aceito | conversar
+  comentario: string | null;
+  em: string;
+  /** true = é a resposta MAIS RECENTE daquele herdeiro (a que vale). */
+  atual: boolean;
+}
+
+export interface CenarioDoCaso {
+  id: string;
+  status: string; // proposto | congelado | retirado
+  dados: CenarioCompartilhado;
+  criadoEm: string;
+  atualizadoEm: string;
+  adesoes: AdesaoDoCenario[];
+}
+
+const TAMANHO_MAXIMO_CENARIO = 200_000;
+
+/** Marca `atual` na resposta mais recente de cada token (append-only: mudar
+ *  de ideia é linha nova; a mais recente vale). */
+function marcarAtuais(
+  linhas: { token: string; autor: string; resposta: string; comentario: string | null; createdAt: Date }[],
+): AdesaoDoCenario[] {
+  const ultimaPorToken = new Map<string, number>();
+  linhas.forEach((l, i) => ultimaPorToken.set(l.token, i));
+  return linhas.map((l, i) => ({
+    autor: l.autor,
+    resposta: l.resposta,
+    comentario: l.comentario,
+    em: l.createdAt.toISOString(),
+    atual: ultimaPorToken.get(l.token) === i,
+  }));
+}
+
+/** Cenários do caso com as adesões (para o card do advogado). */
+export async function cenariosDoEspolio(
+  casoId: string,
+): Promise<{ ok: boolean; cenarios?: CenarioDoCaso[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const [cenarios, adesoes] = await Promise.all([
+      prisma.espolioCenario.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 50,
+      }),
+      prisma.espolioAdesao.findMany({
+        where: { casoId: id },
+        orderBy: { createdAt: "asc" },
+        take: 1000,
+      }),
+    ]);
+    return {
+      ok: true,
+      cenarios: cenarios.map((c) => ({
+        id: c.id,
+        status: c.status,
+        dados: c.dados as unknown as CenarioCompartilhado,
+        criadoEm: c.createdAt.toISOString(),
+        atualizadoEm: c.updatedAt.toISOString(),
+        adesoes: marcarAtuais(adesoes.filter((a) => a.cenarioId === c.id)),
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar os cenários." };
+  }
+}
+
+/**
+ * Cria ou atualiza um cenário proposto à família. O snapshot chega PRONTO do
+ * navegador (montarCenarioCompartilhado — allowlist); aqui só se valida,
+ * autoriza e grava. Cenário congelado não se edita (reabra antes); retirado
+ * não volta — proponha um novo.
+ */
+export async function salvarCenario(dados: {
+  casoId: string;
+  cenarioId?: string;
+  cenario: CenarioCompartilhado;
+}): Promise<{ ok: boolean; cenarioId?: string; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const casoId = String(dados.casoId ?? "").slice(0, 80);
+  if (!casoId) return { ok: false, erro: "Caso sem identificação." };
+  const titulo = String(dados.cenario?.titulo ?? "").trim();
+  if (!titulo) return { ok: false, erro: "Dê um título ao cenário." };
+  const snapshot = JSON.parse(JSON.stringify(dados.cenario)) as object;
+  if (JSON.stringify(snapshot).length > TAMANHO_MAXIMO_CENARIO) {
+    return { ok: false, erro: "Cenário grande demais para publicar." };
+  }
+  try {
+    if (!(await podeGerirCaso(casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    if (dados.cenarioId) {
+      const existente = await prisma.espolioCenario.findUnique({
+        where: { id: String(dados.cenarioId).slice(0, 80) },
+      });
+      if (!existente || existente.casoId !== casoId) {
+        return { ok: false, erro: "Cenário não encontrado." };
+      }
+      if (existente.status !== "proposto") {
+        return { ok: false, erro: "Cenário congelado ou retirado não se edita — reabra ou proponha um novo." };
+      }
+      await prisma.espolioCenario.update({
+        where: { id: existente.id },
+        data: { dados: snapshot },
+      });
+      return { ok: true, cenarioId: existente.id };
+    }
+    const criado = await prisma.espolioCenario.create({
+      data: { casoId, dados: snapshot },
+    });
+    void registrarEventoPortal(casoId, "ESPOLIO_CENARIO", { cenario: titulo });
+    return { ok: true, cenarioId: criado.id };
+  } catch {
+    return { ok: false, erro: "Falha ao salvar o cenário — tente novamente." };
+  }
+}
+
+/** Retira um cenário da conversa (fica registrado; não volta a proposto). */
+export async function retirarCenario(
+  cenarioId: string,
+): Promise<{ ok: boolean; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(cenarioId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Cenário sem identificação." };
+  try {
+    const cenario = await prisma.espolioCenario.findUnique({ where: { id } });
+    if (!cenario) return { ok: false, erro: "Cenário não encontrado." };
+    if (!(await podeGerirCaso(cenario.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    await prisma.espolioCenario.update({ where: { id }, data: { status: "retirado" } });
+    void registrarEventoPortal(cenario.casoId, "ESPOLIO_CENARIO_RETIRADO", {
+      cenario: (cenario.dados as { titulo?: string } | null)?.titulo,
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: "Falha ao retirar — tente novamente." };
+  }
+}
+
+/**
+ * Congela (consenso fechado — também vale para o consenso colhido fora do
+ * portal) ou REABRE um cenário congelado. Congelado trava edição e novas
+ * adesões.
+ */
+export async function congelarCenario(
+  cenarioId: string,
+  congelar: boolean,
+): Promise<{ ok: boolean; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(cenarioId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Cenário sem identificação." };
+  try {
+    const cenario = await prisma.espolioCenario.findUnique({ where: { id } });
+    if (!cenario) return { ok: false, erro: "Cenário não encontrado." };
+    if (cenario.status === "retirado") return { ok: false, erro: "Cenário retirado não reabre." };
+    if (!(await podeGerirCaso(cenario.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    await prisma.espolioCenario.update({
+      where: { id },
+      data: { status: congelar ? "congelado" : "proposto" },
+    });
+    if (congelar) {
+      void registrarEventoPortal(cenario.casoId, "ESPOLIO_CONSENSO", {
+        cenario: (cenario.dados as { titulo?: string } | null)?.titulo,
+      });
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: "Falha ao alterar o cenário — tente novamente." };
   }
 }
 

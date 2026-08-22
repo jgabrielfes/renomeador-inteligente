@@ -63,6 +63,7 @@ export async function POST(req: Request, ctx: Ctx) {
   let body: {
     nota?: { bemId?: string; tipo?: string; texto?: string; valorSugerido?: string };
     despesa?: { categoria?: string; valor?: string; data?: string; descricao?: string };
+    adesao?: { cenarioId?: string; resposta?: string; comentario?: string };
   };
   try {
     body = await req.json();
@@ -148,6 +149,79 @@ export async function POST(req: Request, ctx: Ctx) {
       token,
     );
     return Response.json({ despesa, convite: atualizado });
+  }
+
+  /* ---------- adesão a um cenário de divisão ---------- */
+  if (body?.adesao && typeof body.adesao === 'object') {
+    const cenarioId = String(body.adesao.cenarioId ?? '').slice(0, 80);
+    const resposta = String(body.adesao.resposta ?? '');
+    const comentario = String(body.adesao.comentario ?? '').trim().slice(0, 400);
+    if (!cenarioId || !['aceito', 'nao_aceito', 'conversar'].includes(resposta)) {
+      return Response.json({ erro: 'Adesão sem cenário ou com resposta inválida.' }, { status: 422 });
+    }
+    const cenario = await prisma.espolioCenario.findUnique({ where: { id: cenarioId } });
+    if (!cenario || cenario.casoId !== convite.casoId) {
+      return Response.json({ erro: 'Cenário não encontrado.' }, { status: 404 });
+    }
+    if (cenario.status !== 'proposto') {
+      return Response.json(
+        { erro: 'Este cenário foi fechado ou retirado — a resposta não muda mais.' },
+        { status: 409 },
+      );
+    }
+    const adesao = await prisma.espolioAdesao.create({
+      data: {
+        cenarioId,
+        casoId: convite.casoId,
+        token,
+        autor,
+        resposta,
+        comentario: comentario === '' ? null : comentario,
+      },
+    });
+    const tituloCenario = (cenario.dados as { titulo?: string } | null)?.titulo;
+    void registrarEventoPortal(
+      convite.casoId,
+      'ESPOLIO_ADESAO',
+      { herdeiro: autor, cenario: tituloCenario, resposta },
+      token,
+    );
+    // CONSENSO: a resposta mais recente de TODO convite ativo é "aceito" —
+    // o cenário congela sozinho e a família (e o advogado) veem o fecho.
+    let consenso = false;
+    try {
+      const [convitesDoCaso, adesoes] = await Promise.all([
+        prisma.portalConvite.findMany({
+          where: { casoId: convite.casoId },
+          select: { token: true, dados: true },
+        }),
+        prisma.espolioAdesao.findMany({
+          where: { cenarioId },
+          orderBy: { createdAt: 'asc' },
+          select: { token: true, resposta: true },
+        }),
+      ]);
+      const ativos = convitesDoCaso.filter(
+        (c) => !(c.dados as { revogadoEm?: string } | null)?.revogadoEm,
+      );
+      const ultimaPorToken = new Map<string, string>();
+      for (const a of adesoes) ultimaPorToken.set(a.token, a.resposta);
+      consenso =
+        ativos.length > 0 &&
+        ativos.every((c) => ultimaPorToken.get(c.token) === 'aceito');
+      if (consenso) {
+        await prisma.espolioCenario.update({
+          where: { id: cenarioId },
+          data: { status: 'congelado' },
+        });
+        void registrarEventoPortal(convite.casoId, 'ESPOLIO_CONSENSO', {
+          cenario: tituloCenario,
+        });
+      }
+    } catch {
+      consenso = false;
+    }
+    return Response.json({ adesao: { id: adesao.id, resposta, comentario }, consenso });
   }
 
   return Response.json({ erro: 'Nada para registrar.' }, { status: 422 });

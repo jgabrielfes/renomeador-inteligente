@@ -145,8 +145,12 @@ import {
   mmc,
   participantesDoResultado,
   pctNum,
+  resumoDoCenario,
   temAlocacao,
+  type DespesaAdiantada,
 } from '@/lib/partilha/cenario';
+import { montarCenarioCompartilhado } from '@/lib/portal/espolio';
+import { fatosDoEspolio, salvarCenario } from './painel-actions';
 import {
   PainelFamiliaCard,
   PAINEL_FAMILIA_INICIAL,
@@ -413,6 +417,14 @@ export default function SucessoristaClient({
   const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
   /* Coluna "Responsável" por item do catálogo de documentos. */
   const [responsaveisDocs, setResponsaveisDocs] = useState<Record<string, string>>({});
+  /* Despesas adiantadas RECONHECIDAS (Espaço do Espólio) — entram nas
+     linhas dos cenários de partilha (ressarcir × compensar). */
+  const [despesasCenario, setDespesasCenario] = useState<DespesaAdiantada[]>([]);
+  /* Propor a atribuição atual como CENÁRIO para a família (Etapa 4). */
+  const [proporAberto, setProporAberto] = useState(false);
+  const [tituloCenario, setTituloCenario] = useState('');
+  const [descricaoCenario, setDescricaoCenario] = useState('');
+  const [enviandoCenario, setEnviandoCenario] = useState(false);
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
@@ -1636,7 +1648,31 @@ export default function SucessoristaClient({
    * fechar 100%. O desvio entre recebido e direito vira o acerto (torna),
    * com o imposto da cessão.
    */
-  const atribuicao = useMemo(() => {
+  // Despesas adiantadas reconhecidas: carregadas do servidor (best-effort)
+  // quando o caso tem convites do cofre — só elas entram na conta.
+  const temConvites = Object.keys(convites).length > 0;
+  useEffect(() => {
+    if (!temConvites) return;
+    let vivo = true;
+    void fatosDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setDespesasCenario(
+        (r.despesas ?? [])
+          .filter((d) => d.status === 'reconhecida' && d.herdeiroId)
+          .map((d) => ({
+            participanteId: d.herdeiroId as string,
+            descricao: d.descricao,
+            valor: Number(d.valor) || 0,
+            tratamento: d.tratamento === 'compensar' ? ('compensar' as const) : ('ressarcir' as const),
+          })),
+      );
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [casoId, temConvites]);
+
+  const apuracaoCenario = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || bens.length === 0) return null;
     if (participantes.length === 0) return null;
     if (!temAlocacao(matriz, bens, participantes)) return null; // tudo na proporção do direito
@@ -1644,6 +1680,8 @@ export default function SucessoristaClient({
     // Apuração pelo MOTOR DE CENÁRIOS (lib/partilha/cenario.ts) — o mesmo do
     // Espaço do Espólio: matriz → frações exatas → apurarAtribuicao. A
     // isenção de doação por donatário/ano (art. 6º, II, "a") é 2.500 UFESPs.
+    // As despesas adiantadas RECONHECIDAS entram nas linhas do cenário
+    // (ressarcir × compensar) — não mexem na atribuição técnica.
     const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
     const cenario = apurarCenario({
       caso,
@@ -1651,18 +1689,59 @@ export default function SucessoristaClient({
       alocacoes: matriz,
       titulo,
       isencaoDoacaoAnual: 2500 * ufespAtual,
+      despesas: despesasCenario,
     });
     if (!cenario.atribuicao && cenario.bloqueios.length === 0) return null;
+    return cenario;
+  }, [resultado, titulo, caso, bens, matriz, participantes, despesasCenario]);
+
+  const atribuicao = useMemo(() => {
+    if (!apuracaoCenario) return null;
     return (
-      cenario.atribuicao ?? {
+      apuracaoCenario.atribuicao ?? {
         posicoes: [],
         transferencias: [],
         totalTorna: '0.00',
         avisos: [],
-        bloqueios: cenario.bloqueios,
+        bloqueios: apuracaoCenario.bloqueios,
       }
     );
-  }, [resultado, titulo, caso, bens, matriz, participantes]);
+  }, [apuracaoCenario]);
+
+  /** Propõe a atribuição ATUAL como cenário do Espaço do Espólio: o snapshot
+   *  leigo é montado aqui (allowlist) e a família responde pelo portal. */
+  const proporCenario = async () => {
+    if (!apuracaoCenario || apuracaoCenario.bloqueios.length > 0) return;
+    setEnviandoCenario(true);
+    try {
+      const cenario = montarCenarioCompartilhado({
+        titulo: tituloCenario.trim(),
+        descricao: descricaoCenario,
+        bens: bens.map((b) => ({ id: b.id, descricao: b.descricao })),
+        participantes: participantes.map((p) => ({ id: p.id, nome: p.nome })),
+        alocacoes: matriz,
+        linhas: apuracaoCenario.linhas,
+        resumo: resumoDoCenario(apuracaoCenario),
+        avisos: apuracaoCenario.avisos,
+        totalTorna: apuracaoCenario.totalTorna,
+        totalDespesasReconhecidas: apuracaoCenario.totalDespesasReconhecidas,
+      });
+      const r = await salvarCenario({ casoId, cenario });
+      if (r.ok) {
+        setProporAberto(false);
+        setTituloCenario('');
+        setDescricaoCenario('');
+        toast.success('Cenário proposto à família', {
+          description:
+            'Cada herdeiro responde pelo próprio link — o cenário aparece com o espaço do espólio ABERTO e o painel publicado.',
+        });
+      } else {
+        toast.error('Não foi possível propor', { description: r.erro });
+      }
+    } finally {
+      setEnviandoCenario(false);
+    }
+  };
 
   // Espelho para a telemetria do caso (o retrato é montado antes daqui).
   useEffect(() => {
@@ -3737,6 +3816,16 @@ export default function SucessoristaClient({
                   })
                 }
                 onEncerrado={() => setConvites({})}
+                onLevarParaPartilha={(alocacoes) => {
+                  // Consenso vira partilha: as alocações do cenário são o
+                  // MESMO formato da matriz da seção III — cópia direta.
+                  setMatriz(alocacoes);
+                  irPara('partilha');
+                  toast.success('Cenário levado para a partilha', {
+                    description:
+                      'A matriz da seção III recebeu as alocações do cenário — confira o espelho e os acertos.',
+                  });
+                }}
                 onAplicarValor={(bemId, valor) =>
                   // Sugestão de valor ACEITA pelo advogado: entra como
                   // AVALIAÇÃO do bem (o venal do óbito segue sendo o
@@ -4050,8 +4139,78 @@ export default function SucessoristaClient({
                             {a}
                           </p>
                         ))}
+
+                        {/* Simulador do Espaço do Espólio: a atribuição atual
+                            vira um CENÁRIO que a família responde pelo portal. */}
+                        {temConvites && (
+                          <div className="nota" style={{ marginTop: 12 }}>
+                            <span className="eyebrow">Espaço do espólio</span>
+                            <p>
+                              Esta divisão pode virar um <strong>cenário proposto à família</strong>:
+                              cada herdeiro vê os números em linguagem simples no próprio link e
+                              responde aceito · não aceito · quero conversar. Quando todos aceitam,
+                              o cenário congela como consenso.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setProporAberto(true)}
+                            >
+                              Propor este cenário à família
+                            </Button>
+                          </div>
+                        )}
                       </>
                     )}
+
+                    <Dialog
+                      open={proporAberto}
+                      onOpenChange={(o) => !enviandoCenario && setProporAberto(o)}
+                    >
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Propor este cenário à família</DialogTitle>
+                          <DialogDescription>
+                            A família vê quem fica com o quê, o acerto em dinheiro e o total de
+                            cada um — em linguagem simples, com os mesmos números para todos.
+                            Honorários e anotações internas nunca entram.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <label className="campo">
+                          Nome do cenário (como a família vai chamá-lo)
+                          <Input
+                            value={tituloCenario}
+                            placeholder="Ex.: Casa para Ana, apartamento para Bruno"
+                            onChange={(e) => setTituloCenario(e.target.value)}
+                          />
+                        </label>
+                        <label className="campo">
+                          Explicação curta (opcional)
+                          <Input
+                            value={descricaoCenario}
+                            placeholder="Ex.: Evita vender a casa; a diferença é compensada em dinheiro"
+                            onChange={(e) => setDescricaoCenario(e.target.value)}
+                          />
+                        </label>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            disabled={enviandoCenario}
+                            onClick={() => setProporAberto(false)}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            loading={enviandoCenario}
+                            disabled={tituloCenario.trim() === ''}
+                            onClick={() => void proporCenario()}
+                          >
+                            Propor à família
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                     {atribuicao?.bloqueios.map((b, i) => (
                       <p key={i} className="mono-alerta">
                         {b}

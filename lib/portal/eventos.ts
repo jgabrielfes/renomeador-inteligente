@@ -29,7 +29,11 @@ export type TipoEventoPortal =
   | 'ESPOLIO_NOTA'
   | 'ESPOLIO_SUGESTAO_DECIDIDA'
   | 'ESPOLIO_DESPESA'
-  | 'ESPOLIO_DESPESA_DECIDIDA';
+  | 'ESPOLIO_DESPESA_DECIDIDA'
+  | 'ESPOLIO_CENARIO'
+  | 'ESPOLIO_CENARIO_RETIRADO'
+  | 'ESPOLIO_ADESAO'
+  | 'ESPOLIO_CONSENSO';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -42,6 +46,10 @@ export interface DetalheEventoPortal {
   fase?: string;
   /** PUBLICACAO: quantos convites o espelho cobre. */
   convites?: number;
+  /** Cenários do espólio: título do cenário em questão. */
+  cenario?: string;
+  /** ESPOLIO_ADESAO: resposta dada (aceito|nao_aceito|conversar). */
+  resposta?: string;
 }
 
 /** Tipos que o HERDEIRO pode ver nas "Atualizações do caso" — os demais são
@@ -53,6 +61,8 @@ export const TIPOS_VISIVEIS_AO_HERDEIRO: TipoEventoPortal[] = [
   'DOC_RECUSADO',
   'PENDENCIA',
   'QUINHAO_LIBERADO',
+  'ESPOLIO_CENARIO',
+  'ESPOLIO_CONSENSO',
 ];
 
 /** Texto LEIGO de um evento para o histórico do herdeiro — null = não exibir. */
@@ -79,6 +89,14 @@ export function textoLeigoDoEvento(
         : 'Um novo documento foi solicitado a você';
     case 'QUINHAO_LIBERADO':
       return 'Seu quinhão foi liberado para consulta nesta página';
+    case 'ESPOLIO_CENARIO':
+      return detalhe?.cenario
+        ? `Novo cenário de divisão proposto à família: ${detalhe.cenario}`
+        : 'Um novo cenário de divisão foi proposto à família';
+    case 'ESPOLIO_CONSENSO':
+      return detalhe?.cenario
+        ? `A família fechou consenso no cenário: ${detalhe.cenario}`
+        : 'A família fechou consenso em um cenário de divisão';
     default:
       return null;
   }
@@ -107,4 +125,8 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_SUGESTAO_DECIDIDA: 'Sugestão de valor decidida pelo escritório',
   ESPOLIO_DESPESA: 'Despesa adiantada informada por herdeiro',
   ESPOLIO_DESPESA_DECIDIDA: 'Despesa adiantada decidida pelo escritório',
+  ESPOLIO_CENARIO: 'Cenário de divisão proposto à família',
+  ESPOLIO_CENARIO_RETIRADO: 'Cenário de divisão retirado da conversa',
+  ESPOLIO_ADESAO: 'Resposta de herdeiro a um cenário',
+  ESPOLIO_CONSENSO: 'Consenso da família em um cenário (congelado)',
 };

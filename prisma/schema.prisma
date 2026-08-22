@@ -247,6 +247,44 @@ model EspolioDespesa {
   @@map("espolio_despesas")
 }
 
+// CENÁRIO de divisão proposto à família (simulador do Espaço do Espólio):
+// `dados` é o snapshot LEIGO montado no navegador do advogado (título,
+// linhas por participante, mapa bem→destino, avisos) + as `alocacoes` (o
+// MESMO formato do `atribuicoesPct` da seção III — "levar para a partilha"
+// é cópia direta). Enquanto `proposto`, o advogado pode ajustar; `congelado`
+// (consenso ou fecho manual) trava tudo; `retirado` sai da conversa mas fica
+// registrado. Sem FK; quem apaga é o Encerrar compartilhamento.
+model EspolioCenario {
+  id        String   @id @default(cuid())
+  casoId    String
+  dados     Json
+  status    String   @default("proposto") // proposto|congelado|retirado
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([casoId, createdAt])
+  @@map("espolio_cenarios")
+}
+
+// ADESÃO de um herdeiro a um cenário — imutável e append-only: mudar de
+// ideia é registrar resposta nova (a mais recente vale); o histórico inteiro
+// fica para o registro de atendimento. Consenso = a resposta mais recente de
+// TODO convite ativo é "aceito" — congela o cenário.
+model EspolioAdesao {
+  id         String   @id @default(cuid())
+  cenarioId  String
+  casoId     String
+  token      String
+  autor      String
+  resposta   String   // aceito|nao_aceito|conversar
+  comentario String?
+  createdAt  DateTime @default(now())
+
+  @@index([cenarioId, createdAt])
+  @@index([casoId, createdAt])
+  @@map("espolio_adesoes")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:

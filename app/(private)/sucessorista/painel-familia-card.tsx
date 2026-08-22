@@ -47,7 +47,11 @@ import type { ConviteHerdeiro } from '@/lib/portal/store';
 import { montarRelatorioComunicacaoPdf } from '@/lib/portal/relatorio-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 
+import type { Alocacoes } from '@/lib/partilha/cenario';
+
 import {
+  cenariosDoEspolio,
+  congelarCenario,
   decidirDespesa,
   decidirSugestao,
   encerrarPainel,
@@ -55,7 +59,9 @@ import {
   eventosDoCaso,
   fatosDoEspolio,
   publicarPainel,
+  retirarCenario,
   revogarConvite,
+  type CenarioDoCaso,
   type DespesaEspolio,
   type NotaEspolio,
 } from './painel-actions';
@@ -143,6 +149,7 @@ export function PainelFamiliaCard({
   onConviteAtualizado,
   onEncerrado,
   onAplicarValor,
+  onLevarParaPartilha,
   irParaDocumentos,
 }: {
   casoId: string;
@@ -166,6 +173,9 @@ export function PainelFamiliaCard({
   /** Sugestão de valor ACEITA: o client aplica no bem do acervo (nada muda
    *  no caso sem este aceite explícito do advogado). */
   onAplicarValor: (bemId: string, valor: string) => void;
+  /** Cenário levado para a partilha: as alocações entram na matriz da
+   *  seção III (mesmo formato — cópia direta). */
+  onLevarParaPartilha: (alocacoes: Alocacoes) => void;
   irParaDocumentos: () => void;
 }) {
   const [publicando, setPublicando] = useState(false);
@@ -178,6 +188,9 @@ export function PainelFamiliaCard({
      comentários e despesas adiantadas, com a decisão do escritório aqui. */
   const [notasEspolio, setNotasEspolio] = useState<NotaEspolio[]>([]);
   const [despesasEspolio, setDespesasEspolio] = useState<DespesaEspolio[]>([]);
+  const [cenarios, setCenarios] = useState<CenarioDoCaso[]>([]);
+  const [mudandoCenario, setMudandoCenario] = useState<string | null>(null);
+  const [confirmaRetirar, setConfirmaRetirar] = useState<CenarioDoCaso | null>(null);
   const [decidindo, setDecidindo] = useState<string | null>(null);
   const [recusa, setRecusa] = useState<{ tipo: 'nota' | 'despesa'; id: string } | null>(null);
   const [motivoRecusa, setMotivoRecusa] = useState('');
@@ -237,10 +250,51 @@ export function PainelFamiliaCard({
       setNotasEspolio(r.notas ?? []);
       setDespesasEspolio(r.despesas ?? []);
     });
+    void cenariosDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setCenarios(r.cenarios ?? []);
+    });
     return () => {
       vivo = false;
     };
   }, [casoId, recolhido, estado.espolioAberto]);
+
+  const recarregarCenarios = async () => {
+    const r = await cenariosDoEspolio(casoId);
+    if (r.ok) setCenarios(r.cenarios ?? []);
+  };
+
+  const mudarCenario = async (
+    cenario: CenarioDoCaso,
+    acao: 'congelar' | 'reabrir' | 'retirar',
+  ) => {
+    setMudandoCenario(cenario.id);
+    try {
+      const r =
+        acao === 'retirar'
+          ? await retirarCenario(cenario.id)
+          : await congelarCenario(cenario.id, acao === 'congelar');
+      if (!r.ok) {
+        toast.error('Não foi possível alterar o cenário', { description: r.erro });
+        return;
+      }
+      setConfirmaRetirar(null);
+      await recarregarCenarios();
+      if (acao === 'congelar') {
+        toast.success('Cenário congelado como consenso', {
+          description: 'As respostas da família não mudam mais; edite só reabrindo.',
+        });
+      } else if (acao === 'reabrir') {
+        toast.success('Cenário reaberto para conversa');
+      } else {
+        toast.success('Cenário retirado da conversa', {
+          description: 'Ele some do portal, mas fica no registro do caso.',
+        });
+      }
+    } finally {
+      setMudandoCenario(null);
+    }
+  };
 
   const descricaoDoBem = (bemId: string) =>
     espolioDados.bens.find((b) => b.id === bemId)?.descricao ?? 'bem não localizado no acervo atual';
@@ -723,6 +777,88 @@ export function PainelFamiliaCard({
               ))}
             </div>
           )}
+
+        {/* Cenários de divisão propostos — o coração do espaço: a família
+            responde pelo portal; todos aceitando, o cenário congela. */}
+        {estado.espolioAberto && cenarios.filter((c) => c.status !== 'retirado').length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <span className="eyebrow">Cenários propostos</span>
+            {cenarios
+              .filter((c) => c.status !== 'retirado')
+              .map((c) => {
+                const atuais = c.adesoes.filter((a) => a.atual);
+                const aceitos = atuais.filter((a) => a.resposta === 'aceito').length;
+                return (
+                  <div className="linha-item" key={c.id}>
+                    <span>
+                      <strong>{c.dados.titulo}</strong>
+                      <span className="fracao num">
+                        {c.status === 'congelado'
+                          ? ' · CONSENSO (congelado)'
+                          : ` · em conversa — ${aceitos} de ${ativos.length} aceitaram`}
+                      </span>
+                      {atuais.length > 0 && (
+                        <span className="fund" style={{ display: 'block' }}>
+                          {atuais
+                            .map(
+                              (a) =>
+                                `${a.autor}: ${
+                                  a.resposta === 'aceito'
+                                    ? 'aceitou'
+                                    : a.resposta === 'nao_aceito'
+                                      ? 'não aceitou'
+                                      : 'quer conversar'
+                                }${a.comentario ? ` (“${a.comentario}”)` : ''}`,
+                            )
+                            .join(' · ')}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                      {c.status === 'congelado' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          loading={mudandoCenario === c.id}
+                          onClick={() => onLevarParaPartilha(c.dados.alocacoes)}
+                        >
+                          levar para a partilha
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        loading={mudandoCenario === c.id}
+                        onClick={() =>
+                          void mudarCenario(c, c.status === 'congelado' ? 'reabrir' : 'congelar')
+                        }
+                      >
+                        {c.status === 'congelado' ? 'reabrir' : 'congelar consenso'}
+                      </Button>
+                      {c.status === 'proposto' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={mudandoCenario !== null}
+                          onClick={() => setConfirmaRetirar(c)}
+                        >
+                          retirar
+                        </Button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            <p className="fund" style={{ margin: '4px 0 0' }}>
+              Cenário novo nasce na aba Partilha (seção III): monte a divisão na matriz e
+              clique “Propor este cenário à família”.
+            </p>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -806,6 +942,38 @@ export function PainelFamiliaCard({
       </p>
       </>
       )}
+
+      <Dialog
+        open={confirmaRetirar !== null}
+        onOpenChange={(o) => mudandoCenario === null && !o && setConfirmaRetirar(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Retirar o cenário “{confirmaRetirar?.dados.titulo}”?</DialogTitle>
+            <DialogDescription>
+              Ele some do portal da família na hora e não volta a ficar em conversa —
+              para retomar a ideia, proponha um cenário novo pela aba Partilha. As
+              respostas já dadas ficam no registro do caso.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="outline"
+              disabled={mudandoCenario !== null}
+              onClick={() => setConfirmaRetirar(null)}
+            >
+              Manter em conversa
+            </Button>
+            <Button
+              variant="destructive"
+              loading={mudandoCenario !== null}
+              onClick={() => confirmaRetirar && void mudarCenario(confirmaRetirar, 'retirar')}
+            >
+              Retirar cenário
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Recusa de sugestão / não-reconhecimento de despesa: motivo obrigatório
           — o herdeiro lê exatamente este texto no espaço do espólio. */}

@@ -21,7 +21,7 @@ type Ev = { target: { value: string; files?: FileList | null; checked?: boolean 
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { PainelHerdeiro } from '@/lib/portal/painel';
-import type { EspolioCompartilhado } from '@/lib/portal/espolio';
+import type { CenarioCompartilhado, EspolioCompartilhado } from '@/lib/portal/espolio';
 
 /** O GET do portal devolve o convite + o recorte do Painel do Cliente deste
  *  token (null enquanto o advogado não publicar) + a flag de e-mail ativo
@@ -55,12 +55,31 @@ interface DespesaEspolioPortal {
   minha: boolean;
 }
 
+interface AdesaoPortal {
+  autor: string;
+  resposta: string; // aceito | nao_aceito | conversar
+  comentario: string | null;
+  em: string;
+  /** true = é a resposta mais recente daquele herdeiro (a que vale). */
+  atual: boolean;
+  minha: boolean;
+}
+
+interface CenarioEspolioPortal {
+  id: string;
+  status: string; // proposto | congelado
+  dados: CenarioCompartilhado;
+  adesoes: AdesaoPortal[];
+  minhaResposta: string | null;
+}
+
 type ConviteComPainel = ConviteHerdeiro & {
   painel?: PainelHerdeiro | null;
   /** Espaço do Espólio: o snapshot COMPARTILHADO — igual para todos. */
   espolio?: EspolioCompartilhado | null;
   espolioNotas?: NotaEspolioPortal[];
   espolioDespesas?: DespesaEspolioPortal[];
+  espolioCenarios?: CenarioEspolioPortal[];
   emailAtivo?: boolean;
 };
 
@@ -215,6 +234,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       espolio: prev?.espolio ?? null,
       espolioNotas: prev?.espolioNotas ?? [],
       espolioDespesas: prev?.espolioDespesas ?? [],
+      espolioCenarios: prev?.espolioCenarios ?? [],
       emailAtivo: prev?.emailAtivo ?? false,
     }));
 
@@ -228,6 +248,38 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setConvite((prev) =>
       prev ? { ...prev, espolioDespesas: [...(prev.espolioDespesas ?? []), d] } : prev,
     );
+  /** Resposta a um cenário enviada nesta visita — atualiza a lista local;
+   *  com consenso, o cenário já aparece congelado. */
+  const registrarAdesaoLocal = (
+    cenarioId: string,
+    resposta: string,
+    comentario: string,
+    consenso: boolean,
+  ) =>
+    setConvite((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        espolioCenarios: (prev.espolioCenarios ?? []).map((c) => {
+          if (c.id !== cenarioId) return c;
+          const adesoes = c.adesoes.map((a) => (a.minha ? { ...a, atual: false } : a));
+          adesoes.push({
+            autor: prev.nomeHerdeiro,
+            resposta,
+            comentario: comentario === '' ? null : comentario,
+            em: '',
+            atual: true,
+            minha: true,
+          });
+          return {
+            ...c,
+            adesoes,
+            minhaResposta: resposta,
+            status: consenso ? 'congelado' : c.status,
+          };
+        }),
+      };
+    });
 
   const {
     register,
@@ -997,6 +1049,31 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
             }}
             enviarComprovante={enviarDocumento}
           />
+
+          {/* ---------- cenários de divisão propostos ---------- */}
+          {(convite.espolioCenarios ?? []).length > 0 && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Cenários de divisão propostos</h3>
+              <p className="fund" style={{ marginBottom: 4 }}>
+                O escritório montou uma ou mais formas possíveis de dividir os bens —
+                os números abaixo são os mesmos para toda a família. Responda cada
+                proposta; quando todos aceitam a mesma, ela fecha como consenso.
+                Nenhum cenário é definitivo: a partilha final é a do ato lavrado ou
+                homologado.
+              </p>
+              {(convite.espolioCenarios ?? []).map((c) => (
+                <CenarioDoEspolio
+                  key={c.id}
+                  token={token}
+                  cenario={c}
+                  onRespondida={registrarAdesaoLocal}
+                />
+              ))}
+              {(convite.espolioCenarios ?? []).length > 1 && (
+                <ComparacaoCenarios cenarios={convite.espolioCenarios ?? []} />
+              )}
+            </>
+          )}
         </>
       )}
 
@@ -1370,6 +1447,219 @@ function DespesaEspolioForm({
         </button>
       </div>
     </details>
+  );
+}
+
+const ROTULO_RESPOSTA: Record<string, string> = {
+  aceito: 'aceitou',
+  nao_aceito: 'não aceitou',
+  conversar: 'quer conversar',
+};
+
+/**
+ * UM cenário de divisão: quem fica com o quê, a conta leiga por pessoa, as
+ * respostas de todos e a SUA resposta (aceito · não aceito · quero conversar).
+ * Congelado = consenso fechado; a resposta não muda mais.
+ */
+function CenarioDoEspolio({
+  token,
+  cenario,
+  onRespondida,
+}: {
+  token: string;
+  cenario: CenarioEspolioPortal;
+  onRespondida: (cenarioId: string, resposta: string, comentario: string, consenso: boolean) => void;
+}) {
+  const [comentario, setComentario] = useState('');
+  const [enviando, setEnviando] = useState<string | null>(null);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const atuais = cenario.adesoes.filter((a) => a.atual);
+  const brlNum = (v: number) =>
+    `R$ ${Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const responder = async (resposta: 'aceito' | 'nao_aceito' | 'conversar') => {
+    setErroEnvio(null);
+    setEnviando(resposta);
+    try {
+      const r = await fetch(`/api/portal/${token}/espolio`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adesao: { cenarioId: cenario.id, resposta, comentario: comentario.trim() },
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { consenso?: boolean; erro?: string }
+        | null;
+      if (r.ok) {
+        onRespondida(cenario.id, resposta, comentario.trim(), corpo?.consenso === true);
+        setComentario('');
+      } else {
+        setErroEnvio(corpo?.erro ?? 'Não foi possível responder — tente de novo.');
+      }
+    } catch {
+      setErroEnvio('Não foi possível responder — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  return (
+    <div className={`nota ${cenario.status === 'congelado' ? 'registro' : ''}`} style={{ marginTop: 8 }}>
+      <span className="eyebrow">
+        {cenario.status === 'congelado' ? 'Consenso fechado' : 'Em conversa'}
+      </span>
+      <h3 style={{ marginTop: 2 }}>{cenario.dados.titulo}</h3>
+      {cenario.dados.descricao && <p className="fund">{cenario.dados.descricao}</p>}
+
+      <p style={{ margin: '8px 0 2px' }}>
+        <strong>Quem fica com o quê</strong>
+      </p>
+      <ul className="custos-portal">
+        {cenario.dados.mapaBens.map((m, i) => (
+          <li key={i}>
+            <span>{m.bem}</span>
+            <span>{m.destino}</span>
+          </li>
+        ))}
+      </ul>
+
+      <p style={{ margin: '10px 0 2px' }}>
+        <strong>A conta de cada um</strong>
+      </p>
+      <ul className="custos-portal">
+        {cenario.dados.linhas.map((l, i) => (
+          <li key={i}>
+            <span>
+              {l.nome}
+              <span className="fase-descricao">
+                direito de {brlNum(l.direito)} · recebe {brlNum(l.recebeEmBens)} em bens
+                {l.acertoEmDinheiro !== 0 &&
+                  ` · ${l.acertoEmDinheiro > 0 ? 'recebe' : 'paga'} ${brlNum(l.acertoEmDinheiro)} em dinheiro`}
+                {l.efeitoDespesas !== 0 &&
+                  ` · despesas adiantadas: ${l.efeitoDespesas > 0 ? '+' : '−'}${brlNum(l.efeitoDespesas)}`}
+              </span>
+            </span>
+            <span className="num">{brlNum(l.total)}</span>
+          </li>
+        ))}
+      </ul>
+      {cenario.dados.resumo.map((f, i) => (
+        <p key={i} className="fund" style={{ marginTop: 4 }}>
+          {f}
+        </p>
+      ))}
+
+      {atuais.length > 0 && (
+        <>
+          <p style={{ margin: '10px 0 2px' }}>
+            <strong>Como cada um respondeu</strong>
+          </p>
+          <ul className="custos-portal">
+            {atuais.map((a, i) => (
+              <li key={i}>
+                <span>
+                  {a.autor}
+                  {a.minha ? ' (você)' : ''}
+                  {a.comentario && <span className="fase-descricao">“{a.comentario}”</span>}
+                </span>
+                <span>{ROTULO_RESPOSTA[a.resposta] ?? a.resposta}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {cenario.status === 'congelado' ? (
+        <p className="fund" style={{ marginTop: 8 }}>
+          Este cenário fechou como consenso da família — o escritório dá sequência a
+          partir dele.
+        </p>
+      ) : (
+        <>
+          <p style={{ margin: '10px 0 2px' }}>
+            <strong>
+              {cenario.minhaResposta
+                ? `Sua resposta atual: ${ROTULO_RESPOSTA[cenario.minhaResposta] ?? cenario.minhaResposta} — mudou de ideia? Responda de novo.`
+                : 'Sua resposta'}
+            </strong>
+          </p>
+          <Campo rotulo="Comentário (opcional — a família e o escritório leem)">
+            <input
+              type="text"
+              maxLength={400}
+              placeholder="Ex.: Aceito, desde que o carro fique comigo."
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+            />
+          </Campo>
+          {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button
+              className="acao"
+              type="button"
+              disabled={enviando !== null}
+              onClick={() => void responder('aceito')}
+            >
+              {enviando === 'aceito' ? 'Enviando…' : 'Aceito'}
+            </button>
+            <button
+              className="acao secundaria"
+              type="button"
+              disabled={enviando !== null}
+              onClick={() => void responder('conversar')}
+            >
+              {enviando === 'conversar' ? 'Enviando…' : 'Quero conversar'}
+            </button>
+            <button
+              className="acao secundaria"
+              type="button"
+              disabled={enviando !== null}
+              onClick={() => void responder('nao_aceito')}
+            >
+              {enviando === 'nao_aceito' ? 'Enviando…' : 'Não aceito'}
+            </button>
+          </div>
+          <p className="fund" style={{ marginTop: 6 }}>
+            Cada resposta fica registrada; vale a mais recente. Quando todos aceitam,
+            o cenário fecha como consenso.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Comparação lado a lado: com quanto cada um sai em cada cenário proposto. */
+function ComparacaoCenarios({ cenarios }: { cenarios: CenarioEspolioPortal[] }) {
+  const nomes = Array.from(
+    new Set(cenarios.flatMap((c) => c.dados.linhas.map((l) => l.nome))),
+  );
+  const brlNum = (v: number) =>
+    `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <>
+      <h3 style={{ marginTop: 14 }}>Comparando os cenários</h3>
+      <p className="fund" style={{ marginBottom: 4 }}>
+        Com quanto cada um sai, em cada proposta (bens + acertos em dinheiro +
+        despesas reconhecidas):
+      </p>
+      <ul className="custos-portal">
+        {nomes.map((nome) => (
+          <li key={nome}>
+            <span>{nome}</span>
+            <span>
+              {cenarios
+                .map((c) => {
+                  const linha = c.dados.linhas.find((l) => l.nome === nome);
+                  return `${c.dados.titulo}: ${linha ? brlNum(linha.total) : '—'}`;
+                })
+                .join(' · ')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

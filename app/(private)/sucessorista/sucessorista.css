@@ -1466,6 +1466,15 @@
 .sucessorista button.acao:hover { background: #2c3833; }
 .sucessorista button.acao:disabled { opacity: 0.6; cursor: default; }
 
+/* Variante SECUNDÁRIA (responder cenário: conversar/não aceito) — contorno
+   de tinta sobre o papel, mesmo desenho e alvo do botão cheio. */
+.sucessorista button.acao.secundaria {
+  background: transparent;
+  color: var(--tinta);
+}
+
+.sucessorista button.acao.secundaria:hover { background: var(--papel-alto); color: var(--tinta); }
+
 /* ---------- responsivo ---------- */
 
 /* Tela comum em 100% de zoom (1280/1366): o painel CONTINUA à direita —
