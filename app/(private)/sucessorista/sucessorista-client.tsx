@@ -3787,6 +3787,7 @@ export default function SucessoristaClient({
             rascunhoSalvoEm={rascunhoSalvoEm}
             onExportarCaso={exportarCaso}
             onImportarCaso={importarCaso}
+            onCasoDaFamilia={(caso) => aplicarSnapshot(caso as CasoSalvo)}
             onNovoCaso={novoCaso}
             casoId={casoId}
             perfil={perfil}

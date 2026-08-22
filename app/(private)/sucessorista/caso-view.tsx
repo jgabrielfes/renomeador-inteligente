@@ -51,6 +51,7 @@ import { classificarNoCatalogo } from '@/lib/partilha/documentos';
 import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import { Pilula } from './familia';
 import { EquipeCard } from './equipe-card';
+import { ImportarCasoFamilia } from './importar-familia';
 import type { InfoEquipe } from './equipe-actions';
 import { comprimirImagem } from '@/lib/envio-imagens';
 import { registrarLeituraDoCofre } from './actions';
@@ -195,6 +196,7 @@ export function CasoView({
   rascunhoSalvoEm,
   onExportarCaso,
   onImportarCaso,
+  onCasoDaFamilia,
   onNovoCaso,
   casoId,
   perfil,
@@ -217,6 +219,8 @@ export function CasoView({
   rascunhoSalvoEm: string | null;
   onExportarCaso: () => void;
   onImportarCaso: (file: File) => Promise<void>;
+  /** "Importar caso de família" (área pública): recebe o CasoSalvo pronto. */
+  onCasoDaFamilia?: (caso: unknown) => void;
   onNovoCaso: () => Promise<void>;
   /** Telemetria: id aleatório do caso e perfil ativo (sem dado pessoal). */
   casoId: string;
@@ -844,6 +848,7 @@ export function CasoView({
         <Button variant="outline" onClick={() => inputCasoRef.current?.click()} loading={importando}>
           Importar arquivo do caso
         </Button>
+        {onCasoDaFamilia && <ImportarCasoFamilia onCaso={onCasoDaFamilia} />}
         <Dialog open={confirmandoNovo} onOpenChange={setConfirmandoNovo}>
           <DialogTrigger
             render={<Button variant="ghost" className="text-destructive" />}

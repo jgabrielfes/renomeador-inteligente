@@ -7,6 +7,8 @@
  * do contexto (PDF, salvar, e-mail…).
  */
 
+import { useState } from 'react';
+
 import type { RespostasFamilia } from '@/lib/familias/tipos';
 import type { Triagem } from '@/lib/familias/triagem';
 import type { EstimativaCompleta } from '@/lib/familias/estimativas';
@@ -26,6 +28,64 @@ export const dataBr = (iso: string) => {
   const [a, m, d] = iso.split('-');
   return `${d}/${m}/${a}`;
 };
+
+/**
+ * "Já tem advogado?" — gera o CÓDIGO de uso único que a família entrega ao
+ * advogado DELA: no Sucessorista, "Importar caso de família" monta a folha
+ * pré-preenchida com estas respostas. Nenhuma indicação de profissional
+ * acontece aqui — o código vai para quem a família escolher.
+ */
+export function GerarCodigoAdvogado({ token }: { token: string }) {
+  const [codigo, setCodigo] = useState<string | null>(null);
+  const [gerando, setGerando] = useState(false);
+  const [erroCodigo, setErroCodigo] = useState<string | null>(null);
+
+  const gerar = async () => {
+    setErroCodigo(null);
+    setGerando(true);
+    try {
+      const r = await fetch('/api/familias/handoff', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const corpo = (await r.json().catch(() => null)) as { codigo?: string; erro?: string } | null;
+      if (r.ok && corpo?.codigo) setCodigo(corpo.codigo);
+      else setErroCodigo(corpo?.erro ?? 'Não foi possível gerar o código — tente de novo.');
+    } catch {
+      setErroCodigo('Não foi possível gerar o código — verifique a conexão.');
+    } finally {
+      setGerando(false);
+    }
+  };
+
+  return (
+    <div className="nota" style={{ marginTop: 12 }}>
+      <p style={{ marginBottom: 6 }}>
+        <strong>Já tem advogado(a)?</strong>{' '}
+        <span className="fund">
+          Gere um código e entregue a ele(a): no O Sucessorista, o código monta o caso já
+          com o que você respondeu — a primeira reunião rende muito mais.
+        </span>
+      </p>
+      {codigo ? (
+        <p>
+          Código para o(a) seu(sua) advogado(a):{' '}
+          <strong className="num" style={{ letterSpacing: 2 }}>{codigo}</strong>
+          <span className="fase-descricao">
+            Uso único. Ele(a) importa em &quot;Página Inicial → Importar caso de família&quot;;
+            depois da importação, suas respostas saem do nosso servidor.
+          </span>
+        </p>
+      ) : (
+        <button className="acao secundaria" type="button" disabled={gerando} onClick={() => void gerar()}>
+          {gerando ? 'Gerando…' : 'Gerar código para meu advogado'}
+        </button>
+      )}
+      {erroCodigo && <p className="mono-alerta">{erroCodigo}</p>}
+    </div>
+  );
+}
 
 export function ResultadoView({
   r,

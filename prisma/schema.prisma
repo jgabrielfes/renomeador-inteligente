@@ -367,6 +367,24 @@ model FamiliaIntake {
   @@map("familia_intakes")
 }
 
+// HANDOFF do intake ao advogado: a família gera um CÓDIGO de uso único e o
+// advogado, logado, "Importa caso de família" — o caso nasce NO NAVEGADOR
+// dele (local-first; intakeParaCaso), nunca no servidor. Confirmada a
+// importação, o intake é PODADO (respostas/resultado apagados; fica só o
+// histórico da solicitação e do aceite).
+model IntakeHandoff {
+  id             String    @id @default(cuid())
+  intakeId       String
+  codigo         String    @unique
+  advogadoUserId String?
+  importadoEm    DateTime?
+  confirmadoEm   DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([intakeId])
+  @@map("intake_handoffs")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:

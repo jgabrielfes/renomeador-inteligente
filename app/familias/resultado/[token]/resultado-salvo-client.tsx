@@ -13,14 +13,16 @@ import type { EstimativaCompleta } from '@/lib/familias/estimativas';
 import type { ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { ResultadoView } from '../../resultado-view';
+import { GerarCodigoAdvogado, ResultadoView } from '../../resultado-view';
 
 export function ResultadoSalvoClient({
+  token,
   r,
   triagem,
   estimativa,
   docs,
 }: {
+  token: string;
   r: RespostasFamilia;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
@@ -52,11 +54,14 @@ export function ResultadoSalvoClient({
           estimativa={estimativa}
           docs={docs}
           acoes={
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-              <button className="acao" type="button" disabled={gerandoPdf} onClick={() => void baixarPdf()}>
-                {gerandoPdf ? 'Gerando…' : 'Baixar em PDF'}
-              </button>
-            </div>
+            <>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+                <button className="acao" type="button" disabled={gerandoPdf} onClick={() => void baixarPdf()}>
+                  {gerandoPdf ? 'Gerando…' : 'Baixar em PDF'}
+                </button>
+              </div>
+              <GerarCodigoAdvogado token={token} />
+            </>
           }
         />
       </main>

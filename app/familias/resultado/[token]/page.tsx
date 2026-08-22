@@ -68,6 +68,12 @@ export default async function ResultadoSalvoPage({
   const docs = montarChecklistDocumentos(respostas, triagem.via);
 
   return (
-    <ResultadoSalvoClient r={respostas} triagem={triagem} estimativa={estimativa} docs={docs} />
+    <ResultadoSalvoClient
+      token={token}
+      r={respostas}
+      triagem={triagem}
+      estimativa={estimativa}
+      docs={docs}
+    />
   );
 }

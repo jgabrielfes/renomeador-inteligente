@@ -27,7 +27,7 @@ import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativ
 import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { ResultadoView } from './resultado-view';
+import { GerarCodigoAdvogado, ResultadoView } from './resultado-view';
 
 const TOTAL_TELAS = 12;
 
@@ -54,6 +54,7 @@ function AcoesResultado({
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [salvando, setSalvando] = useState<'salvar' | 'email' | null>(null);
   const [urlSalvo, setUrlSalvo] = useState<string | null>(null);
+  const [tokenSalvo, setTokenSalvo] = useState<string | null>(null);
   const [emailEnviado, setEmailEnviado] = useState(false);
   const [email, setEmail] = useState(r.email);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
@@ -88,13 +89,14 @@ function AcoesResultado({
         body: JSON.stringify({ respostas: { ...r, email: email.trim() || r.email }, acao }),
       });
       const corpo = (await resp.json().catch(() => null)) as
-        | { url?: string; emailEnviado?: boolean; erro?: string }
+        | { url?: string; token?: string; emailEnviado?: boolean; erro?: string }
         | null;
       if (!resp.ok || !corpo?.url) {
         setErroAcao(corpo?.erro ?? 'Não foi possível salvar agora — tente de novo.');
         return;
       }
       setUrlSalvo(corpo.url);
+      setTokenSalvo(corpo.token ?? null);
       if (acao === 'email') setEmailEnviado(corpo.emailEnviado === true);
     } catch {
       setErroAcao('Não foi possível salvar — verifique a conexão e tente de novo.');
@@ -166,6 +168,7 @@ function AcoesResultado({
           </p>
         </div>
       )}
+      {tokenSalvo && r.jaTemAdvogado === 'sim' && <GerarCodigoAdvogado token={tokenSalvo} />}
     </>
   );
 }

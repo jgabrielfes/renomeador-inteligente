@@ -11,6 +11,8 @@ import { classificarVia, faixaDoAcervo } from './triagem';
 import { estimarCustos } from './estimativas';
 import { estimarItcmdUf, ITCMD_POR_UF } from './itcmd-uf';
 import { montarChecklistDocumentos } from './documentos';
+import { intakeParaCaso } from './intake-para-caso';
+import { sanitizarRespostas } from './sanitizar';
 
 let ok = 0, fail = 0;
 function teste(nome: string, cond: boolean, detalhe?: string) {
@@ -151,6 +153,60 @@ console.log('\nPara famílias — triagem, estimativas e checklist\n');
   const docs = montarChecklistDocumentos(base({ bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: 'ate-50' } }), 'ALVARA');
   teste('alvará pede comprovantes dos valores', docs.some((d) => d.id === 'comprovantes-valores'));
   teste('sem imóvel não pede matrícula', !docs.some((d) => d.id === 'matriculas'));
+}
+
+/* ---------- sanitização (allowlist do servidor) ---------- */
+
+{
+  const bruto = {
+    ...base({ bens: { ...RESPOSTAS_INICIAIS.bens, imoveis: '200-500', imoveisUfs: ['sp', 'XX'] } }),
+    cpf: '111.222.333-44',
+    nomeDoFalecido: 'José Sigiloso',
+    testamento: 'talvez',
+  } as unknown;
+  const r = sanitizarRespostas(bruto)!;
+  teste('sanitizar reconstrói por allowlist (campo estranho não atravessa)', !('cpf' in r) && !('nomeDoFalecido' in r));
+  eq('UF minúscula normaliza; inválida cai fora', r.bens.imoveisUfs, ['SP']);
+  eq('enum inválido volta ao padrão', r.testamento, 'nao');
+  teste('sem o mínimo devolve null', sanitizarRespostas({ ufFalecido: 'SP' }) === null);
+}
+
+/* ---------- intake → CasoSalvo (importação do advogado) ---------- */
+
+{
+  let seq = 0;
+  const gerarId = (p: string) => `${p}-${++seq}`;
+  const r = base({
+    vinculo: 'casado',
+    regime: 'comunhao-parcial',
+    qtdHerdeiros: 3,
+    menorOuIncapaz: 'sim',
+    dividas: 'sim',
+    nome: 'Maria',
+    email: 'maria@exemplo.com',
+    bens: { ...RESPOSTAS_INICIAIS.bens, imoveis: '200-500', imoveisUfs: ['SP', 'RJ'], financeiro: 'ate-50', empresa: true },
+  });
+  const caso = intakeParaCaso(r, { casoId: 'caso-teste', gerarId });
+  eq('caso v1 no formato do Importar', caso.v, 1);
+  eq('falecido SEM nome (o questionário não coleta)', caso.familia.falecido.nome, '');
+  eq('data do óbito transportada', caso.familia.falecido.dataObito, '2026-05-10');
+  eq('vínculo e regime mapeados', [caso.familia.vinculo, caso.familia.regime], ['CASAMENTO', 'COMUNHAO_PARCIAL']);
+  eq('3 fichas de herdeiro em branco', caso.familia.herdeiros.length, 3);
+  eq('imóvel vira UM bem POR UF', caso.bens.filter((b) => b.tipo === 'IMOVEL').length, 2);
+  teste('bens marcados como faixa aproximada', caso.bens.every((b) => b.tipo === 'QUOTAS' || b.descricao.includes('faixa aproximada')));
+  teste('regime informado → natureza COMUM', caso.bens.every((b) => b.natureza === 'COMUM'));
+  teste('notas carregam as flags (incapaz, dívidas) e o contato', ['MENOR/INCAPAZ', 'DÍVIDAS', 'maria@exemplo.com'].every((t) => caso.notas.includes(t)));
+  eq('rito AUTO quando a via não é judicial... ', caso.fiscal.rito, 'JUDICIAL'); // menor/incapaz → judicial
+  eq('casoId e ids determinísticos do gerador injetado', caso.familia.herdeiros[0].id, 'h-1');
+}
+{
+  // Sem regime informado: natureza PARTICULAR (não presumir meação).
+  let seq = 0;
+  const caso = intakeParaCaso(
+    base({ vinculo: 'casado', regime: '', bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: '50-200' } }),
+    { casoId: 'c', gerarId: (p) => `${p}-${++seq}` },
+  );
+  teste('regime desconhecido → bens PARTICULARES + nota', caso.bens.every((b) => b.natureza === 'PARTICULAR') && caso.notas.includes('Regime de bens NÃO informado'));
 }
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
