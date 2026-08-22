@@ -57,6 +57,9 @@ export function MinhaSolicitacaoClient({
   const [mensagem, setMensagem] = useState('');
   const [confirmandoContratei, setConfirmandoContratei] = useState(false);
   const [confirmandoEncerrar, setConfirmandoEncerrar] = useState(false);
+  const [denunciando, setDenunciando] = useState<{ advogadoId: string; nome: string } | null>(null);
+  const [motivoDenuncia, setMotivoDenuncia] = useState('');
+  const [denunciaEnviada, setDenunciaEnviada] = useState(false);
 
   const acaoConversa = async (corpo: Record<string, unknown>): Promise<boolean> => {
     setErro(null);
@@ -302,14 +305,75 @@ export function MinhaSolicitacaoClient({
                   <p style={{ margin: 0 }} className="fund">
                     <strong>Como conduziria:</strong> {r.conducao}
                   </p>
-                  <div style={{ marginTop: 4 }}>
+                  <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <button className="acao" type="button" disabled={agindo} onClick={() => setEscolhendo(r)}>
                       Quero conversar
+                    </button>
+                    <button
+                      className="acao secundaria"
+                      type="button"
+                      disabled={agindo}
+                      onClick={() => {
+                        setDenunciando({ advogadoId: r.advogadoId, nome: r.nome });
+                        setMotivoDenuncia('');
+                        setDenunciaEnviada(false);
+                      }}
+                    >
+                      Denunciar
                     </button>
                   </div>
                 </section>
               ))}
             </div>
+            {denunciando && (
+              <div className="nota exigencia" style={{ marginTop: 12 }}>
+                {denunciaEnviada ? (
+                  <p>
+                    Denúncia registrada — a administração da plataforma analisa toda
+                    denúncia e pode suspender o perfil do(a) profissional. Obrigado por
+                    avisar.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      <strong>Denunciar {denunciando.nome}:</strong> conte o que aconteceu
+                      (promessa de resultado, cobrança pela plataforma, contato fora do
+                      combinado…). A administração analisa e pode suspender o perfil.
+                    </p>
+                    <label className="campo" style={{ marginTop: 8 }}>
+                      O que aconteceu?
+                      <textarea
+                        rows={3}
+                        maxLength={1000}
+                        value={motivoDenuncia}
+                        onChange={(e) => setMotivoDenuncia(e.target.value)}
+                      />
+                    </label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setDenunciando(null)}>
+                        Voltar
+                      </button>
+                      <button
+                        className="acao"
+                        type="button"
+                        disabled={agindo || motivoDenuncia.trim().length < 10}
+                        onClick={() => {
+                          void acaoConversa({
+                            acao: 'denunciar',
+                            advogadoId: denunciando.advogadoId,
+                            texto: motivoDenuncia,
+                          }).then((ok) => {
+                            if (ok) setDenunciaEnviada(true);
+                          });
+                        }}
+                      >
+                        {agindo ? 'Enviando…' : 'Enviar denúncia'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {escolhendo && (
               <div className="nota registro" style={{ marginTop: 12 }}>
                 <p>

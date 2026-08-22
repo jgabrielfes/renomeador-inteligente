@@ -146,5 +146,25 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, codigo: handoff.codigo });
   }
 
+  if (acao === 'denunciar') {
+    // Denúncia sobre uma resposta/conduta — vai para a fila do /admin/radar;
+    // acatar suspende o perfil do(a) advogado(a).
+    const advogadoId = String(body.advogadoId ?? '');
+    const motivo = String(body.texto ?? '').trim().slice(0, 1000);
+    if (!motivo || motivo.length < 10) {
+      return Response.json({ erro: 'Descreva o que aconteceu (ao menos 10 caracteres).' }, { status: 422 });
+    }
+    const resposta = await prisma.radarResposta.findUnique({
+      where: { intakeId_advogadoUserId: { intakeId: intake.id, advogadoUserId: advogadoId } },
+    });
+    if (!resposta && intake.conversaAdvogadoUserId !== advogadoId) {
+      return Response.json({ erro: 'Resposta não encontrada.' }, { status: 404 });
+    }
+    await prisma.radarDenuncia.create({
+      data: { intakeId: intake.id, advogadoUserId: advogadoId, motivo },
+    });
+    return Response.json({ ok: true }, { status: 201 });
+  }
+
   return Response.json({ erro: 'Ação desconhecida.' }, { status: 400 });
 }

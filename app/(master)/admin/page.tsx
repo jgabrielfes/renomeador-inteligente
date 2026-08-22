@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
   FileCheck2,
+  Radar,
   Scale,
   ScrollText,
   Users,
@@ -78,6 +79,9 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       minutas,
       acessos,
       notas,
+      radarPublicados,
+      radarPerfisPendentes,
+      radarDenunciasPendentes,
     ] = await Promise.all([
       // Total de contas do site (sem recorte de data): é o que a listagem
       // mostra. O recorte do período entra como "novas no período", no rodapé
@@ -104,6 +108,10 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         _count: { _all: true },
         where: { createdAt },
       }),
+      // Radar de famílias (estado ATUAL, não período): casos abertos e filas.
+      prisma.familiaIntake.count({ where: { status: "publicado" } }),
+      prisma.advogadoPerfil.count({ where: { situacao: "pendente" } }),
+      prisma.radarDenuncia.count({ where: { status: "pendente" } }),
     ]);
 
     const arquivos = renomeacoes._sum.quantidade ?? 0;
@@ -128,6 +136,26 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
                 ),
                 "porte, rito e leitura do cofre",
               ],
+            },
+            {
+              href: "/admin/radar",
+              icon: Radar,
+              titulo: "Radar de famílias",
+              valor: radarPublicados,
+              leitura: "casos publicados aguardando resposta",
+              detalhes: [
+                plural(
+                  radarPerfisPendentes,
+                  "perfil aguardando verificação da OAB",
+                  "perfis aguardando verificação da OAB"
+                ),
+                plural(
+                  radarDenunciasPendentes,
+                  "denúncia pendente",
+                  "denúncias pendentes"
+                ),
+              ],
+              alerta: radarPerfisPendentes + radarDenunciasPendentes > 0,
             },
           ]
         : []),

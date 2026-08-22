@@ -692,3 +692,19 @@ model SucessoristaEvent {
   @@index([casoId, acao])
   @@map("sucessorista_events")
 }
+
+// Denúncia da FAMÍLIA sobre uma resposta/conduta no Radar (promessa de
+// resultado, cobrança pela plataforma, contato fora do combinado…). Decisão
+// do admin em /admin/radar: ACATAR suspende o perfil; arquivar mantém.
+model RadarDenuncia {
+  id             String    @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  motivo         String
+  status         String    @default("pendente") // pendente|acatada|arquivada
+  createdAt      DateTime  @default(now())
+  decididoEm     DateTime?
+
+  @@index([status, createdAt])
+  @@map("radar_denuncias")
+}
