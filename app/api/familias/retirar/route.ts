@@ -29,6 +29,8 @@ export async function POST(req: Request) {
 
   await prisma.$transaction([
     prisma.intakeHandoff.deleteMany({ where: { intakeId: intake.id } }),
+    prisma.radarResposta.deleteMany({ where: { intakeId: intake.id } }),
+    prisma.radarMensagem.deleteMany({ where: { intakeId: intake.id } }),
     prisma.familiaIntake.delete({ where: { id: intake.id } }),
   ]);
   return Response.json({ ok: true });

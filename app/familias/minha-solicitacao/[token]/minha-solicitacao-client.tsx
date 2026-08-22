@@ -2,15 +2,19 @@
 
 /**
  * Painel do herdeiro no Radar: status honesto (inclusive quando NINGUÉM
- * respondeu), o resumo ANÔNIMO que os advogados veem (transparência total) e
- * o "Retirar solicitação", que apaga tudo do servidor na hora.
+ * respondeu), o resumo ANÔNIMO que os advogados veem (transparência total),
+ * as respostas recebidas em ORDEM ALEATÓRIA FIXA (sem ranking), a conversa
+ * 1:1 com o(a) advogado(a) escolhido(a) — um por vez — e o "Retirar
+ * solicitação", que apaga tudo do servidor na hora.
  */
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import '../../../(private)/sucessorista/sucessorista.css';
 
 import type { CasoAnonimo } from '@/lib/radar/anonimizar';
+import type { ConversaParaFamilia, RespostaParaFamilia } from './page';
 
 const ROTULO_STATUS: Record<string, string> = {
   resultado: 'Resultado gerado — ainda não publicado no Radar',
@@ -37,13 +41,46 @@ export function MinhaSolicitacaoClient({
     horasSemResposta: number | null;
     casoAnonimo: CasoAnonimo | null;
     urlResultado: string;
+    respostas: RespostaParaFamilia[];
+    conversa: ConversaParaFamilia | null;
+    codigoContratacao: string | null;
   } | null;
   horasAviso: number;
 }) {
+  const router = useRouter();
   const [confirmando, setConfirmando] = useState(false);
   const [retirando, setRetirando] = useState(false);
   const [retirada, setRetirada] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [escolhendo, setEscolhendo] = useState<RespostaParaFamilia | null>(null);
+  const [agindo, setAgindo] = useState(false);
+  const [mensagem, setMensagem] = useState('');
+  const [confirmandoContratei, setConfirmandoContratei] = useState(false);
+  const [confirmandoEncerrar, setConfirmandoEncerrar] = useState(false);
+
+  const acaoConversa = async (corpo: Record<string, unknown>): Promise<boolean> => {
+    setErro(null);
+    setAgindo(true);
+    try {
+      const r = await fetch('/api/familias/conversa', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, ...corpo }),
+      });
+      if (r.ok) {
+        router.refresh();
+        return true;
+      }
+      const c = (await r.json().catch(() => null)) as { erro?: string } | null;
+      setErro(c?.erro ?? 'Não foi possível concluir — tente de novo.');
+      return false;
+    } catch {
+      setErro('Não foi possível concluir — verifique a conexão.');
+      return false;
+    } finally {
+      setAgindo(false);
+    }
+  };
 
   const retirar = async () => {
     setErro(null);
@@ -107,7 +144,7 @@ export function MinhaSolicitacaoClient({
       <main className="folha" style={{ margin: '0 auto', maxWidth: 720 }}>
         <span className="eyebrow">Minha solicitação</span>
         <h1>{ROTULO_STATUS[dados.status] ?? dados.status}</h1>
-        {dados.publicadoEm && (
+        {dados.publicadoEm && dados.status === 'publicado' && (
           <p className="subtitulo">
             Publicada em {new Date(dados.publicadoEm).toLocaleDateString('pt-BR')} — o caso
             aparece para advogados SEM o seu nome e sem contato; você decide com quem
@@ -126,7 +163,183 @@ export function MinhaSolicitacaoClient({
           </div>
         )}
 
-        {dados.casoAnonimo && (
+        {/* CONVERSA 1:1 — aberta pelo "Quero conversar"; um(a) por vez. */}
+        {dados.conversa && (
+          <section className="nota" style={{ marginTop: 8 }}>
+            <span className="eyebrow">Sua conversa</span>
+            <h3 style={{ margin: 0 }}>
+              {dados.conversa.advogadoNome}
+              {dados.conversa.advogadoOab ? ` — ${dados.conversa.advogadoOab}` : ''}
+            </h3>
+            {dados.status === 'contratado' && dados.codigoContratacao && (
+              <div className="nota registro" style={{ marginTop: 8 }}>
+                <p>
+                  Contratação confirmada. Código do seu caso:{' '}
+                  <strong style={{ fontSize: '1.2em', letterSpacing: '0.1em' }}>{dados.codigoContratacao}</strong>
+                  {' '}— o(a) advogado(a) usa este código no Sucessorista para importar tudo o
+                  que você respondeu (ele também já está na conversa).
+                </p>
+              </div>
+            )}
+            <div style={{ display: 'grid', gap: 6, marginTop: 8, maxHeight: 300, overflowY: 'auto' }}>
+              {dados.conversa.mensagens.length === 0 && (
+                <p className="fund">Conversa aberta — escreva a primeira mensagem se quiser.</p>
+              )}
+              {dados.conversa.mensagens.map((m, i) => (
+                <p
+                  key={i}
+                  style={{
+                    margin: 0,
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border, #ddd)',
+                    background: m.autor === 'familia' ? 'var(--papel-alto, #eee)' : 'transparent',
+                  }}
+                >
+                  <strong>{m.autor === 'familia' ? 'Você' : dados.conversa!.advogadoNome}:</strong> {m.texto}
+                </p>
+              ))}
+            </div>
+            <label className="campo" style={{ marginTop: 8 }}>
+              Mensagem
+              <textarea
+                rows={2}
+                maxLength={2000}
+                value={mensagem}
+                onChange={(e) => setMensagem(e.target.value)}
+              />
+            </label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              <button
+                className="acao"
+                type="button"
+                disabled={agindo || !mensagem.trim()}
+                onClick={() => {
+                  void acaoConversa({ acao: 'mensagem', texto: mensagem }).then((ok) => {
+                    if (ok) setMensagem('');
+                  });
+                }}
+              >
+                Enviar
+              </button>
+              {dados.status === 'em_conversa' && (
+                <>
+                  <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setConfirmandoContratei(true)}>
+                    Contratei este(a) advogado(a)
+                  </button>
+                  <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setConfirmandoEncerrar(true)}>
+                    Encerrar conversa
+                  </button>
+                </>
+              )}
+            </div>
+            {confirmandoContratei && (
+              <div className="nota registro" style={{ marginTop: 10 }}>
+                <p>
+                  Confirmar a contratação gera um <strong>código do caso</strong> para o(a)
+                  advogado(a) importar suas respostas — e a solicitação sai do Radar.
+                  Honorários e contrato são combinados diretamente com ele(a), fora da
+                  plataforma.
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setConfirmandoContratei(false)}>
+                    Voltar
+                  </button>
+                  <button
+                    className="acao"
+                    type="button"
+                    disabled={agindo}
+                    onClick={() => {
+                      void acaoConversa({ acao: 'contratei' }).then(() => setConfirmandoContratei(false));
+                    }}
+                  >
+                    {agindo ? 'Confirmando…' : 'Confirmar contratação'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {confirmandoEncerrar && (
+              <div className="nota exigencia" style={{ marginTop: 10 }}>
+                <p>
+                  Encerrar devolve o caso ao Radar e você pode conversar com outro(a)
+                  advogado(a). O histórico desta conversa continua visível para você.
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setConfirmandoEncerrar(false)}>
+                    Voltar
+                  </button>
+                  <button
+                    className="acao"
+                    type="button"
+                    disabled={agindo}
+                    onClick={() => {
+                      void acaoConversa({ acao: 'encerrar' }).then(() => setConfirmandoEncerrar(false));
+                    }}
+                  >
+                    {agindo ? 'Encerrando…' : 'Encerrar conversa'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* RESPOSTAS — ordem aleatória fixa, sem destaque; a escolha é sua. */}
+        {dados.status === 'publicado' && dados.respostas.length > 0 && (
+          <>
+            <h2>Respostas recebidas ({dados.respostas.length} de 5)</h2>
+            <p className="fund" style={{ marginTop: 0 }}>
+              A ordem abaixo é aleatória e fixa — ninguém paga por destaque. Leia com
+              calma; você só libera seu contato se escolher conversar, com um(a) de cada
+              vez.
+            </p>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {dados.respostas.map((r) => (
+                <section key={r.advogadoId} className="nota" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span className="eyebrow">{r.oab || 'Advogado(a)'} · respondeu em {r.em.split('-').reverse().join('/')}</span>
+                  <h3 style={{ margin: 0 }}>{r.nome}</h3>
+                  <p style={{ margin: 0 }}>{r.apresentacao}</p>
+                  <p style={{ margin: 0 }} className="fund">
+                    <strong>Como conduziria:</strong> {r.conducao}
+                  </p>
+                  <div style={{ marginTop: 4 }}>
+                    <button className="acao" type="button" disabled={agindo} onClick={() => setEscolhendo(r)}>
+                      Quero conversar
+                    </button>
+                  </div>
+                </section>
+              ))}
+            </div>
+            {escolhendo && (
+              <div className="nota registro" style={{ marginTop: 12 }}>
+                <p>
+                  Abrir conversa com <strong>{escolhendo.nome}</strong> libera para ele(a) o
+                  seu nome e e-mail — e só para ele(a), enquanto a conversa durar. Você pode
+                  encerrar quando quiser e escolher outro(a).
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button className="acao secundaria" type="button" disabled={agindo} onClick={() => setEscolhendo(null)}>
+                    Voltar
+                  </button>
+                  <button
+                    className="acao"
+                    type="button"
+                    disabled={agindo}
+                    onClick={() => {
+                      void acaoConversa({ acao: 'conversar', advogadoId: escolhendo.advogadoId }).then(() =>
+                        setEscolhendo(null),
+                      );
+                    }}
+                  >
+                    {agindo ? 'Abrindo…' : 'Abrir conversa'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {dados.casoAnonimo && dados.status === 'publicado' && (
           <>
             <h2>O que os advogados veem (e nada além disto)</h2>
             <ul className="custos-portal">
@@ -191,7 +404,9 @@ export function MinhaSolicitacaoClient({
 
         <footer className="rodape-etico">
           Esta plataforma não intermedeia honorários nem indica advogados. Os
-          profissionais listados respondem voluntariamente à sua solicitação.
+          profissionais respondem voluntariamente à sua solicitação e a escolha é sempre
+          sua — honorários são combinados diretamente com o(a) advogado(a), fora da
+          plataforma.
         </footer>
       </main>
     </div>
