@@ -367,11 +367,76 @@ model FamiliaIntake {
   confirmacaoToken  String?   @unique
   publicadoEm       DateTime?
   aviso72hEm        DateTime?
+  // Conversa 1:1 (etapa 5): a família escolhe UM(A) advogado(a) por vez —
+  // "Quero conversar" grava quem; encerrar limpa e o caso volta ao Radar;
+  // 30 dias sem confirmação de contratação reabrem sozinhos (na leitura).
+  conversaAdvogadoUserId String?
+  conversaAbertaEm       DateTime?
+  contratadoEm           DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([status, uf, createdAt])
   @@map("familia_intakes")
+}
+
+// RADAR — lado do(a) advogado(a) (camada 3, etapa 5). Ética OAB (Provimento
+// 205/2021): verificação da OAB é MANUAL (fila no /admin), a assinatura é
+// MENSAL e marcada à mão por UF (nunca comissão por caso), a resposta não tem
+// campo de honorários e a lista não tem ranking — ordenação única por data.
+model AdvogadoPerfil {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  oab                String
+  oabUf              String
+  situacao           String    @default("pendente") // pendente|aprovado|recusado|suspenso
+  motivoRecusa       String?
+  quizAprovadoEm     DateTime?
+  aceitaPequenoValor Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("advogado_perfis")
+}
+
+model RadarAssinatura {
+  id        String   @id @default(cuid())
+  userId    String
+  uf        String
+  origem    String   @default("assinante_manual") // sem gateway de pagamento (fora de escopo)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, uf])
+  @@map("radar_assinaturas")
+}
+
+// Resposta de apresentação a um caso anônimo: teto de 5 por caso (validado na
+// action), uma por advogado(a), textos limitados (600/800) e SEM valores.
+model RadarResposta {
+  id             String   @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  apresentacao   String
+  conducao       String
+  createdAt      DateTime @default(now())
+
+  @@unique([intakeId, advogadoUserId])
+  @@index([intakeId, createdAt])
+  @@map("radar_respostas")
+}
+
+// Canal 1:1 aberto pelo "Quero conversar" — só a família e o(a) advogado(a)
+// escolhido(a) leem; o histórico permanece para a família mesmo após encerrar.
+model RadarMensagem {
+  id             String   @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  autor          String   // advogado|familia
+  texto          String
+  createdAt      DateTime @default(now())
+
+  @@index([intakeId, advogadoUserId, createdAt])
+  @@map("radar_mensagens")
 }
 
 // HANDOFF do intake ao advogado: a família gera um CÓDIGO de uso único e o
