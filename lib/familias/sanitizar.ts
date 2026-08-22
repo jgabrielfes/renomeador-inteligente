@@ -51,6 +51,9 @@ export function sanitizarRespostas(bruto: unknown): RespostasFamilia | null {
       veiculos: faixa(bens.veiculos),
       financeiro: faixa(bens.financeiro),
       empresa: bens.empresa === true,
+      // A faixa da empresa só vale COM a caixinha marcada — corpo forjado
+      // com valor sem a flag não infla o acervo.
+      empresaValor: bens.empresa === true ? faixa(bens.empresaValor) : null,
       outros: faixa(bens.outros),
     },
     dividas: opcao(b.dividas, ['sim', 'nao'] as const, 'nao'),
@@ -60,6 +63,7 @@ export function sanitizarRespostas(bruto: unknown): RespostasFamilia | null {
     ufFamilia: uf(b.ufFamilia) || uf(b.ufFalecido),
     nome: texto(b.nome, 80),
     email: texto(b.email, 200),
+    observacoes: texto(b.observacoes, 500),
   };
   // Mínimo para um resultado fazer sentido.
   const temBem =

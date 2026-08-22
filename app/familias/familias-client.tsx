@@ -204,16 +204,19 @@ function Opcao({
 function SeletorFaixa({
   valor,
   onMudar,
+  rotuloVazio = 'não há / não se aplica',
 }: {
   valor: FaixaValor | null;
   onMudar: (f: FaixaValor | null) => void;
+  /** Texto da opção nula (a empresa usa "não sei informar"). */
+  rotuloVazio?: string;
 }) {
   return (
     <select
       value={valor ?? ''}
       onChange={(e) => onMudar((e.target.value || null) as FaixaValor | null)}
     >
-      <option value="">não há / não se aplica</option>
+      <option value="">{rotuloVazio}</option>
       {FAIXAS.map((f) => (
         <option key={f} value={f}>
           {ROTULO_FAIXA[f]}
@@ -562,10 +565,22 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
               <input
                 type="checkbox"
                 checked={r.bens.empresa}
-                onChange={(e) => patchBens({ empresa: e.target.checked })}
+                onChange={(e) =>
+                  patchBens({ empresa: e.target.checked, empresaValor: null })
+                }
               />
               Tinha participação em empresa (sociedade, quotas)
             </label>
+            {r.bens.empresa && (
+              <label className="campo" style={{ marginTop: 8 }}>
+                Capital social ou patrimônio líquido da parte dele(a) — aproximado
+                <SeletorFaixa
+                  valor={r.bens.empresaValor}
+                  onMudar={(f) => patchBens({ empresaValor: f })}
+                  rotuloVazio="não sei informar"
+                />
+              </label>
+            )}
             <label className="campo" style={{ marginTop: 8 }}>
               Outros bens (joias, obras, semoventes…)
               <SeletorFaixa valor={r.bens.outros} onMudar={(f) => patchBens({ outros: f })} />
@@ -658,6 +673,20 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
                 />
               </label>
             </div>
+            <label className="campo campo-longo" style={{ marginTop: 8 }}>
+              Quer explicar algo em poucas palavras? (opcional)
+              <textarea
+                rows={3}
+                maxLength={500}
+                value={r.observacoes}
+                onChange={(e) => patch({ observacoes: e.target.value })}
+                placeholder="Ex.: a casa ainda está no nome dos avós; um irmão mora fora; a empresa está parada…"
+              />
+            </label>
+            <p className="fund" style={{ marginTop: 4 }}>
+              Essas observações acompanham o seu caso se você levá-lo a um(a)
+              advogado(a) — não entram no resumo anônimo do Radar.
+            </p>
           </>
         )}
 

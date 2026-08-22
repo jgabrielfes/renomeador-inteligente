@@ -65,11 +65,14 @@ console.log('\nRadar — anonimização do caso publicado\n');
     cpf: '111.222.333-44',
     nomeDoFalecido: 'José Sigiloso',
     telefone: '11 99999-0000',
+    // Texto LIVRE do questionário: vai ao advogado no handoff, JAMAIS ao
+    // resumo anônimo — pode identificar a família.
+    observacoes: 'a casa da Rua Sigilosa 123 está no nome do meu avô Aristides',
   } as unknown as RespostasFamilia;
   const texto = JSON.stringify(
     anonimizarIntake({ id: 'x', respostas: contaminada, pequenoValor: true, publicadoEm: '2026-08-23' }),
   );
-  for (const proibido of ['111.222', 'José', '99999', 'cpf', 'telefone']) {
+  for (const proibido of ['111.222', 'José', '99999', 'cpf', 'telefone', 'Sigilosa', 'Aristides', 'observacoes']) {
     teste(`contaminação não atravessa ("${proibido}")`, !texto.includes(proibido));
   }
 }

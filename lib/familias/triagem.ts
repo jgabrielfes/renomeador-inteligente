@@ -29,7 +29,13 @@ export interface Triagem {
 export function faixaDoAcervo(r: RespostasFamilia): { min: number; max: number } {
   let min = 0;
   let max = 0;
-  for (const f of [r.bens.imoveis, r.bens.veiculos, r.bens.financeiro, r.bens.outros]) {
+  for (const f of [
+    r.bens.imoveis,
+    r.bens.veiculos,
+    r.bens.financeiro,
+    r.bens.empresaValor,
+    r.bens.outros,
+  ]) {
     if (!f) continue;
     min += LIMITES_FAIXA[f].min;
     max += LIMITES_FAIXA[f].max;

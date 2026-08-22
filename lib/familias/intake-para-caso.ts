@@ -152,8 +152,10 @@ export function intakeParaCaso(
   if (r.bens.empresa) {
     bens.push({
       id: opts.gerarId('bem'),
-      descricao: 'Participação societária (apurar valor pelo contrato social e balanço)',
-      valor: '0.00',
+      descricao: r.bens.empresaValor
+        ? `Participação societária (faixa aproximada ${ROTULO_FAIXA[r.bens.empresaValor]} de capital/patrimônio líquido — apurar pelo contrato social e balanço)`
+        : 'Participação societária (apurar valor pelo contrato social e balanço)',
+      valor: r.bens.empresaValor ? meioDaFaixa(r.bens.empresaValor) : '0.00',
       natureza,
       tipo: 'QUOTAS',
     });
@@ -186,6 +188,7 @@ export function intakeParaCaso(
     `Família em ${r.cidade || '(cidade não informada)'}/${r.ufFamilia || r.ufFalecido}.` +
       (r.nome || r.email ? ` Contato de quem respondeu: ${[r.nome, r.email].filter(Boolean).join(' · ')}.` : ''),
   );
+  if (r.observacoes) flags.push(`Observações da família: "${r.observacoes}"`);
 
   return {
     v: 1,

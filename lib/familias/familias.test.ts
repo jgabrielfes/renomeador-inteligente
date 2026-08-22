@@ -171,6 +171,30 @@ console.log('\nPara famílias — triagem, estimativas e checklist\n');
   teste('sem o mínimo devolve null', sanitizarRespostas({ ufFalecido: 'SP' }) === null);
 }
 
+{
+  // Empresa: a faixa só vale COM a caixinha marcada; observações são
+  // limitadas a 500 caracteres.
+  const comEmpresa = sanitizarRespostas(
+    base({
+      bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: '200-500' },
+      observacoes: `  ${'x'.repeat(600)}  `,
+    }),
+  )!;
+  eq('faixa da empresa atravessa com a flag', comEmpresa.bens.empresaValor, '200-500');
+  eq('observações aparadas em 500', comEmpresa.observacoes.length, 500);
+  const semFlag = sanitizarRespostas(
+    base({
+      bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: 'ate-50', empresa: false, empresaValor: '1000-2000' },
+    }),
+  )!;
+  eq('faixa da empresa SEM a flag cai fora (corpo forjado)', semFlag.bens.empresaValor, null);
+  eq(
+    'faixa do acervo soma o valor da empresa',
+    faixaDoAcervo(base({ bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: '200-500' } })),
+    { min: 200_000, max: 500_000 },
+  );
+}
+
 /* ---------- intake → CasoSalvo (importação do advogado) ---------- */
 
 {

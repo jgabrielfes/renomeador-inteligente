@@ -53,6 +53,9 @@ export interface BensDaFamilia {
   financeiro: FaixaValor | null;
   /** Participação em empresa (quotas/ações fechadas). */
   empresa: boolean;
+  /** Faixa do capital social/patrimônio líquido da participação (só com
+   *  `empresa` marcada; null = a família não sabe informar). */
+  empresaValor: FaixaValor | null;
   outros: FaixaValor | null;
 }
 
@@ -90,6 +93,9 @@ export interface RespostasFamilia {
   /** 12. Contato (opcional para ver o resultado). */
   nome: string;
   email: string;
+  /** 12. Observações livres (curtas) — algo que a família queira explicar.
+   *  Seguem ao advogado no handoff; NUNCA entram no resumo anônimo do Radar. */
+  observacoes: string;
 }
 
 export const RESPOSTAS_INICIAIS: RespostasFamilia = {
@@ -107,6 +113,7 @@ export const RESPOSTAS_INICIAIS: RespostasFamilia = {
     veiculos: null,
     financeiro: null,
     empresa: false,
+    empresaValor: null,
     outros: null,
   },
   dividas: 'nao',
@@ -116,4 +123,5 @@ export const RESPOSTAS_INICIAIS: RespostasFamilia = {
   ufFamilia: '',
   nome: '',
   email: '',
+  observacoes: '',
 };
