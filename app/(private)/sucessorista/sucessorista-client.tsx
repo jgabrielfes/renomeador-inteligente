@@ -896,87 +896,108 @@ export default function SucessoristaClient({
 
         /* painel "Meus casos": decide o modo de persistência e pinta do
            cache antes da varredura (nunca tela vazia esperando I/O). A
-           pasta-raiz é POR CONTA: o escopo entra antes de qualquer leitura. */
-        definirContaAtiva(contaId);
-        const nomeDisp = (await dispositivoSalvo()) ?? '';
-        setDispositivo(nomeDisp);
-        const rascunho = await carregarRascunho();
-        const migrado = await idbGet<boolean>(STORES.config, 'rascunho-migrado');
-        setTemRascunhoLegado(Boolean(rascunho) && !migrado);
-        if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
+           pasta-raiz é POR CONTA: o escopo entra antes de qualquer leitura.
+           TODA chamada abaixo tem fallback próprio: uma falha isolada
+           (IndexedDB em modo restrito, server action fora do ar, permissão
+           negada) não pode matar o efeito antes do setEstadoPainel — foi o
+           que congelava o painel no "carregando" sem erro visível. */
+        let nomeDisp = '';
+        try {
+          definirContaAtiva(contaId);
+          nomeDisp = (await dispositivoSalvo()) ?? '';
+          setDispositivo(nomeDisp);
+          const rascunho = await carregarRascunho();
+          const migrado = await idbGet<boolean>(STORES.config, 'rascunho-migrado');
+          setTemRascunhoLegado(Boolean(rascunho) && !migrado);
+          if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
+        } catch {
+          // IndexedDB indisponível — segue sem rascunho/nome do dispositivo
+        }
 
         // NUVEM DE ARQUIVOS conectada tem prioridade: a "pasta do processo"
         // vive na conta Google/Microsoft/Dropbox do usuário e vale em
         // qualquer dispositivo — sem seletor de pasta local (é o que resolve
         // o conflito entre máquinas). Com mais de uma conectada, a ordem é
         // Google → OneDrive → Dropbox (desconecte para cair na seguinte).
+        const nuvemFora = { disponivel: false, conectado: false, email: null };
         const [eDrive, eOneDrive, eDropbox] = await Promise.all([
-          estadoDrive(),
-          estadoOneDrive(),
-          estadoDropbox(),
+          estadoDrive().catch(() => nuvemFora),
+          estadoOneDrive().catch(() => nuvemFora),
+          estadoDropbox().catch(() => nuvemFora),
         ]);
         setDrive(eDrive);
         setOneDrive(eOneDrive);
         setDropbox(eDropbox);
-        if (eDrive.conectado) {
-          const s = new DriveCaseStore(
-            new TokenDrivePool(tokenDrive),
-            nomeDisp || 'Google Drive',
-          );
-          setStore(s);
-          setEstadoPainel('drive');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (eOneDrive.conectado) {
-          const s = new OneDriveCaseStore(
-            new TokenDrivePool(tokenOneDrive),
-            nomeDisp || 'OneDrive',
-          );
-          setStore(s);
-          setEstadoPainel('onedrive');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (eDropbox.conectado) {
-          const s = new DropboxCaseStore(
-            new TokenDrivePool(tokenDropbox),
-            nomeDisp || 'Dropbox',
-          );
-          setStore(s);
-          setEstadoPainel('dropbox');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (pastaDisponivel()) {
-          const { estado, raiz } = await estadoDaRaiz();
-          if (estado === 'granted' && raiz) {
-            const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+        try {
+          if (eDrive.conectado) {
+            const s = new DriveCaseStore(
+              new TokenDrivePool(tokenDrive),
+              nomeDisp || 'Google Drive',
+            );
             setStore(s);
-            setNomeRaiz(raiz.name);
-            setEstadoPainel('pasta');
-            setResumos(await cacheDeResumos());
-            void s.listarCasos().then(setResumos);
-          } else if ((estado === 'prompt' || estado === 'denied') && raiz) {
-            setEstadoPainel('pasta-bloqueada');
-            setResumos(await cacheDeResumos());
+            setEstadoPainel('drive');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (eOneDrive.conectado) {
+            const s = new OneDriveCaseStore(
+              new TokenDrivePool(tokenOneDrive),
+              nomeDisp || 'OneDrive',
+            );
+            setStore(s);
+            setEstadoPainel('onedrive');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (eDropbox.conectado) {
+            const s = new DropboxCaseStore(
+              new TokenDrivePool(tokenDropbox),
+              nomeDisp || 'Dropbox',
+            );
+            setStore(s);
+            setEstadoPainel('dropbox');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (pastaDisponivel()) {
+            const { estado, raiz } = await estadoDaRaiz();
+            if (estado === 'granted' && raiz) {
+              const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+              setStore(s);
+              setNomeRaiz(raiz.name);
+              setEstadoPainel('pasta');
+              setResumos(await cacheDeResumos());
+              void s.listarCasos().then(setResumos).catch(() => {});
+            } else if ((estado === 'prompt' || estado === 'denied') && raiz) {
+              setEstadoPainel('pasta-bloqueada');
+              setResumos(await cacheDeResumos());
+            } else {
+              setEstadoPainel('sem-raiz');
+              setResumos([]);
+            }
           } else {
-            setEstadoPainel('sem-raiz');
-            setResumos([]);
+            const s = new PortableCaseStore(nomeDisp || 'Este navegador');
+            setStore(s);
+            setEstadoPainel('portatil');
+            void s.listarCasos().then(setResumos).catch(() => setResumos([]));
           }
-        } else {
+        } catch {
+          // Último recurso: qualquer falha inesperada acima cai no modo
+          // portátil — painel utilizável em vez de congelado.
           const s = new PortableCaseStore(nomeDisp || 'Este navegador');
           setStore(s);
           setEstadoPainel('portatil');
-          void s.listarCasos().then(setResumos);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
         }
 
         // Nuvem (conta ou equipe): os casos espelhados entram no painel
         // junto dos locais (melhor-esforço — falha vira lista vazia).
         if (nuvemAtiva) {
-          void listarCasosNuvem().then((lista) => {
-            if (lista) setResumosNuvem(lista);
-          });
+          void listarCasosNuvem()
+            .then((lista) => {
+              if (lista) setResumosNuvem(lista);
+            })
+            .catch(() => {});
         }
       })();
     }, 0);
