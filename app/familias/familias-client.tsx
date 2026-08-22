@@ -27,7 +27,7 @@ import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativ
 import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { GerarCodigoAdvogado, ResultadoView } from './resultado-view';
+import { GerarCodigoAdvogado, PedirAnalise, ResultadoView } from './resultado-view';
 
 const TOTAL_TELAS = 12;
 
@@ -43,12 +43,14 @@ function AcoesResultado({
   triagem,
   estimativa,
   docs,
+  radarAtivo,
   onRevisar,
 }: {
   r: RespostasFamilia;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
   docs: ItemChecklist[];
+  radarAtivo: boolean;
   onRevisar: () => void;
 }) {
   const [gerandoPdf, setGerandoPdf] = useState(false);
@@ -169,6 +171,9 @@ function AcoesResultado({
         </div>
       )}
       {tokenSalvo && r.jaTemAdvogado === 'sim' && <GerarCodigoAdvogado token={tokenSalvo} />}
+      {tokenSalvo && radarAtivo && r.jaTemAdvogado !== 'sim' && (
+        <PedirAnalise token={tokenSalvo} emailInicial={email} />
+      )}
     </>
   );
 }
@@ -218,7 +223,7 @@ function SeletorFaixa({
   );
 }
 
-export function FamiliasClient() {
+export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean }) {
   const [tela, setTela] = useState(0); // 0 = capa; 1..12 = perguntas; 13 = resultado
   const [r, setR] = useState<RespostasFamilia>({ ...RESPOSTAS_INICIAIS });
   const [erro, setErro] = useState<string | null>(null);
@@ -311,6 +316,7 @@ export function FamiliasClient() {
                 triagem={triagem}
                 estimativa={estimativa}
                 docs={docs}
+                radarAtivo={radarAtivo}
                 onRevisar={() => setTela(TOTAL_TELAS)}
               />
             }

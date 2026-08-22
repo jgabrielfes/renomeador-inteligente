@@ -11,6 +11,7 @@ import { sanitizarRespostas } from '@/lib/familias/sanitizar';
 import { classificarVia } from '@/lib/familias/triagem';
 import { estimarCustos } from '@/lib/familias/estimativas';
 import { montarChecklistDocumentos } from '@/lib/familias/documentos';
+import { radarAtivo } from '@/lib/radar/config';
 import { ResultadoSalvoClient } from './resultado-salvo-client';
 
 export const dynamic = 'force-dynamic';
@@ -47,11 +48,17 @@ export default async function ResultadoSalvoPage({
     </div>
   );
 
-  let linha: { respostas: unknown; status: string; expiraEm: Date } | null = null;
+  let linha: {
+    respostas: unknown;
+    status: string;
+    expiraEm: Date;
+    email: string | null;
+    publicadoEm: Date | null;
+  } | null = null;
   try {
     linha = await prisma.familiaIntake.findUnique({
       where: { tokenGestao: token.slice(0, 120) },
-      select: { respostas: true, status: true, expiraEm: true },
+      select: { respostas: true, status: true, expiraEm: true, email: true, publicadoEm: true },
     });
   } catch {
     linha = null;
@@ -74,6 +81,8 @@ export default async function ResultadoSalvoPage({
       triagem={triagem}
       estimativa={estimativa}
       docs={docs}
+      radar={radarAtivo() ? (linha.publicadoEm ? 'publicado' : 'disponivel') : 'inativo'}
+      emailInicial={linha.email ?? respostas.email}
     />
   );
 }

@@ -13,7 +13,7 @@ import type { EstimativaCompleta } from '@/lib/familias/estimativas';
 import type { ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { GerarCodigoAdvogado, ResultadoView } from '../../resultado-view';
+import { GerarCodigoAdvogado, PedirAnalise, ResultadoView } from '../../resultado-view';
 
 export function ResultadoSalvoClient({
   token,
@@ -21,9 +21,14 @@ export function ResultadoSalvoClient({
   triagem,
   estimativa,
   docs,
+  radar = 'inativo',
+  emailInicial = '',
 }: {
   token: string;
   r: RespostasFamilia;
+  /** Estado do Radar para este resultado (env-gated no servidor). */
+  radar?: 'inativo' | 'disponivel' | 'publicado';
+  emailInicial?: string;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
   docs: ItemChecklist[];
@@ -61,6 +66,15 @@ export function ResultadoSalvoClient({
                 </button>
               </div>
               <GerarCodigoAdvogado token={token} />
+              {radar === 'disponivel' && <PedirAnalise token={token} emailInicial={emailInicial} />}
+              {radar === 'publicado' && (
+                <div className="nota registro" style={{ marginTop: 12 }}>
+                  <p>
+                    Sua solicitação está publicada no Radar.{' '}
+                    <a href={`/familias/minha-solicitacao/${token}`}>Acompanhar ou retirar</a>.
+                  </p>
+                </div>
+              )}
             </>
           }
         />

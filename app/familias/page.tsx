@@ -6,6 +6,7 @@
 import type { Metadata } from 'next';
 
 import { requirePlataforma } from '@/lib/app';
+import { radarAtivo } from '@/lib/radar/config';
 import { FamiliasClient } from './familias-client';
 
 export const metadata: Metadata = {
@@ -32,5 +33,7 @@ export const metadata: Metadata = {
 export default async function FamiliasPage() {
   // Página do site do Sucessorista — nos demais deploys ela não existe.
   await requirePlataforma('SUCESSORISTA');
-  return <FamiliasClient />;
+  // O Radar é ligado pelo admin (RADAR_ATIVO=1 + e-mail configurado) — a
+  // página é estática, então a flag entra no build do site.
+  return <FamiliasClient radarAtivo={radarAtivo()} />;
 }

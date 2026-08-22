@@ -87,6 +87,111 @@ export function GerarCodigoAdvogado({ token }: { token: string }) {
   );
 }
 
+/**
+ * "Pedir análise de advogados especializados" — a porta do Radar, no ritmo
+ * do herdeiro: consentimento ESPECÍFICO (LGPD), e-mail e a publicação só
+ * depois do clique no link de confirmação. Sem pop-up, sem pressão.
+ */
+export function PedirAnalise({ token, emailInicial }: { token: string; emailInicial: string }) {
+  const [aberto, setAberto] = useState(false);
+  const [email, setEmail] = useState(emailInicial);
+  const [consentiu, setConsentiu] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+
+  const publicar = async () => {
+    setErroEnvio(null);
+    if (!consentiu) {
+      setErroEnvio('Marque o consentimento para continuar.');
+      return;
+    }
+    if (!/.+@.+\..+/.test(email.trim())) {
+      setErroEnvio('Informe um e-mail válido — a confirmação vai por ele.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch('/api/familias/radar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, email: email.trim(), consentimento: true }),
+      });
+      const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
+      if (r.ok) setEnviado(true);
+      else setErroEnvio(corpo?.erro ?? 'Não foi possível enviar — tente de novo.');
+    } catch {
+      setErroEnvio('Não foi possível enviar — verifique a conexão.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (enviado) {
+    return (
+      <div className="nota registro" style={{ marginTop: 12 }}>
+        <span className="eyebrow">Confira seu e-mail</span>
+        <p>
+          Enviamos um link de confirmação para <strong>{email.trim()}</strong>. A
+          solicitação só é publicada depois do seu clique — e sai do ar quando você
+          quiser.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="nota" style={{ marginTop: 12 }}>
+      <p style={{ marginBottom: 6 }}>
+        <strong>Quer que advogados especializados analisem seu caso?</strong>{' '}
+        <span className="fund">
+          Seu caso é publicado SEM nome e sem contato; profissionais de sucessões da sua
+          região podem responder com uma apresentação, e VOCÊ escolhe se (e com quem)
+          conversa — um por vez.
+        </span>
+      </p>
+      {!aberto ? (
+        <button className="acao secundaria" type="button" onClick={() => setAberto(true)}>
+          Pedir análise de advogados especializados
+        </button>
+      ) : (
+        <>
+          <label className="campo" style={{ marginTop: 8 }}>
+            Seu e-mail (a confirmação e os avisos vão por ele)
+            <input
+              type="text"
+              inputMode="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label className="marcar" style={{ marginTop: 8, fontWeight: 400 }}>
+            <input
+              type="checkbox"
+              checked={consentiu}
+              onChange={(e) => setConsentiu(e.target.checked)}
+            />
+            Autorizo a publicação ANÔNIMA do meu caso (cidade, via provável, faixa de
+            valor e particularidades — nunca meu nome, contato ou o nome de quem faleceu)
+            para que advogados respondam à minha solicitação. Posso retirar a solicitação
+            a qualquer momento, apagando tudo.
+          </label>
+          {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+          <div style={{ marginTop: 8 }}>
+            <button className="acao" type="button" disabled={enviando} onClick={() => void publicar()}>
+              {enviando ? 'Enviando…' : 'Receber o link de confirmação'}
+            </button>
+          </div>
+        </>
+      )}
+      <p className="fund" style={{ marginTop: 6 }}>
+        Esta plataforma não intermedeia honorários nem indica advogados — os
+        profissionais respondem voluntariamente à sua solicitação.
+      </p>
+    </div>
+  );
+}
+
 export function ResultadoView({
   r,
   triagem,

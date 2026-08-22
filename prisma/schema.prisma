@@ -360,6 +360,13 @@ model FamiliaIntake {
   pequenoValor      Boolean   @default(false)
   tokenGestao       String    @unique
   expiraEm          DateTime
+  // RADAR — publicação anonimizada (camada 3, etapa 4): a publicação SÓ
+  // acontece com consentimento específico + e-mail confirmado pelo link
+  // (confirmacaoToken, uso único). aviso72hEm marca o aviso honesto de
+  // "ninguém respondeu ainda" (enviado uma vez pela varredura do admin).
+  confirmacaoToken  String?   @unique
+  publicadoEm       DateTime?
+  aviso72hEm        DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
