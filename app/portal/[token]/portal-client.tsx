@@ -1202,6 +1202,16 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         Dúvidas sobre algum documento? Fale direto com {advogado}.
       </p>
 
+      {/* Advogado(a) próprio(a): o herdeiro informa e o escritório passa a
+          copiar o(a) colega — direito do Provimento 205/2021, sem burocracia. */}
+      {!ehMediador && (
+        <AdvogadoProprioForm
+          token={token}
+          atual={convite.advogadoProprio ?? null}
+          onAtualizado={atualizarConvite}
+        />
+      )}
+
       {/* Aviso deontológico permanente (Provimento 205/2021 da OAB): o
           herdeiro sempre sabe quem conduz e que pode ter advogado próprio. */}
       <footer className="rodape-etico">
@@ -2019,6 +2029,94 @@ function ComparacaoCenarios({ cenarios }: { cenarios: CenarioEspolioPortal[] }) 
         ))}
       </ul>
     </>
+  );
+}
+
+/**
+ * "Tenho advogado(a) próprio(a)": o herdeiro informa nome/OAB/contato e o
+ * escritório passa a copiar o(a) colega nas comunicações. Só estrutura —
+ * nenhum acesso novo nasce daqui, e o contato não circula entre os demais.
+ */
+function AdvogadoProprioForm({
+  token,
+  atual,
+  onAtualizado,
+}: {
+  token: string;
+  atual: { nome: string; oab?: string; contato?: string; informadoEm?: string } | null;
+  onAtualizado: (c: ConviteHerdeiro) => void;
+}) {
+  const [nome, setNome] = useState('');
+  const [oab, setOab] = useState('');
+  const [contato, setContato] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+
+  const enviar = async () => {
+    setErroEnvio(null);
+    if (nome.trim() === '') {
+      setErroEnvio('Informe o nome do(a) advogado(a).');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/portal/${token}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ advogadoProprio: { nome: nome.trim(), oab, contato } }),
+      });
+      const corpo = (await r.json().catch(() => null)) as ConviteHerdeiro | { erro?: string } | null;
+      if (r.ok && corpo && 'token' in (corpo as ConviteHerdeiro)) {
+        onAtualizado(corpo as ConviteHerdeiro);
+        setNome('');
+        setOab('');
+        setContato('');
+      } else {
+        setErroEnvio((corpo as { erro?: string } | null)?.erro ?? 'Não foi possível salvar — tente de novo.');
+      }
+    } catch {
+      setErroEnvio('Não foi possível salvar — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <details className="nota" style={{ marginTop: 16 }}>
+      <summary style={{ cursor: 'pointer' }}>
+        {atual
+          ? `Advogado(a) próprio(a) informado(a): ${atual.nome}${atual.oab ? ` (OAB ${atual.oab})` : ''} — atualizar`
+          : 'Tenho advogado(a) próprio(a) — informar ao escritório'}
+      </summary>
+      <p className="fund" style={{ margin: '6px 0 4px' }}>
+        Você pode constituir advogado(a) próprio(a) a qualquer momento. Informando aqui,
+        o escritório que conduz o inventário passa a se comunicar também com quem você
+        indicou. Esta informação não aparece para os outros herdeiros.
+      </p>
+      <div className="grade q-grid">
+        <Campo rotulo="Nome do(a) advogado(a)">
+          <input type="text" maxLength={160} value={nome} onChange={(e) => setNome(e.target.value)} />
+        </Campo>
+        <Campo rotulo="OAB (opcional)">
+          <input type="text" maxLength={40} placeholder="Ex.: 123.456/SP" value={oab} onChange={(e) => setOab(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Contato (opcional)">
+          <input
+            type="text"
+            maxLength={200}
+            placeholder="Telefone ou e-mail"
+            value={contato}
+            onChange={(e) => setContato(e.target.value)}
+          />
+        </Campo>
+      </div>
+      {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+      <div style={{ marginTop: 8 }}>
+        <button className="acao" type="button" disabled={enviando} onClick={() => void enviar()}>
+          {enviando ? 'Salvando…' : atual ? 'Atualizar indicação' : 'Informar ao escritório'}
+        </button>
+      </div>
+    </details>
   );
 }
 

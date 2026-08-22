@@ -159,4 +159,18 @@ export const store: PortalStore = {
     }
     await memoryStore.marcarEspolioVisto(token, quando);
   },
+
+  async salvarAdvogadoProprio(token, dados) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        c.advogadoProprio = dados;
+        await gravarNoBanco(c);
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.salvarAdvogadoProprio(token, dados);
+  },
 };

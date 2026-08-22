@@ -108,6 +108,10 @@ export interface EstadoPainelFamilia {
   espolioQuinhoes: boolean;
   /** Eco local da última publicação (a verdade é o servidor). */
   publicadoEm?: string;
+  /** CONSENSO levado para a partilha: eco no caso.json (o .json transporta a
+   *  configuração E o consenso — abrir o caso em outra máquina mostra qual
+   *  cenário a família fechou e quando ele virou a matriz da seção III). */
+  consensoAplicado?: { titulo: string; em: string };
 }
 
 export const PAINEL_FAMILIA_INICIAL: EstadoPainelFamilia = {
@@ -191,8 +195,9 @@ export function PainelFamiliaCard({
    *  no caso sem este aceite explícito do advogado). */
   onAplicarValor: (bemId: string, valor: string) => void;
   /** Cenário levado para a partilha: as alocações entram na matriz da
-   *  seção III (mesmo formato — cópia direta). */
-  onLevarParaPartilha: (alocacoes: Alocacoes) => void;
+   *  seção III (mesmo formato — cópia direta) e o consenso fica ecoado no
+   *  caso.json (consensoAplicado). */
+  onLevarParaPartilha: (alocacoes: Alocacoes, titulo: string) => void;
   irParaDocumentos: () => void;
 }) {
   const [publicando, setPublicando] = useState(false);
@@ -1062,7 +1067,7 @@ export function PainelFamiliaCard({
                           variant="outline"
                           size="sm"
                           loading={mudandoCenario === c.id}
-                          onClick={() => onLevarParaPartilha(c.dados.alocacoes)}
+                          onClick={() => onLevarParaPartilha(c.dados.alocacoes, c.dados.titulo)}
                         >
                           levar para a partilha
                         </Button>
@@ -1094,6 +1099,12 @@ export function PainelFamiliaCard({
                   </div>
                 );
               })}
+            {estado.consensoAplicado && (
+              <p className="fund" style={{ margin: '4px 0 0' }}>
+                Consenso aplicado à partilha: “{estado.consensoAplicado.titulo}” em{' '}
+                {dataCurta(estado.consensoAplicado.em)} — registrado no caso.
+              </p>
+            )}
             <p className="fund" style={{ margin: '4px 0 0' }}>
               Cenário novo nasce na aba Partilha (seção III): monte a divisão na matriz e
               clique “Propor este cenário à família”.
@@ -1272,6 +1283,14 @@ export function PainelFamiliaCard({
                   {(tentativas[c.token] ?? 0) > 0 &&
                     ` · ${tentativas[c.token]} tentativa(s) de contato`}
                 </span>
+                {c.advogadoProprio && (
+                  <span className="fund" style={{ display: 'block' }}>
+                    advogado(a) próprio(a): {c.advogadoProprio.nome}
+                    {c.advogadoProprio.oab ? ` (OAB ${c.advogadoProprio.oab})` : ''}
+                    {c.advogadoProprio.contato ? ` · ${c.advogadoProprio.contato}` : ''} — copiar
+                    nas comunicações
+                  </span>
+                )}
               </span>
               {!c.revogadoEm && (
                 <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

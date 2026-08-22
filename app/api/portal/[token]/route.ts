@@ -296,6 +296,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     confirmarEnvio?: boolean;
     novoPedido?: { id?: string; titulo?: string; descricao?: string };
     preferencias?: { email?: string; notificacoes?: string };
+    advogadoProprio?: { nome?: string; oab?: string; contato?: string };
   };
   try {
     body = await req.json();
@@ -364,6 +365,28 @@ export async function PATCH(req: Request, ctx: Ctx) {
         : {}),
     });
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    return Response.json(atualizado);
+  }
+
+  // Advogado(a) próprio(a) do herdeiro (Provimento 205/2021) — SÓ estrutura:
+  // fica no convite, o escritório vê no card e o evento registra a data.
+  // Nenhum acesso novo nasce daqui.
+  if (body?.advogadoProprio && typeof body.advogadoProprio === 'object') {
+    const nome = String(body.advogadoProprio.nome ?? '').trim().slice(0, 160);
+    if (!nome) return Response.json({ erro: 'Informe o nome do(a) advogado(a).' }, { status: 422 });
+    const atualizado = await store.salvarAdvogadoProprio(token, {
+      nome,
+      oab: String(body.advogadoProprio.oab ?? '').trim().slice(0, 40) || undefined,
+      contato: String(body.advogadoProprio.contato ?? '').trim().slice(0, 200) || undefined,
+      informadoEm: new Date().toISOString(),
+    });
+    if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'ADVOGADO_PROPRIO',
+      { herdeiro: atualizado.nomeHerdeiro },
+      token,
+    );
     return Response.json(atualizado);
   }
 

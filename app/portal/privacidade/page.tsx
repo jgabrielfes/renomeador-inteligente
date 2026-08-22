@@ -52,12 +52,29 @@ export default async function PrivacidadePortalPage() {
           </li>
         </ul>
 
+        <h2>O espaço do espólio: o que é compartilhado com a família</h2>
+        <p>
+          Quando o advogado abre o <strong>espaço do espólio</strong>, uma parte passa a
+          ser <strong>igual para todos os convidados</strong> — de propósito, porque ver
+          os mesmos números juntos é o que pacifica: a lista de bens e valores, as
+          dívidas, os quinhões (se liberados), os cenários de divisão com as respostas de
+          cada um, as votações com os votos, as despesas adiantadas informadas e as
+          mensagens do mural <strong>aprovadas pelo escritório</strong>. Nesses itens, o
+          seu nome e o que você escreveu aparecem para os demais — o seu link, o seu
+          telefone e o seu e-mail, nunca. O que você envia ao espaço fica registrado e
+          não pode ser editado: para corrigir, registra-se algo novo. Um(a){" "}
+          <strong>mediador(a)</strong> convidado(a) pelo escritório vê o mesmo conteúdo e
+          pode comentar, mas não vota nem decide.
+        </p>
+
         <h2>O que NUNCA fica visível para você ou para terceiros</h2>
         <p>
           A folha de trabalho completa do advogado, as anotações internas do escritório e
           os honorários não entram no seu painel — por construção, não por configuração.
-          Cada herdeiro vê somente o próprio recorte: seus documentos, seu quinhão, seus
-          avisos. Os dados de um herdeiro nunca aparecem para outro.
+          Fora do espaço compartilhado, cada herdeiro vê somente o próprio recorte: seus
+          documentos, seu quinhão, seus avisos. O motivo de uma mensagem sua não
+          publicada no mural só aparece para você, e o contato de advogado(a) próprio(a)
+          que você informar não circula entre os demais herdeiros.
         </p>
 
         <h2>Por quanto tempo e como excluir</h2>

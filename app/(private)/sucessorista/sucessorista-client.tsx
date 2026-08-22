@@ -3821,10 +3821,18 @@ export default function SucessoristaClient({
                   setConvites((prev) => ({ ...prev, [c.token]: c }))
                 }
                 onEncerrado={() => setConvites({})}
-                onLevarParaPartilha={(alocacoes) => {
+                onLevarParaPartilha={(alocacoes, tituloCenarioAplicado) => {
                   // Consenso vira partilha: as alocações do cenário são o
-                  // MESMO formato da matriz da seção III — cópia direta.
+                  // MESMO formato da matriz da seção III — cópia direta. O
+                  // eco fica no caso.json (o .json transporta o consenso).
                   setMatriz(alocacoes);
+                  setPainelFamilia((prev) => ({
+                    ...prev,
+                    consensoAplicado: {
+                      titulo: tituloCenarioAplicado,
+                      em: new Date().toISOString(),
+                    },
+                  }));
                   irPara('partilha');
                   toast.success('Cenário levado para a partilha', {
                     description:

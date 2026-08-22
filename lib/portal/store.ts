@@ -114,6 +114,11 @@ export interface ConviteHerdeiro {
    *  vota, não adere a cenário, não conta para consenso, não lança despesa
    *  e não tem pedidos de documentos nem quinhão. */
   papelConvite?: 'herdeiro' | 'mediador';
+  /** ADVOGADO(A) PRÓPRIO(A) do herdeiro (Provimento 205/2021): SÓ a
+   *  estrutura — o herdeiro informa pelo portal, o escritório vê no card e
+   *  passa a copiar o(a) colega nas comunicações. Nenhum acesso novo nasce
+   *  daqui; o contato informado não circula entre os demais herdeiros. */
+  advogadoProprio?: { nome: string; oab?: string; contato?: string; informadoEm?: string };
 }
 
 export interface PortalStore {
@@ -144,6 +149,11 @@ export interface PortalStore {
   ): Promise<ConviteHerdeiro | null>;
   /** Espaço do Espólio: carimba o 1º acesso (idempotente). */
   marcarEspolioVisto(token: string, quando: string): Promise<void>;
+  /** Advogado(a) próprio(a) do herdeiro — informado por ele no portal. */
+  salvarAdvogadoProprio(
+    token: string,
+    dados: { nome: string; oab?: string; contato?: string; informadoEm?: string },
+  ): Promise<ConviteHerdeiro | null>;
 }
 
 const mem = new Map<string, ConviteHerdeiro>();
@@ -200,6 +210,12 @@ export const memoryStore: PortalStore = {
   async marcarEspolioVisto(token, quando) {
     const c = mem.get(token);
     if (c && !c.espolioVistoEm) c.espolioVistoEm = quando;
+  },
+  async salvarAdvogadoProprio(token, dados) {
+    const c = mem.get(token);
+    if (!c) return null;
+    c.advogadoProprio = dados;
+    return c;
   },
 };
 

@@ -40,7 +40,8 @@ export type TipoEventoPortal =
   | 'ESPOLIO_MURAL'
   | 'ESPOLIO_MURAL_MODERADA'
   | 'ESPOLIO_DIGEST'
-  | 'CONTATO_TENTATIVA';
+  | 'CONTATO_TENTATIVA'
+  | 'ADVOGADO_PROPRIO';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -157,4 +158,5 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_MURAL_MODERADA: 'Mensagem do mural moderada pelo escritório',
   ESPOLIO_DIGEST: 'Resumo do caso enviado à família por e-mail',
   CONTATO_TENTATIVA: 'Tentativa de contato com herdeiro registrada',
+  ADVOGADO_PROPRIO: 'Herdeiro informou advogado(a) próprio(a)',
 };
