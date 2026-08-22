@@ -321,6 +321,25 @@ model EspolioVoto {
   @@map("espolio_votos")
 }
 
+// MURAL da família — mensagem de herdeiro com MODERAÇÃO PRÉVIA: só aparece
+// para os demais depois que o escritório aprova (recusa exige motivo, que o
+// autor lê). Imutável e append-only: a mensagem nunca é editada; a moderação
+// só muda status/motivo/decididaEm. Sem FK; quem apaga é o Encerrar.
+model EspolioMural {
+  id         String    @id @default(cuid())
+  casoId     String
+  token      String
+  autor      String
+  texto      String
+  status     String    @default("pendente") // pendente|aprovada|recusada
+  motivo     String?
+  decididaEm DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_mural")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:

@@ -23,10 +23,12 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { EH_SUCESSORISTA } from "@/lib/app";
 import {
+  notificarDigest,
   notificarMudancaDeFase,
   notificarQuinhaoLiberado,
   notificarVotacao,
 } from "@/lib/portal/notificar";
+import { textoLeigoDoEvento, TIPOS_VISIVEIS_AO_HERDEIRO } from "@/lib/portal/eventos";
 import type { VotacaoDados } from "@/lib/portal/espolio";
 import type { PainelHerdeiro, VisibilidadePainel } from "@/lib/portal/painel";
 import type { CenarioCompartilhado, EspolioCompartilhado } from "@/lib/portal/espolio";
@@ -241,6 +243,7 @@ export async function encerrarPainel(
       prisma.espolioAdesao.deleteMany({ where: { casoId: id } }),
       prisma.espolioVotacao.deleteMany({ where: { casoId: id } }),
       prisma.espolioVoto.deleteMany({ where: { casoId: id } }),
+      prisma.espolioMural.deleteMany({ where: { casoId: id } }),
     ]);
     return { ok: true, convitesApagados: convites.count };
   } catch {
@@ -934,6 +937,165 @@ export async function encerrarVotacao(
     };
   } catch {
     return { ok: false, erro: "Falha ao encerrar a votação — tente novamente." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Espaço do Espólio — mural moderado + resumo por e-mail (digest)     */
+/* ------------------------------------------------------------------ */
+
+export interface MensagemMural {
+  id: string;
+  autor: string;
+  texto: string;
+  status: string; // pendente | aprovada | recusada
+  motivo: string | null;
+  criadaEm: string;
+}
+
+/** Mensagens do mural (todas — o card modera as pendentes). */
+export async function muralDoEspolio(
+  casoId: string,
+): Promise<{ ok: boolean; mensagens?: MensagemMural[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const linhas = await prisma.espolioMural.findMany({
+      where: { casoId: id },
+      orderBy: { createdAt: "asc" },
+      take: 300,
+    });
+    return {
+      ok: true,
+      mensagens: linhas.map((m) => ({
+        id: m.id,
+        autor: m.autor,
+        texto: m.texto,
+        status: m.status,
+        motivo: m.motivo,
+        criadaEm: m.createdAt.toISOString(),
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao carregar o mural." };
+  }
+}
+
+/**
+ * Moderação prévia do mural: aprovar publica para a família inteira;
+ * recusar exige motivo (o autor lê). A mensagem em si é imutável.
+ */
+export async function moderarMural(
+  mensagemId: string,
+  aprovar: boolean,
+  motivo?: string,
+): Promise<{ ok: boolean; mensagem?: MensagemMural; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(mensagemId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Mensagem sem identificação." };
+  const motivoLimpo = String(motivo ?? "").trim().slice(0, 300);
+  if (!aprovar && motivoLimpo === "") {
+    return { ok: false, erro: "Explique o motivo — o autor vai ler." };
+  }
+  try {
+    const mensagem = await prisma.espolioMural.findUnique({ where: { id } });
+    if (!mensagem) return { ok: false, erro: "Mensagem não encontrada." };
+    if (!(await podeGerirCaso(mensagem.casoId, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const atualizada = await prisma.espolioMural.update({
+      where: { id },
+      data: {
+        status: aprovar ? "aprovada" : "recusada",
+        motivo: motivoLimpo === "" ? null : motivoLimpo,
+        decididaEm: new Date(),
+      },
+    });
+    void registrarEventoPortal(
+      mensagem.casoId,
+      "ESPOLIO_MURAL_MODERADA",
+      { herdeiro: mensagem.autor, motivo: aprovar ? undefined : motivoLimpo },
+      mensagem.token,
+    );
+    return {
+      ok: true,
+      mensagem: {
+        id: atualizada.id,
+        autor: atualizada.autor,
+        texto: atualizada.texto,
+        status: atualizada.status,
+        motivo: atualizada.motivo,
+        criadaEm: atualizada.createdAt.toISOString(),
+      },
+    };
+  } catch {
+    return { ok: false, erro: "Falha ao moderar — tente novamente." };
+  }
+}
+
+/**
+ * RESUMO por e-mail (digest) com um clique: compila os marcos do CASO
+ * INTEIRO (eventos visíveis ao herdeiro e SEM token — conteúdo idêntico
+ * para todos) desde o último resumo e envia à família. O envio vira o
+ * evento ESPOLIO_DIGEST — o marco do próximo período.
+ */
+export async function enviarDigest(
+  casoId: string,
+  nomeFalecido: string,
+): Promise<{ ok: boolean; itens?: number; enviados?: number; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const ultimoDigest = await prisma.portalEvento.findFirst({
+      where: { casoId: id, tipo: "ESPOLIO_DIGEST" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    const eventos = await prisma.portalEvento.findMany({
+      where: {
+        casoId: id,
+        tipo: { in: TIPOS_VISIVEIS_AO_HERDEIRO },
+        token: null,
+        ...(ultimoDigest ? { createdAt: { gt: ultimoDigest.createdAt } } : {}),
+      },
+      orderBy: { createdAt: "asc" },
+      take: 30,
+      select: { tipo: true, detalhe: true, createdAt: true },
+    });
+    const itens = eventos
+      .map((e) => ({
+        data: e.createdAt.toLocaleDateString("pt-BR"),
+        texto: textoLeigoDoEvento(e.tipo, (e.detalhe as DetalheEventoPortal | null) ?? null),
+      }))
+      .filter((i): i is { data: string; texto: string } => i.texto !== null);
+    if (itens.length === 0) {
+      return { ok: false, erro: "Nada novo desde o último resumo — não há o que enviar." };
+    }
+    const enviados = await notificarDigest(id, nomeFalecido, itens, await origemDaRequisicao());
+    if (enviados === 0) {
+      return {
+        ok: false,
+        erro: "Nenhum e-mail pôde ser enviado — confira a RESEND_API_KEY e os e-mails salvos dos herdeiros.",
+      };
+    }
+    void registrarEventoPortal(id, "ESPOLIO_DIGEST", { convites: enviados });
+    return { ok: true, itens: itens.length, enviados };
+  } catch {
+    return { ok: false, erro: "Falha ao enviar o resumo — tente novamente." };
   }
 }
 

@@ -153,6 +153,42 @@ export async function notificarVotacao(
   }
 }
 
+/**
+ * RESUMO (digest) do caso enviado pelo advogado com um clique: compila os
+ * marcos do caso inteiro desde o último resumo (só eventos SEM token —
+ * conteúdo idêntico para todos) e manda a 'tudo' e 'fases'.
+ */
+export async function notificarDigest(
+  casoId: string,
+  nomeFalecido: string,
+  itens: { data: string; texto: string }[],
+  origin: string,
+): Promise<number> {
+  if (!emailHabilitado() || itens.length === 0) return 0;
+  let enviados = 0;
+  for (const c of await convitesDoCaso(casoId)) {
+    const d = destino(c);
+    if (!d) continue;
+    const ok = await enviarEmailPortal({
+      para: d.para,
+      assunto: `Inventário de ${nomeFalecido}: resumo do que aconteceu`,
+      titulo: 'Resumo do período',
+      paragrafos: [
+        `Olá, ${c.nomeHerdeiro}.`,
+        `O que aconteceu no inventário de ${nomeFalecido} desde o último resumo:`,
+        ...itens.map((i) => `${i.data} — ${i.texto}`),
+        'Os detalhes estão no seu portal.',
+      ],
+      urlPortal: urlDoPortal(origin, c.token),
+    });
+    if (ok) {
+      enviados += 1;
+      void registrarEventoPortal(casoId, 'NOTIFICACAO', { herdeiro: c.nomeHerdeiro }, c.token);
+    }
+  }
+  return enviados;
+}
+
 /** Documento aprovado/devolvido OU nova pendência — aviso a UM herdeiro. */
 export async function notificarHerdeiro(
   convite: ConviteHerdeiro,

@@ -60,15 +60,19 @@ import {
   decidirSugestao,
   encerrarPainel,
   encerrarVotacao,
+  enviarDigest,
   estadoPainel,
   eventosDoCaso,
   fatosDoEspolio,
+  moderarMural,
+  muralDoEspolio,
   publicarPainel,
   retirarCenario,
   revogarConvite,
   votacoesDoEspolio,
   type CenarioDoCaso,
   type DespesaEspolio,
+  type MensagemMural,
   type NotaEspolio,
   type VotacaoDoCaso,
 } from './painel-actions';
@@ -209,7 +213,12 @@ export function PainelFamiliaCard({
   const [encerrandoVotacao, setEncerrandoVotacao] = useState(false);
   const [gerandoTermo, setGerandoTermo] = useState<string | null>(null);
   const [decidindo, setDecidindo] = useState<string | null>(null);
-  const [recusa, setRecusa] = useState<{ tipo: 'nota' | 'despesa'; id: string } | null>(null);
+  const [recusa, setRecusa] = useState<{ tipo: 'nota' | 'despesa' | 'mural'; id: string } | null>(
+    null,
+  );
+  /* Mural moderado + resumo por e-mail (digest). */
+  const [mural, setMural] = useState<MensagemMural[]>([]);
+  const [enviandoDigest, setEnviandoDigest] = useState(false);
   const [motivoRecusa, setMotivoRecusa] = useState('');
   const [tratamentos, setTratamentos] = useState<Record<string, 'ressarcir' | 'compensar'>>({});
   /* Recolhível (é o primeiro bloco da Página Inicial): a preferência fica no
@@ -275,10 +284,50 @@ export function PainelFamiliaCard({
       if (!vivo || !r.ok) return;
       setVotacoes(r.votacoes ?? []);
     });
+    void muralDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setMural(r.mensagens ?? []);
+    });
     return () => {
       vivo = false;
     };
   }, [casoId, recolhido, estado.espolioAberto]);
+
+  const moderarMuralLocal = async (mensagem: MensagemMural, aprovar: boolean, motivo?: string) => {
+    setDecidindo(mensagem.id);
+    try {
+      const r = await moderarMural(mensagem.id, aprovar, motivo);
+      if (!r.ok || !r.mensagem) {
+        toast.error('Não foi possível moderar', { description: r.erro });
+        return;
+      }
+      setMural((prev) => prev.map((m) => (m.id === mensagem.id ? r.mensagem! : m)));
+      setRecusa(null);
+      setMotivoRecusa('');
+      toast.success(
+        aprovar ? 'Mensagem publicada no mural da família' : 'Mensagem não publicada',
+        aprovar ? undefined : { description: 'O autor lê o motivo no próprio portal.' },
+      );
+    } finally {
+      setDecidindo(null);
+    }
+  };
+
+  const enviarDigestLocal = async () => {
+    setEnviandoDigest(true);
+    try {
+      const r = await enviarDigest(casoId, nomeFalecido);
+      if (r.ok) {
+        toast.success('Resumo enviado à família', {
+          description: `${r.itens} acontecimento(s) em ${r.enviados} e-mail(s) — o próximo resumo parte de agora.`,
+        });
+      } else {
+        toast.error('Resumo não enviado', { description: r.erro });
+      }
+    } finally {
+      setEnviandoDigest(false);
+    }
+  };
 
   const recarregarCenarios = async () => {
     const r = await cenariosDoEspolio(casoId);
@@ -1017,6 +1066,74 @@ export function PainelFamiliaCard({
             </div>
           </div>
         )}
+
+        {/* Mural moderado: nada aparece à família sem o aval do escritório. */}
+        {estado.espolioAberto && mural.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <span className="eyebrow">Mural da família</span>
+            <p className="fund" style={{ margin: '2px 0 0' }}>
+              {mural.filter((m) => m.status === 'aprovada').length} publicada(s) ·{' '}
+              {mural.filter((m) => m.status === 'pendente').length} aguardando moderação
+            </p>
+            {mural
+              .filter((m) => m.status === 'pendente')
+              .map((m) => (
+                <div className="linha-item" key={m.id}>
+                  <span>
+                    <strong>{m.autor}</strong> escreveu:
+                    <span className="fund" style={{ display: 'block' }}>
+                      “{m.texto}”
+                    </span>
+                  </span>
+                  <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      loading={decidindo === m.id}
+                      onClick={() => void moderarMuralLocal(m, true)}
+                    >
+                      publicar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                      disabled={decidindo !== null}
+                      onClick={() => {
+                        setMotivoRecusa('');
+                        setRecusa({ tipo: 'mural', id: m.id });
+                      }}
+                    >
+                      não publicar
+                    </Button>
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Resumo por e-mail (digest): compila os marcos do caso desde o
+            último resumo e manda à família com um clique. */}
+        {estado.espolioAberto && (
+          <div style={{ marginTop: 10 }}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              loading={enviandoDigest}
+              onClick={() => void enviarDigestLocal()}
+            >
+              Enviar resumo à família (e-mail)
+            </Button>
+            <p className="fund" style={{ margin: '4px 0 0' }}>
+              Junta o que aconteceu no caso desde o último resumo — fases, cenários,
+              consensos e votações — num único e-mail para todos os herdeiros com
+              e-mail salvo. Requer o e-mail configurado (RESEND_API_KEY).
+            </p>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -1255,7 +1372,11 @@ export function PainelFamiliaCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {recusa?.tipo === 'nota' ? 'Recusar a sugestão de valor?' : 'Não reconhecer a despesa?'}
+              {recusa?.tipo === 'nota'
+                ? 'Recusar a sugestão de valor?'
+                : recusa?.tipo === 'mural'
+                  ? 'Não publicar a mensagem no mural?'
+                  : 'Não reconhecer a despesa?'}
             </DialogTitle>
             <DialogDescription>
               Explique o motivo em linguagem simples — o herdeiro que enviou vai ler este
@@ -1268,7 +1389,9 @@ export function PainelFamiliaCard({
             placeholder={
               recusa?.tipo === 'nota'
                 ? 'Ex.: O valor de referência é o venal do IPTU na data do óbito, que já está lançado.'
-                : 'Ex.: O comprovante não identifica o pagamento — reenvie o recibo completo.'
+                : recusa?.tipo === 'mural'
+                  ? 'Ex.: O mural é para o andamento do caso — vamos tratar esse assunto na reunião.'
+                  : 'Ex.: O comprovante não identifica o pagamento — reenvie o recibo completo.'
             }
             onChange={(e) => setMotivoRecusa(e.target.value)}
           />
@@ -1285,13 +1408,20 @@ export function PainelFamiliaCard({
                 if (recusa.tipo === 'nota') {
                   const nota = notasEspolio.find((n) => n.id === recusa.id);
                   if (nota) void decidirNota(nota, false, motivoRecusa);
+                } else if (recusa.tipo === 'mural') {
+                  const mensagem = mural.find((m) => m.id === recusa.id);
+                  if (mensagem) void moderarMuralLocal(mensagem, false, motivoRecusa);
                 } else {
                   const despesa = despesasEspolio.find((d) => d.id === recusa.id);
                   if (despesa) void decidirDespesaLocal(despesa, 'nao_reconhecida', motivoRecusa);
                 }
               }}
             >
-              {recusa?.tipo === 'nota' ? 'Recusar com este motivo' : 'Não reconhecer com este motivo'}
+              {recusa?.tipo === 'nota'
+                ? 'Recusar com este motivo'
+                : recusa?.tipo === 'mural'
+                  ? 'Não publicar com este motivo'
+                  : 'Não reconhecer com este motivo'}
             </Button>
           </div>
         </DialogContent>

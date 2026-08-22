@@ -66,6 +66,7 @@ export async function GET(req: Request, ctx: Ctx) {
   let espolioDespesas: unknown[] = [];
   let espolioCenarios: unknown[] = [];
   let espolioVotacoes: unknown[] = [];
+  let espolioMural: unknown[] = [];
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
@@ -90,7 +91,7 @@ export async function GET(req: Request, ctx: Ctx) {
       // outros veem (com autor). O token de cada autor NUNCA sai daqui: é a
       // credencial do convite dele; `minha` marca só os fatos deste token.
       if (espolio) {
-        const [notas, despesas, cenarios, adesoes, votacoes, votos] = await Promise.all([
+        const [notas, despesas, cenarios, adesoes, votacoes, votos, mural] = await Promise.all([
           prisma.espolioNota.findMany({
             where: { casoId: convite.casoId },
             orderBy: { createdAt: 'asc' },
@@ -121,7 +122,25 @@ export async function GET(req: Request, ctx: Ctx) {
             orderBy: { createdAt: 'asc' },
             take: 2000,
           }),
+          prisma.espolioMural.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 300,
+          }),
         ]);
+        // Mural com MODERAÇÃO PRÉVIA: a família só vê as APROVADAS; cada um
+        // vê também as PRÓPRIAS pendentes/recusadas (com o motivo da recusa).
+        espolioMural = mural
+          .filter((m) => m.status === 'aprovada' || m.token === token)
+          .map((m) => ({
+            id: m.id,
+            autor: m.autor,
+            texto: m.texto,
+            status: m.status,
+            motivo: m.token === token ? m.motivo : null,
+            criadaEm: m.createdAt.toISOString().slice(0, 10),
+            minha: m.token === token,
+          }));
         // Votações formais: mesma disciplina dos cenários — o voto mais
         // recente de cada herdeiro vale; tokens alheios nunca saem.
         espolioVotacoes = votacoes.map((v) => {
@@ -225,6 +244,7 @@ export async function GET(req: Request, ctx: Ctx) {
       espolioDespesas = [];
       espolioCenarios = [];
       espolioVotacoes = [];
+      espolioMural = [];
     }
   }
 
@@ -240,6 +260,7 @@ export async function GET(req: Request, ctx: Ctx) {
           espolioDespesas,
           espolioCenarios,
           espolioVotacoes,
+          espolioMural,
           emailAtivo: emailHabilitado(),
         }
       : convite,

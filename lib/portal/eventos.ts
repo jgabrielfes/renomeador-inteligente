@@ -36,7 +36,10 @@ export type TipoEventoPortal =
   | 'ESPOLIO_CONSENSO'
   | 'ESPOLIO_VOTACAO_ABERTA'
   | 'ESPOLIO_VOTO'
-  | 'ESPOLIO_VOTACAO_ENCERRADA';
+  | 'ESPOLIO_VOTACAO_ENCERRADA'
+  | 'ESPOLIO_MURAL'
+  | 'ESPOLIO_MURAL_MODERADA'
+  | 'ESPOLIO_DIGEST';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -147,4 +150,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_VOTACAO_ABERTA: 'Votação aberta à família',
   ESPOLIO_VOTO: 'Voto de herdeiro em votação',
   ESPOLIO_VOTACAO_ENCERRADA: 'Votação encerrada (resultado apurado)',
+  ESPOLIO_MURAL: 'Mensagem enviada ao mural da família',
+  ESPOLIO_MURAL_MODERADA: 'Mensagem do mural moderada pelo escritório',
+  ESPOLIO_DIGEST: 'Resumo do caso enviado à família por e-mail',
 };

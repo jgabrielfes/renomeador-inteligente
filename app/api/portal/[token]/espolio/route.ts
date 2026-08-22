@@ -65,6 +65,7 @@ export async function POST(req: Request, ctx: Ctx) {
     despesa?: { categoria?: string; valor?: string; data?: string; descricao?: string };
     adesao?: { cenarioId?: string; resposta?: string; comentario?: string };
     voto?: { votacaoId?: string; opcaoId?: string; comentario?: string };
+    mural?: { texto?: string };
   };
   try {
     body = await req.json();
@@ -267,6 +268,28 @@ export async function POST(req: Request, ctx: Ctx) {
       token,
     );
     return Response.json({ voto: { id: voto.id, opcaoId, comentario } });
+  }
+
+  /* ---------- mensagem ao mural (moderação prévia do escritório) ---------- */
+  if (body?.mural && typeof body.mural === 'object') {
+    const texto = String(body.mural.texto ?? '').trim().slice(0, 600);
+    if (texto === '') {
+      return Response.json({ erro: 'Escreva a mensagem antes de enviar.' }, { status: 422 });
+    }
+    const mensagem = await prisma.espolioMural.create({
+      data: { casoId: convite.casoId, token, autor, texto },
+    });
+    void registrarEventoPortal(convite.casoId, 'ESPOLIO_MURAL', { herdeiro: autor }, token);
+    return Response.json({
+      mural: {
+        id: mensagem.id,
+        autor,
+        texto,
+        status: mensagem.status,
+        motivo: null,
+        criadaEm: mensagem.createdAt.toISOString().slice(0, 10),
+      },
+    });
   }
 
   return Response.json({ erro: 'Nada para registrar.' }, { status: 422 });

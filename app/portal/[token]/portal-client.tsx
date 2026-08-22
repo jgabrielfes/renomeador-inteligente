@@ -95,6 +95,17 @@ interface VotacaoEspolioPortal {
   meuVoto: string | null;
 }
 
+interface MensagemMuralPortal {
+  id: string;
+  autor: string;
+  texto: string;
+  status: string; // pendente | aprovada | recusada
+  /** Motivo da não-publicação — só o AUTOR recebe. */
+  motivo: string | null;
+  criadaEm: string;
+  minha: boolean;
+}
+
 type ConviteComPainel = ConviteHerdeiro & {
   painel?: PainelHerdeiro | null;
   /** Espaço do Espólio: o snapshot COMPARTILHADO — igual para todos. */
@@ -103,6 +114,7 @@ type ConviteComPainel = ConviteHerdeiro & {
   espolioDespesas?: DespesaEspolioPortal[];
   espolioCenarios?: CenarioEspolioPortal[];
   espolioVotacoes?: VotacaoEspolioPortal[];
+  espolioMural?: MensagemMuralPortal[];
   emailAtivo?: boolean;
 };
 
@@ -259,6 +271,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       espolioDespesas: prev?.espolioDespesas ?? [],
       espolioCenarios: prev?.espolioCenarios ?? [],
       espolioVotacoes: prev?.espolioVotacoes ?? [],
+      espolioMural: prev?.espolioMural ?? [],
       emailAtivo: prev?.emailAtivo ?? false,
     }));
 
@@ -272,6 +285,11 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
     setConvite((prev) =>
       prev ? { ...prev, espolioDespesas: [...(prev.espolioDespesas ?? []), d] } : prev,
     );
+  const registrarMuralLocal = (m: MensagemMuralPortal) =>
+    setConvite((prev) =>
+      prev ? { ...prev, espolioMural: [...(prev.espolioMural ?? []), m] } : prev,
+    );
+
   /** Voto enviado nesta visita — atualiza a votação local (vale o mais recente). */
   const registrarVotoLocal = (votacaoId: string, opcaoId: string, comentario: string) =>
     setConvite((prev) => {
@@ -1141,6 +1159,19 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               ))}
             </>
           )}
+
+          {/* ---------- mural da família (moderação prévia) ---------- */}
+          <h3 style={{ marginTop: 14 }}>Mural da família</h3>
+          <p className="fund" style={{ marginBottom: 4 }}>
+            Recados sobre o andamento do inventário, visíveis a toda a família. Toda
+            mensagem passa antes pelo escritório — publicada, não pode ser editada nem
+            apagada; para corrigir, escreva outra.
+          </p>
+          <MuralDoEspolio
+            token={token}
+            mensagens={convite.espolioMural ?? []}
+            onNova={registrarMuralLocal}
+          />
         </>
       )}
 
@@ -1829,6 +1860,94 @@ function VotacaoDoEspolio({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Mural da família: mensagens APROVADAS de todos + as SUAS pendentes ou não
+ * publicadas (com o motivo, que só você vê) + o envio de mensagem nova.
+ */
+function MuralDoEspolio({
+  token,
+  mensagens,
+  onNova,
+}: {
+  token: string;
+  mensagens: MensagemMuralPortal[];
+  onNova: (m: MensagemMuralPortal) => void;
+}) {
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+
+  const enviar = async () => {
+    setErroEnvio(null);
+    if (texto.trim() === '') {
+      setErroEnvio('Escreva a mensagem antes de enviar.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/portal/${token}/espolio`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mural: { texto: texto.trim() } }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { mural?: MensagemMuralPortal; erro?: string }
+        | null;
+      if (r.ok && corpo?.mural) {
+        onNova({ ...corpo.mural, minha: true });
+        setTexto('');
+      } else {
+        setErroEnvio(corpo?.erro ?? 'Não foi possível enviar — tente de novo.');
+      }
+    } catch {
+      setErroEnvio('Não foi possível enviar — verifique a conexão e tente de novo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <>
+      {mensagens.length > 0 && (
+        <ul className="custos-portal">
+          {mensagens.map((m) => (
+            <li key={m.id}>
+              <span>
+                <strong>
+                  {m.autor}
+                  {m.minha ? ' (você)' : ''}
+                </strong>{' '}
+                — “{m.texto}”
+                <span className="fase-descricao">
+                  {dataLonga(m.criadaEm)}
+                  {m.status === 'pendente' && ' · aguardando o escritório publicar'}
+                  {m.status === 'recusada' &&
+                    ` · não publicada${m.motivo ? `: ${m.motivo}` : ''} (só você vê este recado)`}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Campo rotulo="Escrever no mural (o escritório publica antes de todos verem)">
+        <textarea
+          rows={2}
+          maxLength={600}
+          placeholder="Ex.: Consegui a chave do apartamento — está comigo para as visitas de avaliação."
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+      </Campo>
+      {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
+      <div style={{ marginTop: 8 }}>
+        <button className="acao" type="button" disabled={enviando} onClick={() => void enviar()}>
+          {enviando ? 'Enviando…' : 'Enviar ao mural'}
+        </button>
+      </div>
+    </>
   );
 }
 
