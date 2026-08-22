@@ -1449,8 +1449,10 @@
 }
 
 /* Botão de ação do PORTAL DO HERDEIRO (página pública sem shadcn montado):
-   tinta sobre papel, mesmo desenho dos botões do módulo. */
-.sucessorista button.acao {
+   tinta sobre papel, mesmo desenho dos botões do módulo. Vale também para
+   LINK vestido de botão (a.acao) — as páginas públicas navegam por âncora. */
+.sucessorista button.acao,
+.sucessorista a.acao {
   appearance: none;
   border: 1px solid var(--tinta);
   background: var(--tinta);
@@ -1463,17 +1465,20 @@
   border-radius: 6px;
 }
 
-.sucessorista button.acao:hover { background: #2c3833; }
+.sucessorista button.acao:hover,
+.sucessorista a.acao:hover { background: #2c3833; }
 .sucessorista button.acao:disabled { opacity: 0.6; cursor: default; }
 
 /* Variante SECUNDÁRIA (responder cenário: conversar/não aceito) — contorno
    de tinta sobre o papel, mesmo desenho e alvo do botão cheio. */
-.sucessorista button.acao.secundaria {
+.sucessorista button.acao.secundaria,
+.sucessorista a.acao.secundaria {
   background: transparent;
   color: var(--tinta);
 }
 
-.sucessorista button.acao.secundaria:hover { background: var(--papel-alto); color: var(--tinta); }
+.sucessorista button.acao.secundaria:hover,
+.sucessorista a.acao.secundaria:hover { background: var(--papel-alto); color: var(--tinta); }
 
 /* ---------- responsivo ---------- */
 
