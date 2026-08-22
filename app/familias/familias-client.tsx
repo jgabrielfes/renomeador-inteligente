@@ -24,27 +24,151 @@ import {
 } from '@/lib/familias/tipos';
 import { classificarVia, type Triagem } from '@/lib/familias/triagem';
 import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativas';
-import { montarChecklistDocumentos } from '@/lib/familias/documentos';
+import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
+import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
+import { baixarBlob } from '@/lib/partilha/xlsx';
+import { ResultadoView } from './resultado-view';
 
 const TOTAL_TELAS = 12;
 
-const brl = (v: number) =>
-  `R$ ${Math.round(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
-
-const dataBr = (iso: string) => {
-  if (!iso) return '';
-  const [a, m, d] = iso.split('-');
-  return `${d}/${m}/${a}`;
-};
-
 const FAIXAS: FaixaValor[] = ['ate-50', '50-200', '200-500', '500-1000', '1000-2000', 'acima-2000'];
 
-/** Rótulo leigo da via para títulos. */
-const ROTULO_VIA = {
-  EXTRAJUDICIAL: 'Inventário em cartório (extrajudicial)',
-  JUDICIAL: 'Inventário judicial',
-  ALVARA: 'Alvará judicial (caminho simplificado)',
-} as const;
+/**
+ * Ações do resultado recém-gerado: baixar em PDF, salvar (link de 90 dias)
+ * e receber por e-mail — captura de contato SÓ aqui, com clareza e sem
+ * pressão (o resultado já está na tela de qualquer forma).
+ */
+function AcoesResultado({
+  r,
+  triagem,
+  estimativa,
+  docs,
+  onRevisar,
+}: {
+  r: RespostasFamilia;
+  triagem: Triagem;
+  estimativa: EstimativaCompleta;
+  docs: ItemChecklist[];
+  onRevisar: () => void;
+}) {
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [salvando, setSalvando] = useState<'salvar' | 'email' | null>(null);
+  const [urlSalvo, setUrlSalvo] = useState<string | null>(null);
+  const [emailEnviado, setEmailEnviado] = useState(false);
+  const [email, setEmail] = useState(r.email);
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
+
+  const baixarPdf = async () => {
+    setGerandoPdf(true);
+    try {
+      const blob = await montarResultadoPdf({
+        r,
+        triagem,
+        estimativa,
+        docs,
+        agora: new Date().toISOString(),
+      });
+      baixarBlob(blob, 'Por onde comecar o inventario.pdf');
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
+  const enviar = async (acao: 'salvar' | 'email') => {
+    setErroAcao(null);
+    if (acao === 'email' && !/.+@.+\..+/.test(email.trim())) {
+      setErroAcao('Informe um e-mail válido para receber o resultado.');
+      return;
+    }
+    setSalvando(acao);
+    try {
+      const resp = await fetch('/api/familias', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ respostas: { ...r, email: email.trim() || r.email }, acao }),
+      });
+      const corpo = (await resp.json().catch(() => null)) as
+        | { url?: string; emailEnviado?: boolean; erro?: string }
+        | null;
+      if (!resp.ok || !corpo?.url) {
+        setErroAcao(corpo?.erro ?? 'Não foi possível salvar agora — tente de novo.');
+        return;
+      }
+      setUrlSalvo(corpo.url);
+      if (acao === 'email') setEmailEnviado(corpo.emailEnviado === true);
+    } catch {
+      setErroAcao('Não foi possível salvar — verifique a conexão e tente de novo.');
+    } finally {
+      setSalvando(null);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+        <button className="acao" type="button" disabled={gerandoPdf} onClick={() => void baixarPdf()}>
+          {gerandoPdf ? 'Gerando…' : 'Baixar em PDF'}
+        </button>
+        <button
+          className="acao secundaria"
+          type="button"
+          disabled={salvando !== null}
+          onClick={() => void enviar('salvar')}
+        >
+          {salvando === 'salvar' ? 'Salvando…' : 'Salvar e continuar depois'}
+        </button>
+        <button className="acao secundaria" type="button" onClick={onRevisar}>
+          Revisar respostas
+        </button>
+      </div>
+
+      <div className="nota" style={{ marginTop: 12 }}>
+        <p style={{ marginBottom: 6 }}>
+          <strong>Receber este resultado por e-mail</strong>{' '}
+          <span className="fund">(com o link para reabrir quando quiser — guardado por 90 dias)</span>
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label className="campo" style={{ flex: '1 1 240px' }}>
+            Seu e-mail
+            <input
+              type="text"
+              inputMode="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <button
+            className="acao"
+            type="button"
+            disabled={salvando !== null}
+            onClick={() => void enviar('email')}
+          >
+            {salvando === 'email' ? 'Enviando…' : 'Receber por e-mail'}
+          </button>
+        </div>
+        <p className="fund" style={{ marginTop: 6 }}>
+          Usamos o e-mail só para isto — nada de lista de marketing.
+        </p>
+      </div>
+
+      {erroAcao && <p className="mono-alerta">{erroAcao}</p>}
+      {urlSalvo && (
+        <div className="nota registro" style={{ marginTop: 10 }}>
+          <span className="eyebrow">Resultado salvo</span>
+          <p>
+            {emailEnviado
+              ? 'Enviamos o link para o seu e-mail. '
+              : ''}
+            Guarde este endereço para reabrir quando quiser (vale por 90 dias):
+          </p>
+          <p className="num" style={{ wordBreak: 'break-all', marginTop: 4 }}>
+            <a href={urlSalvo}>{typeof location !== 'undefined' ? location.origin : ''}{urlSalvo}</a>
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
 
 /** Botão de escolha única — cheio quando marcado, contorno quando não. */
 function Opcao({
@@ -173,140 +297,21 @@ export function FamiliasClient() {
     return (
       <div className="sucessorista">
         <main className="folha" style={{ margin: '0 auto', maxWidth: 720 }}>
-          <span className="eyebrow">Seu resultado — gratuito, sem cadastro</span>
-          <h1>{ROTULO_VIA[triagem.via]}</h1>
-          <p className="subtitulo">
-            Com base no que você respondeu{r.nome.trim() ? `, ${r.nome.trim().split(/\s+/)[0]}` : ''}.
-            Os números são estimativas por faixa — servem para você chegar preparado(a) à
-            conversa com um advogado, não para substituí-la.
-          </p>
-
-          <h2>Por que esse caminho</h2>
-          {triagem.motivos.map((m, i) => (
-            <p key={i} style={{ marginTop: 6 }}>
-              {m}
-            </p>
-          ))}
-          {triagem.observacoes.map((o, i) => (
-            <p key={i} className="fund" style={{ marginTop: 6 }}>
-              {o}
-            </p>
-          ))}
-
-          <h2>Estimativa do imposto (ITCMD)</h2>
-          <ul className="custos-portal">
-            {estimativa.itcmd.map((e) => (
-              <li key={e.uf}>
-                <span>
-                  {e.uf}
-                  <span className="fase-descricao">
-                    {e.precisao === 'motor-sp'
-                      ? 'cálculo pela lei paulista, com atualização e eventuais multas'
-                      : 'faixa pela alíquota do estado'}
-                  </span>
-                </span>
-                <span className="num">
-                  {brl(e.faixa.min)} a {brl(e.faixa.max)}
-                </span>
-              </li>
-            ))}
-            {estimativa.itcmd.length > 1 && (
-              <li>
-                <span>
-                  <strong>Total estimado</strong>
-                </span>
-                <span className="num">
-                  <strong>
-                    {brl(estimativa.itcmdTotal.min)} a {brl(estimativa.itcmdTotal.max)}
-                  </strong>
-                </span>
-              </li>
-            )}
-          </ul>
-          {estimativa.itcmd.flatMap((e) => e.avisos).map((a, i) => (
-            <p key={i} className="fund" style={{ marginTop: 4 }}>
-              {a}
-            </p>
-          ))}
-
-          <h2>{estimativa.custos.rotulo}</h2>
-          <ul className="custos-portal">
-            <li>
-              <span>Faixa estimada</span>
-              <span className="num">
-                {brl(estimativa.custos.faixa.min)} a {brl(estimativa.custos.faixa.max)}
-              </span>
-            </li>
-          </ul>
-          {estimativa.custos.avisos.map((a, i) => (
-            <p key={i} className="fund" style={{ marginTop: 4 }}>
-              {a}
-            </p>
-          ))}
-
-          <h2>Prazo</h2>
-          <div className={`nota ${estimativa.prazo.aberturaVencida ? 'exigencia' : ''}`}>
-            <p>{estimativa.prazo.texto}</p>
-            {estimativa.prazo.limiteAbertura && (
-              <p className="fund" style={{ marginTop: 4 }}>
-                Prazo de abertura: até {dataBr(estimativa.prazo.limiteAbertura)}.
-              </p>
-            )}
-          </div>
-
-          <h2>Documentos que a família já pode separar</h2>
-          <ul className="custos-portal">
-            {docs.map((d) => (
-              <li key={d.id}>
-                <span>
-                  {d.titulo}
-                  <span className="fase-descricao">{d.detalhe}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          <h2>Próximos passos</h2>
-          <ol className="fase-lista">
-            <li className="fase-item atual">
-              <span className="fase-ponto num">1</span>
-              <span>Separe os documentos da lista acima — é o que mais adianta o trabalho.</span>
-            </li>
-            <li className="fase-item">
-              <span className="fase-ponto num">2</span>
-              <span>
-                {r.consenso === 'sim'
-                  ? 'Combine com os demais herdeiros quem vai acompanhar o processo (o inventariante).'
-                  : 'Converse com os demais herdeiros — com todos de acordo, o caminho fica mais rápido e barato.'}
-              </span>
-            </li>
-            <li className="fase-item">
-              <span className="fase-ponto num">3</span>
-              <span>
-                Procure um(a) advogado(a) de sua confiança com experiência em inventários —
-                mesmo em cartório, a lei exige advogado. Leve este resultado: ele encurta a
-                primeira conversa.
-              </span>
-            </li>
-          </ol>
-
-          {estimativa.avisos.map((a, i) => (
-            <p key={i} className="fund" style={{ marginTop: 8 }}>
-              {a}
-            </p>
-          ))}
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-            <button className="acao secundaria" type="button" onClick={() => setTela(TOTAL_TELAS)}>
-              Revisar respostas
-            </button>
-          </div>
-
-          <footer className="rodape-etico">
-            Orientação geral e gratuita, sem coleta de dados sensíveis — não substitui a
-            consulta com advogado(a). Esta plataforma não intermedeia honorários nem indica
-            advogados.
-          </footer>
+          <ResultadoView
+            r={r}
+            triagem={triagem}
+            estimativa={estimativa}
+            docs={docs}
+            acoes={
+              <AcoesResultado
+                r={r}
+                triagem={triagem}
+                estimativa={estimativa}
+                docs={docs}
+                onRevisar={() => setTela(TOTAL_TELAS)}
+              />
+            }
+          />
         </main>
       </div>
     );

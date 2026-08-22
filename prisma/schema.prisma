@@ -340,6 +340,33 @@ model EspolioMural {
   @@map("espolio_mural")
 }
 
+// ÁREA PÚBLICA "Para famílias" (camada 3): o questionário salvo. AQUI a
+// plataforma é CONTROLADORA (LGPD) — diferente das camadas 1–2. Sem dado
+// sensível por desenho (sem CPF, sem nome do falecido, sem endereço; bens
+// por FAIXA). `tokenGestao` é a credencial do link "meu resultado" (mesmo
+// padrão do portal: token = credencial, sem login). Retenção: intake não
+// reclamado expira em 90 dias (expiraEm); retirado é APAGADO na hora.
+model FamiliaIntake {
+  id                String    @id @default(cuid())
+  respostas         Json
+  resultado         Json
+  nome              String?
+  email             String?
+  emailConfirmadoEm DateTime?
+  consentimentoEm   DateTime?
+  status            String    @default("resultado") // rascunho|resultado|publicado|em_conversa|contratado|retirado|expirado
+  uf                String
+  cidade            String
+  pequenoValor      Boolean   @default(false)
+  tokenGestao       String    @unique
+  expiraEm          DateTime
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, uf, createdAt])
+  @@map("familia_intakes")
+}
+
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
 // documentos aceitos/recusados, notificações — o histórico que protege o
 // advogado (relatório de comunicação com a família). SEM FK para o painel:
