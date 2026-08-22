@@ -33,13 +33,12 @@ export function EntradaSucessorista() {
             <span className="eyebrow">Para advogados(as)</span>
             <h3 style={{ margin: 0 }}>Do primeiro atendimento ao registro</h3>
             <p style={{ margin: 0 }}>
-              Leitura dos documentos do caso com IA, partilha e ITCMD com fundamento
-              legal, honorários e petições, minuta ao Tabelionato — e um portal para a
-              família acompanhar o processo.
-            </p>
-            <p className="fund" style={{ margin: 0 }}>
-              Os documentos são processados no seu navegador — nada sai da sua máquina
-              sem a sua ordem.
+              Cofre de documentos com extração por IA, elegibilidade do rito (CPC,
+              art. 610), partilha com meação por regime, legítima, colação e cenários;
+              ITCMD com atualização pela UFESP, multas e Selic; custas extrajudiciais
+              e judiciais, honorários por complexidade, petição inicial e minuta ao
+              Tabelionato — e o portal do herdeiro para qualificação, documentos e
+              deliberações da família.
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 6 }}>
               <Link className="acao" href="/login" style={botao}>
@@ -55,12 +54,11 @@ export function EntradaSucessorista() {
             <span className="eyebrow">Para escreventes e tabeliães</span>
             <h3 style={{ margin: 0 }}>A escritura do jeito do balcão</h3>
             <p style={{ margin: 0 }}>
-              Minuta de escritura calibrada por atos reais — qualificação completa,
-              partilha em tabelas, sobrepartilha e dois óbitos — com emolumentos,
-              custas e a conferência registral do caso.
-            </p>
-            <p className="fund" style={{ margin: 0 }}>
-              O perfil Escrevente é escolhido dentro da conta, no primeiro acesso.
+              Minuta de escritura calibrada por atos reais: qualificação completa das
+              partes, tabelas de patrimônio e partilha, adjudicação, sobrepartilha e
+              dois óbitos; base de emolumentos pelo Enunciado 7 do CNB/SP (maior entre
+              atribuído, venal e avaliação), conferência das certidões do registro
+              civil e antecipador de exigências registrais (LRP, arts. 213 e 246).
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 6 }}>
               <Link className="acao" href="/login" style={botao}>
