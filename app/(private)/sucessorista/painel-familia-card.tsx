@@ -77,6 +77,9 @@ import {
   type MensagemMural,
   type NotaEspolio,
   type VotacaoDoCaso,
+  canalAdvogados,
+  enviarMensagemCanal,
+  type MensagemCanalAdvogados,
 } from './painel-actions';
 import { MEIOS_DE_CONTATO } from '@/lib/portal/eventos';
 
@@ -240,6 +243,11 @@ export function PainelFamiliaCard({
   const [representaSel, setRepresentaSel] = useState<Record<string, boolean>>({});
   const [indicadoPorHerdeiro, setIndicadoPorHerdeiro] = useState(false);
   const [salvandoAdvogado, setSalvandoAdvogado] = useState(false);
+  /* Canal do caso entre os advogados (A2) — carregado ao abrir. */
+  const [canalAberto, setCanalAberto] = useState(false);
+  const [canalMsgs, setCanalMsgs] = useState<MensagemCanalAdvogados[]>([]);
+  const [msgCanal, setMsgCanal] = useState('');
+  const [enviandoCanal, setEnviandoCanal] = useState(false);
   /* Herdeiro ausente: registro de tentativas de contato (prova de diligência). */
   const [tentativas, setTentativas] = useState<Record<string, number>>({});
   const [tentativaConvite, setTentativaConvite] = useState<ConviteHerdeiro | null>(null);
@@ -669,6 +677,10 @@ export function PainelFamiliaCard({
         nomeAdvogado,
         agora: agoraIso(),
         votacao,
+        // Ciência dos advogados constituídos ativos no caso (camada 4).
+        advogadosDoCaso: ativos
+          .filter((c) => c.papelConvite === 'advogado')
+          .map((c) => ({ nome: c.nomeHerdeiro, oab: c.oabAdvogado, representa: c.representa })),
       });
       baixarBlob(
         blob,
@@ -1109,6 +1121,7 @@ export function PainelFamiliaCard({
                   <div className="linha-item" key={c.id}>
                     <span>
                       <strong>{c.dados.titulo}</strong>
+                      {c.dados.autor && <span className="fracao"> · proposto por {c.dados.autor}</span>}
                       <span className="fracao num">
                         {c.status === 'congelado'
                           ? ' · CONSENSO (congelado)'
@@ -1438,6 +1451,91 @@ export function PainelFamiliaCard({
           </Button>
         </div>
       </div>
+
+      {/* Canal do caso ENTRE ADVOGADOS (A2) — registrado e exportável; nada
+          daqui circula para os herdeiros. */}
+      {ativos.some((c) => c.papelConvite === 'advogado') && (
+        <div style={{ marginTop: 12 }}>
+          <span className="eyebrow">Conversa entre advogados</span>
+          {!canalAberto ? (
+            <div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCanalAberto(true);
+                  void canalAdvogados(casoId).then((r) => {
+                    if (r.ok) setCanalMsgs(r.mensagens ?? []);
+                    else toast.error(r.erro ?? 'Não foi possível abrir a conversa.');
+                  });
+                }}
+              >
+                abrir conversa
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gap: 4, maxHeight: 200, overflowY: 'auto', marginTop: 6 }}>
+                {canalMsgs.length === 0 && (
+                  <p className="fund" style={{ margin: 0 }}>
+                    Sem mensagens ainda — alinhem por aqui o que for do caso; o registro
+                    fica para os dois lados.
+                  </p>
+                )}
+                {canalMsgs.map((m, i) => (
+                  <p key={i} className="fund" style={{ margin: 0 }}>
+                    <strong>{m.minha ? 'Você' : m.autor}</strong> ({dataCurta(m.em)}): {m.texto}
+                  </p>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <Input
+                  value={msgCanal}
+                  placeholder="Mensagem ao(à) colega…"
+                  onChange={(e) => setMsgCanal(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  loading={enviandoCanal}
+                  disabled={!msgCanal.trim()}
+                  onClick={() => {
+                    setEnviandoCanal(true);
+                    void enviarMensagemCanal(casoId, msgCanal)
+                      .then(async (r) => {
+                        if (!r.ok) {
+                          toast.error(r.erro ?? 'Não foi possível enviar.');
+                          return;
+                        }
+                        setMsgCanal('');
+                        const c = await canalAdvogados(casoId);
+                        if (c.ok) setCanalMsgs(c.mensagens ?? []);
+                      })
+                      .finally(() => setEnviandoCanal(false));
+                  }}
+                >
+                  Enviar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(
+                        canalMsgs.map((m) => `${m.autor} (${dataCurta(m.em)}): ${m.texto}`).join('\n'),
+                      )
+                      .then(() => toast.success('Conversa copiada.'));
+                  }}
+                >
+                  copiar
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
         <Button type="button" loading={publicando} onClick={() => void publicar()}>

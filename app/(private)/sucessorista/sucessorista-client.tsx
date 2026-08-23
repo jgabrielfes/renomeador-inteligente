@@ -1742,6 +1742,9 @@ export default function SucessoristaClient({
       const cenario = montarCenarioCompartilhado({
         titulo: tituloCenario.trim(),
         descricao: descricaoCenario,
+        // Autoria visível (camada 4): cenário do escritório titular leva o
+        // nome de quem propôs — os do advogado constituído também levarão.
+        autor: nomeConta ?? undefined,
         bens: bens.map((b) => ({ id: b.id, descricao: b.descricao })),
         participantes: participantes.map((p) => ({ id: p.id, nome: p.nome })),
         alocacoes: matriz,

@@ -242,6 +242,26 @@ type Qualificacao = z.infer<typeof esquemaQualificacao>;
 export default function PortalHerdeiro({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [convite, setConvite] = useState<ConviteComPainel | null>(null);
+  /* Canal entre advogados (camada 4) — só o convite de papel 'advogado'. */
+  const [canalMsgs, setCanalMsgs] = useState<
+    { autor: string; texto: string; em: string; minha: boolean }[]
+  >([]);
+  const [msgCanal, setMsgCanal] = useState('');
+  const [enviandoCanal, setEnviandoCanal] = useState(false);
+  const papelDoConviteAtual = convite?.papelConvite;
+  useEffect(() => {
+    if (papelDoConviteAtual !== 'advogado') return;
+    let vivo = true;
+    void fetch(`/api/portal/${token}/canal`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: { mensagens?: typeof canalMsgs } | null) => {
+        if (vivo && c) setCanalMsgs(c.mensagens ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [token, papelDoConviteAtual]);
   const [erro, setErro] = useState<string | null>(null);
   const [analisando, setAnalisando] = useState<string | null>(null);
   const [dicaQualidade, setDicaQualidade] = useState<string | null>(null);
@@ -691,6 +711,60 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               </div>
             );
           })}
+        </>
+      )}
+
+      {ehAdvogado && (
+        <>
+          <h2>Conversa com o escritório titular</h2>
+          <p className="fund" style={{ marginBottom: 4 }}>
+            Canal registrado entre os advogados do caso — nada daqui aparece para a
+            família. Honorários de cada um são tratados com os próprios clientes, fora
+            da plataforma.
+          </p>
+          <div style={{ display: 'grid', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+            {canalMsgs.length === 0 && (
+              <p className="fund" style={{ margin: 0 }}>Sem mensagens ainda.</p>
+            )}
+            {canalMsgs.map((m, i) => (
+              <p key={i} className="fund" style={{ margin: 0 }}>
+                <strong>{m.minha ? 'Você' : m.autor}</strong>: {m.texto}
+              </p>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <input
+              type="text"
+              value={msgCanal}
+              placeholder="Mensagem ao escritório…"
+              onChange={(e) => setMsgCanal(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="acao"
+              type="button"
+              disabled={enviandoCanal || !msgCanal.trim()}
+              onClick={() => {
+                setEnviandoCanal(true);
+                void fetch(`/api/portal/${token}/canal`, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ texto: msgCanal }),
+                })
+                  .then(async (r) => {
+                    if (!r.ok) return;
+                    setMsgCanal('');
+                    const c = await fetch(`/api/portal/${token}/canal`).then((x) =>
+                      x.ok ? x.json() : null,
+                    );
+                    if (c) setCanalMsgs(c.mensagens ?? []);
+                  })
+                  .finally(() => setEnviandoCanal(false));
+              }}
+            >
+              {enviandoCanal ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
         </>
       )}
 
@@ -1720,6 +1794,11 @@ function CenarioDoEspolio({
         {cenario.status === 'congelado' ? 'Consenso fechado' : 'Em conversa'}
       </span>
       <h3 style={{ marginTop: 2 }}>{cenario.dados.titulo}</h3>
+      {cenario.dados.autor && (
+        <p className="fund" style={{ margin: '0 0 4px' }}>
+          Proposto por {cenario.dados.autor}
+        </p>
+      )}
       {cenario.dados.descricao && <p className="fund">{cenario.dados.descricao}</p>}
 
       <p style={{ margin: '8px 0 2px' }}>

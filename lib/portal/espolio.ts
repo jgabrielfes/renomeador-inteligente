@@ -135,6 +135,9 @@ export interface CenarioCompartilhado {
   v: 1;
   titulo: string;
   descricao?: string;
+  /** Autoria visível (camada 4): quem propôs — o escritório titular ou o(a)
+   *  advogado(a) constituído(a). Só NOME; nunca contato. */
+  autor?: string;
   /** Quem fica com o quê, por bem, em uma frase ("Casa → Ana (100%)"). */
   mapaBens: { bem: string; destino: string }[];
   linhas: LinhaCenarioLeiga[];
@@ -151,6 +154,7 @@ export interface CenarioCompartilhado {
 export interface EntradaCenarioCompartilhado {
   titulo: string;
   descricao?: string;
+  autor?: string;
   bens: { id: string; descricao: string }[];
   participantes: { id: string; nome: string }[];
   alocacoes: Alocacoes;
@@ -200,6 +204,7 @@ export function montarCenarioCompartilhado(
     v: 1,
     titulo: entrada.titulo,
     descricao: textoOuNada(entrada.descricao),
+    autor: textoOuNada(entrada.autor?.slice(0, 120)),
     mapaBens,
     linhas: entrada.linhas.map((l) => ({
       nome: l.nome,

@@ -66,12 +66,15 @@ export async function montarTermoVotacaoPdf({
   nomeAdvogado,
   agora,
   votacao,
+  advogadosDoCaso = [],
 }: {
   nomeFalecido: string;
   nomeAdvogado: string;
   /** ISO de geração — vem de fora (o motor não olha o relógio). */
   agora: string;
   votacao: VotacaoDoTermo;
+  /** Camada 4 — advogados CONSTITUÍDOS no caso (ciência registrada no termo). */
+  advogadosDoCaso?: { nome: string; oab?: string; representa?: string[] }[];
 }): Promise<Blob> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.create();
@@ -221,6 +224,22 @@ export async function montarTermoVotacaoPdf({
         corpo,
         9,
         C.tintaMedia,
+        MARGEM,
+        LARGURA,
+      );
+    }
+  }
+
+  if (advogadosDoCaso.length > 0) {
+    titulo('CIÊNCIA DOS ADVOGADOS CONSTITUÍDOS');
+    for (const a of advogadosDoCaso) {
+      escrever(
+        `${a.nome}${a.oab ? ` (${a.oab})` : ''}${
+          (a.representa?.length ?? 0) > 0 ? ` — representa ${a.representa!.join(', ')}` : ''
+        } — com acesso a esta deliberação pelo portal do caso.`,
+        corpo,
+        9,
+        C.tinta,
         MARGEM,
         LARGURA,
       );

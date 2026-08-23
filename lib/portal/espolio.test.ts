@@ -170,6 +170,12 @@ eq('fechado por padrão devolve null', montarEspolioDoCaso(entradaBase(), VISIBI
   eq('cenário: efeito líquido das despesas', c.linhas[0].efeitoDespesas, 250);
   eq('cenário: torna presente', c.totalTorna, '150000.00');
   teste('cenário: marca que há despesas contadas', c.temDespesas);
+  eq('cenário: sem autor informado fica sem autor', c.autor, undefined);
+  eq(
+    'cenário: autoria visível atravessa (camada 4)',
+    montarCenarioCompartilhado({ ...entrada, autor: 'Dra. Beatriz Colega' }).autor,
+    'Dra. Beatriz Colega',
+  );
 
   // Não-vazamento: contaminação em linhas/participantes não atravessa.
   const contaminada = {

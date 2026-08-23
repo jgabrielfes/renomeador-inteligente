@@ -296,6 +296,20 @@ export async function revogarConvite(
     } else {
       await atualizaConvite;
     }
+    // Camada 4: revogar o convite-espelho de um(a) advogado(a) constituído(a)
+    // encerra também o VÍNCULO com o caso (some das telas de transparência).
+    if (convite.papelConvite === "advogado") {
+      await prisma.casoAdvogado.updateMany({
+        where: { conviteToken: t },
+        data: { status: "removido" },
+      });
+      void registrarEventoPortal(
+        linha.casoId,
+        "ADVOGADO_REMOVIDO",
+        { herdeiro: convite.nomeHerdeiro },
+        t,
+      );
+    }
     void registrarEventoPortal(
       linha.casoId,
       "CONVITE_REVOGADO",
@@ -305,6 +319,80 @@ export async function revogarConvite(
     return { ok: true, convite };
   } catch {
     return { ok: false, erro: "Falha ao revogar — tente novamente." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Camada 4 — canal do caso ENTRE ADVOGADOS (titular ↔ constituídos)   */
+/* ------------------------------------------------------------------ */
+
+export interface MensagemCanalAdvogados {
+  autor: string;
+  texto: string;
+  em: string;
+  minha: boolean;
+}
+
+/** Conversa do caso entre os advogados — o lado do TITULAR/equipe. O(a)
+ *  constituído(a) usa a rota do convite-espelho (/api/portal/[token]/canal).
+ *  Nada daqui circula para herdeiros nem para /admin. */
+export async function canalAdvogados(
+  casoId: string,
+): Promise<{ ok: boolean; mensagens?: MensagemCanalAdvogados[]; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  if (!id) return { ok: false, erro: "Caso sem identificação." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    const mensagens = await prisma.casoAdvogadoMensagem.findMany({
+      where: { casoId: id },
+      orderBy: { createdAt: "asc" },
+      take: 500,
+    });
+    const ids = [...new Set(mensagens.map((m) => m.deUserId))];
+    const usuarios = await prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    const nomePor = new Map(usuarios.map((u) => [u.id, u.name ?? "Advogado(a)"]));
+    return {
+      ok: true,
+      mensagens: mensagens.map((m) => ({
+        autor: nomePor.get(m.deUserId) ?? "Advogado(a)",
+        texto: m.texto,
+        em: m.createdAt.toISOString(),
+        minha: m.deUserId === eu.id,
+      })),
+    };
+  } catch {
+    return { ok: false, erro: "Não foi possível carregar a conversa." };
+  }
+}
+
+export async function enviarMensagemCanal(
+  casoId: string,
+  texto: string,
+): Promise<{ ok: boolean; erro?: string }> {
+  if (!EH_SUCESSORISTA) return { ok: false, erro: "Recurso de outro site." };
+  const eu = await usuarioLogado();
+  if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
+  const id = String(casoId ?? "").slice(0, 80);
+  const t = String(texto ?? "").trim().slice(0, 2000);
+  if (!id || !t) return { ok: false, erro: "Escreva a mensagem." };
+  try {
+    if (!(await podeGerirCaso(id, eu))) {
+      return { ok: false, erro: "O painel deste caso é de outra conta." };
+    }
+    await prisma.casoAdvogadoMensagem.create({
+      data: { casoId: id, deUserId: eu.id, texto: t },
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: "Não foi possível enviar — tente de novo." };
   }
 }
 
