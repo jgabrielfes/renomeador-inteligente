@@ -1748,6 +1748,54 @@
   .sucessorista .fases-trilho { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* Tarefas do caso — a fila operacional do dashboard (LexCausa fase 2). */
+.sucessorista .tarefas-caso { margin-bottom: var(--e-4); }
+.sucessorista .tarefas-lista {
+  list-style: none;
+  margin: var(--e-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.sucessorista .tarefas-lista li {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  padding: var(--e-1) var(--e-2);
+  border-radius: 6px;
+}
+.sucessorista .tarefas-lista li:hover { background: var(--papel-alto); }
+.sucessorista .tarefas-lista li.feita .tarefa-texto {
+  text-decoration: line-through;
+  color: var(--tinta-media);
+}
+.sucessorista .tarefas-lista .tarefa-chip {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.sucessorista .tarefas-lista .tarefa-prazo {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  white-space: nowrap;
+}
+.sucessorista .tarefas-lista .tarefa-prazo.vencida {
+  color: var(--estado-vencido);
+  font-weight: 700;
+}
+.sucessorista .tarefas-form {
+  display: flex;
+  gap: var(--e-3);
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: var(--e-3);
+  padding-top: var(--e-3);
+  border-top: 1px solid var(--fio);
+}
+
 /* Alternador de tema claro/escuro — pílula no topo do dashboard. */
 .sucessorista .tema-alternador {
   display: inline-flex;

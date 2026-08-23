@@ -60,6 +60,7 @@ import { porteDoAcervo } from '@/lib/porte';
 import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
 import { FasesCaso } from './fases-caso';
+import { TarefasCaso, type TarefaCaso } from './tarefas-caso';
 import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
@@ -315,6 +316,8 @@ interface CasoSalvo {
   painelFamilia?: EstadoPainelFamilia;
   /** Coluna "Responsável" da aba Documentos (docId → quem entrega). */
   responsaveisDocs?: Record<string, string>;
+  /** Fila de TAREFAS do caso (LexCausa fase 2) — viaja no caso.json. */
+  tarefas?: TarefaCaso[];
 }
 
 export default function SucessoristaClient({
@@ -422,6 +425,7 @@ export default function SucessoristaClient({
   const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
   /* Coluna "Responsável" por item do catálogo de documentos. */
   const [responsaveisDocs, setResponsaveisDocs] = useState<Record<string, string>>({});
+  const [tarefasCaso, setTarefasCaso] = useState<TarefaCaso[]>([]);
   /* Despesas adiantadas RECONHECIDAS (Espaço do Espólio) — entram nas
      linhas dos cenários de partilha (ressarcir × compensar). */
   const [despesasCenario, setDespesasCenario] = useState<DespesaAdiantada[]>([]);
@@ -852,6 +856,7 @@ export default function SucessoristaClient({
         ? salvo.responsaveisDocs
         : {},
     );
+    setTarefasCaso(Array.isArray(salvo.tarefas) ? salvo.tarefas : []);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -879,6 +884,7 @@ export default function SucessoristaClient({
       custosAdicionais,
       painelFamilia,
       responsaveisDocs,
+      tarefas: tarefasCaso,
     };
   };
 
@@ -2392,7 +2398,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, tarefasCaso, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -3812,6 +3818,16 @@ export default function SucessoristaClient({
         </div>
         {abaProc === 'caso' && (
           <CasoView
+            tarefas={
+              <TarefasCaso
+                tarefas={tarefasCaso}
+                onChange={setTarefasCaso}
+                sugestoes={[
+                  ...(nomeConta ? [nomeConta] : []),
+                  ...(equipe?.membros.map((m) => m.nome) ?? []),
+                ].filter((n, i, a) => a.indexOf(n) === i)}
+              />
+            }
             fases={
               <FasesCaso
                 irPara={(aba) => irPara(aba as Aba)}
