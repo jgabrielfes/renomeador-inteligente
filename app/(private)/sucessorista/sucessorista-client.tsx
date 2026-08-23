@@ -59,6 +59,7 @@ import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 import { porteDoAcervo } from '@/lib/porte';
 import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
+import { FasesCaso } from './fases-caso';
 import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
@@ -3811,6 +3812,68 @@ export default function SucessoristaClient({
         </div>
         {abaProc === 'caso' && (
           <CasoView
+            fases={
+              <FasesCaso
+                irPara={(aba) => irPara(aba as Aba)}
+                fases={[
+                  {
+                    aba: 'familia',
+                    rotulo: 'Composição',
+                    completa: falecido.nome.trim().length > 0 && herdeiros.length > 0,
+                    resumo:
+                      herdeiros.length > 0
+                        ? `${herdeiros.length} herdeiro(s)`
+                        : 'família e qualificação',
+                  },
+                  {
+                    aba: 'acervo',
+                    rotulo: 'Acervo',
+                    completa: bens.length > 0,
+                    resumo: bens.length > 0 ? `${bens.length} bem(ns) lançado(s)` : 'bens e dívidas',
+                  },
+                  {
+                    aba: 'partilha',
+                    rotulo: 'Quinhões',
+                    completa: resultado !== null,
+                    resumo: resultado !== null ? 'partilha calculada' : 'aguarda família e acervo',
+                  },
+                  {
+                    aba: 'documentos',
+                    rotulo: 'Cofre',
+                    completa: Object.values(anexosProcesso).some((fs) => fs.length > 0),
+                    resumo: (() => {
+                      const n = Object.values(anexosProcesso).reduce((acc, fs) => acc + fs.length, 0);
+                      return n > 0 ? `${n} documento(s)` : 'documentos do processo';
+                    })(),
+                  },
+                  {
+                    aba: 'itcmd',
+                    rotulo: 'Espelho ITCMD',
+                    completa: fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO',
+                    resumo:
+                      fiscal.itcmdSituacao === 'PAGO'
+                        ? 'imposto pago'
+                        : fiscal.itcmdSituacao === 'DECLARADO'
+                        ? 'declarado'
+                        : 'declaração e provisão',
+                  },
+                ]}
+                acoes={
+                  perfil === 'ADVOGADO'
+                    ? [
+                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
+                        { rotulo: 'Projetar custos', aba: 'custos' },
+                        { rotulo: 'Sugerir honorários', aba: 'honorarios' },
+                        { rotulo: 'Gerar minuta', aba: 'minutas' },
+                      ]
+                    : [
+                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
+                        { rotulo: 'Projetar custos', aba: 'custos' },
+                        { rotulo: 'Gerar escritura', aba: 'escritura' },
+                      ]
+                }
+              />
+            }
             aplicarLeitura={aplicarLeitura}
             reclassificarArquivos={reclassificarArquivos}
             onInicioRapido={inicioRapido}

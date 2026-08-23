@@ -208,6 +208,7 @@ export function CasoView({
   ritoMotor = null,
   equipe = null,
   painelFamilia = null,
+  fases = null,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
@@ -239,6 +240,9 @@ export function CasoView({
   /** Card "Painel da família" (Painel do Cliente) — vem pronto do client,
    *  que tem o estado do caso; este dashboard só o posiciona no grid. */
   painelFamilia?: React.ReactNode;
+  /** Barra das 5 FASES + ações rápidas (LexCausa) — idem: vem pronta do
+   *  client, que tem o estado; o dashboard só a posiciona no topo. */
+  fases?: React.ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
@@ -589,6 +593,8 @@ export function CasoView({
           </button>
         </div>
       </div>
+
+      {fases}
 
       <div className="dash-pilha">
         {/* Escolha do RITO: decide a projeção de custas (escritura e atos

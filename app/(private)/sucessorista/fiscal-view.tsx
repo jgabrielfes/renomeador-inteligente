@@ -466,9 +466,12 @@ function DeclaracaoFinalSecao({
 
 /* ---------- Módulo 1 — Ganho de capital ---------- */
 
+/* Linguagem: a coluna aponta o MENOR CUSTO TRIBUTÁRIO de cada bem — conta
+   aritmética dos dois cenários, nunca "recomendação" (não é consultoria
+   jurídica; a decisão é do profissional com o cliente). */
 const ROTULO_RECOMENDACAO: Record<RecomendacaoGC, { texto: string; cor: string }> = {
-  ATUALIZAR_SEM_CUSTO: { texto: 'Atualizar (grátis)', cor: 'var(--verde-registro)' },
-  ATUALIZAR_COMPENSA: { texto: 'Atualizar compensa', cor: 'var(--verde-registro)' },
+  ATUALIZAR_SEM_CUSTO: { texto: 'Atualizar — sem custo', cor: 'var(--verde-registro)' },
+  ATUALIZAR_COMPENSA: { texto: 'Atualizar', cor: 'var(--verde-registro)' },
   MANTER_DECLARADO: { texto: 'Manter declarado', cor: 'var(--bronze)' },
 };
 
@@ -569,7 +572,7 @@ function GanhoCapitalSecao({
                 <TableHead>Bem</TableHead>
                 <TableHead>Imposto agora (mercado)</TableHead>
                 <TableHead>Imposto futuro (declarado)</TableHead>
-                <TableHead>Recomendação</TableHead>
+                <TableHead>Menor custo tributário</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -594,7 +597,9 @@ function GanhoCapitalSecao({
             </p>
             <p className="fund">
               DARF {resultado.resumo.darf.codigo} (espólio), vence na {resultado.resumo.darf.vencimento}. A escolha é
-              por bem e irrevogável após a Declaração Final — estimativa de apoio, confirme no caso concreto.
+              por bem e irrevogável após a Declaração Final. A coluna indica o MENOR CUSTO
+              TRIBUTÁRIO calculado das premissas acima — estimativa de apoio, não
+              aconselhamento jurídico; a decisão é do(a) profissional com o cliente.
             </p>
           </div>
         </>

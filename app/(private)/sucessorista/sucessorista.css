@@ -1690,6 +1690,64 @@
   margin-bottom: 18px;
 }
 
+/* Barra das 5 FASES do inventário (remodelagem LexCausa) — trilho clicável
+   no topo do dashboard: cada passo navega para a aba correspondente; o
+   check marca a fase que a folha já alimentou. Informa, nunca bloqueia. */
+.sucessorista .fases-caso { margin-bottom: var(--e-4); }
+.sucessorista .fases-cabeca {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--e-3);
+  flex-wrap: wrap;
+}
+.sucessorista .fases-trilho {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: var(--e-2);
+  margin: var(--e-2) 0 0;
+  padding: 0;
+}
+.sucessorista .fases-trilho .fase {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 40px;
+  padding: var(--e-2) var(--e-3);
+  border: 1px solid var(--fio);
+  border-radius: 8px;
+  background: var(--papel-alto);
+  color: var(--tinta);
+  text-align: left;
+}
+.sucessorista .fases-trilho .fase:hover { border-color: var(--bronze); }
+.sucessorista .fases-trilho .fase.completa { border-color: var(--verde-registro); }
+.sucessorista .fases-trilho .fase-numero {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--tinta-media);
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sucessorista .fases-trilho .fase.completa .fase-numero {
+  color: var(--papel-alto);
+  background: var(--verde-registro);
+  border-color: var(--verde-registro);
+}
+.sucessorista .fases-trilho .fase-rotulo { font-weight: 600; font-size: var(--t-sm); }
+.sucessorista .fases-trilho .fase-resumo { font-size: var(--t-xs); color: var(--tinta-media); }
+@media (max-width: 860px) {
+  .sucessorista .fases-trilho { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* Alternador de tema claro/escuro — pílula no topo do dashboard. */
 .sucessorista .tema-alternador {
   display: inline-flex;
