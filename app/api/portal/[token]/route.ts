@@ -62,6 +62,12 @@ export async function GET(req: Request, ctx: Ctx) {
   // não deve carregá-lo para dentro do snapshot do caso.
   let painel: unknown = null;
   let espolio: unknown = null;
+  // Camada 4 — advogados constituídos: visíveis a TODOS os tokens do caso
+  // (transparência: cada herdeiro sabe quem representa quem), e o convite de
+  // ADVOGADO recebe os painéis dos SEUS representados (por nome — o token
+  // dos herdeiros é credencial e nunca sai daqui).
+  let advogadosDoCaso: { nome: string; oab: string; representa: string[] }[] = [];
+  let paineisRepresentados: { nome: string; painel: unknown }[] = [];
   let espolioNotas: unknown[] = [];
   let espolioDespesas: unknown[] = [];
   let espolioCenarios: unknown[] = [];
@@ -237,6 +243,41 @@ export async function GET(req: Request, ctx: Ctx) {
       } else {
         painel = recorte;
       }
+
+      const vinculos = await prisma.casoAdvogado.findMany({
+        where: { casoId: convite.casoId, status: 'ativo' },
+      });
+      if (vinculos.length > 0) {
+        const convitesAdv = await prisma.portalConvite.findMany({
+          where: { token: { in: vinculos.map((v) => v.conviteToken) } },
+          select: { token: true, dados: true },
+        });
+        const dadosPor = new Map(
+          convitesAdv.map((c) => [
+            c.token,
+            c.dados as { nomeHerdeiro?: string; oabAdvogado?: string; representa?: string[] },
+          ]),
+        );
+        advogadosDoCaso = vinculos.map((v) => {
+          const d = dadosPor.get(v.conviteToken);
+          return {
+            nome: d?.nomeHerdeiro ?? 'Advogado(a)',
+            oab: d?.oabAdvogado ?? '',
+            representa: Array.isArray(d?.representa) ? d.representa : [],
+          };
+        });
+        if (convite.papelConvite === 'advogado') {
+          const meu = vinculos.find((v) => v.conviteToken === token);
+          const tokensRep = Array.isArray(meu?.representaTokens)
+            ? (meu.representaTokens as string[])
+            : [];
+          const snap = (linha?.snapshot ?? {}) as Record<string, unknown>;
+          paineisRepresentados = tokensRep
+            .map((t) => snap[t])
+            .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+            .map((p) => ({ nome: String(p.nomeHerdeiro ?? 'Herdeiro(a)'), painel: p }));
+        }
+      }
     } catch {
       painel = null;
       espolio = null;
@@ -261,6 +302,8 @@ export async function GET(req: Request, ctx: Ctx) {
           espolioCenarios,
           espolioVotacoes,
           espolioMural,
+          advogadosDoCaso,
+          paineisRepresentados,
           emailAtivo: emailHabilitado(),
         }
       : convite,

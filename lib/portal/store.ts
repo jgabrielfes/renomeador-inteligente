@@ -112,8 +112,16 @@ export interface ConviteHerdeiro {
   /** Papel do convite (ausente = 'herdeiro'). MEDIADOR(A) acompanha tudo do
    *  espaço — números, cenários, votações, mural — mas NÃO delibera: não
    *  vota, não adere a cenário, não conta para consenso, não lança despesa
-   *  e não tem pedidos de documentos nem quinhão. */
-  papelConvite?: 'herdeiro' | 'mediador';
+   *  e não tem pedidos de documentos nem quinhão. ADVOGADO(A) (camada 4) é
+   *  o(a) constituído(a) de herdeiros específicos: lê tudo do espólio,
+   *  comenta, JUNTA documentos (pedido `docs-advogado`) e lê os painéis dos
+   *  representados — sem deliberar (matriz em lib/rede/escopo.ts). */
+  papelConvite?: 'herdeiro' | 'mediador' | 'advogado';
+  /** Convite de ADVOGADO(A): nomes dos herdeiros representados (exibição —
+   *  o vínculo real, por token, vive em caso_advogados). */
+  representa?: string[];
+  /** Convite de ADVOGADO(A): inscrição exibida nos cabeçalhos ("OAB/SP 123"). */
+  oabAdvogado?: string;
   /** ADVOGADO(A) PRÓPRIO(A) do herdeiro (Provimento 205/2021): SÓ a
    *  estrutura — o herdeiro informa pelo portal, o escritório vê no card e
    *  passa a copiar o(a) colega nas comunicações. Nenhum acesso novo nasce

@@ -50,6 +50,9 @@ const CATALOGO_DO_PEDIDO_PORTAL: Record<string, string> = {
   'outros-documentos': 'outros',
   // Convites antigos ainda carregam o pedido de profissão.
   profissao: 'docs-herdeiros',
+  // Camada 4: o que o(a) advogado(a) constituído(a) junta (procuração,
+  // substabelecimento, petições) cai no card próprio do catálogo.
+  'docs-advogado': 'docs-advogado',
 };
 
 const ROTULO_STATUS_PORTAL: Record<string, string> = {

@@ -234,6 +234,12 @@ export function PainelFamiliaCard({
   const [convidandoMediador, setConvidandoMediador] = useState(false);
   const [nomeMediador, setNomeMediador] = useState('');
   const [salvandoMediador, setSalvandoMediador] = useState(false);
+  /* Camada 4 — advogado(a) constituído(a) de herdeiros específicos. */
+  const [convidandoAdvogado, setConvidandoAdvogado] = useState(false);
+  const [emailAdvogado, setEmailAdvogado] = useState('');
+  const [representaSel, setRepresentaSel] = useState<Record<string, boolean>>({});
+  const [indicadoPorHerdeiro, setIndicadoPorHerdeiro] = useState(false);
+  const [salvandoAdvogado, setSalvandoAdvogado] = useState(false);
   /* Herdeiro ausente: registro de tentativas de contato (prova de diligência). */
   const [tentativas, setTentativas] = useState<Record<string, number>>({});
   const [tentativaConvite, setTentativaConvite] = useState<ConviteHerdeiro | null>(null);
@@ -271,8 +277,11 @@ export function PainelFamiliaCard({
     ? estado.faseAtual
     : fases[0].id;
   const ativos = convites.filter((c) => !c.revogadoEm);
-  /* Consenso e votação são dos HERDEIROS — mediador(a) acompanha, não conta. */
-  const ativosHerdeiros = ativos.filter((c) => c.papelConvite !== 'mediador');
+  /* Consenso e votação são dos HERDEIROS — mediador(a) e advogado(a)
+     constituído(a) acompanham, não contam (matriz em lib/rede/escopo.ts). */
+  const ativosHerdeiros = ativos.filter(
+    (c) => c.papelConvite !== 'mediador' && c.papelConvite !== 'advogado',
+  );
 
   // Verdade do servidor sobre a publicação (outra máquina pode ter
   // publicado/encerrado) — melhor-esforço, uma vez por caso aberto.
@@ -393,6 +402,68 @@ export function PainelFamiliaCard({
       });
     } finally {
       setSalvandoMediador(false);
+    }
+  };
+
+  /* Camada 4 — convidar advogado(a) constituído(a): conta com OAB verificada,
+     vinculado(a) aos herdeiros que representa. O convite do titular É a
+     aprovação; quando a origem é a indicação do herdeiro, fica no log. */
+  const convidarAdvogado = async () => {
+    const representaTokens = Object.keys(representaSel).filter((t) => representaSel[t]);
+    const representaNomes = convites
+      .filter((c) => representaTokens.includes(c.token))
+      .map((c) => c.nomeHerdeiro);
+    setSalvandoAdvogado(true);
+    try {
+      const r = await fetch('/api/portal/convite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          casoId,
+          nomeHerdeiro: '',
+          nomeFalecido,
+          nomeAdvogado,
+          papel: 'advogado',
+          advogadoEmail: emailAdvogado.trim(),
+          representaTokens,
+          representaNomes,
+          indicadoPor: indicadoPorHerdeiro ? 'herdeiro' : 'titular',
+        }),
+      });
+      const corpo = (await r.json().catch(() => null)) as
+        | { token?: string; url?: string; nome?: string; oab?: string; erro?: string }
+        | null;
+      if (!r.ok || !corpo?.token) {
+        toast.error('Não foi possível convidar', { description: corpo?.erro });
+        return;
+      }
+      onNovoConvite({
+        token: corpo.token,
+        casoId,
+        nomeHerdeiro: corpo.nome ?? 'Advogado(a)',
+        nomeFalecido,
+        nomeAdvogado,
+        documentos: [],
+        criadoEm: agoraIso(),
+        papelConvite: 'advogado',
+        representa: representaNomes,
+        oabAdvogado: corpo.oab,
+      });
+      try {
+        await navigator.clipboard.writeText(`${location.origin}${corpo.url ?? `/portal/${corpo.token}`}`);
+      } catch {
+        // sem clipboard — o link fica no cofre como os demais
+      }
+      setConvidandoAdvogado(false);
+      setEmailAdvogado('');
+      setRepresentaSel({});
+      setIndicadoPorHerdeiro(false);
+      toast.success(`${corpo.nome ?? 'Advogado(a)'} entrou no caso — link copiado`, {
+        description:
+          'Lê o espólio e os painéis dos representados, comenta e junta documentos — sem deliberar e sem acesso aos seus honorários e anotações.',
+      });
+    } finally {
+      setSalvandoAdvogado(false);
     }
   };
 
@@ -1269,6 +1340,12 @@ export function PainelFamiliaCard({
                 {c.papelConvite === 'mediador' && (
                   <span className="fracao"> · mediador(a)</span>
                 )}
+                {c.papelConvite === 'advogado' && (
+                  <span className="fracao">
+                    {' '}· advogado(a) constituído(a){c.oabAdvogado ? ` — ${c.oabAdvogado}` : ''}
+                    {(c.representa?.length ?? 0) > 0 ? ` · representa ${c.representa!.join(', ')}` : ''}
+                  </span>
+                )}
                 <span className="fracao num">
                   {c.revogadoEm
                     ? ` · revogado em ${dataCurta(c.revogadoEm)}`
@@ -1288,7 +1365,26 @@ export function PainelFamiliaCard({
                     advogado(a) próprio(a): {c.advogadoProprio.nome}
                     {c.advogadoProprio.oab ? ` (OAB ${c.advogadoProprio.oab})` : ''}
                     {c.advogadoProprio.contato ? ` · ${c.advogadoProprio.contato}` : ''} — copiar
-                    nas comunicações
+                    nas comunicações{' '}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        // A indicação do herdeiro vira ingresso SÓ com este
+                        // aval do titular — e a origem fica registrada no log.
+                        setIndicadoPorHerdeiro(true);
+                        setEmailAdvogado(
+                          /.+@.+\..+/.test(c.advogadoProprio?.contato ?? '')
+                            ? c.advogadoProprio!.contato!
+                            : '',
+                        );
+                        setRepresentaSel({ [c.token]: true });
+                        setConvidandoAdvogado(true);
+                      }}
+                    >
+                      convidar para o caso
+                    </Button>
                   </span>
                 )}
               </span>
@@ -1328,6 +1424,17 @@ export function PainelFamiliaCard({
             onClick={() => setConvidandoMediador(true)}
           >
             + convidar mediador(a)
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setIndicadoPorHerdeiro(false);
+              setConvidandoAdvogado(true);
+            }}
+          >
+            + convidar advogado(a) constituído(a)
           </Button>
         </div>
       </div>
@@ -1408,6 +1515,79 @@ export function PainelFamiliaCard({
               onClick={() => void convidarMediador()}
             >
               Gerar link de mediador(a)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Camada 4 — advogado(a) constituído(a) de herdeiros específicos. */}
+      <Dialog
+        open={convidandoAdvogado}
+        onOpenChange={(o) => !salvandoAdvogado && setConvidandoAdvogado(o)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Convidar advogado(a) constituído(a)</DialogTitle>
+            <DialogDescription>
+              O(a) colega precisa de conta no Sucessorista com OAB verificada. Pelo
+              link, lê o espaço do espólio e o painel dos herdeiros que representa,
+              comenta e junta documentos (procuração, petições) — não delibera e não
+              alcança seus honorários, anotações nem documentos internos.
+              {indicadoPorHerdeiro &&
+                ' Origem: indicação do próprio herdeiro — este convite é a sua aprovação, e ela fica registrada.'}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="campo">
+            E-mail da conta do(a) colega
+            <Input
+              type="text"
+              inputMode="email"
+              value={emailAdvogado}
+              placeholder="colega@escritorio.adv.br"
+              onChange={(e) => setEmailAdvogado(e.target.value)}
+            />
+          </label>
+          <div>
+            <span className="eyebrow">Representa quais herdeiros?</span>
+            {ativos.filter((c) => !c.papelConvite || c.papelConvite === 'herdeiro').length === 0 ? (
+              <p className="fund" style={{ margin: '4px 0 0' }}>
+                Gere os convites dos herdeiros primeiro (aba Documentos) — o vínculo é
+                por herdeiro representado.
+              </p>
+            ) : (
+              ativos
+                .filter((c) => !c.papelConvite || c.papelConvite === 'herdeiro')
+                .map((c) => (
+                  <label key={c.token} className="marcar" style={{ display: 'flex', fontWeight: 400, marginTop: 4 }}>
+                    <input
+                      type="checkbox"
+                      checked={representaSel[c.token] === true}
+                      onChange={(e) =>
+                        setRepresentaSel((prev) => ({ ...prev, [c.token]: e.target.checked }))
+                      }
+                    />
+                    {c.nomeHerdeiro}
+                  </label>
+                ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={salvandoAdvogado}
+              onClick={() => setConvidandoAdvogado(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              loading={salvandoAdvogado}
+              disabled={
+                !/.+@.+\..+/.test(emailAdvogado.trim()) ||
+                Object.values(representaSel).every((v) => !v)
+              }
+              onClick={() => void convidarAdvogado()}
+            >
+              Convidar para o caso
             </Button>
           </DialogFooter>
         </DialogContent>

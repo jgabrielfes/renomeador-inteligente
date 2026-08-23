@@ -115,6 +115,10 @@ type ConviteComPainel = ConviteHerdeiro & {
   espolioCenarios?: CenarioEspolioPortal[];
   espolioVotacoes?: VotacaoEspolioPortal[];
   espolioMural?: MensagemMuralPortal[];
+  /** Camada 4 — advogados constituídos: visíveis a todos (transparência). */
+  advogadosDoCaso?: { nome: string; oab: string; representa: string[] }[];
+  /** Convite de ADVOGADO(A): painéis dos herdeiros representados. */
+  paineisRepresentados?: { nome: string; painel: PainelHerdeiro }[];
   emailAtivo?: boolean;
 };
 
@@ -272,6 +276,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       espolioCenarios: prev?.espolioCenarios ?? [],
       espolioVotacoes: prev?.espolioVotacoes ?? [],
       espolioMural: prev?.espolioMural ?? [],
+      advogadosDoCaso: prev?.advogadosDoCaso ?? [],
+      paineisRepresentados: prev?.paineisRepresentados ?? [],
       emailAtivo: prev?.emailAtivo ?? false,
     }));
 
@@ -555,6 +561,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
   /** MEDIADOR(A): acompanha tudo e conversa, mas não delibera — sem
    *  formulário, sem documentos, sem voto/adesão/despesa. */
   const ehMediador = convite.papelConvite === 'mediador';
+  /** ADVOGADO(A) constituído(a) (camada 4): lê tudo, comenta e junta
+   *  documentos — não delibera (matriz em lib/rede/escopo.ts). */
+  const ehAdvogado = convite.papelConvite === 'advogado';
 
   return (
     <div className="sucessorista">
@@ -583,7 +592,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       <p className="subtitulo">
         {ehMediador
           ? `Você acompanha este inventário como mediador(a), a convite de ${advogado}. Nada aqui é público: só quem recebeu um link vê estas informações.`
-          : `Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos) e os documentos da lista. Nada aqui é público: só você e ${advogado} veem esta página.`}
+          : ehAdvogado
+            ? `Você acompanha este inventário como advogado(a) constituído(a)${(convite.representa?.length ?? 0) > 0 ? ` de ${convite.representa!.join(' e ')}` : ''}, a convite de ${advogado}. Nada aqui é público: só quem recebeu um link vê estas informações.`
+            : `Para o inventário andar, precisamos de duas coisas suas: os dados abaixo (2 minutos) e os documentos da lista. Nada aqui é público: só você e ${advogado} veem esta página.`}
       </p>
 
       {/* ---------- onde estamos (Painel do Cliente publicado) ---------- */}
@@ -622,6 +633,67 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
         </>
       )}
 
+      {(convite.advogadosDoCaso?.length ?? 0) > 0 && (
+        <p className="fund" style={{ marginTop: 6 }}>
+          {convite.advogadosDoCaso!
+            .map(
+              (a) =>
+                `${a.nome}${a.oab ? ` (${a.oab})` : ''} representa ${a.representa.length > 0 ? a.representa.join(', ') : 'herdeiro(s) do caso'}`,
+            )
+            .join(' · ')}
+          {' — '}os demais herdeiros seguem representados por {advogado}.
+        </p>
+      )}
+
+      {ehAdvogado && (
+        <div className="nota" style={{ marginTop: 10 }}>
+          <span className="eyebrow">Você acompanha como advogado(a) constituído(a)</span>
+          <p>
+            Este acesso mostra o espaço do espólio e o painel dos seus representados, e
+            permite comentar e juntar documentos (procuração, substabelecimento,
+            petições). Adesões, votos e despesas são atos dos herdeiros; honorários,
+            anotações e documentos internos do escritório titular não passam por aqui.
+          </p>
+        </div>
+      )}
+
+      {ehAdvogado && (convite.paineisRepresentados?.length ?? 0) > 0 && (
+        <>
+          <h2>Seus representados</h2>
+          {convite.paineisRepresentados!.map((r) => {
+            const atual = r.painel.fases.find((f) => f.atual);
+            return (
+              <div className="nota" key={r.nome} style={{ marginTop: 8 }}>
+                <span className="eyebrow">{r.nome}</span>
+                <p style={{ margin: 0 }}>
+                  Fase atual: <strong>{atual?.titulo ?? '—'}</strong>
+                  {r.painel.proximoPasso ? ` · próximo passo: ${r.painel.proximoPasso.texto}` : ''}
+                </p>
+                {(r.painel.custos?.length ?? 0) > 0 && (
+                  <ul className="custos-portal" style={{ marginTop: 6 }}>
+                    {r.painel.custos!.map((c, i) => (
+                      <li key={i}>
+                        <span>
+                          {c.rotulo}
+                          <span className="fracao"> · {c.situacao === 'PAGO' ? 'pago' : 'previsto'}</span>
+                        </span>
+                        <span className="num">{brl(c.valor)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {r.painel.quinhao && (
+                  <p className="fund" style={{ marginTop: 6 }}>
+                    Quinhão liberado ao herdeiro: {brl(r.painel.quinhao.valor)}
+                    {r.painel.quinhao.fracao ? ` (${r.painel.quinhao.fracao})` : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
       {ehMediador && (
         <div className="nota" style={{ marginTop: 10 }}>
           <span className="eyebrow">Você acompanha como mediador(a)</span>
@@ -636,7 +708,9 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
       {/* ---------- o que falta de você (só herdeiro) ---------- */}
       {!ehMediador && (
       <>
-      <h2>O que falta de você</h2>
+      <h2>{ehAdvogado ? 'Seus documentos no caso' : 'O que falta de você'}</h2>
+      {!ehAdvogado && (
+      <>
       <h3 style={{ marginTop: 8 }}>Seus dados (2 minutos)</h3>
       {convite.qualificacao ? (
         <div className="nota registro">
@@ -775,6 +849,8 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           </button>
         </div>
       </form>
+      </>
+      )}
 
       {/* ---------- documentos ---------- */}
       <h3 style={{ marginTop: 20 }}>Seus documentos</h3>
@@ -1124,7 +1200,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
               ))}
             </ul>
           )}
-          {!ehMediador && (
+          {!ehMediador && !ehAdvogado && (
             <DespesaEspolioForm
               token={token}
               onRegistrada={(d, conviteNovo) => {
@@ -1151,7 +1227,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                   key={c.id}
                   token={token}
                   cenario={c}
-                  somenteAcompanha={ehMediador}
+                  somenteAcompanha={ehMediador || ehAdvogado}
                   onRespondida={registrarAdesaoLocal}
                 />
               ))}
@@ -1176,7 +1252,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
                   key={v.id}
                   token={token}
                   votacao={v}
-                  somenteAcompanha={ehMediador}
+                  somenteAcompanha={ehMediador || ehAdvogado}
                   onVotou={registrarVotoLocal}
                 />
               ))}
@@ -1204,7 +1280,7 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
 
       {/* Advogado(a) próprio(a): o herdeiro informa e o escritório passa a
           copiar o(a) colega — direito do Provimento 205/2021, sem burocracia. */}
-      {!ehMediador && (
+      {!ehMediador && !ehAdvogado && (
         <AdvogadoProprioForm
           token={token}
           atual={convite.advogadoProprio ?? null}

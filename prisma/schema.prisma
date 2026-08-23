@@ -708,3 +708,38 @@ model RadarDenuncia {
   @@index([status, createdAt])
   @@map("radar_denuncias")
 }
+
+// CAMADA 4 — Rede advogado-advogado, pilar A: o SEGUNDO advogado no caso.
+// Ele entra por CONTA (OAB aprovada, camada 3) — token é credencial de
+// leigo; a janela dele no caso é um convite-espelho do portal
+// (papelConvite 'advogado'). `representaTokens` = convites de herdeiro que
+// ele representa (o escopo de leitura dos painéis individuais).
+model CasoAdvogado {
+  id                 String   @id @default(cuid())
+  casoId             String
+  advogadoUserId     String
+  convidadoPorUserId String
+  indicadoPor        String   @default("titular") // titular|herdeiro
+  representaTokens   Json
+  conviteToken       String   @unique
+  status             String   @default("ativo") // ativo|removido
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([casoId, advogadoUserId])
+  @@index([advogadoUserId, status])
+  @@map("caso_advogados")
+}
+
+// Canal 1:1 entre os advogados do caso (pilar A, etapa A2) — registrado e
+// exportável; nada disto circula para herdeiros nem para /admin.
+model CasoAdvogadoMensagem {
+  id        String   @id @default(cuid())
+  casoId    String
+  deUserId  String
+  texto     String
+  createdAt DateTime @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("caso_advogado_mensagens")
+}

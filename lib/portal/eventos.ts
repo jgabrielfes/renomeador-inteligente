@@ -41,7 +41,10 @@ export type TipoEventoPortal =
   | 'ESPOLIO_MURAL_MODERADA'
   | 'ESPOLIO_DIGEST'
   | 'CONTATO_TENTATIVA'
-  | 'ADVOGADO_PROPRIO';
+  | 'ADVOGADO_PROPRIO'
+  // Camada 4 — segundo advogado no caso (rede advogado-advogado):
+  | 'ADVOGADO_CONVIDADO'
+  | 'ADVOGADO_REMOVIDO';
 
 export interface DetalheEventoPortal {
   /** Nome do herdeiro do convite relacionado. */
@@ -90,6 +93,7 @@ export const TIPOS_VISIVEIS_AO_HERDEIRO: TipoEventoPortal[] = [
   'ESPOLIO_CONSENSO',
   'ESPOLIO_VOTACAO_ABERTA',
   'ESPOLIO_VOTACAO_ENCERRADA',
+  'ADVOGADO_CONVIDADO',
 ];
 
 /** Texto LEIGO de um evento para o histórico do herdeiro — null = não exibir. */
@@ -132,6 +136,11 @@ export function textoLeigoDoEvento(
       return detalhe?.votacao
         ? `Votação encerrada com o resultado apurado: ${detalhe.votacao}`
         : 'Uma votação da família foi encerrada';
+    case 'ADVOGADO_CONVIDADO':
+      // Transparência para a família: todo mundo sabe quem representa quem.
+      return detalhe?.herdeiro
+        ? `Advogado(a) constituído(a) entrou no caso: ${detalhe.herdeiro}`
+        : 'Um(a) advogado(a) constituído(a) entrou no caso';
     default:
       return null;
   }
@@ -172,4 +181,6 @@ export const ROTULO_EVENTO: Record<string, string> = {
   ESPOLIO_DIGEST: 'Resumo do caso enviado à família por e-mail',
   CONTATO_TENTATIVA: 'Tentativa de contato com herdeiro registrada',
   ADVOGADO_PROPRIO: 'Herdeiro informou advogado(a) próprio(a)',
+  ADVOGADO_CONVIDADO: 'Advogado(a) constituído(a) entrou no caso',
+  ADVOGADO_REMOVIDO: 'Advogado(a) constituído(a) removido(a) do caso',
 };
