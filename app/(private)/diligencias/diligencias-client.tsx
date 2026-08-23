@@ -9,7 +9,7 @@
  * registra o termo de referência.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Toaster } from '@/components/ui/sonner';
 
 import type { Municipio } from '@/lib/rede/municipios';
+import { ComarcaAutocomplete } from './comarca-autocomplete';
 import {
   CRITERIOS_AVALIACAO,
   ROTULO_STATUS_DILIGENCIA,
@@ -41,7 +42,6 @@ import {
 import {
   arquivosDaDiligencia,
   avaliarDiligencia,
-  buscarComarcas,
   cancelarDiligencia,
   concluirDiligencia,
   confirmarTermo,
@@ -60,65 +60,6 @@ const AVISO_LEGAL =
   'A correspondência é combinada ENTRE os advogados — a plataforma não participa dos honorários da diligência, não processa pagamento e não indica correspondente: a lista segue ordem neutra.';
 
 const hojeIso = () => new Date().toISOString().slice(0, 10);
-
-/** Autocomplete de comarca — pergunta ao servidor (a base não vem ao bundle). */
-function ComarcaAutocomplete({
-  onEscolher,
-  placeholder = 'Digite a comarca…',
-}: {
-  onEscolher: (m: Municipio) => void;
-  placeholder?: string;
-}) {
-  const [texto, setTexto] = useState('');
-  const [opcoes, setOpcoes] = useState<Municipio[]>([]);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  return (
-    <div style={{ position: 'relative' }}>
-      <Input
-        value={texto}
-        placeholder={placeholder}
-        onChange={(e) => {
-          const v = e.target.value;
-          setTexto(v);
-          if (debounce.current) clearTimeout(debounce.current);
-          debounce.current = setTimeout(() => {
-            void buscarComarcas(v).then(setOpcoes);
-          }, 250);
-        }}
-      />
-      {opcoes.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            zIndex: 20,
-            insetInlineStart: 0,
-            insetInlineEnd: 0,
-            background: 'var(--background, #fff)',
-            border: '1px solid var(--border, #ddd)',
-            borderRadius: 8,
-            maxHeight: 200,
-            overflowY: 'auto',
-          }}
-        >
-          {opcoes.map((m) => (
-            <button
-              key={m.ibge}
-              type="button"
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px' }}
-              onClick={() => {
-                onEscolher(m);
-                setTexto('');
-                setOpcoes([]);
-              }}
-            >
-              {m.nome}/{m.uf}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function CardDiligencia({
   d,

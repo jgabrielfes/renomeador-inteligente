@@ -3611,6 +3611,7 @@ export default function SucessoristaClient({
         {menu}
         <CasosView
           radarHref={radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null}
+          diligenciasHref={perfil === 'ADVOGADO' || ehMaster ? '/diligencias' : null}
           estado={estadoPainel}
           resumos={(() => {
             // A nuvem entra no painel junto dos casos locais; caso
@@ -4377,6 +4378,8 @@ export default function SucessoristaClient({
                 return s.excluirDocumento(aberto.cabecalho.caseId, file.name);
               }}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
+              casoId={casoId}
+              municipioSugestao={bens.find((b) => b.imovel?.municipio)?.imovel?.municipio}
             />
           </section>
         )}

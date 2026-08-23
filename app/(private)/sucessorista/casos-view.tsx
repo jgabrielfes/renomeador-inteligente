@@ -67,6 +67,7 @@ const esquemaNovo = z.object({
 
 export function CasosView({
   radarHref = null,
+  diligenciasHref = null,
   estado,
   resumos,
   comNuvem = false,
@@ -97,6 +98,8 @@ export function CasosView({
 }: {
   /** Rota do Radar de famílias quando ligado (env) — atalho no cabeçalho. */
   radarHref?: string | null;
+  /** Rota das diligências entre advogados (camada 4) — atalho no cabeçalho. */
+  diligenciasHref?: string | null;
   estado: EstadoPainel;
   /** null = cache ainda não pintou. */
   resumos: ResumoCaso[] | null;
@@ -230,6 +233,11 @@ export function CasosView({
             {radarHref && (
               <Button variant="outline" render={<Link href={radarHref} />} nativeButton={false}>
                 Radar de famílias
+              </Button>
+            )}
+            {diligenciasHref && (
+              <Button variant="outline" render={<Link href={diligenciasHref} />} nativeButton={false}>
+                Diligências
               </Button>
             )}
             {onEnviarNuvem && (

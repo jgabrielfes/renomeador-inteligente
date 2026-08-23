@@ -34,6 +34,7 @@ import {
 import { montarPdfUnificado, montarZipIndividualizado } from '@/lib/partilha/processo';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
+import { DiligenciasCaso } from './diligencias-caso';
 import { LupaPreview } from './preview';
 import { toast } from 'sonner';
 
@@ -560,6 +561,8 @@ export function DocumentosView({
   onExcluirDrive,
   onSubirNuvem,
   onMontado,
+  casoId,
+  municipioSugestao,
 }: {
   anexos: AnexosProcesso;
   setAnexos: (a: AnexosProcesso) => void;
@@ -594,6 +597,10 @@ export function DocumentosView({
   onSubirNuvem?: (files: File[]) => Promise<{ ok: number; falhas: number; motivo?: string }>;
   /** Telemetria: o processo foi montado (só o formato e a contagem). */
   onMontado?: (formato: 'PDF_PROCESSO' | 'ZIP_PROCESSO', itens: number) => void;
+  /** Id do caso — liga a seção "Diligências a distância" (camada 4, pilar B). */
+  casoId?: string;
+  /** Município do imóvel do acervo — pré-preenche a comarca da diligência. */
+  municipioSugestao?: string;
 }) {
   const [preview, setPreview] = useState<File | null>(null);
   /** Pedido de remoção aguardando a AUTORIZAÇÃO EXTRA (modo Drive). */
@@ -984,6 +991,15 @@ export function DocumentosView({
           );
         })}
       </div>
+
+      {casoId && (
+        <DiligenciasCaso
+          casoId={casoId}
+          anexos={anexos}
+          onAnexar={(docId, file) => anexar(docId, [file])}
+          municipioSugestao={municipioSugestao}
+        />
+      )}
 
       <h2>Montar o processo</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
