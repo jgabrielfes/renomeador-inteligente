@@ -743,3 +743,91 @@ model CasoAdvogadoMensagem {
   @@index([casoId, createdAt])
   @@map("caso_advogado_mensagens")
 }
+
+// CAMADA 4, pilar B — CORRESPONDENTES de sucessões por comarca. Extensão do
+// perfil verificado (camada 3): comarcas por código IBGE (sem dígito), tipos
+// de diligência e prazos. Só aparece nas buscas com selo (OAB aprovada +
+// quiz) e perfil ATIVO; a ordem de exibição é NEUTRA (motor puro em
+// lib/rede/diligencias.ts) — nunca por preço ou nota.
+model CorrespondentePerfil {
+  userId         String   @id
+  comarcas       Json     // number[] — códigos IBGE
+  tipos          Json     // TipoDiligencia[]
+  prazoMedioDias Int      @default(5)
+  raioKm         Int      @default(0)
+  ativo          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("correspondente_perfis")
+}
+
+// A DILIGÊNCIA: nasce de um caso (casoId) ou avulsa; a PASTA é o conjunto
+// isolado de arquivos (DiligenciaArquivo) — o correspondente NUNCA vê o
+// caso. termoJson registra o combinado ENTRE os advogados (escopo, prazo,
+// valor em texto livre) — a plataforma não processa pagamento.
+model Diligencia {
+  id                     String    @id @default(cuid())
+  solicitanteUserId      String
+  casoId                 String?
+  comarcaIbge            Int
+  municipio              String
+  uf                     String
+  tipo                   String
+  descricao              String
+  prazoEm                DateTime?
+  status                 String    @default("aberta") // lib/rede/diligencias.ts
+  correspondenteUserId   String?
+  termoJson              Json?
+  justificativaAtraso    String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([status, uf, comarcaIbge])
+  @@index([solicitanteUserId])
+  @@index([correspondenteUserId])
+  @@map("diligencias")
+}
+
+// Arquivo da PASTA da diligência: origem 'pasta' (anexado pelo solicitante)
+// ou 'relatorio' (entregue pelo correspondente). Fora da pasta, nada circula
+// (conteudoDaPasta, com teste). NUNCA em /admin.
+model DiligenciaArquivo {
+  id           String   @id @default(cuid())
+  diligenciaId String
+  origem       String   // pasta|relatorio
+  nome         String
+  mime         String
+  tamanho      Int
+  conteudo     Bytes
+  createdAt    DateTime @default(now())
+
+  @@index([diligenciaId])
+  @@map("diligencia_arquivos")
+}
+
+model DiligenciaOferta {
+  id                   String   @id @default(cuid())
+  diligenciaId         String
+  correspondenteUserId String
+  mensagem             String
+  prazoDias            Int
+  createdAt            DateTime @default(now())
+
+  @@unique([diligenciaId, correspondenteUserId])
+  @@map("diligencia_ofertas")
+}
+
+// Avaliação MÚTUA por critérios objetivos (prazo/relatório/comunicação,
+// 1–5) — agregada no perfil só para assinantes logados; nunca pública.
+model DiligenciaAvaliacao {
+  id             String   @id @default(cuid())
+  diligenciaId   String
+  avaliadorUserId String
+  avaliadoUserId String
+  criterios      Json
+  createdAt      DateTime @default(now())
+
+  @@unique([diligenciaId, avaliadorUserId])
+  @@map("diligencia_avaliacoes")
+}
