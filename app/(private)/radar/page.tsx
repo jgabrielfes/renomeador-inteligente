@@ -6,8 +6,10 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { LexTopbar } from '@/components/lexcausa/topbar';
+import { UserMenu } from '@/components/user-menu';
 import { requirePlataforma } from '@/lib/app';
-import { requireSession } from '@/lib/auth';
+import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 import { estadoRadarAdvogado, listarCasosRadar, type CasoRadar } from './radar-actions';
 import { RadarClient } from './radar-client';
@@ -30,5 +32,16 @@ export default async function RadarPage() {
     const r = await listarCasosRadar();
     if (r.ok) casos = r.casos;
   }
-  return <RadarClient estado={estado} casos={casos} />;
+  const session = await auth();
+  return (
+    <>
+      <LexTopbar
+        menu={<UserMenu />}
+        ehMaster={isMaster(session)}
+        radarAtivo
+        sub="Radar Sucessório · by LexCausa"
+      />
+      <RadarClient estado={estado} casos={casos} />
+    </>
+  );
 }

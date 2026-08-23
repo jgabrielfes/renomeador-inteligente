@@ -4,6 +4,8 @@
 // aqui entram as cargas por conta (lições, perfil, equipe) e o client.
 
 import { AccessTracker } from "@/components/access-tracker";
+import { comandosPadrao } from "@/components/lexcausa/comandos";
+import { PaletaComandos } from "@/components/lexcausa/paleta-comandos";
 import { UserMenu } from "@/components/user-menu";
 import { IDENTIDADE } from "@/lib/app";
 import { isMaster } from "@/lib/auth";
@@ -49,6 +51,15 @@ export async function PaginaSucessorista({
   return (
     <>
       <AccessTracker modulo={IDENTIDADE.modulo} />
+      {/* Shell LexCausa dentro do módulo imersivo: só a paleta (⌘K) — a
+          lombada é a navegação visual daqui. */}
+      <PaletaComandos
+        comandos={comandosPadrao({
+          ehMaster: isMaster(session),
+          radarAtivo: radarAtivo(),
+          escrevente: perfilConta === "ESCREVENTE",
+        })}
+      />
       <SucessoristaClient
         licoesRenomeador={licoes}
         menu={<UserMenu />}

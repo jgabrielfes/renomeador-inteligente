@@ -13,8 +13,8 @@ import Link from 'next/link';
 
 import '@/app/lexcausa.css';
 
-import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
+import { LexTopbar } from '@/components/lexcausa/topbar';
 import { useProgressRouter } from '@/components/navigation-progress';
 
 const PREF_KEY = 'lexcausa-produto-padrao';
@@ -73,10 +73,12 @@ export function HubLexCausa({
 
   return (
     <div className="lexcausa" style={{ minHeight: '100vh' }}>
-      <header className="lc-topo">
-        <MarcaLexCausa href="/?hub=1" />
-        <nav aria-label="Sessão">{menu}</nav>
-      </header>
+      <LexTopbar
+        menu={menu}
+        ehMaster={ehMaster}
+        radarAtivo={radarAtivo}
+        escrevente={perfil === 'ESCREVENTE'}
+      />
 
       <main className="lc-miolo">
         <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>

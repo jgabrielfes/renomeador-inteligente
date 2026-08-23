@@ -4,8 +4,11 @@
 
 import type { Metadata } from 'next';
 
+import { LexTopbar } from '@/components/lexcausa/topbar';
+import { UserMenu } from '@/components/user-menu';
 import { requirePlataforma } from '@/lib/app';
-import { requireSession } from '@/lib/auth';
+import { auth, isMaster, requireSession } from '@/lib/auth';
+import { radarAtivo } from '@/lib/radar/config';
 import {
   diligenciasAbertas,
   estadoCorrespondente,
@@ -33,12 +36,16 @@ export default async function DiligenciasPage() {
     if (r.ok) abertas = r.abertas;
   }
 
+  const session = await auth();
   return (
-    <DiligenciasClient
-      estado={estado.ok ? estado : null}
-      solicitadas={minhas.ok ? minhas.solicitadas : []}
-      aceitas={minhas.ok ? minhas.aceitas : []}
-      abertas={abertas}
-    />
+    <>
+      <LexTopbar menu={<UserMenu />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} />
+      <DiligenciasClient
+        estado={estado.ok ? estado : null}
+        solicitadas={minhas.ok ? minhas.solicitadas : []}
+        aceitas={minhas.ok ? minhas.aceitas : []}
+        abertas={abertas}
+      />
+    </>
   );
 }

@@ -234,6 +234,76 @@
   outline-offset: 2px;
 }
 
+/* ---------- shell persistente (barra-noite dos produtos) ---------- */
+/* Variante BARRA do escopo: um .lexcausa fino e escuro montado ACIMA das
+   telas dos produtos — o switcher sempre à mão sem roubar a cena do módulo.
+   As variáveis do shadcn são re-mapeadas para o fundo-noite, então o
+   UserMenu (Button outline/ghost) continua legível aqui dentro. */
+.lexcausa.lc-shell {
+  background: var(--lc-noite);
+  color: var(--lc-noite-tinta);
+  min-height: 0;
+  --background: var(--lc-noite);
+  --foreground: var(--lc-noite-tinta);
+  --primary: var(--lc-noite-tinta);
+  --primary-foreground: var(--lc-noite);
+  --secondary: #232c38;
+  --secondary-foreground: var(--lc-noite-tinta);
+  --muted: #232c38;
+  --muted-foreground: #aab3bd;   /* 7,3:1 sobre a noite */
+  --accent: #232c38;
+  --accent-foreground: var(--lc-noite-tinta);
+  --border: #3c4552;
+  --input: #3c4552;
+  --ring: var(--lc-noite-acento);
+}
+.lexcausa.lc-shell .lc-topo { padding: var(--e-2) var(--e-5); max-width: none; }
+.lexcausa.lc-shell .lc-marca { color: var(--lc-noite-tinta); }
+.lexcausa.lc-shell .lc-marca .lc-marca-lex { color: var(--lc-noite-acento); }
+.lexcausa.lc-shell nav a.lc-guia {
+  color: var(--lc-noite-tinta);
+  text-decoration: none;
+  font-size: var(--t-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.lexcausa.lc-shell nav a.lc-guia:hover { border-color: #3c4552; }
+.lexcausa.lc-shell nav a.lc-guia.ativa {
+  border-color: var(--lc-noite-acento);
+  color: var(--lc-noite-acento);
+}
+.lexcausa.lc-shell nav a.lc-guia:focus-visible,
+.lexcausa.lc-shell button:focus-visible {
+  outline: 2px solid var(--lc-noite-acento);
+  outline-offset: 2px;
+}
+
+/* paleta de comandos (composta de Dialog + Input) */
+.lexcausa .lc-paleta-lista {
+  display: grid;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: var(--e-2);
+}
+.lexcausa .lc-paleta-lista button {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--e-2) var(--e-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--lc-tinta);
+  font-size: var(--t-sm);
+}
+.lexcausa .lc-paleta-lista button.selecionado,
+.lexcausa .lc-paleta-lista button:hover { background: var(--accent); }
+.lexcausa .lc-paleta-lista .lc-fund { margin-left: auto; }
+
 /* listas de recursos das páginas de produto */
 .lexcausa ul.lc-lista {
   margin: 0 0 var(--e-3);
