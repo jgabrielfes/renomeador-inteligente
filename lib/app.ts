@@ -67,10 +67,13 @@ export const IDENTIDADES: Record<Plataforma, IdentidadeDaPlataforma> = {
     modulo: "RENOMEADOR",
   },
   SUCESSORISTA: {
-    nome: "O Sucessorista",
-    nomeCurto: "Sucessorista",
+    // Remodelagem de marca: a LEXCAUSA é a marca-mãe deste site; O
+    // Sucessorista e o Radar Sucessório são os produtos dentro dela. O
+    // `modulo` de telemetria NÃO muda — é chave de dados, não de marca.
+    nome: "LexCausa",
+    nomeCurto: "LexCausa",
     descricao:
-      "Folha de trabalho do inventário: composição familiar, acervo, quinhões com fundamento legal, cofre de documentos e espelho do ITCMD-SP. Cálculo de apoio — a revisão do advogado responsável é obrigatória.",
+      "A prática sucessória, organizada: O Sucessorista (gestão de inventários, do primeiro atendimento ao registro) e o Radar Sucessório (o encontro entre famílias e advogados). Cálculo de apoio — a revisão do advogado responsável é obrigatória.",
     modulo: "SUCESSORISTA",
   },
   NOTAS: {

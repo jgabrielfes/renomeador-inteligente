@@ -1,0 +1,278 @@
+/* Identidade da LEXCAUSA — a marca-mãe da aplicação, escopada em .lexcausa
+   (landing pública, hub de produtos, páginas institucionais e shell).
+
+   Mesma disciplina do sucessorista.css: os componentes são os do shadcn/ui e
+   a identidade entra POR CIMA, re-mapeando as variáveis de tema no escopo.
+   Escala tipográfica idêntica à do módulo (seis degraus --t-*, nada abaixo
+   de 12px) e cores declaradas com contraste ≥ 4,5:1 sobre o fundo em que
+   aparecem. Identidade fixa clara (decisão do projeto), com a FAIXA-NOITE
+   (.lc-noite) como plano escuro institucional do hero/rodapé.
+
+   Cada PRODUTO tem um acento próprio, trocado por escopo:
+     .produto-sucessorista → bronze da casa
+     .produto-radar        → verde-petróleo
+   O neutro da marca (azul-aço grafite) vale onde nenhum produto manda. */
+
+.lexcausa {
+  /* --- paleta da marca --- */
+  --lc-fundo: #f4f3ef;
+  --lc-alto: #fcfbf8;
+  --lc-tinta: #1f2733;
+  --lc-tinta-media: #49525f;
+  --lc-fio: #dcd8cc;
+  --lc-fio-forte: #b7b2a3;
+  --lc-acento: #32475e;          /* azul-aço da marca (7,4:1 sobre o papel) */
+  --lc-noite: #161d26;           /* faixa institucional escura */
+  --lc-noite-tinta: #e9e7e0;
+  --lc-noite-acento: #c9a35f;    /* 6,2:1 sobre a noite */
+
+  /* --- fontes: serifa institucional nos títulos, Geist na UI --- */
+  --lc-display: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+  --lc-texto: var(--font-geist-sans), 'Segoe UI', system-ui, sans-serif;
+
+  /* --- tema shadcn re-mapeado (Button/Input/Dialog vestem a marca) --- */
+  --background: var(--lc-fundo);
+  --foreground: var(--lc-tinta);
+  --card: var(--lc-alto);
+  --card-foreground: var(--lc-tinta);
+  --popover: var(--lc-alto);
+  --popover-foreground: var(--lc-tinta);
+  --primary: var(--lc-tinta);
+  --primary-foreground: var(--lc-alto);
+  --secondary: #eae7dd;
+  --secondary-foreground: var(--lc-tinta);
+  --muted: #eae7dd;
+  --muted-foreground: var(--lc-tinta-media);
+  --accent: #ece9df;
+  --accent-foreground: var(--lc-tinta);
+  --destructive: #9e2b25;
+  --border: var(--lc-fio-forte);
+  --input: var(--lc-fio-forte);
+  --ring: var(--lc-acento);
+  --radius: 0.5rem;
+
+  /* --- a MESMA escala tipográfica do módulo (seis degraus, ≥12px) --- */
+  --t-xs: 0.75rem;
+  --t-sm: 0.875rem;
+  --t-base: 1rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.75rem;
+  --t-2xl: 2.25rem;
+  --e-1: 4px; --e-2: 8px; --e-3: 12px; --e-4: 16px;
+  --e-5: 24px; --e-6: 32px; --e-7: 48px; --e-8: 64px;
+  --lh-titulo: 1.12;
+  --lh-corpo: 1.6;
+
+  color-scheme: light;
+  color: var(--lc-tinta);
+  font-family: var(--lc-texto);
+  font-size: var(--t-base);
+  line-height: var(--lh-corpo);
+  /* textura discreta de papel: um véu radial claro sobre o fundo neutro —
+     a informação vem primeiro, o gradiente só tira o "chapado". */
+  background:
+    radial-gradient(1100px 520px at 85% -120px, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0) 60%),
+    var(--lc-fundo);
+  min-height: 100%;
+}
+
+.lexcausa * { box-sizing: border-box; }
+
+/* acento por produto — aplicado num wrapper (card ou página do produto) */
+.lexcausa .produto-sucessorista { --lc-acento: #6f5527; --ring: #6f5527; }
+.lexcausa .produto-radar { --lc-acento: #20565c; --ring: #20565c; }
+
+/* ---------- topo (barra fina da marca) ---------- */
+.lexcausa .lc-topo {
+  display: flex;
+  align-items: center;
+  gap: var(--e-4);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--e-4) var(--e-5);
+}
+.lexcausa .lc-topo nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  flex-wrap: wrap;
+}
+
+/* lockup da marca — "LexCausa" na serifa; a submarca acompanha nos produtos */
+.lexcausa .lc-marca {
+  font-family: var(--lc-display);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--lc-tinta);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lexcausa .lc-marca .lc-marca-lex { color: var(--lc-acento); }
+.lexcausa .lc-lockup {
+  font-size: var(--t-xs);
+  color: var(--lc-tinta-media);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---------- blocos de página ---------- */
+.lexcausa main { display: block; }
+.lexcausa .lc-miolo {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 var(--e-5) var(--e-7);
+}
+.lexcausa .lc-secao { margin-top: var(--e-7); }
+.lexcausa .lc-eyebrow {
+  display: block;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lc-acento);
+  margin-bottom: var(--e-2);
+}
+.lexcausa h1 {
+  font-family: var(--lc-display);
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  line-height: var(--lh-titulo);
+  margin: 0 0 var(--e-3);
+  text-wrap: balance;
+}
+.lexcausa h2 {
+  font-family: var(--lc-display);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: var(--lh-titulo);
+  margin: 0 0 var(--e-3);
+}
+.lexcausa h3 {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: var(--lh-titulo);
+  margin: 0;
+}
+.lexcausa p { margin: 0 0 var(--e-3); }
+.lexcausa .lc-sub {
+  font-size: var(--t-lg);
+  color: var(--lc-tinta-media);
+  max-width: 46rem;
+}
+.lexcausa .lc-fund { font-size: var(--t-sm); color: var(--lc-tinta-media); }
+.lexcausa .lc-prosa { max-width: 44rem; }
+
+/* hero da landing */
+.lexcausa .lc-hero { padding-top: var(--e-7); }
+
+/* faixa-noite institucional (rodapé/tiras escuras) */
+.lexcausa .lc-noite {
+  background: var(--lc-noite);
+  color: var(--lc-noite-tinta);
+}
+.lexcausa .lc-noite .lc-eyebrow { color: var(--lc-noite-acento); }
+.lexcausa .lc-noite a { color: var(--lc-noite-acento); }
+
+/* ---------- cartões de produto ---------- */
+.lexcausa .lc-cartoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--e-4);
+  margin-top: var(--e-4);
+}
+.lexcausa .lc-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-2);
+  background: var(--lc-alto);
+  border: 1px solid var(--lc-fio);
+  border-top: 3px solid var(--lc-acento);
+  border-radius: var(--radius);
+  padding: var(--e-5);
+  box-shadow: 0 1px 2px rgba(31, 39, 51, 0.06);
+}
+.lexcausa .lc-cartao .lc-acoes {
+  display: flex;
+  gap: var(--e-2);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--e-3);
+}
+.lexcausa .lc-cartao.desabilitado {
+  border-top-color: var(--lc-fio-forte);
+  color: var(--lc-tinta-media);
+  background: transparent;
+}
+
+/* ---------- ações (links com veste de botão, sem JS) ---------- */
+.lexcausa a.lc-acao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 var(--e-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--lc-tinta);
+  background: var(--lc-tinta);
+  color: var(--lc-alto);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+.lexcausa a.lc-acao:hover { background: var(--lc-acento); border-color: var(--lc-acento); }
+.lexcausa a.lc-acao.secundaria {
+  background: transparent;
+  color: var(--lc-tinta);
+  border-color: var(--lc-fio-forte);
+}
+.lexcausa a.lc-acao.secundaria:hover { border-color: var(--lc-tinta); background: transparent; }
+.lexcausa a.lc-acao:focus-visible,
+.lexcausa .lc-marca:focus-visible {
+  outline: 2px solid var(--lc-acento);
+  outline-offset: 2px;
+}
+
+/* listas de recursos das páginas de produto */
+.lexcausa ul.lc-lista {
+  margin: 0 0 var(--e-3);
+  padding-left: 1.2em;
+  display: grid;
+  gap: var(--e-1);
+}
+
+/* FAQ em <details> nativo — sem JS nas páginas institucionais */
+.lexcausa details.lc-faq {
+  border: 1px solid var(--lc-fio);
+  border-radius: var(--radius);
+  background: var(--lc-alto);
+  padding: var(--e-3) var(--e-4);
+}
+.lexcausa details.lc-faq + details.lc-faq { margin-top: var(--e-2); }
+.lexcausa details.lc-faq summary { font-weight: 600; cursor: pointer; }
+.lexcausa details.lc-faq[open] summary { margin-bottom: var(--e-2); }
+
+/* rodapé institucional */
+.lexcausa .lc-rodape {
+  margin-top: var(--e-8);
+  padding: var(--e-6) 0;
+}
+.lexcausa .lc-rodape .lc-miolo {
+  padding-top: 0;
+  padding-bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-4);
+  justify-content: space-between;
+  font-size: var(--t-sm);
+}
+
+@media (max-width: 720px) {
+  .lexcausa .lc-hero { padding-top: var(--e-6); }
+  .lexcausa h1 { font-size: var(--t-xl); }
+  .lexcausa h2 { font-size: var(--t-lg); }
+  .lexcausa .lc-sub { font-size: var(--t-base); }
+  .lexcausa .lc-topo { padding: var(--e-3) var(--e-4); }
+  .lexcausa .lc-miolo { padding: 0 var(--e-4) var(--e-6); }
+}

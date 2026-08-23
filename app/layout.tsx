@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { Suspense } from "react";
@@ -19,6 +19,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Serifa institucional da marca LexCausa (títulos da landing, hub e páginas
+// de produto). A UI segue na Geist — a serifa é voz de marca, não de tela.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+});
+
 // Título e descrição vêm da plataforma DESTE deploy (lib/app.ts): o mesmo
 // repositório publica dois sites, e cada um se apresenta com o próprio nome.
 export const metadata: Metadata = {
@@ -32,9 +39,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // A cor da moldura do navegador acompanha o site: o Sucessorista abre no
-  // papel da identidade (mesma cor do manifest), o Renomeador no branco.
-  themeColor: EH_SUCESSORISTA ? "#f6f4ee" : "#ffffff",
+  // A cor da moldura do navegador acompanha o site: o site da LexCausa abre
+  // no papel da marca (mesma cor do manifest), o Renomeador no branco.
+  themeColor: EH_SUCESSORISTA ? "#f4f3ef" : "#ffffff",
   // PWA no celular: a área útil vai até o fim da tela (safe-area cuidada
   // no CSS com env(safe-area-inset-bottom)).
   viewportFit: "cover",
@@ -44,7 +51,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="pt-BR"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {/* useSearchParams (usado pela barra) exige um limite de Suspense */}
