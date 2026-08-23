@@ -15,14 +15,14 @@ Este repositório publica **três sites independentes**, um por ferramenta. O qu
 | `APP` | URL | O que `/` é | O que existe |
 | --- | --- | --- | --- |
 | `renomeador` | `renomeador-inteligente.vercel.app` | o Renomeador | `/`, `/login`, `/cadastro`, `/admin`, `/admin/usuarios`, `/admin/renomeacoes`, `/admin/erros`, `/api/rename` |
-| `sucessorista` | `osucessorista.vercel.app` | o Sucessorista | tudo acima **+** `/admin/sucessorista`, `/portal/[token]`, `/api/sucessorista`, `/api/partilha`, `/api/portal/*` |
+| `sucessorista` | `osucessorista.vercel.app` | **a LEXCAUSA** (marca-mãe): deslogado = landing institucional; logado = HUB de produtos | tudo acima **+** `/s` (O Sucessorista), `/produtos/sucessorista`, `/produtos/radar`, `/admin/sucessorista`, `/portal/[token]`, `/api/sucessorista`, `/api/partilha`, `/api/portal/*` |
 | `notas` | projeto próprio na Vercel | o Resolvedor de Notas Devolutivas | `/`, `/login`, `/cadastro`, `/admin`, `/admin/usuarios`, `/admin/notas`, `/admin/erros`, `/api/notas` — **sem** `/api/rename` (o Renomeador não roda lá) |
 
 Regras que valem para qualquer mudança:
 
 - **`lib/app.ts` é a fonte da verdade.** `APP` (a plataforma), `EH_RENOMEADOR`/`EH_SUCESSORISTA`/`EH_NOTAS`, `IDENTIDADE` (nome/descrição/módulo de telemetria), `requirePlataforma()` (página → 404) e `foraDaPlataforma()` (rota de API → 404). Sem a env a aplicação **não sobe** — de propósito.
 - **`process.env.APP` é só do servidor.** O cliente recebe a plataforma por prop, vinda de um server component. Nunca criar um `NEXT_PUBLIC_APP` paralelo.
-- **A raiz é o módulo.** Não existe mais painel de ferramentas nem as rotas `/renomeador`, `/sucessorista` e `/notas` — quem chegar nelas cai no 404. Módulo novo entra como um `if` em `app/(private)/page.tsx`, com `await import()` (o outro client não pode entrar no payload da rota).
+- **A raiz é o módulo — EXCETO no site da LexCausa.** No Renomeador e no Notas, `/` segue sendo a ferramenta e as rotas `/renomeador` e `/notas` não existem (404). No site `APP=sucessorista`, a **remodelagem LexCausa** mudou a raiz: deslogado vê a landing da marca (`entrada.tsx`), logado cai no **HUB** de produtos (`hub-client.tsx`; preferência "abrir direto" no localStorage `lexcausa-produto-padrao`, escotilha `?hub=1` que nunca redireciona) e **O Sucessorista mora em `/s`** — a rota `/caso/<id>/<etapa>` segue valendo e o fechamento do caso volta a `/s`. Identidade da marca em `app/lexcausa.css` (escopo `.lexcausa`, mesma disciplina de tokens/contraste do módulo; acento por produto em `.produto-sucessorista`/`.produto-radar`; serifa Fraunces via `--font-fraunces`), catálogo de produtos/lockup/topbar/paleta em `components/lexcausa/*`: o **shell** (`topbar.tsx`, barra-noite com switcher) monta no hub, no `/radar` e nas `/diligencias`; dentro do módulo imersivo entra SÓ a **paleta de comandos** (⌘K — `paleta-comandos.tsx`, COMPOSTA de Dialog+Input; a lista `comandosPadrao` vive em `comandos.ts` SEM 'use client' porque é chamada também no servidor). O dashboard do caso tem a **barra das 5 fases** (`fases-caso.tsx`: composição → acervo → quinhões → cofre → espelho ITCMD, clicável e nunca bloqueante) + ações rápidas por perfil. Linguagem das comparações/simulações: **"menor custo tributário", nunca "recomendado"**, com disclaimer na própria tela. Módulo novo segue entrando como `if` em `app/(private)/page.tsx`, com `await import()` (o outro client não pode entrar no payload da rota).
 - **Rota que é só de um lado começa com o gate**: `await requirePlataforma("SUCESSORISTA")` em página/server action, `foraDaPlataforma("SUCESSORISTA")` em route handler. Vale inclusive para server action — endpoint público.
 - **O Renomeador roda embutido no cofre do Sucessorista**, então `/api/rename` e `lib/ai.ts` são desses DOIS sites; só a rota `/renomeador` é que não existe lá. No site do Resolvedor de Notas o Renomeador NÃO roda — `/api/rename` responde 404 lá.
 - **O banco é um só, mas nada cruza a fronteira**: `users`, `error_events` e `rename_events` carregam a coluna `app`, e toda consulta do `/admin` filtra por ela. `notas_events` e `sucessorista_events` não têm a coluna — cada tabela inteira é do seu site.
@@ -44,7 +44,7 @@ O `app/` é organizado em **route groups por nível de acesso** (não mudam a UR
 
 | Grupo | Quem acessa | Rotas hoje | Gate |
 | --- | --- | --- | --- |
-| `(private)` | só logado | `/` (a ferramenta deste site) | `requireSession("/")` no `page.tsx` (server) — leva o caminho na URL de login (`/login?callbackUrl=…`) para voltar direto após entrar |
+| `(private)` | só logado | `/` (Renomeador/Notas: a ferramenta; LexCausa: o hub) + `/s` no site da LexCausa | `requireSession("/")`/`requireSession("/s")` no `page.tsx` (server) — leva o caminho na URL de login (`/login?callbackUrl=…`) para voltar direto após entrar |
 | `(protected)` | só DESLOGADO | `/login`, `/cadastro` | layout do grupo (`auth()` + redirect; limpa cookie morto) |
 | `(master)` | só MASTER | `/admin/*` | layout do grupo (`requireMaster()` → 404) + repetido em páginas/actions (defesa em profundidade) |
 
