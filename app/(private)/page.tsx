@@ -1,16 +1,15 @@
-// A RAIZ DE CADA SITE É O PRÓPRIO MÓDULO.
+// A RAIZ DE CADA SITE.
 //
-// O repositório publica três sites (lib/app.ts): no deploy do Renomeador, `/`
-// é o Renomeador; no do Sucessorista, `/` é o Sucessorista; no do Resolvedor
-// de Notas, `/` é o resolvedor. Não existe painel de escolha de ferramenta, e
-// as rotas `/renomeador`, `/sucessorista` e `/notas` não existem — quem chegar
-// nelas cai no 404 da plataforma.
+// O repositório publica três sites (lib/app.ts). No Renomeador e no
+// Resolvedor de Notas, `/` é o próprio módulo — não existe painel de escolha
+// de ferramenta, e as rotas `/renomeador` e `/notas` não existem.
 //
-// O gate é aqui (server): sem sessão, vai para o login e volta para `/`.
-// EXCEÇÃO (site do Sucessorista): visitante deslogado NÃO é jogado no login —
-// vê a entrada pública com as duas portas (advogados × famílias), já que o
-// site tem uma área gratuita (/familias). Com sessão, a raiz segue sendo a
-// ferramenta, como sempre.
+// No site da LEXCAUSA (APP=sucessorista) a raiz mudou com a remodelagem de
+// marca: DESLOGADO vê a landing institucional (produtos + porta das
+// famílias); LOGADO cai no HUB de produtos — O Sucessorista mora em `/s`
+// (montagem compartilhada com /caso/<id>/<etapa>) e o Radar Sucessório em
+// /radar. A preferência "abrir direto" do hub devolve o clique único a quem
+// só usa um produto.
 //
 // O `await import()` do módulo ativo é proposital: o outro client não entra no
 // payload desta rota, então o navegador nunca baixa o bundle do módulo que
@@ -19,21 +18,40 @@
 import { AccessTracker } from "@/components/access-tracker";
 import { UserMenu } from "@/components/user-menu";
 import { APP, IDENTIDADE } from "@/lib/app";
-import { auth, requireSession } from "@/lib/auth";
+import { auth, isMaster, requireSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { radarAtivo } from "@/lib/radar/config";
 
 import { carregarLicoes } from "./renomeador/licoes-actions";
 
 export default async function Home() {
   if (APP === "SUCESSORISTA") {
-    // Montagem compartilhada com a rota /caso/<id>/<etapa> (T1): as cargas
-    // por conta (perfil, equipe, client) vivem em sucessorista/pagina.tsx.
     const session = await auth();
     if (!session?.user) {
       const { EntradaSucessorista } = await import("./sucessorista/entrada");
       return <EntradaSucessorista />;
     }
-    const { PaginaSucessorista } = await import("./sucessorista/pagina");
-    return <PaginaSucessorista session={session} />;
+    // HUB LexCausa — o perfil decide quais cards aparecem; falha de banco
+    // degrada para null (o hub mostra tudo e os gates reais ficam nas rotas).
+    let perfil: "ADVOGADO" | "ESCREVENTE" | null = null;
+    try {
+      const usuario = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { perfilSucessorista: true },
+      });
+      perfil = usuario?.perfilSucessorista ?? null;
+    } catch {
+      perfil = null;
+    }
+    const { HubLexCausa } = await import("./hub-client");
+    return (
+      <HubLexCausa
+        menu={<UserMenu />}
+        perfil={perfil}
+        ehMaster={isMaster(session)}
+        radarAtivo={radarAtivo()}
+      />
+    );
   }
 
   await requireSession("/");

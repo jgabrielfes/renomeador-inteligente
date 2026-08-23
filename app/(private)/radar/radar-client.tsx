@@ -288,7 +288,7 @@ export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; 
           Famílias publicam o caso ANÔNIMO e escolhem com quem conversar. {AVISO_LEGAL}
         </p>
         <p style={{ marginTop: -18 }}>
-          <Link href="/">← Meus casos</Link>
+          <Link href="/s">← Meus casos</Link>
         </p>
 
         {!estado && (

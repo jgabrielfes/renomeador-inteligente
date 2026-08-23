@@ -283,7 +283,7 @@ export function DiligenciasClient({
           procuração — com colegas que entendem do rito sucessório. {AVISO_LEGAL}
         </p>
         <p style={{ marginTop: -18 }}>
-          <Link href="/">← Meus casos</Link>
+          <Link href="/s">← Meus casos</Link>
         </p>
 
         {/* ------- perfil de correspondente ------- */}

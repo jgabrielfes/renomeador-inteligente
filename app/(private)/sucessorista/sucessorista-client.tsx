@@ -707,15 +707,16 @@ export default function SucessoristaClient({
 
   /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
      favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
-     volta à raiz (o ?etapa= antigo segue aceito na chegada) — mas NUNCA
-     durante a restauração: apagar /caso/<id> antes de o caso abrir fazia o
-     F5 seguinte cair em Meus casos. */
+     volta a /s, a casa do módulo desde a remodelagem LexCausa (o ?etapa=
+     antigo segue aceito na chegada) — mas NUNCA durante a restauração:
+     apagar /caso/<id> antes de o caso abrir fazia o F5 seguinte cair em
+     Meus casos. */
   useEffect(() => {
     const id = casoAberto?.cabecalho.caseId;
     if (id) {
       window.history.replaceState(null, '', `/caso/${encodeURIComponent(id)}/${abaProc}`);
     } else if (!restaurandoCasoRef.current && window.location.pathname.startsWith('/caso/')) {
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', '/s');
     }
   }, [casoAberto, abaProc]);
 
@@ -3590,7 +3591,7 @@ export default function SucessoristaClient({
         <Button
           onClick={() => {
             setCasoNaoEncontrado(false);
-            window.history.replaceState(null, '', '/');
+            window.history.replaceState(null, '', '/s');
           }}
         >
           Ir para Meus casos
