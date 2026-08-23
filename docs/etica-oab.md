@@ -65,3 +65,29 @@ Antes de aprovar qualquer tela/e-mail que toque o Radar, conferir:
 funil por status/UF, varredura de 72h e denúncias. NUNCA o conteúdo das
 conversas, das respostas ou dos intakes — a exceção é o MOTIVO da denúncia,
 escrito pela própria família para a moderação.
+
+## Rede advogado-advogado (camada 4) — decisões que valem as mesmas regras
+
+A rede de correspondentes e o segundo advogado no caso
+(**docs/rede-advogados.md**) herdam os fundamentos acima entre PARES:
+
+- **A plataforma não participa dos honorários da diligência** (EOAB art. 34;
+  CED arts. 26–27): o combinado financeiro é ENTRE os advogados; a
+  plataforma só registra o **termo de referência** (escopo, prazo e o valor
+  em texto livre) — sem processamento de pagamento, sem comissão, sem split.
+  O acesso do correspondente às buscas vem da MESMA assinatura mensal do
+  Radar; nunca de taxa por diligência fechada.
+- **Ordem NEUTRA de correspondentes**: comarca exata → mesma UF → data de
+  cadastro (`ordenarCorrespondentes`, motor puro testado); ofertas exibidas
+  em ordem de CHEGADA. Nunca por preço, nunca por nota.
+- **Selo de verificação obrigatório**: aparecer nas buscas e ofertar exigem
+  OAB aprovada + quiz deontológico (o selo da camada 3) e perfil ativo.
+- **Avaliações só por critérios objetivos** (prazo/relatório/comunicação,
+  1–5, mútuas, após a conclusão): a **nota agregada** só aparece a
+  assinantes logados; atraso sem justificativa pesa na média pelo motor.
+- **Pasta isolada da diligência**: o(a) correspondente vê SÓ o que o
+  solicitante colocou na pasta (`conteudoDaPasta`, testado) — nunca o caso.
+- **Texto legal fixo das telas da rede**: "A correspondência é combinada
+  ENTRE os advogados — a plataforma não participa dos honorários da
+  diligência, não processa pagamento e não indica correspondente: a lista
+  segue ordem neutra."
