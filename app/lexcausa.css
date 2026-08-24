@@ -81,6 +81,7 @@
 /* acento por produto — aplicado num wrapper (card ou página do produto) */
 .lexcausa .produto-sucessorista { --lc-acento: #6f5527; --ring: #6f5527; }
 .lexcausa .produto-radar { --lc-acento: #20565c; --ring: #20565c; }
+.lexcausa .produto-diligencias { --lc-acento: #3e4a63; --ring: #3e4a63; }
 
 /* ---------- topo (barra fina da marca) ---------- */
 .lexcausa .lc-topo {

@@ -41,6 +41,7 @@ export function comandosPadrao(opcoes: {
     { id: 'familias', rotulo: 'Área para famílias', dica: 'público', href: '/familias' },
     { id: 'prod-s', rotulo: 'Página do produto: O Sucessorista', dica: 'institucional', href: '/produtos/sucessorista' },
     { id: 'prod-r', rotulo: 'Página do produto: Radar Sucessório', dica: 'institucional', href: '/produtos/radar' },
+    { id: 'prod-d', rotulo: 'Página do produto: Diligências entre advogados', dica: 'institucional', href: '/produtos/diligencias' },
   );
   return lista;
 }

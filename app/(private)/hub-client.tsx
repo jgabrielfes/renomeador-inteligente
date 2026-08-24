@@ -36,11 +36,11 @@ export function HubLexCausa({
 }) {
   const router = useProgressRouter();
 
-  // O Radar é ferramenta de advogado(a); escrevente vê só O Sucessorista.
-  // Perfil ainda não escolhido (primeiro acesso) vê os dois — a escolha
-  // acontece dentro do Sucessorista e vale dali em diante.
+  // Radar e Diligências são ferramentas de advogado(a); escrevente vê só O
+  // Sucessorista. Perfil ainda não escolhido (primeiro acesso) vê tudo — a
+  // escolha acontece dentro do Sucessorista e vale dali em diante.
   const produtos = PRODUTOS_LEXCAUSA.filter(
-    (p) => p.id !== 'radar' || perfil !== 'ESCREVENTE' || ehMaster,
+    (p) => p.id === 'sucessorista' || perfil !== 'ESCREVENTE' || ehMaster,
   );
 
   // Preferência "abrir direto" (editada em /config) lida em efeito DIFERIDO
@@ -110,20 +110,6 @@ export function HubLexCausa({
               </section>
             );
           })}
-          {(perfil !== 'ESCREVENTE' || ehMaster) && (
-            <section className="lc-cartao">
-              <h3>Diligências entre advogados</h3>
-              <p style={{ margin: 0 }}>
-                Correspondentes por comarca: peça ou execute atos a distância,
-                com termo de referência e pasta isolada por diligência.
-              </p>
-              <div className="lc-acoes">
-                <Link className="lc-acao secundaria" href="/diligencias">
-                  Abrir Diligências
-                </Link>
-              </div>
-            </section>
-          )}
           <section className="lc-cartao desabilitado">
             <span className="lc-eyebrow">Em breve</span>
             <h3>Novos produtos LexCausa</h3>

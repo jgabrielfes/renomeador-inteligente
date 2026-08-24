@@ -34,11 +34,13 @@ export function EntradaSucessorista() {
           <span className="lc-eyebrow">LexCausa</span>
           <h1>A prática sucessória, organizada.</h1>
           <p className="lc-sub">
-            Uma casa, dois ofícios: <strong>O Sucessorista</strong> conduz o
+            Uma casa, três ofícios: <strong>O Sucessorista</strong> conduz o
             inventário do primeiro atendimento ao registro; o{' '}
             <strong>Radar Sucessório</strong> aproxima famílias que precisam de
-            um inventário de advogados(as) verificados(as). Um único login dá
-            acesso ao que a sua conta pode usar.
+            um inventário de advogados(as) verificados(as); e as{' '}
+            <strong>Diligências entre advogados</strong> resolvem o ato em outra
+            comarca com correspondentes verificados. Um único login dá acesso ao
+            que a sua conta pode usar.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link className="lc-acao" href="/login">

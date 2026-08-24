@@ -6,10 +6,10 @@
  */
 
 export interface ProdutoLexCausa {
-  id: 'sucessorista' | 'radar';
+  id: 'sucessorista' | 'radar' | 'diligencias';
   nome: string;
   /** Classe de escopo do acento visual (app/lexcausa.css). */
-  classe: 'produto-sucessorista' | 'produto-radar';
+  classe: 'produto-sucessorista' | 'produto-radar' | 'produto-diligencias';
   /** Uma linha — o card do hub e da landing. */
   tagline: string;
   /** Parágrafo da landing/página do produto. */
@@ -43,6 +43,17 @@ export const PRODUTOS_LEXCAUSA: ProdutoLexCausa[] = [
     perfis: ['Advogado(a)', 'Famílias'],
     href: '/radar',
     landing: '/produtos/radar',
+  },
+  {
+    id: 'diligencias',
+    nome: 'Diligências entre advogados',
+    classe: 'produto-diligencias',
+    tagline: 'Correspondentes por comarca, com termo de referência e pasta isolada.',
+    descricao:
+      'Precisa de um ato em outra comarca — retirar certidão, acompanhar audiência, protocolo, ITCMD? Publique aos correspondentes verificados (OAB aprovada + questionário deontológico): as ofertas chegam em ordem neutra, o termo de referência registra escopo, prazo e valor combinados ENTRE os advogados, e a pasta isolada leva só os arquivos que você selecionar. O relatório entregue volta direto ao caso.',
+    perfis: ['Advogado(a)'],
+    href: '/diligencias',
+    landing: '/produtos/diligencias',
   },
 ];
 
