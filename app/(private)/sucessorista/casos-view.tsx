@@ -232,7 +232,7 @@ export function CasosView({
           <div className="escolha">
             {radarHref && (
               <Button variant="outline" render={<Link href={radarHref} />} nativeButton={false}>
-                Radar de famílias
+                Radar Sucessório
               </Button>
             )}
             {diligenciasHref && (

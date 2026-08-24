@@ -61,6 +61,8 @@ import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
 import { FasesCaso } from './fases-caso';
 import { TarefasCaso, type TarefaCaso } from './tarefas-caso';
+import { intakeParaCaso } from '@/lib/familias/intake-para-caso';
+import { confirmarImportacaoIntake, resgatarIntake } from './familias-actions';
 import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
@@ -3147,10 +3149,72 @@ export default function SucessoristaClient({
     }
     // Recomeçar do zero exige RELOAD de verdade (navegação client-side
     // preservaria os estados preenchidos) — exceção consciente à regra.
-    // A raiz É o módulo neste site (a rota /sucessorista não existe mais).
+    // Desde a remodelagem LexCausa o módulo mora em /s (a raiz é o hub).
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = '/';
+    window.location.href = '/s';
   };
+
+  /**
+   * "Converter em inventário" (LexCausa fase 3): a contratação do Radar chega
+   * por /s?importar=<código do handoff> e vira um caso NOVO no store ativo —
+   * resgata o intake, monta o CasoSalvo no navegador (intakeParaCaso), cria a
+   * pasta e confirma a importação (o servidor PODA o intake).
+   */
+  const importarDoRadar = async (codigo: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    const r = await resgatarIntake(codigo);
+    if (!r.ok || !r.respostas) {
+      toast.error('Não foi possível importar a contratação do Radar', { description: r.erro });
+      return;
+    }
+    const dados = intakeParaCaso(r.respostas, {
+      casoId: `caso-${crypto.randomUUID().slice(0, 8)}-${Date.now().toString(36)}`,
+      gerarId: (p) => `${p}-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    try {
+      origemNuvemRef.current = false;
+      baseNuvemRef.current = null;
+      avisoNuvemRef.current = false;
+      const caso = await s.criarCaso(
+        r.nome ? `Família ${r.nome}` : `Contratação do Radar ${codigo}`,
+        dados,
+      );
+      manifestoRef.current = [];
+      baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
+      aplicarSnapshot(dados as unknown as CasoSalvo);
+      setCasoAberto({ cabecalho: caso.cabecalho });
+      setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
+      irPara('caso');
+      await confirmarImportacaoIntake(codigo);
+      toast.success('Contratação do Radar virou inventário — confira a folha', {
+        description:
+          (r.nome || r.email
+            ? `Contato de quem respondeu: ${[r.nome, r.email].filter(Boolean).join(' · ')}. `
+            : '') +
+          'Valores por faixa e fichas em branco: complete com os documentos. Os dados saíram do servidor.',
+      });
+    } catch (e) {
+      toast.error('Não consegui criar a pasta do caso.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
+
+  /* Chegada por /s?importar=<código> — espera o store ficar pronto e roda
+     UMA vez; o parâmetro sai da URL antes (F5 não importa duas vezes). */
+  const importarRadarRef = useRef(false);
+  useEffect(() => {
+    if (importarRadarRef.current || casoAberto || casoInicialId || !store) return;
+    const codigo = new URLSearchParams(window.location.search).get('importar');
+    if (!codigo) return;
+    importarRadarRef.current = true;
+    window.history.replaceState(null, '', '/s');
+    // Diferido (convenção): o efeito só agenda; nada de setState direto aqui.
+    const t = setTimeout(() => void importarDoRadar(codigo.trim().toUpperCase()), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, casoAberto, casoInicialId]);
 
   /** Contexto textual do caso para a redação por IA (nunca os documentos). */
   const contextoDoCaso = (): string => {

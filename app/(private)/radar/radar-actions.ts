@@ -238,6 +238,101 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
   }
 }
 
+export interface RespostaMinha {
+  intakeId: string;
+  respondidaEm: string;
+  /** Recorte anônimo do caso — null quando o intake já saiu do ar. */
+  cidade: string | null;
+  uf: string | null;
+  via: string | null;
+  /** Estágio DERIVADO do acompanhamento — nunca decide nada, só informa. */
+  situacao: 'aguardando' | 'conversa' | 'contratado' | 'encerrado';
+  /** Código do handoff quando a família CONTRATOU este(a) advogado(a) e o
+   *  caso ainda não foi importado — habilita "Converter em inventário". */
+  codigoHandoff: string | null;
+  handoffImportado: boolean;
+}
+
+/**
+ * Acompanhamento das MINHAS respostas (o funil pessoal do prospecção):
+ * aguardando a família → em conversa comigo → contratado (com o código do
+ * handoff) → encerrado (retirado, expirado ou seguiu com outro caminho —
+ * rótulo NEUTRO de propósito: a escolha da família não circula). Só dados
+ * que já eram meus ou anônimos; nada de ranking, valor ou identidade.
+ */
+export async function minhasRespostasRadar(): Promise<
+  { ok: true; respostas: RespostaMinha[] } | Falha
+> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: 'Sessão inválida.' };
+  try {
+    const minhas = await prisma.radarResposta.findMany({
+      where: { advogadoUserId: ctx.userId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { intakeId: true, createdAt: true },
+    });
+    const ids = minhas.map((m) => m.intakeId);
+    const [intakes, handoffs] = await Promise.all([
+      prisma.familiaIntake.findMany({ where: { id: { in: ids } } }),
+      prisma.intakeHandoff.findMany({
+        where: { intakeId: { in: ids }, advogadoUserId: ctx.userId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const intakePor = new Map(intakes.map((i) => [i.id, i]));
+    const handoffPor = new Map<string, (typeof handoffs)[number]>();
+    for (const h of handoffs) if (!handoffPor.has(h.intakeId)) handoffPor.set(h.intakeId, h);
+
+    const saida: RespostaMinha[] = minhas.map((m) => {
+      const intake = intakePor.get(m.intakeId);
+      const handoff = handoffPor.get(m.intakeId);
+      let situacao: RespostaMinha['situacao'] = 'encerrado';
+      if (intake) {
+        if (intake.status === 'contratado' && intake.conversaAdvogadoUserId === ctx.userId) {
+          situacao = 'contratado';
+        } else if (intake.status === 'em_conversa' && intake.conversaAdvogadoUserId === ctx.userId) {
+          situacao = 'conversa';
+        } else if (intake.status === 'publicado') {
+          situacao = 'aguardando';
+        }
+      }
+      // Recorte anônimo (o mesmo da lista) — melhor-esforço.
+      let cidade: string | null = null;
+      let uf: string | null = null;
+      let via: string | null = null;
+      if (intake && intake.publicadoEm) {
+        const r = sanitizarRespostas(intake.respostas);
+        if (r) {
+          const anon = anonimizarIntake({
+            id: intake.id,
+            respostas: r,
+            pequenoValor: intake.pequenoValor,
+            publicadoEm: intake.publicadoEm.toISOString(),
+          });
+          cidade = anon.cidade;
+          uf = anon.uf;
+          via = anon.via;
+        }
+      }
+      return {
+        intakeId: m.intakeId,
+        respondidaEm: m.createdAt.toISOString(),
+        cidade,
+        uf,
+        via,
+        situacao,
+        codigoHandoff:
+          situacao === 'contratado' && handoff && !handoff.importadoEm ? handoff.codigo : null,
+        handoffImportado: Boolean(handoff?.importadoEm),
+      };
+    });
+    return { ok: true, respostas: saida };
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar as suas respostas.' };
+  }
+}
+
 export async function responderCasoRadar(
   intakeId: string,
   apresentacao: string,

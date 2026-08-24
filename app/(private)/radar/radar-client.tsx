@@ -46,6 +46,7 @@ import {
   type CasoRadar,
   type ConversaRadar,
   type EstadoAdvogado,
+  type RespostaMinha,
 } from './radar-actions';
 
 const AVISO_LEGAL =
@@ -217,9 +218,86 @@ function CardCaso({ item, aoResponder, aoConversar }: {
   );
 }
 
-export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; casos: CasoRadar[] }) {
+/** Dias desde um ISO — helper module-level (react-hooks/purity). */
+const diasDesde = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+
+const ROTULO_SITUACAO: Record<RespostaMinha['situacao'], string> = {
+  aguardando: 'Aguardando a família',
+  conversa: 'Em conversa',
+  contratado: 'Contratado',
+  encerrado: 'Encerrado',
+};
+
+/**
+ * Funil pessoal de acompanhamento — as MINHAS respostas por estágio. É
+ * organizador do próprio trabalho, nunca ranking: a escolha é da família e
+ * o estágio "encerrado" é neutro de propósito.
+ */
+function PipelineMinhasRespostas({ respostas }: { respostas: RespostaMinha[] }) {
+  if (respostas.length === 0) return null;
+  const colunas: RespostaMinha['situacao'][] = ['aguardando', 'conversa', 'contratado', 'encerrado'];
+  return (
+    <section style={{ marginTop: 24 }}>
+      <h2 style={{ marginBottom: 0 }}>Minhas respostas</h2>
+      <p className="fund" style={{ marginTop: 4 }}>
+        O acompanhamento do seu trabalho no Radar — quem decide é sempre a família.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        {colunas.map((col) => {
+          const itens = respostas.filter((r) => r.situacao === col);
+          return (
+            <div key={col} className="nota" style={{ margin: 0 }}>
+              <span className="eyebrow">
+                {ROTULO_SITUACAO[col]} · {itens.length}
+              </span>
+              <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+                {itens.length === 0 && <p className="fund" style={{ margin: 0 }}>—</p>}
+                {itens.map((r) => (
+                  <div key={r.intakeId} style={{ borderTop: '1px solid var(--fio)', paddingTop: 6 }}>
+                    <p style={{ margin: 0 }}>
+                      {r.cidade && r.uf ? `${r.cidade}/${r.uf}` : 'Caso fora do ar'}
+                      {r.via && (
+                        <span className="fund"> · {ROTULO_VIA[r.via as keyof typeof ROTULO_VIA] ?? r.via}</span>
+                      )}
+                    </p>
+                    <p className="fund" style={{ margin: 0 }}>respondida em {dataBr(r.respondidaEm)}</p>
+                    {r.codigoHandoff && (
+                      <Button
+                        size="sm"
+                        style={{ marginTop: 6 }}
+                        nativeButton={false}
+                        render={<Link href={`/s?importar=${r.codigoHandoff}`} />}
+                      >
+                        Converter em inventário
+                      </Button>
+                    )}
+                    {r.situacao === 'contratado' && r.handoffImportado && (
+                      <p className="fund" style={{ margin: '4px 0 0' }}>já virou inventário ✓</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+export function RadarClient({
+  estado,
+  casos,
+  minhasRespostas = [],
+}: {
+  estado: EstadoAdvogado | null;
+  casos: CasoRadar[];
+  minhasRespostas?: RespostaMinha[];
+}) {
   const router = useRouter();
   const [filtroUf, setFiltroUf] = useState('');
+  const [filtroVia, setFiltroVia] = useState('');
+  const [filtroDias, setFiltroDias] = useState('');
   const [respondendo, setRespondendo] = useState<CasoRadar | null>(null);
   const [apresentacao, setApresentacao] = useState('');
   const [conducao, setConducao] = useState('');
@@ -228,9 +306,17 @@ export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; 
   const [conversa, setConversa] = useState<ConversaRadar | null>(null);
   const [mensagem, setMensagem] = useState('');
 
+  // Filtros de RECORTE (UF, via, recência) — a ordem por data NUNCA muda
+  // (sem ranking); filtrar por valor não existe de propósito (ética OAB).
   const visiveis = useMemo(
-    () => casos.filter((c) => !filtroUf || c.caso.uf === filtroUf),
-    [casos, filtroUf],
+    () =>
+      casos.filter(
+        (c) =>
+          (!filtroUf || c.caso.uf === filtroUf) &&
+          (!filtroVia || c.caso.via === filtroVia) &&
+          (!filtroDias || diasDesde(c.caso.publicadoEm) <= Number(filtroDias)),
+      ),
+    [casos, filtroUf, filtroVia, filtroDias],
   );
 
   const enviarResposta = async () => {
@@ -282,8 +368,8 @@ export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; 
     <div className="sucessorista">
       <Toaster position="bottom-right" duration={4000} visibleToasts={1} />
       <main className="folha" style={{ margin: '0 auto', maxWidth: 860 }}>
-        <span className="eyebrow">O Sucessorista</span>
-        <h1>Radar de famílias</h1>
+        <span className="eyebrow">Radar Sucessório · by LexCausa</span>
+        <h1>Radar Sucessório</h1>
         <p className="subtitulo">
           Famílias publicam o caso ANÔNIMO e escolhem com quem conversar. {AVISO_LEGAL}
         </p>
@@ -365,6 +451,17 @@ export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; 
                   <option key={u}>{u}</option>
                 ))}
               </select>
+              <select value={filtroVia} onChange={(e) => setFiltroVia(e.target.value)} style={{ maxWidth: 200 }} aria-label="Filtrar por via">
+                <option value="">Todas as vias</option>
+                <option value="EXTRAJUDICIAL">Extrajudicial (cartório)</option>
+                <option value="JUDICIAL">Judicial</option>
+                <option value="ALVARA">Alvará (pequeno valor)</option>
+              </select>
+              <select value={filtroDias} onChange={(e) => setFiltroDias(e.target.value)} style={{ maxWidth: 180 }} aria-label="Filtrar por recência">
+                <option value="">Qualquer data</option>
+                <option value="7">Últimos 7 dias</option>
+                <option value="30">Últimos 30 dias</option>
+              </select>
               {perfil && (
                 <label className="marcar" style={{ fontWeight: 400 }}>
                   <input
@@ -399,6 +496,8 @@ export function RadarClient({ estado, casos }: { estado: EstadoAdvogado | null; 
             </div>
           </>
         )}
+
+        {estado?.habilitado && <PipelineMinhasRespostas respostas={minhasRespostas} />}
 
         <p className="fund" style={{ marginTop: 24 }}>{AVISO_LEGAL}</p>
       </main>

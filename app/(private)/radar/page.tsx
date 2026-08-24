@@ -11,13 +11,19 @@ import { UserMenu } from '@/components/user-menu';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
-import { estadoRadarAdvogado, listarCasosRadar, type CasoRadar } from './radar-actions';
+import {
+  estadoRadarAdvogado,
+  listarCasosRadar,
+  minhasRespostasRadar,
+  type CasoRadar,
+  type RespostaMinha,
+} from './radar-actions';
 import { RadarClient } from './radar-client';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Radar de famílias — O Sucessorista',
+  title: 'Radar Sucessório — LexCausa',
   robots: { index: false },
 };
 
@@ -28,9 +34,11 @@ export default async function RadarPage() {
 
   const estado = await estadoRadarAdvogado();
   let casos: CasoRadar[] = [];
+  let minhas: RespostaMinha[] = [];
   if (estado?.habilitado) {
-    const r = await listarCasosRadar();
+    const [r, m] = await Promise.all([listarCasosRadar(), minhasRespostasRadar()]);
     if (r.ok) casos = r.casos;
+    if (m.ok) minhas = m.respostas;
   }
   const session = await auth();
   return (
@@ -41,7 +49,7 @@ export default async function RadarPage() {
         radarAtivo
         sub="Radar Sucessório · by LexCausa"
       />
-      <RadarClient estado={estado} casos={casos} />
+      <RadarClient estado={estado} casos={casos} minhasRespostas={minhas} />
     </>
   );
 }
