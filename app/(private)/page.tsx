@@ -34,24 +34,22 @@ export default async function Home() {
     }
     // HUB LexCausa — o perfil decide quais cards aparecem; falha de banco
     // degrada para null (o hub mostra tudo e os gates reais ficam nas rotas).
-    let perfil: "ADVOGADO" | "ESCREVENTE" | null = null;
-    try {
-      const usuario = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { perfilSucessorista: true },
-      });
-      perfil = usuario?.perfilSucessorista ?? null;
-    } catch {
-      perfil = null;
-    }
-    // Aviso de casos novos no Radar É AQUI (dentro da plataforma — e-mail de
-    // caso novo não existe, decisão do escritório): o badge conta o que foi
-    // publicado nas UFs assinadas desde a última visita à lista.
-    let radarNovos = 0;
-    if (radarAtivo() && perfil !== "ESCREVENTE") {
-      const { casosNovosRadar } = await import("./radar/radar-actions");
-      radarNovos = await casosNovosRadar();
-    }
+    // As duas cargas rodam em PARALELO (velocidade): o aviso de casos novos
+    // do Radar (o badge — e-mail de caso novo não existe, decisão do
+    // escritório) não espera a consulta do perfil terminar.
+    const [perfil, radarNovosBruto] = await Promise.all([
+      prisma.user
+        .findUnique({
+          where: { id: session.user.id },
+          select: { perfilSucessorista: true },
+        })
+        .then((u) => u?.perfilSucessorista ?? null)
+        .catch(() => null),
+      radarAtivo()
+        ? import("./radar/radar-actions").then((m) => m.casosNovosRadar())
+        : Promise.resolve(0),
+    ]);
+    const radarNovos = perfil === "ESCREVENTE" ? 0 : radarNovosBruto;
     const { HubLexCausa } = await import("./hub-client");
     return (
       <HubLexCausa

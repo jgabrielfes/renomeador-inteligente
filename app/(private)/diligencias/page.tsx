@@ -31,8 +31,8 @@ export default async function DiligenciasPage() {
   const session = await auth();
   const master = isMaster(session);
 
-  const estado = await estadoCorrespondente();
-  const minhas = await minhasDiligencias();
+  // As duas cargas independentes em PARALELO (velocidade).
+  const [estado, minhas] = await Promise.all([estadoCorrespondente(), minhasDiligencias()]);
   let abertas: DiligenciaResumo[] = [];
   // MASTER vê TODAS as abertas mesmo sem perfil de correspondente
   // (operação da plataforma) — a action já dispensa selo/perfil/comarca.

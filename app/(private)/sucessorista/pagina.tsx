@@ -28,27 +28,22 @@ export async function PaginaSucessorista({
   casoInicialId?: string | null;
   etapaInicial?: string | null;
 }) {
-  // Regras + correções da conta, já no primeiro render (sem flash de vazio).
-  const licoes = await carregarLicoes();
-
-  // Perfil de uso VINCULADO À CONTA (null = primeiro acesso pergunta).
-  // Falha de banco (ou migração ainda não aplicada) degrada para null.
-  let perfilConta: "ADVOGADO" | "ESCREVENTE" | null = null;
-  try {
-    const usuario = session?.user?.id
-      ? await prisma.user.findUnique({
-          where: { id: session.user.id },
-          select: { perfilSucessorista: true },
-        })
-      : null;
-    perfilConta = usuario?.perfilSucessorista ?? null;
-  } catch {
-    perfilConta = null;
-  }
-
-  // Equipe da conta (card "Minha equipe" do dashboard) — melhor-esforço.
-  const { minhaEquipe } = await import("./equipe-actions");
-  const equipe = await minhaEquipe();
+  // As três cargas por conta rodam em PARALELO (velocidade): lições do
+  // renomeador, perfil de uso (null = primeiro acesso pergunta; falha de
+  // banco degrada para null) e equipe — nenhuma depende da outra.
+  const [licoes, perfilConta, equipe] = await Promise.all([
+    carregarLicoes(),
+    session?.user?.id
+      ? prisma.user
+          .findUnique({
+            where: { id: session.user.id },
+            select: { perfilSucessorista: true },
+          })
+          .then((u) => u?.perfilSucessorista ?? null)
+          .catch(() => null)
+      : Promise.resolve(null),
+    import("./equipe-actions").then((m) => m.minhaEquipe()),
+  ]);
 
   const { default: SucessoristaClient } = await import("./sucessorista-client");
   return (

@@ -15,6 +15,8 @@
 // plataforma do usuário a cada requisição (defesa em profundidade: token de um
 // site não vale no outro nem se for copiado à mão).
 
+import { cache } from "react";
+
 import { compare } from "bcryptjs";
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
@@ -35,7 +37,12 @@ export function googleHabilitado(): boolean {
 const providers: NextAuthConfig["providers"] = [];
 if (googleHabilitado()) providers.push(Google);
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const {
+  handlers,
+  auth: authSemCache,
+  signIn,
+  signOut,
+} = NextAuth({
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // teto do cookie; o prazo real vai no token
@@ -162,6 +169,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export { handlers, signIn, signOut };
+
+/**
+ * Sessão DEDUPLICADA POR REQUISIÇÃO (React cache): uma página chama auth()
+ * várias vezes (gate, página, UserMenu/Avatar, actions) e cada chamada
+ * rodava o jwt callback — com a REVALIDAÇÃO NO BANCO repetida 3–5× por
+ * clique. O cache() faz todas as chamadas da MESMA requisição dividirem um
+ * único resultado; a regra de segurança segue intacta: o usuário continua
+ * revalidado no banco em TODA requisição (uma vez), nunca "confiado" do
+ * token entre requisições.
+ */
+export const auth = cache(() => authSemCache());
 
 /** Telas/ações exclusivas de administrador. */
 export function isMaster(

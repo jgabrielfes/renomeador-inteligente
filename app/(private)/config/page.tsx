@@ -46,35 +46,39 @@ export default async function ConfigPage() {
     dropboxRefreshToken: string | null;
   } | null = null;
   let radar: { situacao: string | null; ufs: string[] } = { situacao: null, ufs: [] };
+  // TUDO em paralelo (velocidade) — banco fora: a página mostra o que der.
+  let equipe: Awaited<ReturnType<typeof minhaEquipe>> = null;
   try {
-    usuario = await prisma.user.findUnique({
-      where: { id: session?.user?.id ?? '' },
-      select: {
-        name: true,
-        email: true,
-        perfilSucessorista: true,
-        passwordHash: true,
-        fotoPerfil: true,
-        bio: true,
-        enderecoEscritorio: true,
-        telefoneContato: true,
-        emailContato: true,
-        driveRefreshToken: true,
-        oneDriveEmail: true,
-        oneDriveRefreshToken: true,
-        dropboxEmail: true,
-        dropboxRefreshToken: true,
-      },
-    });
-    const [perfil, assinaturas] = await Promise.all([
+    const [u, perfil, assinaturas, eq] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: session?.user?.id ?? '' },
+        select: {
+          name: true,
+          email: true,
+          perfilSucessorista: true,
+          passwordHash: true,
+          fotoPerfil: true,
+          bio: true,
+          enderecoEscritorio: true,
+          telefoneContato: true,
+          emailContato: true,
+          driveRefreshToken: true,
+          oneDriveEmail: true,
+          oneDriveRefreshToken: true,
+          dropboxEmail: true,
+          dropboxRefreshToken: true,
+        },
+      }),
       prisma.advogadoPerfil.findUnique({ where: { userId: session?.user?.id ?? '' } }),
       prisma.radarAssinatura.findMany({ where: { userId: session?.user?.id ?? '' } }),
+      minhaEquipe(),
     ]);
+    usuario = u;
     radar = { situacao: perfil?.situacao ?? null, ufs: assinaturas.map((a) => a.uf) };
+    equipe = eq;
   } catch {
     // banco fora: a página mostra o que der, nunca quebra
   }
-  const equipe = await minhaEquipe();
   const ehMaster = isMaster(session);
 
   const nuvens = [
