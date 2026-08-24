@@ -17,6 +17,7 @@ import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
 import { radarAtivo } from '@/lib/radar/config';
 import { enviarEmailPortal } from '@/lib/portal/email';
+import { notificarContratacaoRadar, notificarMensagemRadar } from '@/lib/radar/notificar';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,21 @@ export async function POST(req: Request) {
         texto,
       },
     });
+    // Avisa o(a) advogado(a) que há mensagem esperando (o CONTEÚDO fica na
+    // plataforma) — melhor-esforço, nunca derruba o envio.
+    try {
+      const adv = await prisma.user.findUnique({
+        where: { id: intake.conversaAdvogadoUserId },
+        select: { email: true },
+      });
+      void notificarMensagemRadar({
+        destinatario: 'advogado',
+        email: adv?.email,
+        origin: new URL(req.url).origin,
+      });
+    } catch {
+      // sem e-mail a mensagem continua valendo na tela
+    }
     return Response.json({ ok: true }, { status: 201 });
   }
 
@@ -143,6 +159,21 @@ export async function POST(req: Request) {
         },
       }),
     ]);
+    // O CÓDIGO do handoff é o que o(a) advogado(a) precisa para criar o caso
+    // — sem este aviso ele só o veria voltando à conversa por conta própria.
+    try {
+      const adv = await prisma.user.findUnique({
+        where: { id: intake.conversaAdvogadoUserId },
+        select: { email: true },
+      });
+      void notificarContratacaoRadar({
+        email: adv?.email,
+        origin: new URL(req.url).origin,
+        codigo: handoff.codigo,
+      });
+    } catch {
+      // o código continua na conversa e no funil "Minhas respostas"
+    }
     return Response.json({ ok: true, codigo: handoff.codigo });
   }
 
