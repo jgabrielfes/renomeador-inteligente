@@ -31,11 +31,15 @@ export function SinoNotificacoes() {
     return () => clearTimeout(t);
   }, []);
 
-  // Fecha ao clicar fora.
+  // Fecha ao clicar fora — exceto dentro de um dialog em portal (mesma
+  // guarda do menu do avatar: fechar no mousedown desmontaria o dialog).
   useEffect(() => {
     if (!aberto) return;
     const fora = (e: MouseEvent) => {
-      if (raiz.current && !raiz.current.contains(e.target as Node)) setAberto(false);
+      const alvo = e.target as Node;
+      if (raiz.current?.contains(alvo)) return;
+      if (alvo instanceof Element && alvo.closest('[data-slot^="dialog"], [role="dialog"]')) return;
+      setAberto(false);
     };
     document.addEventListener('mousedown', fora);
     return () => document.removeEventListener('mousedown', fora);

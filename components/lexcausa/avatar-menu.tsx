@@ -37,7 +37,14 @@ export function AvatarMenu({
   useEffect(() => {
     if (!aberto) return;
     const fora = (e: MouseEvent) => {
-      if (raiz.current && !raiz.current.contains(e.target as Node)) setAberto(false);
+      const alvo = e.target as Node;
+      if (raiz.current?.contains(alvo)) return;
+      // Clique dentro de um DIALOG aberto A PARTIR do menu (o confirmar do
+      // Sair): o portal fica fora desta árvore — fechar o menu aqui
+      // desmontaria o dialog no mousedown e o clique nunca completaria
+      // (era o bug do "Sair que não sai").
+      if (alvo instanceof Element && alvo.closest('[data-slot^="dialog"], [role="dialog"]')) return;
+      setAberto(false);
     };
     document.addEventListener('mousedown', fora);
     return () => document.removeEventListener('mousedown', fora);
