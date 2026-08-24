@@ -28,20 +28,25 @@ export default async function DiligenciasPage() {
   await requirePlataforma('SUCESSORISTA');
   await requireSession('/diligencias');
 
+  const session = await auth();
+  const master = isMaster(session);
+
   const estado = await estadoCorrespondente();
   const minhas = await minhasDiligencias();
   let abertas: DiligenciaResumo[] = [];
-  if (estado.ok && (estado.perfil?.ativo || false) && estado.selo) {
+  // MASTER vê TODAS as abertas mesmo sem perfil de correspondente
+  // (operação da plataforma) — a action já dispensa selo/perfil/comarca.
+  if (estado.ok && ((estado.perfil?.ativo === true && estado.selo === true) || master)) {
     const r = await diligenciasAbertas();
     if (r.ok) abertas = r.abertas;
   }
 
-  const session = await auth();
   return (
     <>
-      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={master} radarAtivo={radarAtivo()} />
       <DiligenciasClient
         estado={estado.ok ? estado : null}
+        ehMaster={master}
         solicitadas={minhas.ok ? minhas.solicitadas : []}
         aceitas={minhas.ok ? minhas.aceitas : []}
         abertas={abertas}

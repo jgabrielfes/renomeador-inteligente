@@ -141,11 +141,14 @@ function Avaliar({ diligenciaId, aoAvaliar }: { diligenciaId: string; aoAvaliar:
 
 export function DiligenciasClient({
   estado,
+  ehMaster = false,
   solicitadas,
   aceitas,
   abertas,
 }: {
   estado: { selo?: boolean; assinante?: boolean; perfil?: PerfilCorrespondente | null; historico?: { concluidas: number; comarcasAtendidas: number; media: number | null } } | null;
+  /** Master vê TODAS as abertas sem perfil de correspondente (operação). */
+  ehMaster?: boolean;
   solicitadas: DiligenciaResumo[];
   aceitas: DiligenciaResumo[];
   abertas: DiligenciaResumo[];
@@ -193,8 +196,8 @@ export function DiligenciasClient({
   const [justificativa, setJustificativa] = useState('');
 
   const habilitadoCorrespondente = useMemo(
-    () => Boolean(estado?.selo && estado?.perfil?.ativo),
-    [estado],
+    () => Boolean((estado?.selo && estado?.perfil?.ativo) || ehMaster),
+    [estado, ehMaster],
   );
 
   const rodar = async (fn: () => Promise<{ ok: boolean; erro?: string }>, sucesso: string) => {
@@ -385,7 +388,9 @@ export function DiligenciasClient({
           <>
             <h2>Diligências abertas</h2>
             <p className="fund" style={{ marginTop: 0 }}>
-              Da sua comarca e UF, mais novas primeiro — sem ranking e sem preço.
+              {ehMaster && !estado?.perfil?.ativo
+                ? 'Como Master você vê TODAS as abertas, de qualquer comarca (operação da plataforma).'
+                : 'Da sua comarca e UF, mais novas primeiro — sem ranking e sem preço.'}
             </p>
             {abertas.length === 0 && <p>Nenhuma diligência aberta na sua região agora.</p>}
             <div style={{ display: 'grid', gap: 12 }}>
