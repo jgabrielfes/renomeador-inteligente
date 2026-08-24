@@ -279,6 +279,30 @@
   outline-offset: 2px;
 }
 
+/* avatar do usuário na barra (abre o menu perfil/preferências/sair) */
+.lexcausa .lc-avatar {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.lexcausa .lc-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
 /* sino de notificações do shell (central unificada) */
 .lexcausa .lc-sino {
   display: inline-flex;

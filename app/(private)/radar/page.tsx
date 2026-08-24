@@ -8,7 +8,7 @@ import { notFound } from 'next/navigation';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { TourLexCausa } from '@/components/lexcausa/tour';
-import { UserMenu } from '@/components/user-menu';
+import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
@@ -45,7 +45,7 @@ export default async function RadarPage() {
   return (
     <>
       <LexTopbar
-        menu={<UserMenu />}
+        menu={<AvatarSessao />}
         ehMaster={isMaster(session)}
         radarAtivo
         sub="Radar Sucessório · by LexCausa"

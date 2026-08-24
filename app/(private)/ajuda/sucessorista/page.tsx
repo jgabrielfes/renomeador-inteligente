@@ -7,7 +7,7 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
-import { UserMenu } from '@/components/user-menu';
+import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
@@ -31,7 +31,7 @@ export default async function AjudaSucessoristaPage() {
   const session = await auth();
   return (
     <>
-      <LexTopbar menu={<UserMenu />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="O Sucessorista · by LexCausa" />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="O Sucessorista · by LexCausa" />
       <div className="lexcausa" style={{ minHeight: '100vh' }}>
         <main className="lc-miolo produto-sucessorista">
           <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>

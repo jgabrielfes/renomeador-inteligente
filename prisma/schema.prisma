@@ -499,6 +499,14 @@ model User {
   emailVerified DateTime?
   // Null = conta criada via Google (entra só pelo OAuth, sem senha).
   passwordHash String?
+  // PERFIL do usuário (/config): foto pequena (data URL JPEG redimensionada
+  // NO NAVEGADOR — nunca arquivo bruto), bio/apresentação, endereço do
+  // escritório e contatos de trabalho. Tudo opcional, editado pelo próprio.
+  fotoPerfil         String?
+  bio                String?
+  enderecoEscritorio String?
+  telefoneContato    String?
+  emailContato       String?
   role         Role      @default(USER)
   // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
   perfilSucessorista PerfilSucessorista?

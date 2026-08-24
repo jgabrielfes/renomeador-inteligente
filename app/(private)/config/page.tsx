@@ -10,13 +10,14 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
-import { UserMenu } from '@/components/user-menu';
+import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { radarAtivo } from '@/lib/radar/config';
 import { minhaEquipe } from '../sucessorista/equipe-actions';
 import { PreferenciaProduto } from './config-client';
+import { AlterarSenha, PerfilUsuarioForm } from './perfil-form';
 
 export const metadata: Metadata = {
   title: 'Configurações — LexCausa',
@@ -32,6 +33,12 @@ export default async function ConfigPage() {
     name: string | null;
     email: string;
     perfilSucessorista: string | null;
+    passwordHash: string | null;
+    fotoPerfil: string | null;
+    bio: string | null;
+    enderecoEscritorio: string | null;
+    telefoneContato: string | null;
+    emailContato: string | null;
     driveRefreshToken: string | null;
     oneDriveEmail: string | null;
     oneDriveRefreshToken: string | null;
@@ -46,6 +53,12 @@ export default async function ConfigPage() {
         name: true,
         email: true,
         perfilSucessorista: true,
+        passwordHash: true,
+        fotoPerfil: true,
+        bio: true,
+        enderecoEscritorio: true,
+        telefoneContato: true,
+        emailContato: true,
         driveRefreshToken: true,
         oneDriveEmail: true,
         oneDriveRefreshToken: true,
@@ -72,7 +85,7 @@ export default async function ConfigPage() {
 
   return (
     <>
-      <LexTopbar menu={<UserMenu />} ehMaster={ehMaster} radarAtivo={radarAtivo()} />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={ehMaster} radarAtivo={radarAtivo()} />
       <div className="lexcausa" style={{ minHeight: '100vh' }}>
         <main className="lc-miolo">
           <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>
@@ -95,6 +108,18 @@ export default async function ConfigPage() {
                 {ehMaster ? ' · conta Master' : ''}. Trocar o perfil é ato de
                 administração — fale com a plataforma.
               </p>
+              <PerfilUsuarioForm
+                inicial={{
+                  fotoPerfil: usuario?.fotoPerfil ?? null,
+                  bio: usuario?.bio ?? null,
+                  enderecoEscritorio: usuario?.enderecoEscritorio ?? null,
+                  telefoneContato: usuario?.telefoneContato ?? null,
+                  emailContato: usuario?.emailContato ?? null,
+                }}
+              />
+              <div>
+                <AlterarSenha temSenha={Boolean(usuario?.passwordHash)} />
+              </div>
             </section>
 
             <section className="lc-cartao">

@@ -5,7 +5,7 @@
 import type { Metadata } from 'next';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
-import { UserMenu } from '@/components/user-menu';
+import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
@@ -39,7 +39,7 @@ export default async function DiligenciasPage() {
   const session = await auth();
   return (
     <>
-      <LexTopbar menu={<UserMenu />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} />
       <DiligenciasClient
         estado={estado.ok ? estado : null}
         solicitadas={minhas.ok ? minhas.solicitadas : []}

@@ -7,7 +7,7 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
-import { UserMenu } from '@/components/user-menu';
+import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
@@ -33,7 +33,7 @@ export default async function AjudaRadarPage() {
   const session = await auth();
   return (
     <>
-      <LexTopbar menu={<UserMenu />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="Radar Sucessório · by LexCausa" />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="Radar Sucessório · by LexCausa" />
       <div className="lexcausa" style={{ minHeight: '100vh' }}>
         <main className="lc-miolo produto-radar">
           <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>

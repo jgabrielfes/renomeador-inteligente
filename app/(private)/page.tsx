@@ -16,6 +16,7 @@
 // este site não serve.
 
 import { AccessTracker } from "@/components/access-tracker";
+import { AvatarSessao } from "@/components/lexcausa/avatar-sessao";
 import { UserMenu } from "@/components/user-menu";
 import { APP, IDENTIDADE } from "@/lib/app";
 import { auth, isMaster, requireSession } from "@/lib/auth";
@@ -54,7 +55,7 @@ export default async function Home() {
     const { HubLexCausa } = await import("./hub-client");
     return (
       <HubLexCausa
-        menu={<UserMenu />}
+        menu={<AvatarSessao />}
         perfil={perfil}
         ehMaster={isMaster(session)}
         radarAtivo={radarAtivo()}
