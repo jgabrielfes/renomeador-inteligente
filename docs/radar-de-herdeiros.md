@@ -95,3 +95,24 @@ a mecânica é a mesma). Do lado do(a) advogado(a):
   intake, cria o caso no store ativo com a folha pré-preenchida
   (`intakeParaCaso`) e confirma a importação — o servidor PODA o intake,
   como no fluxo por código digitado.
+
+## Cauda da remodelagem (fase 4) — vitrine, avisos e onboarding
+
+- **Vitrine do advogado** (`areasAtuacao` até 200 + `experiencia` até 600,
+  migração `vitrine_do_advogado`; action `salvarVitrineRadar`): cadastrada
+  uma vez no Radar ("Minha vitrine") e exibida junto de TODA candidatura na
+  tela da família ("Atua com:" / "Experiência:"). Sempre com nome+OAB, sem
+  valores, sem promessa e sem avaliações — os trilhos de `docs/etica-oab.md`
+  valem por inteiro.
+- **Aviso de caso novo SEM e-mail** (decisão do escritório): o sino
+  "Avisos" do shell conta os casos publicados desde
+  `advogado_perfis.radarVistoEm` e o hub mostra a mesma contagem; visitar o
+  Radar É ver (a visita atualiza o visto). Conversas abertas aguardando o(a)
+  advogado(a) também entram no sino.
+- **Tour de primeiro acesso** (3 passos dispensáveis, uma vez por
+  navegador) e página **/ajuda/radar** ("Como funciona") — ambos citam o
+  teto de candidaturas pela constante `TETO_CANDIDATURAS_POR_CASO`, nunca
+  por número solto.
+- **/config** mostra a situação do perfil no Radar (verificação da OAB +
+  UFs assinadas) e o gancho do plano de assinatura ("em implantação") — a
+  habilitação continua acontecendo no próprio Radar.
