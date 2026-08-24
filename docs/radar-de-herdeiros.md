@@ -29,7 +29,7 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
    assinadas, em **ordem única por data** — sem ranking. MASTER navega sem os
    passos (operação), mas não entra em conversa alheia.
 4. **Resposta**: apresentação (600) + condução (800), **sem campo de
-   honorários**, uma por advogado(a), teto de **5 por caso**. A família é
+   honorários**, uma por advogado(a), teto de **2 por caso** (o marcador "X/2 advogados"; gate com o gancho do plano em `lib/radar/candidatura.ts`). A família é
    avisada por e-mail (melhor-esforço).
 5. **Família** (`/familias/minha-solicitacao/[token]`): vê as respostas em
    **ordem aleatória FIXA** pelo token (`embaralharFixo` — determinística,

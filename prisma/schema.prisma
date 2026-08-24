@@ -393,6 +393,9 @@ model AdvogadoPerfil {
   motivoRecusa       String?
   quizAprovadoEm     DateTime?
   aceitaPequenoValor Boolean   @default(false)
+  /// Última visita à lista do Radar — o que separa "caso novo" de "já visto"
+  /// (o aviso é DENTRO da plataforma; e-mail de caso novo não existe).
+  radarVistoEm       DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

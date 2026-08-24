@@ -34,6 +34,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Toaster } from '@/components/ui/sonner';
 
 import { UFS } from '@/lib/familias/tipos';
+import {
+  marcadorCandidaturas,
+  TETO_CANDIDATURAS_POR_CASO,
+} from '@/lib/radar/candidatura';
 import { QUESTOES_RADAR, type CorrecaoQuiz } from '@/lib/radar/quiz';
 import { ROTULO_VIA, dataBr } from '../../familias/resultado-view';
 import {
@@ -186,9 +190,13 @@ function CardCaso({ item, aoResponder, aoConversar }: {
 }) {
   const c = item.caso;
   const flags = Object.entries(c.flags).filter(([, v]) => v).map(([k]) => ROTULO_FLAG[k] ?? k);
+  const completo = item.respostas >= TETO_CANDIDATURAS_POR_CASO;
   return (
     <section className="nota" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span className="eyebrow">
+        {item.novo && (
+          <strong style={{ color: 'var(--verde-registro)', marginRight: 8 }}>NOVO</strong>
+        )}
         {c.cidade ? `${c.cidade}/` : ''}{c.uf} · publicado em {dataBr(c.publicadoEm)}
       </span>
       <h3 style={{ margin: 0 }}>
@@ -198,8 +206,9 @@ function CardCaso({ item, aoResponder, aoConversar }: {
         {c.qtdHerdeiros} herdeiro(s){c.ufsBens.length > 1 ? ` · bens em ${c.ufsBens.join(', ')}` : ''}
         {flags.length > 0 ? ` · ${flags.join(' · ')}` : ''}
       </p>
-      <p className="fund" style={{ margin: 0 }}>
-        {item.respostas} de 5 respostas{item.minhaResposta ? ' — a sua entre elas' : ''}
+      <p className="fund num" style={{ margin: 0 }}>
+        {marcadorCandidaturas(item.respostas)}
+        {item.minhaResposta ? ' — você entre eles(as)' : completo ? ' — caso completo' : ''}
       </p>
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         {item.conversaComigo ? (
@@ -209,8 +218,10 @@ function CardCaso({ item, aoResponder, aoConversar }: {
             Aguardando a família
           </Button>
         ) : (
-          <Button onClick={aoResponder} disabled={item.respostas >= 5}>
-            {item.respostas >= 5 ? 'Teto de respostas atingido' : 'Apresentar-se à família'}
+          <Button onClick={aoResponder} disabled={completo}>
+            {completo
+              ? `Caso completo (${marcadorCandidaturas(item.respostas)})`
+              : 'Candidatar-se (apresentação à família)'}
           </Button>
         )}
       </div>
@@ -479,8 +490,19 @@ export function RadarClient({
               )}
             </div>
             <p className="fund" style={{ marginTop: 4 }}>
-              Ordem única: mais recentes primeiro. Sem ranking, sem destaque pago.
+              Ordem única: mais recentes primeiro. Sem ranking, sem destaque pago. Cada
+              caso aceita até {TETO_CANDIDATURAS_POR_CASO} candidaturas — o marcador
+              X/{TETO_CANDIDATURAS_POR_CASO} mostra as vagas; candidatar-se depende do
+              seu plano de assinatura (em implantação — hoje vale a assinatura por UF).
             </p>
+            {casos.some((c) => c.novo) && (
+              <p style={{ marginTop: 4 }}>
+                <strong style={{ color: 'var(--verde-registro)' }}>
+                  {casos.filter((c) => c.novo).length} caso(s) novo(s)
+                </strong>{' '}
+                desde a sua última visita — marcados com NOVO.
+              </p>
+            )}
             {visiveis.length === 0 && (
               <p style={{ marginTop: 8 }}>Nenhum caso aberto nas suas UFs neste momento.</p>
             )}
@@ -506,11 +528,13 @@ export function RadarClient({
       <Dialog open={respondendo !== null} onOpenChange={(v) => !v && setRespondendo(null)}>
         <DialogContent className="sucessorista">
           <DialogHeader>
-            <DialogTitle>Apresentar-se à família</DialogTitle>
+            <DialogTitle>Candidatar-se — apresentação à família</DialogTitle>
             <DialogDescription>
               Sóbrio e informativo (Provimento 205/2021): quem é você e como conduziria.
               Sem promessa de resultado e sem valores — honorários são tratados fora da
-              plataforma, se a família escolher conversar.
+              plataforma, se a família escolher conversar. Cada caso aceita até{' '}
+              {TETO_CANDIDATURAS_POR_CASO} candidaturas, e a sua vale pelo seu plano de
+              assinatura.
             </DialogDescription>
           </DialogHeader>
           <label className="campo">

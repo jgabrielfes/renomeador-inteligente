@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation';
 import '../../../(private)/sucessorista/sucessorista.css';
 
 import type { CasoAnonimo } from '@/lib/radar/anonimizar';
+import { TETO_CANDIDATURAS_POR_CASO } from '@/lib/radar/candidatura';
 import type { ConversaParaFamilia, RespostaParaFamilia } from './page';
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -290,7 +291,7 @@ export function MinhaSolicitacaoClient({
         {/* RESPOSTAS — ordem aleatória fixa, sem destaque; a escolha é sua. */}
         {dados.status === 'publicado' && dados.respostas.length > 0 && (
           <>
-            <h2>Respostas recebidas ({dados.respostas.length} de 5)</h2>
+            <h2>Respostas recebidas ({dados.respostas.length} de {TETO_CANDIDATURAS_POR_CASO})</h2>
             <p className="fund" style={{ marginTop: 0 }}>
               A ordem abaixo é aleatória e fixa — ninguém paga por destaque. Leia com
               calma; você só libera seu contato se escolher conversar, com um(a) de cada

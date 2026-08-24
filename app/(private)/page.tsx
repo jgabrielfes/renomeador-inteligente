@@ -43,6 +43,14 @@ export default async function Home() {
     } catch {
       perfil = null;
     }
+    // Aviso de casos novos no Radar É AQUI (dentro da plataforma — e-mail de
+    // caso novo não existe, decisão do escritório): o badge conta o que foi
+    // publicado nas UFs assinadas desde a última visita à lista.
+    let radarNovos = 0;
+    if (radarAtivo() && perfil !== "ESCREVENTE") {
+      const { casosNovosRadar } = await import("./radar/radar-actions");
+      radarNovos = await casosNovosRadar();
+    }
     const { HubLexCausa } = await import("./hub-client");
     return (
       <HubLexCausa
@@ -50,6 +58,7 @@ export default async function Home() {
         perfil={perfil}
         ehMaster={isMaster(session)}
         radarAtivo={radarAtivo()}
+        radarNovos={radarNovos}
       />
     );
   }

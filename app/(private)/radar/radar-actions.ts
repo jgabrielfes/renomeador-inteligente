@@ -21,6 +21,7 @@ import { prisma } from '@/lib/prisma';
 import { EH_SUCESSORISTA } from '@/lib/app';
 import { radarAtivo } from '@/lib/radar/config';
 import { anonimizarIntake, type CasoAnonimo } from '@/lib/radar/anonimizar';
+import { podeCandidatar, TETO_CANDIDATURAS_POR_CASO } from '@/lib/radar/candidatura';
 import { corrigirQuiz, type CorrecaoQuiz } from '@/lib/radar/quiz';
 import { sanitizarRespostas } from '@/lib/familias/sanitizar';
 import { UFS } from '@/lib/familias/tipos';
@@ -28,8 +29,6 @@ import { enviarEmailPortal } from '@/lib/portal/email';
 
 /** Conversa aberta há mais de 30 dias sem contratação volta ao Radar. */
 const DIAS_REABRIR_CONVERSA = 30;
-/** Teto de respostas por caso — a família não é leiloada. */
-const MAX_RESPOSTAS_POR_CASO = 5;
 
 type Falha = { ok: false; erro: string };
 
@@ -171,11 +170,13 @@ export async function salvarPreferenciasRadar(prefs: {
 
 export interface CasoRadar {
   caso: CasoAnonimo;
-  /** Quantas respostas o caso já tem (teto 5) — número, nunca quem. */
+  /** Candidaturas que o caso já tem (o "X/2") — número, nunca quem. */
   respostas: number;
   minhaResposta: boolean;
   conversaComigo: boolean;
   status: string;
+  /** Publicado depois da última visita deste(a) advogado(a) ao Radar. */
+  novo: boolean;
 }
 
 export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[] } | Falha> {
@@ -186,6 +187,21 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
     if (!estado?.habilitado) return { ok: false, erro: 'Perfil ainda não habilitado no Radar.' };
 
     await reabrirConversasParadas();
+
+    // "Caso novo" = publicado depois da última visita à lista. O aviso é
+    // DENTRO da plataforma (decisão do escritório — sem e-mail de caso
+    // novo): o chip NOVO aqui e o badge no hub. Visitar a lista É ver.
+    const perfilLinha = await prisma.advogadoPerfil.findUnique({
+      where: { userId: ctx.userId },
+      select: { radarVistoEm: true },
+    });
+    const vistoAntes = perfilLinha?.radarVistoEm ?? null;
+    if (perfilLinha) {
+      await prisma.advogadoPerfil.update({
+        where: { userId: ctx.userId },
+        data: { radarVistoEm: new Date() },
+      });
+    }
 
     const agora = new Date();
     const linhas = await prisma.familiaIntake.findMany({
@@ -230,11 +246,44 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
         minhaResposta: minhasSet.has(l.id),
         conversaComigo: l.status === 'em_conversa' && l.conversaAdvogadoUserId === ctx.userId,
         status: l.status,
+        // Sem visita registrada (primeira vez / master sem perfil), nada
+        // acende — o chip marca novidade real, não a lista inteira.
+        novo: vistoAntes !== null && l.publicadoEm > vistoAntes,
       });
     }
     return { ok: true, casos };
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o Radar.' };
+  }
+}
+
+/**
+ * CONTAGEM de casos novos nas UFs assinadas desde a última visita ao Radar
+ * — alimenta o badge do hub (aviso dentro da plataforma; e-mail de caso
+ * novo não existe por decisão do escritório). Só conta; não marca visto —
+ * quem marca é a entrada na lista (`listarCasosRadar`).
+ */
+export async function casosNovosRadar(): Promise<number> {
+  const ctx = await contexto();
+  if (!ctx) return 0;
+  try {
+    const estado = await estadoRadarAdvogado();
+    if (!estado?.habilitado) return 0;
+    const perfil = await prisma.advogadoPerfil.findUnique({
+      where: { userId: ctx.userId },
+      select: { radarVistoEm: true },
+    });
+    if (!perfil?.radarVistoEm) return 0;
+    return await prisma.familiaIntake.count({
+      where: {
+        status: 'publicado',
+        publicadoEm: { gt: perfil.radarVistoEm },
+        expiraEm: { gt: new Date() },
+        ...(ctx.master ? {} : { uf: { in: estado.ufsAssinadas } }),
+      },
+    });
+  } catch {
+    return 0;
   }
 }
 
@@ -352,14 +401,28 @@ export async function responderCasoRadar(
     if (!intake || intake.status !== 'publicado' || intake.expiraEm < new Date()) {
       return { ok: false, erro: 'Este caso não está mais aberto a respostas.' };
     }
-    const quantas = await prisma.radarResposta.count({ where: { intakeId } });
-    if (quantas >= MAX_RESPOSTAS_POR_CASO) {
-      return { ok: false, erro: `Este caso já recebeu ${MAX_RESPOSTAS_POR_CASO} respostas — o teto que protege a família.` };
-    }
-    const jaRespondi = await prisma.radarResposta.findUnique({
-      where: { intakeId_advogadoUserId: { intakeId, advogadoUserId: ctx.userId } },
+    // Gate ÚNICO da candidatura (motor puro, testado): teto de 2 por caso e
+    // o plano de assinatura — hoje representado pela habilitação; quando o
+    // plano nascer, entra pelo MESMO parâmetro.
+    const [quantas, jaRespondi] = await Promise.all([
+      prisma.radarResposta.count({ where: { intakeId } }),
+      prisma.radarResposta.findUnique({
+        where: { intakeId_advogadoUserId: { intakeId, advogadoUserId: ctx.userId } },
+      }),
+    ]);
+    const gate = podeCandidatar({
+      planoPermite: estado.habilitado,
+      jaCandidato: jaRespondi !== null,
+      candidaturas: quantas,
     });
-    if (jaRespondi) return { ok: false, erro: 'Você já respondeu a este caso.' };
+    if (!gate.pode) {
+      const mensagens = {
+        'sem-plano': 'O seu plano de assinatura ainda não permite candidatar-se.',
+        'ja-candidato': 'Você já se candidatou a este caso.',
+        'caso-completo': `Este caso já tem ${TETO_CANDIDATURAS_POR_CASO}/${TETO_CANDIDATURAS_POR_CASO} advogado(a)s — o teto que protege a família.`,
+      } as const;
+      return { ok: false, erro: mensagens[gate.motivo] };
+    }
 
     await prisma.radarResposta.create({
       data: { intakeId, advogadoUserId: ctx.userId, apresentacao: ap, conducao: co },

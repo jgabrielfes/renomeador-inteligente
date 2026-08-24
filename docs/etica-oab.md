@@ -21,8 +21,10 @@ passa por ele antes do merge.
   e OAB; quiz deontológico (10/10) antes da primeira resposta.
 - **Escolha do cliente é inviolável**: a plataforma não indica, não ranqueia
   e não destaca. → Ordem da lista do advogado é ÚNICA (data); ordem das
-  respostas para a família é ALEATÓRIA E FIXA por token; teto de 5 respostas
-  por caso (a família não é leiloada).
+  respostas para a família é ALEATÓRIA E FIXA por token; teto de DUAS candidaturas
+  por caso — o marcador "X/2 advogados" (a família não é leiloada); a
+  candidatura vale pelo plano de assinatura do(a) advogado(a) (gate no motor
+  puro lib/radar/candidatura.ts — o plano em desenvolvimento entra ali).
 - **LGPD**: a plataforma é CONTROLADORA dos dados do intake; publicação exige
   consentimento específico + e-mail confirmado; retirar apaga tudo; retenção
   máxima de 90 dias; pós-importação o servidor poda o conteúdo.

@@ -84,7 +84,7 @@ export default async function ProdutoRadarPage() {
             <li>A família SOLICITA; advogados respondem. Nenhum contato nasce do lado profissional.</li>
             <li>Respostas em ordem aleatória fixa, sempre com nome e OAB — sem ranking, sem destaque pago.</li>
             <li>Honorários são tratados diretamente entre família e advogado(a), fora da plataforma.</li>
-            <li>Teto de cinco respostas por caso: a família não é leiloada.</li>
+            <li>Até dois advogados(as) por caso (o marcador X/2): a família não é leiloada.</li>
             <li>Retirar a solicitação apaga tudo — inclusive as conversas.</li>
           </ul>
           <p className="lc-fund">{TEXTO_LEGAL_RADAR}</p>

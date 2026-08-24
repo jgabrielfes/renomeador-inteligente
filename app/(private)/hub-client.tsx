@@ -24,11 +24,15 @@ export function HubLexCausa({
   perfil,
   ehMaster,
   radarAtivo,
+  radarNovos = 0,
 }: {
   menu: ReactNode;
   perfil: 'ADVOGADO' | 'ESCREVENTE' | null;
   ehMaster: boolean;
   radarAtivo: boolean;
+  /** Casos novos no Radar desde a última visita — o aviso é AQUI, na
+   *  plataforma (e-mail de caso novo não existe por decisão do escritório). */
+  radarNovos?: number;
 }) {
   const router = useProgressRouter();
   const [pref, setPref] = useState<string>('');
@@ -94,6 +98,11 @@ export function HubLexCausa({
                 <span className="lc-eyebrow">{p.perfis.join(' · ')}</span>
                 <h3>{p.nome}</h3>
                 <p style={{ margin: 0 }}>{p.tagline}</p>
+                {p.id === 'radar' && radarNovos > 0 && (
+                  <p style={{ margin: 0, fontWeight: 600, color: 'var(--lc-acento)' }}>
+                    {radarNovos} caso(s) novo(s) na sua região desde a sua última visita.
+                  </p>
+                )}
                 {radarSemEnv && (
                   <p className="lc-fund" style={{ margin: 0 }}>
                     Em ativação neste ambiente — a página do produto explica
