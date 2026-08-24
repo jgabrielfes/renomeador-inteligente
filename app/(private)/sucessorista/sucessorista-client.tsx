@@ -325,6 +325,7 @@ interface CasoSalvo {
 export default function SucessoristaClient({
   licoesRenomeador = null,
   menu,
+  shell = null,
   perfilConta = null,
   ehMaster = false,
   equipe = null,
@@ -340,6 +341,9 @@ export default function SucessoristaClient({
   /** Faixa de sessão (nome, papel, Administração, Sair). Vem pronta de um
    *  server component — este arquivo é client e não pode chamar auth(). */
   menu?: React.ReactNode;
+  /** Barra LexCausa (topbar) — renderizada SÓ fora da folha do caso (painel
+   *  Meus casos e telas de espera): dentro do caso a lombada é o shell. */
+  shell?: React.ReactNode;
   /** Perfil VINCULADO À CONTA (banco): null = primeiro acesso, ainda não
    *  escolhido — o módulo abre a escolha obrigatória. */
   perfilConta?: Perfil | null;
@@ -3165,7 +3169,7 @@ export default function SucessoristaClient({
     if (!s) return;
     const r = await resgatarIntake(codigo);
     if (!r.ok || !r.respostas) {
-      toast.error('Não foi possível importar a contratação do Radar', { description: r.erro });
+      toast.error('Não foi possível importar o caso prospectado', { description: r.erro });
       return;
     }
     const dados = intakeParaCaso(r.respostas, {
@@ -3177,7 +3181,7 @@ export default function SucessoristaClient({
       baseNuvemRef.current = null;
       avisoNuvemRef.current = false;
       const caso = await s.criarCaso(
-        r.nome ? `Família ${r.nome}` : `Contratação do Radar ${codigo}`,
+        r.nome ? `Família ${r.nome}` : `Novo negócio ${codigo}`,
         dados,
       );
       manifestoRef.current = [];
@@ -3187,7 +3191,7 @@ export default function SucessoristaClient({
       setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
       irPara('caso');
       await confirmarImportacaoIntake(codigo);
-      toast.success('Contratação do Radar virou inventário — confira a folha', {
+      toast.success('Caso prospectado virou inventário — confira a folha', {
         description:
           (r.nome || r.email
             ? `Contato de quem respondeu: ${[r.nome, r.email].filter(Boolean).join(' · ')}. `
@@ -3649,11 +3653,14 @@ export default function SucessoristaClient({
 
   return (
     <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
+    {/* Barra LexCausa FORA da folha do caso (pedido do escritório): no painel
+        Meus casos dá para voltar ao hub; dentro do caso a lombada assume. */}
+    {casoAberto === null && shell}
     {/* Rota /caso/<id> que não abriu: tela própria com o caminho de volta
         — nunca um redirecionamento silencioso (T1 da auditoria). */}
     {casoAberto === null && casoNaoEncontrado ? (
       <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <h1>Caso não encontrado</h1>
         <p className="subtitulo">
           O link aponta um caso que não está nesta máquina nem na sua nuvem — ele pode ter
@@ -3672,7 +3679,7 @@ export default function SucessoristaClient({
       /* F5 dentro do caso: a folha está sendo reaberta — mostrar o painel
          Meus casos aqui daria a impressão de ter "voltado" para a lista. */
       <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <h1>Reabrindo o caso…</h1>
         <p className="subtitulo">
           Restaurando a folha e os documentos deste inventário. Um instante.
@@ -3680,10 +3687,12 @@ export default function SucessoristaClient({
       </div>
     ) : casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <CasosView
           radarHref={radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null}
-          diligenciasHref={perfil === 'ADVOGADO' || ehMaster ? '/diligencias' : null}
+          onImportarFamilia={
+            perfil === 'ADVOGADO' || ehMaster ? (codigo) => importarDoRadar(codigo) : null
+          }
           estado={estadoPainel}
           resumos={(() => {
             // A nuvem entra no painel junto dos casos locais; caso
@@ -3961,7 +3970,6 @@ export default function SucessoristaClient({
             rascunhoSalvoEm={rascunhoSalvoEm}
             onExportarCaso={exportarCaso}
             onImportarCaso={importarCaso}
-            onCasoDaFamilia={(caso) => aplicarSnapshot(caso as CasoSalvo)}
             onNovoCaso={novoCaso}
             casoId={casoId}
             perfil={perfil}

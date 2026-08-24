@@ -6,6 +6,7 @@
 import { AccessTracker } from "@/components/access-tracker";
 import { comandosPadrao } from "@/components/lexcausa/comandos";
 import { PaletaComandos } from "@/components/lexcausa/paleta-comandos";
+import { LexTopbar } from "@/components/lexcausa/topbar";
 import { TourLexCausa } from "@/components/lexcausa/tour";
 import { UserMenu } from "@/components/user-menu";
 import { IDENTIDADE } from "@/lib/app";
@@ -84,6 +85,17 @@ export async function PaginaSucessorista({
       <SucessoristaClient
         licoesRenomeador={licoes}
         menu={<UserMenu />}
+        shell={
+          /* Barra LexCausa no painel Meus casos (o client a esconde dentro
+             da folha do caso, onde a lombada é o shell). */
+          <LexTopbar
+            menu={<UserMenu />}
+            ehMaster={isMaster(session)}
+            radarAtivo={radarAtivo()}
+            escrevente={perfilConta === "ESCREVENTE"}
+            sub="O Sucessorista · by LexCausa"
+          />
+        }
         perfilConta={perfilConta}
         ehMaster={isMaster(session)}
         equipe={equipe}

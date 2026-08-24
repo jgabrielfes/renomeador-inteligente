@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,6 +27,8 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ResumoCaso } from '@/lib/partilha/caso-store';
 import { faixaDoPrazo, rotuloDoPrazo } from '@/lib/partilha/prazo';
+
+import { NovosNegocios } from './importar-familia';
 
 export type EstadoPainel =
   | 'carregando'
@@ -67,7 +68,7 @@ const esquemaNovo = z.object({
 
 export function CasosView({
   radarHref = null,
-  diligenciasHref = null,
+  onImportarFamilia = null,
   estado,
   resumos,
   comNuvem = false,
@@ -96,10 +97,10 @@ export function CasosView({
   onImportar,
   onMigrarRascunho,
 }: {
-  /** Rota do Radar de famílias quando ligado (env) — atalho no cabeçalho. */
+  /** Rota do Radar de famílias quando ligado (env) — usada no Novos negócios. */
   radarHref?: string | null;
-  /** Rota das diligências entre advogados (camada 4) — atalho no cabeçalho. */
-  diligenciasHref?: string | null;
+  /** Importa o código de família/Radar e CRIA o caso (faixa Novos negócios). */
+  onImportarFamilia?: ((codigo: string) => Promise<void>) | null;
   estado: EstadoPainel;
   /** null = cache ainda não pintou. */
   resumos: ResumoCaso[] | null;
@@ -230,16 +231,6 @@ export function CasosView({
         </div>
         {(estado === 'pasta' || estado === 'portatil' || estado === 'drive' || estado === 'onedrive' || estado === 'dropbox') && (
           <div className="escolha">
-            {radarHref && (
-              <Button variant="outline" render={<Link href={radarHref} />} nativeButton={false}>
-                Radar Sucessório
-              </Button>
-            )}
-            {diligenciasHref && (
-              <Button variant="outline" render={<Link href={diligenciasHref} />} nativeButton={false}>
-                Diligências
-              </Button>
-            )}
             {onEnviarNuvem && (
               <Button
                 variant="outline"
@@ -257,6 +248,13 @@ export function CasosView({
         )}
       </header>
 
+      {/* NOVOS NEGÓCIOS — a entrada dos clientes prospectados (Radar e
+          questionário das famílias), no topo do painel: pedido do escritório. */}
+      {onImportarFamilia &&
+        (estado === 'pasta' || estado === 'portatil' || estado === 'drive' || estado === 'onedrive' || estado === 'dropbox') && (
+          <NovosNegocios onImportar={onImportarFamilia} radarHref={radarHref} />
+        )}
+
       {/* SELETOR DA PASTA DOS CASOS — sempre visível antes de entrar em
           qualquer caso: mostra a pasta-raiz ATIVA desta conta e troca num
           clique (cada login tem a própria pasta; trocar não apaga nada — os
@@ -264,10 +262,8 @@ export function CasosView({
       {estado === 'drive' && (
         <div className="seletor-pasta">
           <span>
-            ☁️ Google Drive conectado{drive?.email ? `: ` : ''}
-            <strong>{drive?.email ?? ''}</strong> — pasta &quot;O Sucessorista&quot; no seu
-            Drive. Não é a conta certa? Desconecte e conecte de novo — o seletor de
-            contas do Google abre para escolher.
+            ☁️ Google Drive: <strong>{drive?.email ?? 'conectado'}</strong> — pasta
+            &quot;O Sucessorista&quot; na sua conta.
           </span>
           {linkNuvem && (
             <Button
@@ -290,9 +286,8 @@ export function CasosView({
       {estado === 'onedrive' && (
         <div className="seletor-pasta">
           <span>
-            ☁️ OneDrive conectado{oneDrive?.email ? `: ` : ''}
-            <strong>{oneDrive?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
-            no seu OneDrive
+            ☁️ OneDrive: <strong>{oneDrive?.email ?? 'conectado'}</strong> — pasta
+            &quot;Apps/O Sucessorista&quot; na sua conta.
           </span>
           {linkNuvem && (
             <Button
@@ -315,9 +310,8 @@ export function CasosView({
       {estado === 'dropbox' && (
         <div className="seletor-pasta">
           <span>
-            ☁️ Dropbox conectado{dropbox?.email ? `: ` : ''}
-            <strong>{dropbox?.email ?? ''}</strong> — pasta &quot;Apps/O Sucessorista&quot;
-            no seu Dropbox
+            ☁️ Dropbox: <strong>{dropbox?.email ?? 'conectado'}</strong> — pasta
+            &quot;Apps/O Sucessorista&quot; na sua conta.
           </span>
           {linkNuvem && (
             <Button
@@ -343,12 +337,11 @@ export function CasosView({
         (drive?.disponivel || oneDrive?.disponivel || dropbox?.disponivel) && (
           <div className="seletor-pasta">
             <span>
-              ☁️ <strong>Conectar uma nuvem de arquivos</strong> — os casos e documentos
-              passam a viver na SUA conta, acessíveis de qualquer dispositivo (sem
-              escolher pasta no computador).
+              ☁️ <strong>Nuvem de arquivos:</strong> não conectada — conecte para acessar
+              os casos de qualquer dispositivo.
             </span>
-            <Button size="sm" onClick={() => setDialogoNuvemArquivos(true)}>
-              Escolher meu drive
+            <Button size="sm" variant="outline" onClick={() => setDialogoNuvemArquivos(true)}>
+              Conectar
             </Button>
           </div>
         )}

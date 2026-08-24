@@ -1,14 +1,15 @@
 'use client';
 
 /**
- * "Importar caso de família" — o advogado digita o CÓDIGO que a família
- * gerou na área pública e o caso nasce AQUI, no navegador (intakeParaCaso →
- * aplicarSnapshot), com as seções 0/I/II pré-preenchidas por faixa. Depois
- * da montagem, a importação é confirmada e o servidor PODA o intake.
+ * "NOVOS NEGÓCIOS" — a entrada dos clientes prospectados, no TOPO do painel
+ * Meus casos (pedido do escritório: fora do caso já criado). O advogado cola
+ * o CÓDIGO que a família gerou (questionário público ou contratação do
+ * Radar) e o CASO NASCE SOZINHO no store ativo — quem importa de verdade é o
+ * handler do client (o mesmo `importarDoRadar` do fluxo /s?importar=).
  */
 
 import { useState } from 'react';
-import { toast } from 'sonner';
+import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -20,15 +21,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { intakeParaCaso } from '@/lib/familias/intake-para-caso';
 
-import { confirmarImportacaoIntake, resgatarIntake } from './familias-actions';
-
-export function ImportarCasoFamilia({
-  onCaso,
+export function NovosNegocios({
+  onImportar,
+  radarHref,
 }: {
-  /** Recebe o snapshot v1 pronto (CasoSalvo) — o client aplica na folha. */
-  onCaso: (caso: unknown) => void;
+  /** Importa pelo código e CRIA o caso no store ativo (abre a folha). */
+  onImportar: (codigo: string) => Promise<void>;
+  /** Rota do Radar quando ligado — o caminho de onde os códigos vêm. */
+  radarHref?: string | null;
 }) {
   const [aberto, setAberto] = useState(false);
   const [codigo, setCodigo] = useState('');
@@ -37,45 +38,40 @@ export function ImportarCasoFamilia({
   const importar = async () => {
     setImportando(true);
     try {
-      const r = await resgatarIntake(codigo);
-      if (!r.ok || !r.respostas) {
-        toast.error('Não foi possível importar', { description: r.erro });
-        return;
-      }
-      const caso = intakeParaCaso(r.respostas, {
-        casoId: `caso-${crypto.randomUUID().slice(0, 8)}-${Date.now().toString(36)}`,
-        gerarId: (p) => `${p}-${crypto.randomUUID().slice(0, 8)}`,
-      });
-      onCaso(caso);
-      await confirmarImportacaoIntake(codigo);
+      await onImportar(codigo.trim().toUpperCase());
       setAberto(false);
       setCodigo('');
-      toast.success('Caso da família importado — confira a folha', {
-        description:
-          (r.nome || r.email
-            ? `Contato de quem respondeu: ${[r.nome, r.email].filter(Boolean).join(' · ')}. `
-            : '') +
-          'Valores por faixa e fichas em branco: complete com os documentos. Os dados saíram do servidor.',
-      });
     } finally {
       setImportando(false);
     }
   };
 
   return (
-    <>
-      <Button variant="outline" onClick={() => setAberto(true)}>
-        Importar caso de família
-      </Button>
+    <div className="seletor-pasta" role="region" aria-label="Novos negócios">
+      <span>
+        🧭 <strong>Novos negócios</strong> — cliente prospectado (Radar ou
+        questionário das famílias)? Cole o código e o inventário nasce pronto
+        para conferir.
+      </span>
+      <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+        {radarHref && (
+          <Button size="sm" variant="outline" render={<Link href={radarHref} />} nativeButton={false}>
+            Ver leads no Radar
+          </Button>
+        )}
+        <Button size="sm" onClick={() => setAberto(true)}>
+          Importar com código
+        </Button>
+      </span>
       <Dialog open={aberto} onOpenChange={(o) => !importando && setAberto(o)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Importar caso de família</DialogTitle>
+            <DialogTitle>Novos negócios — importar caso prospectado</DialogTitle>
             <DialogDescription>
-              A família que respondeu ao questionário público gera um código e entrega a
-              você. A importação monta a folha com o que ela informou — datas, vínculo,
-              número de herdeiros e bens por faixa — e as anotações de alerta. O caso
-              nasce nesta máquina; depois da importação, os dados saem do servidor.
+              A família gera um código na área pública (ou na contratação pelo Radar) e
+              entrega a você. A importação CRIA o caso com o que ela informou — datas,
+              vínculo, herdeiros e bens por faixa — e abre a folha para conferência. Depois
+              da importação, os dados saem do servidor.
             </DialogDescription>
           </DialogHeader>
           <label className="campo">
@@ -83,6 +79,7 @@ export function ImportarCasoFamilia({
             <Input
               value={codigo}
               placeholder="Ex.: K7MPQ2WX"
+              autoFocus
               onChange={(e) => setCodigo(e.target.value.toUpperCase())}
             />
           </label>
@@ -91,11 +88,11 @@ export function ImportarCasoFamilia({
               Cancelar
             </Button>
             <Button loading={importando} disabled={codigo.trim() === ''} onClick={() => void importar()}>
-              Importar
+              Importar e criar o caso
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
