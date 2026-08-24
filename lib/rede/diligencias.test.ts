@@ -77,7 +77,11 @@ console.log('\nRede — correspondentes e municípios\n');
   teste('só pasta e relatório circulam', vis.length === 2 && !vis.some((a) => a.nome === 'honorarios.pdf'));
 }
 
-teste('tipos de diligência fechados (6)', TIPOS_DILIGENCIA.length === 6);
+teste('tipos de diligência fechados (8)', TIPOS_DILIGENCIA.length === 8);
+teste(
+  'ITCMD e Outros na lista',
+  TIPOS_DILIGENCIA.some((t) => t.id === 'itcmd') && TIPOS_DILIGENCIA.some((t) => t.id === 'outros'),
+);
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

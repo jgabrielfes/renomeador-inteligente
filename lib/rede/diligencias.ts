@@ -16,6 +16,8 @@ export const TIPOS_DILIGENCIA = [
   { id: 'assinatura-escritura', rotulo: 'Assinatura de escritura por procuração' },
   { id: 'protocolo-fisico', rotulo: 'Protocolo físico' },
   { id: 'copia-autos', rotulo: 'Cópia de autos' },
+  { id: 'itcmd', rotulo: 'ITCMD' },
+  { id: 'outros', rotulo: 'Outros' },
 ] as const;
 
 export type TipoDiligencia = (typeof TIPOS_DILIGENCIA)[number]['id'];
