@@ -576,7 +576,12 @@ export function RadarClient({
               </p>
             )}
             {visiveis.length === 0 && (
-              <p style={{ marginTop: 8 }}>Nenhum caso aberto nas suas UFs neste momento.</p>
+              <p style={{ marginTop: 8 }}>
+                Nenhum caso aberto no seu recorte agora — os avisos de caso novo
+                aparecem no hub e aqui. Enquanto isso, revise a sua{' '}
+                <strong>vitrine</strong> acima ou veja{' '}
+                <Link href="/ajuda/radar">como o Radar funciona</Link>.
+              </p>
             )}
             <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
               {visiveis.map((item) => (

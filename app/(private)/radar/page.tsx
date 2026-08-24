@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { LexTopbar } from '@/components/lexcausa/topbar';
+import { TourLexCausa } from '@/components/lexcausa/tour';
 import { UserMenu } from '@/components/user-menu';
 import { requirePlataforma } from '@/lib/app';
 import { auth, isMaster, requireSession } from '@/lib/auth';
@@ -48,6 +49,14 @@ export default async function RadarPage() {
         ehMaster={isMaster(session)}
         radarAtivo
         sub="Radar Sucessório · by LexCausa"
+      />
+      <TourLexCausa
+        id="radar"
+        passos={[
+          { titulo: 'Bem-vindo(a) ao Radar Sucessório', texto: 'Famílias publicam o caso ANÔNIMO e você vê os das suas UFs em ordem única por data — sem ranking, sem preço, sem disputa.' },
+          { titulo: 'Candidatura com teto', texto: 'Cada caso aceita até dois advogados (o marcador X/2). A candidatura é a sua apresentação sóbria + como conduziria — a vitrine (áreas e experiência) acompanha.' },
+          { titulo: 'A família escolhe', texto: 'Só quem ela chamar para conversar recebe o contato. Fechou? O funil "Minhas respostas" ganha o botão "Converter em inventário", que cria o caso pronto no Sucessorista.' },
+        ]}
       />
       <RadarClient estado={estado} casos={casos} minhasRespostas={minhas} />
     </>
