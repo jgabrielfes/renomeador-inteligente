@@ -9,8 +9,6 @@
  */
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import '@/app/lexcausa.css';
@@ -34,28 +32,15 @@ export function LexTopbar({
   /** Submarca do produto ativo ("Radar Sucessório · by LexCausa"). */
   sub?: string;
 }) {
-  const pathname = usePathname();
   const [paletaAberta, setPaletaAberta] = useState(false);
 
-  const guias: { rotulo: string; href: string; ativa: boolean }[] = [
-    { rotulo: 'O Sucessorista', href: '/s', ativa: pathname.startsWith('/s') || pathname.startsWith('/caso') },
-  ];
-  if (!escrevente || ehMaster) {
-    if (radarAtivo) guias.push({ rotulo: 'Radar Sucessório', href: '/radar', ativa: pathname.startsWith('/radar') });
-    guias.push({ rotulo: 'Diligências', href: '/diligencias', ativa: pathname.startsWith('/diligencias') });
-  }
-
+  // As guias de produto saíram da barra (pedido do escritório): a troca de
+  // tela é pelo hub (clique na marca), pelos cards e pela paleta ⌘K.
   return (
     <div className="lexcausa lc-shell">
       <header className="lc-topo">
         <MarcaLexCausa href="/?hub=1" sub={sub} />
-        <nav aria-label="Produtos LexCausa" style={{ marginLeft: 12, marginRight: 'auto', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {guias.map((g) => (
-            <Link key={g.href} className={`lc-guia${g.ativa ? ' ativa' : ''}`} href={g.href}>
-              {g.rotulo}
-            </Link>
-          ))}
-        </nav>
+        <span style={{ marginRight: 'auto' }} />
         <SinoNotificacoes />
         <button
           type="button"

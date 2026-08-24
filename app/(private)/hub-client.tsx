@@ -8,7 +8,7 @@
  * de volta, que nunca redireciona.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 
 import '@/app/lexcausa.css';
@@ -35,7 +35,6 @@ export function HubLexCausa({
   radarNovos?: number;
 }) {
   const router = useProgressRouter();
-  const [pref, setPref] = useState<string>('');
 
   // O Radar é ferramenta de advogado(a); escrevente vê só O Sucessorista.
   // Perfil ainda não escolhido (primeiro acesso) vê os dois — a escolha
@@ -44,8 +43,9 @@ export function HubLexCausa({
     (p) => p.id !== 'radar' || perfil !== 'ESCREVENTE' || ehMaster,
   );
 
-  // Preferência restaurada em efeito DIFERIDO (convenção do painel Meus
-  // casos): o HTML do servidor e o primeiro render coincidem na hidratação.
+  // Preferência "abrir direto" (editada em /config) lida em efeito DIFERIDO
+  // (convenção): o HTML do servidor e o primeiro render coincidem na
+  // hidratação. O hub só REDIRECIONA; a escolha não mora mais nos cards.
   useEffect(() => {
     const t = setTimeout(() => {
       let guardada = '';
@@ -54,7 +54,6 @@ export function HubLexCausa({
       } catch {
         /* modo privado/permissão negada: o hub simplesmente aparece */
       }
-      setPref(guardada);
       const destino = PRODUTOS_LEXCAUSA.find((p) => p.id === guardada)?.href;
       if (destino && !new URLSearchParams(window.location.search).has('hub')) {
         router.replace(destino);
@@ -63,17 +62,6 @@ export function HubLexCausa({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const marcarPref = (id: string, ligado: boolean) => {
-    const valor = ligado ? id : '';
-    setPref(valor);
-    try {
-      if (valor) localStorage.setItem(PREF_KEY, valor);
-      else localStorage.removeItem(PREF_KEY);
-    } catch {
-      /* sem armazenamento, sem preferência — o hub continua funcionando */
-    }
-  };
 
   return (
     <div className="lexcausa" style={{ minHeight: '100vh' }}>
@@ -95,7 +83,6 @@ export function HubLexCausa({
             const radarSemEnv = p.id === 'radar' && !radarAtivo;
             return (
               <section key={p.id} className={`lc-cartao ${p.classe}`}>
-                <span className="lc-eyebrow">{p.perfis.join(' · ')}</span>
                 <h3>{p.nome}</h3>
                 <p style={{ margin: 0 }}>{p.tagline}</p>
                 {p.id === 'radar' && radarNovos > 0 && (
@@ -115,27 +102,28 @@ export function HubLexCausa({
                       Conhecer o produto
                     </Link>
                   ) : (
-                    <>
-                      <Link className="lc-acao" href={p.href}>
-                        Abrir {p.nome}
-                      </Link>
-                      <label
-                        className="lc-fund"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={pref === p.id}
-                          onChange={(e) => marcarPref(p.id, e.target.checked)}
-                        />
-                        abrir direto no próximo acesso
-                      </label>
-                    </>
+                    <Link className="lc-acao" href={p.href}>
+                      Abrir {p.nome}
+                    </Link>
                   )}
                 </div>
               </section>
             );
           })}
+          {(perfil !== 'ESCREVENTE' || ehMaster) && (
+            <section className="lc-cartao">
+              <h3>Diligências entre advogados</h3>
+              <p style={{ margin: 0 }}>
+                Correspondentes por comarca: peça ou execute atos a distância,
+                com termo de referência e pasta isolada por diligência.
+              </p>
+              <div className="lc-acoes">
+                <Link className="lc-acao secundaria" href="/diligencias">
+                  Abrir Diligências
+                </Link>
+              </div>
+            </section>
+          )}
           <section className="lc-cartao desabilitado">
             <span className="lc-eyebrow">Em breve</span>
             <h3>Novos produtos LexCausa</h3>
