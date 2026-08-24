@@ -665,6 +665,31 @@ export function DocumentosView({
   const totalAnexos = Object.values(anexos).reduce((acc, fs) => acc + fs.length, 0);
   const itensComAnexo = catalogoDoCasoTopo.filter((d) => (anexos[d.id] ?? []).length > 0).length;
 
+  /* ITENS POR BEM (pedido do escritório): as categorias de bem não se
+     limitam a um espaço — o "+" abre outra linha da MESMA categoria
+     ("Matrícula… — 2º bem"), com id `<docId>#n` no mapa de anexos. Linhas
+     extras com arquivo renascem sozinhas (as chaves ficam no mapa); linha
+     extra vazia é só desta visita. */
+  const PODE_MULTI = new Set([
+    'matricula-imovel',
+    'valor-venal',
+    'extratos-bancarios',
+    'doc-veiculos',
+    'contrato-social',
+  ]);
+  const [slotsExtras, setSlotsExtras] = useState<Record<string, number>>({});
+  const instanciasDe = (docId: string): string[] => {
+    if (!PODE_MULTI.has(docId)) return [docId];
+    let extras = slotsExtras[docId] ?? 0;
+    for (const chave of Object.keys(anexos)) {
+      if (chave.startsWith(`${docId}#`) && (anexos[chave] ?? []).length > 0) {
+        const n = Number(chave.slice(docId.length + 1));
+        if (Number.isFinite(n)) extras = Math.max(extras, n - 1);
+      }
+    }
+    return [docId, ...Array.from({ length: extras }, (_, i) => `${docId}#${i + 2}`)];
+  };
+
   const anexar = (docId: string, lista: FileList | File[]) => {
     setAnexos({ ...anexos, [docId]: [...(anexos[docId] ?? []), ...Array.from(lista)] });
   };
@@ -760,9 +785,14 @@ export function DocumentosView({
   };
 
   const itensOrdenados = () =>
-    CATALOGO_DOCUMENTOS.map((d) => ({ titulo: d.titulo, arquivos: anexos[d.id] ?? [] })).filter(
-      (i) => i.arquivos.length > 0,
-    );
+    CATALOGO_DOCUMENTOS.map((d) => ({
+      titulo: d.titulo,
+      // As linhas extras por bem (`<id>#n`) entram na montagem junto da base.
+      arquivos: Object.keys(anexos)
+        .filter((k) => k === d.id || k.startsWith(`${d.id}#`))
+        .sort()
+        .flatMap((k) => anexos[k] ?? []),
+    })).filter((i) => i.arquivos.length > 0);
 
   const gerarUnificado = async () => {
     setGerando('pdf');
@@ -866,31 +896,40 @@ export function DocumentosView({
           </p>
         )}
         {grupos.map(({ grupo, docs }) => {
-          const comAnexo = docs.filter((d) => (anexos[d.id] ?? []).length > 0).length;
+          const linhas = docs.flatMap((doc) =>
+            instanciasDe(doc.id).map((docId, idx, lista) => ({
+              doc,
+              docId,
+              n: idx + 1,
+              ultima: idx === lista.length - 1,
+            })),
+          );
+          const comAnexo = linhas.filter((l) => (anexos[l.docId] ?? []).length > 0).length;
           return (
             <div key={grupo}>
               <span className="eyebrow">
                 {ROTULO_GRUPO[grupo]}{' '}
                 <span className="num contador-grupo">
-                  {comAnexo} de {docs.length}
+                  {comAnexo} de {linhas.length}
                 </span>
               </span>
               <div className="doc-lista" style={{ marginBottom: 18 }}>
-                {docs.map((doc) => {
-                  const arquivos = anexos[doc.id] ?? [];
-                  const envios = enviosDoCofre[doc.id] ?? [];
+                {linhas.map(({ doc, docId, n, ultima }) => {
+                  const arquivos = anexos[docId] ?? [];
+                  // Envios do cofre chegam pelo id BASE do catálogo.
+                  const envios = n === 1 ? enviosDoCofre[doc.id] ?? [] : [];
                   const tem = arquivos.length > 0;
                   return (
                     <div
-                      className={`doc-linha${alvoDrop === doc.id ? ' solta-aqui' : ''}`}
-                      key={doc.id}
+                      className={`doc-linha${alvoDrop === docId ? ' solta-aqui' : ''}`}
+                      key={docId}
                       onDragOver={(e) => {
                         if (!e.dataTransfer.types.includes('application/x-anexo-caso')) return;
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
-                        setAlvoDrop(doc.id);
+                        setAlvoDrop(docId);
                       }}
-                      onDragLeave={() => setAlvoDrop((atual) => (atual === doc.id ? null : atual))}
+                      onDragLeave={() => setAlvoDrop((atual) => (atual === docId ? null : atual))}
                       onDrop={(e) => {
                         const bruto = e.dataTransfer.getData('application/x-anexo-caso');
                         setAlvoDrop(null);
@@ -898,8 +937,8 @@ export function DocumentosView({
                         e.preventDefault();
                         e.stopPropagation();
                         try {
-                          const { docId, indice } = JSON.parse(bruto) as { docId: string; indice: number };
-                          moverAnexo(docId, indice, doc.id);
+                          const { docId: origem, indice } = JSON.parse(bruto) as { docId: string; indice: number };
+                          moverAnexo(origem, indice, docId);
                         } catch {
                           // payload de outra origem — ignora
                         }
@@ -909,12 +948,15 @@ export function DocumentosView({
                         <span className={`chip-doc ${tem ? 'ok' : 'falta'}`}>
                           {tem ? `${arquivos.length} anexado(s)` : 'falta'}
                         </span>
-                        <h4 title={doc.descricao}>{doc.titulo}</h4>
+                        <h4 title={doc.descricao}>
+                          {doc.titulo}
+                          {n > 1 && <span className="num"> — {n}º bem</span>}
+                        </h4>
                         <span className="doc-ajuda" title={doc.descricao} aria-label={doc.descricao}>
                           ?
                         </span>
                         <span className="doc-linha-fio" aria-hidden />
-                        {onResponsavel && (
+                        {onResponsavel && n === 1 && (
                           <ResponsavelDoc
                             doc={doc}
                             valor={responsaveis[doc.id] ?? ''}
@@ -924,7 +966,33 @@ export function DocumentosView({
                             onConviteAtualizado={onConviteAtualizado}
                           />
                         )}
-                        <BotaoAnexar discreto onFiles={(lista) => anexar(doc.id, lista)} />
+                        <BotaoAnexar discreto onFiles={(lista) => anexar(docId, lista)} />
+                        {PODE_MULTI.has(doc.id) && ultima && (
+                          <button
+                            type="button"
+                            className="doc-mais-bem"
+                            title="Abrir espaço para MAIS UM bem desta categoria (outro imóvel, outro veículo…)"
+                            aria-label={`Adicionar outro bem em ${doc.titulo}`}
+                            onClick={() =>
+                              setSlotsExtras((s) => ({ ...s, [doc.id]: n }))
+                            }
+                          >
+                            ＋ bem
+                          </button>
+                        )}
+                        {n > 1 && ultima && arquivos.length === 0 && (
+                          <button
+                            type="button"
+                            className="doc-mais-bem"
+                            title="Remover este espaço vazio"
+                            aria-label={`Remover o espaço vazio de ${doc.titulo}`}
+                            onClick={() =>
+                              setSlotsExtras((s) => ({ ...s, [doc.id]: Math.max(0, n - 2) }))
+                            }
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                       {envios.map((envio, i) => {
                         const idade = diasDesdeEmissao(envio.emitidaEm);
@@ -974,10 +1042,10 @@ export function DocumentosView({
                               key={`${f.name}-${i}`}
                               file={f}
                               onAbrir={() => setPreview(f)}
-                              onRemover={() => pedirRemocao(doc.id, i, f)}
+                              onRemover={() => pedirRemocao(docId, i, f)}
                               onNuvem={modoDrive && onSubirNuvem ? () => void subirUm(f) : undefined}
                               enviandoNuvem={subindoUm === f}
-                              arrasto={{ docId: doc.id, indice: i }}
+                              arrasto={{ docId, indice: i }}
                               onFimArrasto={() => setAlvoDrop(null)}
                             />
                           ))}
