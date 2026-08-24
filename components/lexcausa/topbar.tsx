@@ -36,12 +36,10 @@ export function LexTopbar({
 }) {
   const [paletaAberta, setPaletaAberta] = useState(false);
   const [feedbackAberto, setFeedbackAberto] = useState(false);
-  const [abaFeedback, setAbaFeedback] = useState<'bug' | 'sugestao'>('bug');
-  // Cada abertura REMONTA o dialog (key) — a aba inicial vale de novo.
+  // Cada abertura REMONTA o dialog (key) — volta sempre à aba inicial.
   const [aberturaFeedback, setAberturaFeedback] = useState(0);
 
-  const abrirFeedback = (aba: 'bug' | 'sugestao') => {
-    setAbaFeedback(aba);
+  const abrirFeedback = () => {
     setAberturaFeedback((n) => n + 1);
     setFeedbackAberto(true);
   };
@@ -56,21 +54,15 @@ export function LexTopbar({
         <Link className="lc-sino" href="/ajuda" title="Ajuda e tutoriais">
           Ajuda
         </Link>
+        {/* Um botão só (pedido do escritório): o dialog traz as abas de
+            bug E sugestão — dois botões abriam "a mesma coisa". */}
         <button
           type="button"
           className="lc-sino"
-          title="Reportar um problema"
-          onClick={() => abrirFeedback('bug')}
+          title="Reportar um problema ou sugerir uma melhoria"
+          onClick={abrirFeedback}
         >
           Reportar
-        </button>
-        <button
-          type="button"
-          className="lc-sino"
-          title="Sugerir uma melhoria"
-          onClick={() => abrirFeedback('sugestao')}
-        >
-          Sugestão
         </button>
         <SinoNotificacoes />
         <button
@@ -99,7 +91,7 @@ export function LexTopbar({
       <FeedbackDialog
         key={aberturaFeedback}
         aberto={feedbackAberto}
-        abaInicial={abaFeedback}
+        abaInicial="bug"
         onFechar={() => setFeedbackAberto(false)}
       />
     </div>
