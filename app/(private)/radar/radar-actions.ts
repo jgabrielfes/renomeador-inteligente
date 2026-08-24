@@ -59,6 +59,8 @@ export interface EstadoAdvogado {
     motivoRecusa: string | null;
     quizOk: boolean;
     aceitaPequenoValor: boolean;
+    areasAtuacao: string | null;
+    experiencia: string | null;
   } | null;
   ufsAssinadas: string[];
   /** Pode ver e responder a lista (aprovado + quiz + alguma UF; master sempre). */
@@ -90,6 +92,8 @@ export async function estadoRadarAdvogado(): Promise<EstadoAdvogado | null> {
             motivoRecusa: perfil.motivoRecusa,
             quizOk: perfil.quizAprovadoEm !== null,
             aceitaPequenoValor: perfil.aceitaPequenoValor,
+            areasAtuacao: perfil.areasAtuacao,
+            experiencia: perfil.experiencia,
           }
         : null,
       ufsAssinadas,
@@ -149,6 +153,30 @@ export async function responderQuizRadar(
     return { ok: true, correcao };
   } catch {
     return { ok: false, erro: 'Cadastre a inscrição na OAB antes do questionário.' };
+  }
+}
+
+/**
+ * VITRINE pública do(a) advogado(a) — o que a família vê junto de cada
+ * candidatura, sempre com nome + OAB. Informação sóbria (Provimento
+ * 205/2021): áreas e experiência, nunca promessa, valor ou avaliação.
+ */
+export async function salvarVitrineRadar(vitrine: {
+  areasAtuacao: string;
+  experiencia: string;
+}): Promise<{ ok: boolean; erro?: string }> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: 'Sessão inválida.' };
+  const areas = String(vitrine.areasAtuacao ?? '').trim().slice(0, 200);
+  const exp = String(vitrine.experiencia ?? '').trim().slice(0, 600);
+  try {
+    await prisma.advogadoPerfil.update({
+      where: { userId: ctx.userId },
+      data: { areasAtuacao: areas || null, experiencia: exp || null },
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: 'Cadastre a inscrição na OAB antes da vitrine.' };
   }
 }
 

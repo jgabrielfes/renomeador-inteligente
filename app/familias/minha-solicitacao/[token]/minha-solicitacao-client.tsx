@@ -302,7 +302,17 @@ export function MinhaSolicitacaoClient({
                 <section key={r.advogadoId} className="nota" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span className="eyebrow">{r.oab || 'Advogado(a)'} · respondeu em {r.em.split('-').reverse().join('/')}</span>
                   <h3 style={{ margin: 0 }}>{r.nome}</h3>
+                  {r.areasAtuacao && (
+                    <p className="fund" style={{ margin: 0 }}>
+                      <strong>Atua com:</strong> {r.areasAtuacao}
+                    </p>
+                  )}
                   <p style={{ margin: 0 }}>{r.apresentacao}</p>
+                  {r.experiencia && (
+                    <p className="fund" style={{ margin: 0 }}>
+                      <strong>Experiência:</strong> {r.experiencia}
+                    </p>
+                  )}
                   <p style={{ margin: 0 }} className="fund">
                     <strong>Como conduziria:</strong> {r.conducao}
                   </p>

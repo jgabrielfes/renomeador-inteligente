@@ -31,6 +31,9 @@ export interface RespostaParaFamilia {
   advogadoId: string;
   nome: string;
   oab: string;
+  /** VITRINE do(a) profissional — informação sóbria, sem avaliações. */
+  areasAtuacao: string | null;
+  experiencia: string | null;
   apresentacao: string;
   conducao: string;
   em: string;
@@ -98,11 +101,16 @@ export default async function MinhaSolicitacaoPage({
         ]);
         const nomePor = new Map(usuarios.map((u) => [u.id, u.name ?? 'Advogado(a)']));
         const oabPor = new Map(perfis.map((p) => [p.userId, `OAB/${p.oabUf} ${p.oab}`]));
+        const vitrinePor = new Map(
+          perfis.map((p) => [p.userId, { areasAtuacao: p.areasAtuacao, experiencia: p.experiencia }]),
+        );
         cartas = embaralharFixo(
           linhas.map((l) => ({
             advogadoId: l.advogadoUserId,
             nome: nomePor.get(l.advogadoUserId) ?? 'Advogado(a)',
             oab: oabPor.get(l.advogadoUserId) ?? '',
+            areasAtuacao: vitrinePor.get(l.advogadoUserId)?.areasAtuacao ?? null,
+            experiencia: vitrinePor.get(l.advogadoUserId)?.experiencia ?? null,
             apresentacao: l.apresentacao,
             conducao: l.conducao,
             em: l.createdAt.toISOString().slice(0, 10),

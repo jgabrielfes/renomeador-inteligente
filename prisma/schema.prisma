@@ -396,6 +396,11 @@ model AdvogadoPerfil {
   /// Última visita à lista do Radar — o que separa "caso novo" de "já visto"
   /// (o aviso é DENTRO da plataforma; e-mail de caso novo não existe).
   radarVistoEm       DateTime?
+  /// VITRINE pública (o que a família vê junto da candidatura, sempre com
+  /// nome + OAB): áreas de atuação e experiência — informação sóbria, sem
+  /// promessa de resultado (Provimento 205/2021). Avaliações NÃO existem.
+  areasAtuacao       String?
+  experiencia        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

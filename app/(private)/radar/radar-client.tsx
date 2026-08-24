@@ -47,6 +47,7 @@ import {
   responderQuizRadar,
   salvarPerfilOab,
   salvarPreferenciasRadar,
+  salvarVitrineRadar,
   type CasoRadar,
   type ConversaRadar,
   type EstadoAdvogado,
@@ -226,6 +227,70 @@ function CardCaso({ item, aoResponder, aoConversar }: {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * VITRINE do(a) advogado(a) — o que a família vê junto da candidatura.
+ * Informação sóbria por regra (Provimento 205/2021): áreas e experiência,
+ * sem promessa, sem valores, sem avaliações.
+ */
+function VitrineForm({
+  inicial,
+  aoSalvar,
+}: {
+  inicial: { areasAtuacao: string | null; experiencia: string | null };
+  aoSalvar: () => void;
+}) {
+  const [areas, setAreas] = useState(inicial.areasAtuacao ?? '');
+  const [exp, setExp] = useState(inicial.experiencia ?? '');
+  const [salvando, setSalvando] = useState(false);
+  return (
+    <details className="nota" style={{ marginTop: 8 }}>
+      <summary style={{ fontWeight: 600 }}>
+        Minha vitrine — o que a família vê junto da sua candidatura
+      </summary>
+      <p className="fund" style={{ margin: '6px 0' }}>
+        Sempre com o seu nome e OAB. Informação sóbria, sem promessa de resultado e
+        sem valores (Provimento 205/2021) — avaliações não existem nesta plataforma.
+      </p>
+      <label className="campo">
+        Áreas de atuação ({areas.length}/200)
+        <Input
+          maxLength={200}
+          value={areas}
+          placeholder="Ex.: Inventários extrajudiciais, ITCMD-SP, planejamento sucessório"
+          onChange={(e) => setAreas(e.target.value)}
+        />
+      </label>
+      <label className="campo">
+        Experiência ({exp.length}/600)
+        <Textarea
+          rows={3}
+          maxLength={600}
+          value={exp}
+          placeholder="Ex.: 12 anos de atuação em sucessões na região de Guarulhos; equipe própria para certidões e diligências."
+          onChange={(e) => setExp(e.target.value)}
+        />
+      </label>
+      <Button
+        size="sm"
+        loading={salvando}
+        onClick={() => {
+          setSalvando(true);
+          void salvarVitrineRadar({ areasAtuacao: areas, experiencia: exp })
+            .then((r) => {
+              if (r.ok) {
+                toast.success('Vitrine salva — vale para as próximas candidaturas.');
+                aoSalvar();
+              } else toast.error(r.erro ?? 'Não foi possível salvar.');
+            })
+            .finally(() => setSalvando(false));
+        }}
+      >
+        Salvar vitrine
+      </Button>
+    </details>
   );
 }
 
@@ -448,6 +513,13 @@ export function RadarClient({
               UF(s) de atuação.
             </p>
           </div>
+        )}
+
+        {estado?.habilitado && perfil && (
+          <VitrineForm
+            inicial={{ areasAtuacao: perfil.areasAtuacao, experiencia: perfil.experiencia }}
+            aoSalvar={() => router.refresh()}
+          />
         )}
 
         {estado?.habilitado && (
