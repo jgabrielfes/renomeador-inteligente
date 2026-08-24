@@ -85,6 +85,7 @@ import { desconectarOneDrive, estadoOneDrive, tokenOneDrive, type EstadoOneDrive
 import { DropboxCaseStore } from '@/lib/partilha/store-dropbox';
 import { desconectarDropbox, estadoDropbox, tokenDropbox, type EstadoDropbox } from './dropbox-actions';
 import { GraficoQuinhoes } from './grafico-quinhoes';
+import { FerramentasView } from './ferramentas-view';
 import { FontesView } from './fontes-view';
 import {
   migrarArquivoCaso,
@@ -244,7 +245,8 @@ type Aba =
   | 'escritura'
   | 'matricula'
   | 'fontes'
-  | 'fiscal';
+  | 'fiscal'
+  | 'ferramentas';
 
 const ABAS: readonly Aba[] = [
   'caso',
@@ -260,6 +262,9 @@ const ABAS: readonly Aba[] = [
   'matricula',
   'fontes',
   'fiscal',
+  // Agrupador das três ferramentas acima (a lombada mostra SÓ este item;
+  // os ids individuais seguem válidos para URL/F5).
+  'ferramentas',
 ];
 
 // Valida contra a lista fechada, com default explícito (convenção de query string).
@@ -3780,31 +3785,30 @@ export default function SucessoristaClient({
             ['custos', 'V', 'Custos'],
             ['documentos', 'VI', 'Documentos'],
             // Abas finais por perfil: honorários e minutas são do advogado;
-            // a escritura é o item VII do balcão do escrevente. O Analisador
-            // de Matrícula fecha a lombada nos dois perfis.
+            // a escritura é o item VII do balcão do escrevente. As TRÊS
+            // ferramentas de apoio (matrícula, fontes, IR/GCAP) viraram o
+            // agrupador "Ferramentas Sucessórias", SEM algarismo (pedido do
+            // escritório) — os ids individuais seguem válidos por URL.
             ...(perfil === 'ADVOGADO'
               ? ([
                   ['honorarios', 'VII', 'Honorários'],
                   ['minutas', 'VIII', 'Minutas'],
-                  ['matricula', 'IX', 'Análise de Matrícula'],
-                  ['fontes', 'X', 'Fontes de Pesquisa'],
-                  ['fiscal', 'XI', 'Fiscal e pré-inventário'],
                 ] as const)
-              : ([
-                  ['escritura', 'VII', 'Escritura'],
-                  ['matricula', 'VIII', 'Análise de Matrícula'],
-                  ['fontes', 'IX', 'Fontes de Pesquisa'],
-                  ['fiscal', 'X', 'Fiscal e pré-inventário'],
-                ] as const)),
+              : ([['escritura', 'VII', 'Escritura']] as const)),
+            ['ferramentas', '', 'Ferramentas Sucessórias'],
           ] as const
         ).map(([id, ind, rotulo]) => (
           <button
             key={id}
             className="aba"
-            aria-current={abaProc === id}
+            aria-current={
+              abaProc === id ||
+              (id === 'ferramentas' &&
+                (abaProc === 'matricula' || abaProc === 'fontes' || abaProc === 'fiscal'))
+            }
             onClick={() => irPara(id)}
           >
-            <span className="indice">{ind}</span>
+            {ind !== '' && <span className="indice">{ind}</span>}
             {rotulo}
           </button>
         ))}
@@ -4618,6 +4622,16 @@ export default function SucessoristaClient({
           />
         )}
 
+        {abaProc === 'ferramentas' && <FerramentasView onAbrir={(id) => irPara(id)} />}
+
+        {(abaProc === 'matricula' || abaProc === 'fontes' || abaProc === 'fiscal') && (
+          <p style={{ margin: '0 0 10px' }}>
+            <Button size="sm" variant="ghost" onClick={() => irPara('ferramentas')}>
+              ← Ferramentas Sucessórias
+            </Button>
+          </p>
+        )}
+
         {abaProc === 'matricula' && (
           <MatriculaView
             anexos={anexosProcesso}
@@ -4641,7 +4655,6 @@ export default function SucessoristaClient({
             bens={bens}
             herdeiros={herdeirosQuinhao}
             dataObito={falecido.dataObito}
-            aliquotaItcmd={0.04}
           />
         )}
       </main>

@@ -1,11 +1,13 @@
 /**
- * Item XI — Módulos fiscais e pré-inventário.
+ * Ferramenta "Imposto de Renda e GCAP" (ex-item XI, agora dentro de
+ * Ferramentas Sucessórias).
  *
- * Quatro motores puros (lib/partilha) sobre os dados que já existem no caso:
- *  · Radar de bens FORA do inventário (VGBL/PGBL/seguro fora do ITCMD)
- *  · Detector de Alvará simplificado (Lei 6.858/80)
- *  · Checklist e prazos da Declaração Final de Espólio
+ * Dois motores puros (lib/partilha) sobre os dados que já existem no caso:
  *  · Simulador de Ganho de Capital do espólio (declarado × mercado)
+ *  · Checklist e prazos da Declaração Final de Espólio
+ * Os antigos módulos 3 (Alvará da Lei 6.858/80) e 4 (radar de bens fora)
+ * saíram desta tela a pedido do escritório — a menção vive na aba Acervo;
+ * os motores lib/partilha/alvara.ts e radar-bens.ts seguem com testes.
  * Tudo é estimativa de APOIO ao profissional, a confirmar no caso concreto.
  */
 
@@ -13,13 +15,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CurrencyInput } from '@/components/currency-input';
 import { DateInput } from '@/components/date-input';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -30,17 +25,10 @@ import {
 } from '@/components/ui/table';
 
 import type { Bem } from '@/lib/partilha/types';
-import {
-  analisarRadarBens,
-  ROTULOS_ITEM_RADAR,
-  type ItemRadar,
-  type RespostaRadar,
-} from '@/lib/partilha/radar-bens';
-import {
-  detectarAlvara,
-  ROTULOS_SUBTIPO_ALVARA,
-  type SubtipoFinanceiro,
-} from '@/lib/partilha/alvara';
+// Só os TIPOS dos módulos removidos: o estado persistido no caso.json os
+// mantém (retrocompatibilidade dos snapshots que já têm radar/alvará).
+import type { ItemRadar } from '@/lib/partilha/radar-bens';
+import type { SubtipoFinanceiro } from '@/lib/partilha/alvara';
 import { planejarDeclaracaoFinal, type HerdeiroQuinhao } from '@/lib/partilha/declaracao-final';
 import {
   simularGanhoCapital,
@@ -81,16 +69,6 @@ export interface EstadoModulosFiscais {
 
 export const ESTADO_MODULOS_FISCAIS_INICIAL: EstadoModulosFiscais = {};
 
-const ITENS_RADAR: ItemRadar[] = [
-  'seguro_vida',
-  'vgbl',
-  'pgbl',
-  'pensao_morte',
-  'conta_conjunta',
-  'fgts_pis_verbas',
-  'consorcio_seguro',
-];
-
 const TIPO_GC_POR_BEM = (b: Bem): TipoBemGC => {
   switch (b.tipo) {
     case 'IMOVEL':
@@ -110,238 +88,28 @@ export function FiscalView({
   bens,
   herdeiros,
   dataObito,
-  aliquotaItcmd = 0.04,
 }: {
   estado: EstadoModulosFiscais;
   setEstado: (e: EstadoModulosFiscais) => void;
   bens: Bem[];
   herdeiros: HerdeiroQuinhao[];
   dataObito: string;
-  aliquotaItcmd?: number;
 }) {
   const set = (patch: Partial<EstadoModulosFiscais>) => setEstado({ ...estado, ...patch });
   const hoje = new Date().toISOString().slice(0, 10);
 
   return (
     <section>
-      <h1>Fiscal e pré-inventário</h1>
+      <h1>Imposto de Renda e GCAP</h1>
       <p className="subtitulo">
-        Quatro leituras fiscais sobre os dados que o caso já tem — todas de APOIO ao
+        Duas leituras fiscais sobre os dados que o caso já tem — ambas de APOIO ao
         profissional, a confirmar no caso concreto. Os valores de referência ficam em
-        tabela versionada (isenções, faixas, 500 OTN).
+        tabela versionada (isenções e faixas).
       </p>
 
-      {/* Na ordem dos módulos (1 → 4), como o escritório trabalha. */}
       <GanhoCapitalSecao estado={estado} set={set} bens={bens} hoje={hoje} />
       <DeclaracaoFinalSecao estado={estado} set={set} herdeiros={herdeiros} dataObito={dataObito} hoje={hoje} />
-      <AlvaraSecao estado={estado} set={set} bens={bens} />
-      <RadarSecao estado={estado} set={set} aliquotaItcmd={aliquotaItcmd} />
     </section>
-  );
-}
-
-/* ---------- Módulo 4 — Radar ---------- */
-
-function RadarSecao({
-  estado,
-  set,
-  aliquotaItcmd,
-}: {
-  estado: EstadoModulosFiscais;
-  set: (p: Partial<EstadoModulosFiscais>) => void;
-  aliquotaItcmd: number;
-}) {
-  const radar = estado.radar ?? {};
-  const respostas: RespostaRadar[] = ITENS_RADAR.map((item) => ({
-    item,
-    presente: radar[item]?.presente ?? false,
-    valor: radar[item]?.valor ? num(radar[item]!.valor!) : undefined,
-    temBeneficiario: radar[item]?.temBeneficiario,
-  }));
-  const resultado = analisarRadarBens({ respostas, aliquotaItcmd });
-
-  const patchItem = (item: ItemRadar, p: Partial<{ presente: boolean; valor: string; temBeneficiario: boolean }>) =>
-    set({ radar: { ...radar, [item]: { ...radar[item], presente: radar[item]?.presente ?? false, ...p } } });
-
-  return (
-    <div className="cartao">
-      <span className="eyebrow">Módulo 4 · Radar de bens fora do inventário</span>
-      <p className="fund" style={{ margin: '4px 0 12px' }}>
-        Marque o que a família recebe por fora do espólio. VGBL, PGBL e seguro saem da base
-        do ITCMD (STF, Tema 1214; art. 794 CC) — economia direta e mensurável.
-      </p>
-
-      {ITENS_RADAR.map((item) => {
-        const info = radar[item];
-        const presente = info?.presente ?? false;
-        const precisaBeneficiario = item === 'seguro_vida';
-        const precisaValor = item !== 'pensao_morte';
-        return (
-          <div key={item} className="radar-item">
-            <label className="marcar" style={{ margin: 0 }}>
-              <Checkbox checked={presente} onCheckedChange={(v) => patchItem(item, { presente: v === true })} />
-              {ROTULOS_ITEM_RADAR[item]}
-            </label>
-            {presente && (
-              <div className="radar-campos">
-                {precisaValor && (
-                  <label className="campo">
-                    <span>Valor (R$)</span>
-                    <CurrencyInput value={info?.valor ?? ''} onChange={(v) => patchItem(item, { valor: v })} />
-                  </label>
-                )}
-                {precisaBeneficiario && (
-                  <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
-                    <Checkbox
-                      checked={info?.temBeneficiario ?? false}
-                      onCheckedChange={(v) => patchItem(item, { temBeneficiario: v === true })}
-                    />
-                    Tem beneficiário indicado na apólice
-                  </label>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {resultado.cards.length > 0 && (
-        <>
-          {resultado.economiaItcmdEstimada > 0 && (
-            <div className="nota registro" style={{ marginTop: 12 }}>
-              <span className="eyebrow">ITCMD que você NÃO vai pagar</span>
-              <h3 className="num" style={{ color: 'var(--verde-registro)' }}>
-                {brl(resultado.economiaItcmdEstimada)}
-              </h3>
-              <p>
-                {brl(resultado.totalForaDoInventario)} saem da base do ITCMD (alíquota de{' '}
-                {(aliquotaItcmd * 100).toLocaleString('pt-BR')}%). Esses valores não compõem o
-                monte-mor da partilha.
-              </p>
-            </div>
-          )}
-          {resultado.cards.map((c) => (
-            <div key={c.item} className="nota" style={{ marginTop: 10 }}>
-              <span className="eyebrow">{c.titulo}</span>
-              <p><strong>Quem recebe:</strong> {c.quemRecebe}</p>
-              <p><strong>Onde:</strong> {c.ondeRequerer}</p>
-              {c.prazo && <p><strong>Prazo:</strong> {c.prazo}</p>}
-              <p className="fund">{c.fundamento}</p>
-              {c.alertas.map((a, i) => (
-                <p key={i} className="mono-alerta">{a}</p>
-              ))}
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ---------- Módulo 3 — Alvará ---------- */
-
-function AlvaraSecao({
-  estado,
-  set,
-  bens,
-}: {
-  estado: EstadoModulosFiscais;
-  set: (p: Partial<EstadoModulosFiscais>) => void;
-  bens: Bem[];
-}) {
-  const subtipos = estado.alvaraSubtipos ?? {};
-  const itens = bens
-    .filter((b) => Number(b.valor) > 0)
-    .map((b) => ({ descricao: b.descricao, valor: Number(b.valor), subtipo: subtipos[b.id] }));
-  const resultado = detectarAlvara({
-    itens,
-    existemDependentesInss: estado.existemDependentesInss ?? false,
-    valor500Otn: estado.valor500Otn ? num(estado.valor500Otn) : undefined,
-  });
-
-  const cor: Record<string, string> = {
-    DISPENSA_TOTAL: 'var(--verde-registro)',
-    ALVARA_SIMPLIFICADO: 'var(--verde-registro)',
-    INVENTARIO_COM_PARALELO: 'var(--bronze)',
-    INVENTARIO_COMUM: 'var(--lacre)',
-  };
-
-  return (
-    <div className="cartao">
-      <span className="eyebrow">Módulo 3 · Detector de Alvará (Lei 6.858/80)</span>
-      <p className="fund" style={{ margin: '4px 0 12px' }}>
-        Classifique os itens financeiros do acervo (etapa II) e o detector diz quando o
-        inventário é DESNECESSÁRIO — a ferramenta que avisa quando o cliente nem precisa do
-        serviço caro.
-      </p>
-
-      <label className="marcar" style={{ margin: '0 0 8px', fontWeight: 400 }}>
-        <Checkbox
-          checked={estado.existemDependentesInss ?? false}
-          onCheckedChange={(v) => set({ existemDependentesInss: v === true })}
-        />
-        Existem dependentes habilitados no INSS
-      </label>
-      <label className="campo" style={{ maxWidth: 280, marginBottom: 8 }}>
-        <span>Teto das 500 OTN (R$) — ajuste ao juízo local</span>
-        <CurrencyInput value={estado.valor500Otn ?? ''} onChange={(v) => set({ valor500Otn: v })} />
-      </label>
-
-      {bens.filter((b) => Number(b.valor) > 0).length === 0 ? (
-        <p className="fund">Lance os bens no item II para o detector rodar.</p>
-      ) : (
-        <div className="check" style={{ marginTop: 6 }}>
-          {bens
-            .filter((b) => Number(b.valor) > 0)
-            .map((b) => (
-              <div className="check-item" key={b.id}>
-                <span className="prio">·</span>
-                <div>
-                  <h4>{b.descricao}</h4>
-                  <p className="num">{brl(Number(b.valor))}</p>
-                </div>
-                <Select
-                  value={(subtipos[b.id] ?? '__nenhum__') as string}
-                  onValueChange={(v) => {
-                    const val = String(v ?? '');
-                    const proximos = { ...subtipos };
-                    if (!val || val === '__nenhum__') delete proximos[b.id];
-                    else proximos[b.id] = val as SubtipoFinanceiro;
-                    set({ alvaraSubtipos: proximos });
-                  }}
-                >
-                  <SelectTrigger size="sm" aria-label={`Subtipo de ${b.descricao}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__nenhum__">Bem sujeito a inventário</SelectItem>
-                    {(Object.keys(ROTULOS_SUBTIPO_ALVARA) as SubtipoFinanceiro[]).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {ROTULOS_SUBTIPO_ALVARA[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
-        </div>
-      )}
-
-      <div
-        className="nota"
-        style={{ marginTop: 12, borderLeftColor: cor[resultado.conclusao] }}
-      >
-        <span className="eyebrow" style={{ color: cor[resultado.conclusao] }}>
-          {resultado.titulo}
-        </span>
-        {resultado.parecer.map((p, i) => (
-          <p key={i}>{p}</p>
-        ))}
-        {resultado.alertas.map((a, i) => (
-          <p key={i} className="fund">{a}</p>
-        ))}
-      </div>
-    </div>
   );
 }
 

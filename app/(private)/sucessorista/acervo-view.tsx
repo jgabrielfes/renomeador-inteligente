@@ -575,6 +575,20 @@ export function AcervoView({
         <EditorColacoes herdeiros={herdeiros} colacoes={colacoes} setColacoes={setColacoes} />
       )}
 
+      {/* Menção que veio da antiga aba Fiscal (pedido do escritório): os
+          módulos de Alvará e de bens fora saíram de lá — o lembrete vive
+          aqui, onde os bens são lançados. */}
+      <div className="nota" style={{ marginTop: 14 }}>
+        <p style={{ margin: 0 }}>
+          <strong>Antes de lançar tudo no acervo:</strong> VGBL/PGBL e seguros de
+          vida com beneficiário NÃO integram o inventário nem o ITCMD (CC, art.
+          794; STF, Tema 1214) — vão direto ao beneficiário. E saldos bancários,
+          FGTS/PIS e verbas trabalhistas de pequeno valor podem dispensar o
+          inventário pelo <strong>alvará da Lei 6.858/80</strong> (teto de 500
+          OTN) — avalie se o caso não se resolve pelo caminho mais barato.
+        </p>
+      </div>
+
       <div className="rodape-acoes">
         <Button variant="outline" onClick={voltar}>
           Voltar à família
