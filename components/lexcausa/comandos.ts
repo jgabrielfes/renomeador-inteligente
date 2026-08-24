@@ -35,6 +35,7 @@ export function comandosPadrao(opcoes: {
   }
   lista.push(
     { id: 'config', rotulo: 'Configurações', dica: 'LexCausa', href: '/config' },
+    { id: 'ajuda', rotulo: 'Ajuda e Tutoriais', dica: 'hub de ajuda', href: '/ajuda' },
     { id: 'ajuda-s', rotulo: 'Como funciona: O Sucessorista', dica: 'ajuda', href: '/ajuda/sucessorista' },
     { id: 'ajuda-r', rotulo: 'Como funciona: Radar Sucessório', dica: 'ajuda', href: '/ajuda/radar' },
     { id: 'familias', rotulo: 'Área para famílias', dica: 'público', href: '/familias' },

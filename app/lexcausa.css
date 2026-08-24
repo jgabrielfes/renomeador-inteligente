@@ -303,7 +303,9 @@
   border-radius: 50%;
 }
 
-/* sino de notificações do shell (central unificada) */
+/* sino de notificações do shell (central unificada) — a MESMA veste serve
+   aos botões Ajuda/Reportar/Sugestão da barra (Ajuda é um Link) */
+.lexcausa a.lc-sino { text-decoration: none; }
 .lexcausa .lc-sino {
   display: inline-flex;
   align-items: center;
@@ -432,7 +434,15 @@
   font-size: var(--t-sm);
 }
 
+/* hub de ajuda — áreas na lateral, trilha ao centro (empilha no celular) */
+.lexcausa .lc-ajuda-grade {
+  display: grid;
+  gap: var(--e-4);
+  grid-template-columns: minmax(140px, 200px) 1fr;
+}
+
 @media (max-width: 720px) {
+  .lexcausa .lc-ajuda-grade { grid-template-columns: 1fr; }
   .lexcausa .lc-hero { padding-top: var(--e-6); }
   .lexcausa h1 { font-size: var(--t-xl); }
   .lexcausa h2 { font-size: var(--t-lg); }

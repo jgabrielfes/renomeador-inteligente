@@ -9,11 +9,13 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import '@/app/lexcausa.css';
 
 import { comandosPadrao } from '@/components/lexcausa/comandos';
+import { FeedbackDialog } from '@/components/lexcausa/feedback';
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { SinoNotificacoes } from '@/components/lexcausa/notificacoes';
 import { PaletaComandos } from '@/components/lexcausa/paleta-comandos';
@@ -33,6 +35,16 @@ export function LexTopbar({
   sub?: string;
 }) {
   const [paletaAberta, setPaletaAberta] = useState(false);
+  const [feedbackAberto, setFeedbackAberto] = useState(false);
+  const [abaFeedback, setAbaFeedback] = useState<'bug' | 'sugestao'>('bug');
+  // Cada abertura REMONTA o dialog (key) — a aba inicial vale de novo.
+  const [aberturaFeedback, setAberturaFeedback] = useState(0);
+
+  const abrirFeedback = (aba: 'bug' | 'sugestao') => {
+    setAbaFeedback(aba);
+    setAberturaFeedback((n) => n + 1);
+    setFeedbackAberto(true);
+  };
 
   // As guias de produto saíram da barra (pedido do escritório): a troca de
   // tela é pelo hub (clique na marca), pelos cards e pela paleta ⌘K.
@@ -41,6 +53,25 @@ export function LexTopbar({
       <header className="lc-topo">
         <MarcaLexCausa href="/?hub=1" sub={sub} />
         <span style={{ marginRight: 'auto' }} />
+        <Link className="lc-sino" href="/ajuda" title="Ajuda e tutoriais">
+          Ajuda
+        </Link>
+        <button
+          type="button"
+          className="lc-sino"
+          title="Reportar um problema"
+          onClick={() => abrirFeedback('bug')}
+        >
+          Reportar
+        </button>
+        <button
+          type="button"
+          className="lc-sino"
+          title="Sugerir uma melhoria"
+          onClick={() => abrirFeedback('sugestao')}
+        >
+          Sugestão
+        </button>
         <SinoNotificacoes />
         <button
           type="button"
@@ -64,6 +95,12 @@ export function LexTopbar({
         comandos={comandosPadrao({ ehMaster, radarAtivo, escrevente })}
         aberta={paletaAberta}
         onFechar={() => setPaletaAberta(false)}
+      />
+      <FeedbackDialog
+        key={aberturaFeedback}
+        aberto={feedbackAberto}
+        abaInicial={abaFeedback}
+        onFechar={() => setFeedbackAberto(false)}
       />
     </div>
   );

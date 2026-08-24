@@ -847,3 +847,25 @@ model DiligenciaAvaliacao {
   @@unique([diligenciaId, avaliadorUserId])
   @@map("diligencia_avaliacoes")
 }
+
+// FEEDBACK da plataforma (dialog "Reportar problema" / "Sugestão" do shell):
+// título + descrição livres do usuário, com a página registrada
+// automaticamente. Sem FK de propósito (o relato sobrevive à conta); a
+// coluna app segue a fronteira dos três sites — /admin filtra por ela.
+// A severidade/status é classificada pela equipe em /admin/feedback.
+model Feedback {
+  id        String     @id @default(cuid())
+  app       Plataforma
+  userId    String?
+  userEmail String?
+  tipo      String // 'bug' | 'sugestao'
+  categoria String? // sugestão: funcionalidade | usabilidade | outro
+  titulo    String
+  descricao String
+  pagina    String?
+  status    String     @default("aberto") // aberto | em_analise | resolvido
+  createdAt DateTime   @default(now())
+
+  @@index([app, createdAt])
+  @@map("feedbacks")
+}

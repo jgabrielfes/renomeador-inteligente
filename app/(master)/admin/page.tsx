@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
   FileCheck2,
+  MessageSquareText,
   Radar,
   Scale,
   ScrollText,
@@ -82,6 +83,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       radarPublicados,
       radarPerfisPendentes,
       radarDenunciasPendentes,
+      feedbackAbertos,
     ] = await Promise.all([
       // Total de contas do site (sem recorte de data): é o que a listagem
       // mostra. O recorte do período entra como "novas no período", no rodapé
@@ -112,6 +114,8 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       prisma.familiaIntake.count({ where: { status: "publicado" } }),
       prisma.advogadoPerfil.count({ where: { situacao: "pendente" } }),
       prisma.radarDenuncia.count({ where: { status: "pendente" } }),
+      // Feedback do shell (bugs e sugestões) — estado atual, não período.
+      prisma.feedback.count({ where: { app: APP, status: { not: "resolvido" } } }),
     ]);
 
     const arquivos = renomeacoes._sum.quantidade ?? 0;
@@ -220,6 +224,21 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
           "IA, rotas internas e fallback local",
         ],
         alerta: erros > 0,
+      },
+      {
+        href: "/admin/feedback",
+        icon: MessageSquareText,
+        titulo: "Feedback",
+        valor: feedbackAbertos,
+        leitura:
+          feedbackAbertos === 0
+            ? "nada aguardando classificação"
+            : "bugs e sugestões aguardando a equipe",
+        detalhes: [
+          "reportados pelo dialog do shell",
+          "classifique a situação em cada um",
+        ],
+        alerta: feedbackAbertos > 0,
       },
     ];
   } catch {
