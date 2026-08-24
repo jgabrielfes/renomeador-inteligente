@@ -30,6 +30,7 @@ import { APP } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+import { ResponderFeedback } from "./responder";
 import { StatusFeedback } from "./status-select";
 
 const COLUNAS = ["data", "tipo", "status"] as const;
@@ -149,7 +150,15 @@ export default async function FeedbackAdminPage({
                     {f.pagina && (
                       <p className="mt-1 text-xs text-muted-foreground">página: {f.pagina}</p>
                     )}
+                    {f.resposta && (
+                      <p className="mt-1 text-sm whitespace-pre-wrap">
+                        <span className="font-medium">Resposta:</span> {f.resposta}
+                      </p>
+                    )}
                   </details>
+                  <div className="mt-1">
+                    <ResponderFeedback id={f.id} titulo={f.titulo} respostaAtual={f.resposta} />
+                  </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {f.userEmail ?? "—"}

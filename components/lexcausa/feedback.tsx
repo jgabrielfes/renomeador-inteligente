@@ -222,6 +222,21 @@ function MeusEnvios({ recarregar }: { recarregar: number }) {
             {new Date(f.criadoEm).toLocaleDateString('pt-BR')} · situação:{' '}
             {ROTULO_STATUS[f.status] ?? f.status}
           </span>
+          {f.resposta && (
+            <span
+              style={{
+                borderLeft: '3px solid var(--lc-acento)',
+                paddingLeft: 10,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              <strong>Resposta da equipe</strong>
+              {f.respondidoEm
+                ? ` (${new Date(f.respondidoEm).toLocaleDateString('pt-BR')})`
+                : ''}
+              : {f.resposta}
+            </span>
+          )}
         </li>
       ))}
     </ul>

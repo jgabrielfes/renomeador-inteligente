@@ -864,6 +864,9 @@ model Feedback {
   descricao String
   pagina    String?
   status    String     @default("aberto") // aberto | em_analise | resolvido
+  // RESPOSTA da equipe ao relato — o usuário a lê em "Meus Envios".
+  resposta     String?
+  respondidoEm DateTime?
   createdAt DateTime   @default(now())
 
   @@index([app, createdAt])
