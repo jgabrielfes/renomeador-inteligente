@@ -1748,6 +1748,19 @@
   .sucessorista .fases-trilho { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* ---------- veste FAMÍLIAS (remodelagem LexCausa) ---------- */
+/* Público enlutado: corpo um degrau acima na ESCALA EXISTENTE (--t-lg —
+   sem sétimo degrau), mais respiro e alvos maiores. Aplicada pelo layout
+   de /familias; nenhuma cor nova e nenhuma urgência artificial. */
+.veste-familias .sucessorista .folha {
+  font-size: var(--t-lg);
+  line-height: var(--lh-corpo);
+}
+.veste-familias .sucessorista .folha .fund { font-size: var(--t-base); }
+.veste-familias .sucessorista .folha .eyebrow { font-size: var(--t-sm); }
+.veste-familias .sucessorista .folha .acao { min-height: 48px; }
+.veste-familias .sucessorista .folha .nota { padding: var(--e-5); }
+
 /* Tarefas do caso — a fila operacional do dashboard (LexCausa fase 2). */
 .sucessorista .tarefas-caso { margin-bottom: var(--e-4); }
 .sucessorista .tarefas-lista {
