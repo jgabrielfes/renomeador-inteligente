@@ -62,6 +62,9 @@ export interface MeuFeedback {
   titulo: string;
   status: string;
   criadoEm: string;
+  /** Resposta escrita pela equipe (null = ainda sem resposta). */
+  resposta: string | null;
+  respondidoEm: string | null;
 }
 
 export async function meusFeedbacks(): Promise<MeuFeedback[]> {
@@ -72,7 +75,15 @@ export async function meusFeedbacks(): Promise<MeuFeedback[]> {
       where: { app: APP, userId: session.user.id },
       orderBy: { createdAt: 'desc' },
       take: 30,
-      select: { id: true, tipo: true, titulo: true, status: true, createdAt: true },
+      select: {
+        id: true,
+        tipo: true,
+        titulo: true,
+        status: true,
+        createdAt: true,
+        resposta: true,
+        respondidoEm: true,
+      },
     });
     return linhas.map((l) => ({
       id: l.id,
@@ -80,6 +91,8 @@ export async function meusFeedbacks(): Promise<MeuFeedback[]> {
       titulo: l.titulo,
       status: l.status,
       criadoEm: l.createdAt.toISOString(),
+      resposta: l.resposta,
+      respondidoEm: l.respondidoEm?.toISOString() ?? null,
     }));
   } catch {
     return [];
