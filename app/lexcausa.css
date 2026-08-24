@@ -279,6 +279,76 @@
   outline-offset: 2px;
 }
 
+/* sino de notificações do shell (central unificada) */
+.lexcausa .lc-sino {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: var(--t-xs);
+}
+.lexcausa .lc-sino-badge {
+  background: var(--lc-noite-acento);
+  color: var(--lc-noite);
+  border-radius: 999px;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  padding: 0 5px;
+}
+.lexcausa .lc-sino-painel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, 88vw);
+  background: var(--lc-alto);
+  color: var(--lc-tinta);
+  border: 1px solid var(--lc-fio);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(22, 29, 38, 0.18);
+  padding: var(--e-3);
+  display: grid;
+  gap: var(--e-2);
+}
+.lexcausa .lc-sino-cabeca {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--e-2);
+  flex-wrap: wrap;
+}
+.lexcausa .lc-sino-cabeca button {
+  background: transparent;
+  border: 1px solid var(--lc-fio);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--t-xs);
+  color: var(--lc-tinta-media);
+}
+.lexcausa .lc-sino-cabeca button.ativa {
+  border-color: var(--lc-acento);
+  color: var(--lc-acento);
+  font-weight: 600;
+}
+.lexcausa .lc-sino-painel > a {
+  display: grid;
+  gap: 2px;
+  padding: var(--e-2);
+  border-radius: 8px;
+  color: var(--lc-tinta);
+  text-decoration: none;
+  font-size: var(--t-sm);
+}
+.lexcausa .lc-sino-painel > a:hover { background: var(--accent); }
+
 /* paleta de comandos (composta de Dialog + Input) */
 .lexcausa .lc-paleta-lista {
   display: grid;

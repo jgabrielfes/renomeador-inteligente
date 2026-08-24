@@ -17,6 +17,7 @@ import '@/app/lexcausa.css';
 
 import { comandosPadrao } from '@/components/lexcausa/comandos';
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
+import { SinoNotificacoes } from '@/components/lexcausa/notificacoes';
 import { PaletaComandos } from '@/components/lexcausa/paleta-comandos';
 
 export function LexTopbar({
@@ -55,6 +56,7 @@ export function LexTopbar({
             </Link>
           ))}
         </nav>
+        <SinoNotificacoes />
         <button
           type="button"
           onClick={() => setPaletaAberta(true)}
