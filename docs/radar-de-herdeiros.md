@@ -77,3 +77,21 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
   a conversa durar.
 - Nada do Radar aparece em `/admin` além de **contadores e cadastros**
   (funil, filas) — nunca o conteúdo de conversas.
+
+## Remodelagem LexCausa (fase 3) — Radar Sucessório
+
+O produto passou a se chamar **Radar Sucessório** (título, tela e atalhos;
+a mecânica é a mesma). Do lado do(a) advogado(a):
+
+- **Filtros de RECORTE** na lista (UF, via, recência) — a ordem por data
+  nunca muda, e **filtro por valor não existe de propósito** (o porte só
+  aparece como a faixa leiga que a família publicou). Avaliações públicas
+  seguem fora.
+- **Funil "Minhas respostas"** (`minhasRespostasRadar`): aguardando a
+  família → em conversa → contratado → **encerrado** — rótulo NEUTRO de
+  propósito: a escolha da família por outro caminho nunca circula.
+- **"Converter em inventário"**: no estágio contratado, o botão leva a
+  `/s?importar=<código do handoff>`; o client do Sucessorista resgata o
+  intake, cria o caso no store ativo com a folha pré-preenchida
+  (`intakeParaCaso`) e confirma a importação — o servidor PODA o intake,
+  como no fluxo por código digitado.
