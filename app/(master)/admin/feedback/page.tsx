@@ -26,7 +26,7 @@ import {
   parsePeriodo,
   queryDaTabela,
 } from "@/lib/admin";
-import { APP } from "@/lib/app";
+import { appComConta } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -69,9 +69,9 @@ export default async function FeedbackAdminPage({
   const query = queryDaTabela({ periodo, paginacao, ordenacao });
 
   const [total, relatos] = await Promise.all([
-    prisma.feedback.count({ where: { createdAt, app: APP } }),
+    prisma.feedback.count({ where: { createdAt, app: appComConta() } }),
     prisma.feedback.findMany({
-      where: { createdAt, app: APP },
+      where: { createdAt, app: appComConta() },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,
       take: paginacao.porPagina,

@@ -11,6 +11,8 @@
    Cada PRODUTO tem um acento próprio, trocado por escopo:
      .produto-sucessorista → bronze da casa
      .produto-radar        → verde-petróleo
+     .produto-renomeador   → terracota (6,09:1 sobre o papel)
+     .produto-notas        → ameixa (8,55:1 sobre o papel)
    O neutro da marca (azul-aço grafite) vale onde nenhum produto manda. */
 
 .lexcausa {
@@ -82,6 +84,10 @@
 .lexcausa .produto-sucessorista { --lc-acento: #6f5527; --ring: #6f5527; }
 .lexcausa .produto-radar { --lc-acento: #20565c; --ring: #20565c; }
 .lexcausa .produto-diligencias { --lc-acento: #3e4a63; --ring: #3e4a63; }
+/* Ferramentas fora do site sucessório — os cartões da vitrine em
+   lexcausa.com.br. Contraste conferido contra o papel (--lc-fundo). */
+.lexcausa .produto-renomeador { --lc-acento: #8a4a32; --ring: #8a4a32; }
+.lexcausa .produto-notas { --lc-acento: #5b3a5e; --ring: #5b3a5e; }
 
 /* ---------- topo (barra fina da marca) ---------- */
 .lexcausa .lc-topo {
@@ -194,6 +200,42 @@
   padding: var(--e-5);
   box-shadow: 0 1px 2px rgba(31, 39, 51, 0.06);
 }
+/* Cartão que É o link (a vitrine da marca): o alvo de clique é o cartão
+   inteiro, não só um botão dentro dele. Sem transform no hover — decisão do
+   escritório; o retorno é de cor, fio e sombra. */
+.lexcausa a.lc-cartao {
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.lexcausa a.lc-cartao:hover {
+  border-color: var(--lc-acento);
+  box-shadow: 0 4px 14px rgba(31, 39, 51, 0.1);
+}
+.lexcausa a.lc-cartao:focus-visible {
+  outline: 2px solid var(--lc-acento);
+  outline-offset: 2px;
+}
+/* Pseudo-botão do cartão-link: um <a> dentro de outro <a> seria inválido,
+   então o "Abrir" é um span com a mesma veste da ação. */
+.lexcausa .lc-cartao .lc-abrir {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-height: 40px;
+  padding: 0 var(--e-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--lc-tinta);
+  background: var(--lc-tinta);
+  color: var(--lc-alto);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.lexcausa a.lc-cartao:hover .lc-abrir {
+  background: var(--lc-acento);
+  border-color: var(--lc-acento);
+}
+
 .lexcausa .lc-cartao .lc-acoes {
   display: flex;
   gap: var(--e-2);

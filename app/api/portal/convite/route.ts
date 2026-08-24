@@ -7,8 +7,7 @@ import {
 // Store PERSISTENTE (Postgres): o convite não expira e os envios sobrevivem
 // aos cold starts — a memória era o que fazia o link "morrer".
 import { store } from '@/lib/portal/store-prisma';
-import { foraDaPlataforma } from '@/lib/app';
-import { APP } from '@/lib/app';
+import { appComConta, foraDaPlataforma } from '@/lib/app';
 import { prisma } from '@/lib/prisma';
 import { PEDIDO_DOCS_ADVOGADO } from '@/lib/rede/escopo';
 
@@ -79,7 +78,7 @@ export async function POST(req: Request) {
     const email = String(body.advogadoEmail ?? '').trim().toLowerCase();
     if (!email) return Response.json({ erro: 'Informe o e-mail da conta do(a) colega.' }, { status: 422 });
     const conta = await prisma.user.findUnique({
-      where: { email_app: { email, app: APP } },
+      where: { email_app: { email, app: appComConta() } },
       select: { id: true, name: true },
     });
     if (!conta) {

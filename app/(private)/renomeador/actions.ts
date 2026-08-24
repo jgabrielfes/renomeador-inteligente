@@ -6,7 +6,7 @@
 // montagem). Registrada no momento da ANÁLISE e atualizada nos desfechos.
 // Nunca quebra a ferramenta: com erro (ou banco fora), falha em silêncio.
 
-import { APP } from "@/lib/app";
+import { appComConta } from "@/lib/app";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { registrarErro } from "@/lib/error-log";
@@ -52,7 +52,7 @@ export async function registrarAnalise(
         metodo,
         // Onde o lote foi analisado: o Renomeador também roda embutido no
         // cofre do Sucessorista, e nesse caso o evento é do site de lá.
-        app: APP,
+        app: appComConta(),
         duracaoMs: duracao,
         itens: itensLimpos as object[],
         userId: session?.user?.id ?? null,

@@ -1,6 +1,9 @@
 // A RAIZ DE CADA SITE.
 //
-// O repositório publica três sites (lib/app.ts). No Renomeador e no
+// O repositório publica quatro sites (lib/app.ts). No HUB (lexcausa.com.br) a
+// raiz é a VITRINE PÚBLICA da marca: sem login, sem banco — só os cartões das
+// ferramentas. É a única página deste grupo `(private)` que não exige sessão,
+// e por isso o retorno acontece antes de qualquer `auth()`. No Renomeador e no
 // Resolvedor de Notas, `/` é o próprio módulo — não existe painel de escolha
 // de ferramenta, e as rotas `/renomeador` e `/notas` não existem.
 //
@@ -18,7 +21,7 @@
 import { AccessTracker } from "@/components/access-tracker";
 import { AvatarSessao } from "@/components/lexcausa/avatar-sessao";
 import { UserMenu } from "@/components/user-menu";
-import { APP, IDENTIDADE } from "@/lib/app";
+import { APP, moduloDaPlataforma } from "@/lib/app";
 import { auth, isMaster, requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { radarAtivo } from "@/lib/radar/config";
@@ -26,6 +29,11 @@ import { radarAtivo } from "@/lib/radar/config";
 import { carregarLicoes } from "./renomeador/licoes-actions";
 
 export default async function Home() {
+  if (APP === "HUB") {
+    const { VitrineLexCausa } = await import("@/components/lexcausa/vitrine");
+    return <VitrineLexCausa />;
+  }
+
   if (APP === "SUCESSORISTA") {
     const session = await auth();
     if (!session?.user) {
@@ -68,7 +76,7 @@ export default async function Home() {
     const { default: NotasClient } = await import("./notas/notas-client");
     return (
       <>
-        <AccessTracker modulo={IDENTIDADE.modulo} />
+        <AccessTracker modulo={moduloDaPlataforma()} />
         <NotasClient menu={<UserMenu />} />
       </>
     );
@@ -82,7 +90,7 @@ export default async function Home() {
   );
   return (
     <>
-      <AccessTracker modulo={IDENTIDADE.modulo} />
+      <AccessTracker modulo={moduloDaPlataforma()} />
       <RenomeadorClient initialLessons={licoes} menu={<UserMenu />} />
     </>
   );

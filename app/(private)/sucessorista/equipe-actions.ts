@@ -14,7 +14,7 @@
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { APP, EH_SUCESSORISTA } from "@/lib/app";
+import { EH_SUCESSORISTA, appComConta } from "@/lib/app";
 
 export interface MembroEquipe {
   id: string;
@@ -109,7 +109,7 @@ export async function criarEquipe(nome: string): Promise<Resultado<InfoEquipe>> 
     const eu = await usuarioDaSessao();
     if (!eu) return { ok: false, erro: "Sessão expirada — entre de novo." };
     if (eu.equipeId) return { ok: false, erro: "Você já está numa equipe — saia dela primeiro." };
-    const equipe = await prisma.equipe.create({ data: { nome: nomeLimpo, app: APP } });
+    const equipe = await prisma.equipe.create({ data: { nome: nomeLimpo, app: appComConta() } });
     await prisma.user.update({
       where: { id: eu.id },
       data: { equipeId: equipe.id, papelEquipe: "CHEFE" },

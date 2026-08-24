@@ -22,7 +22,7 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
-import { APP } from "@/lib/app";
+import { APP, appComConta } from "@/lib/app";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/generated/prisma/enums";
 
@@ -64,7 +64,7 @@ const {
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({
-          where: { email_app: { email, app: APP } },
+          where: { email_app: { email, app: appComConta() } },
         });
         if (!user) return null;
         // Conta criada via Google não tem senha: só entra pelo OAuth.
@@ -98,12 +98,12 @@ const {
       // Sucessorista cria a conta do Sucessorista, mesmo que já exista uma
       // conta com o mesmo e-mail no Renomeador.
       await prisma.user.upsert({
-        where: { email_app: { email, app: APP } },
+        where: { email_app: { email, app: appComConta() } },
         // Conta já existente: marca o e-mail como confirmado (o Google atesta).
         update: { emailVerified: new Date() },
         create: {
           email,
-          app: APP,
+          app: appComConta(),
           name: profile?.name ?? email,
           emailVerified: new Date(),
           role: "USER",
@@ -118,7 +118,7 @@ const {
           // O id do `user` aqui é o do perfil Google — o que vale é o NOSSO.
           const local = await prisma.user.findUnique({
             where: {
-              email_app: { email: String(user.email).toLowerCase(), app: APP },
+              email_app: { email: String(user.email).toLowerCase(), app: appComConta() },
             },
             select: { id: true },
           });

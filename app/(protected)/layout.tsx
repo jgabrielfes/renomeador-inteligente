@@ -4,9 +4,10 @@
 // Nunca gatear por presença de cookie — só a validação real do auth().
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ClearStaleSession } from "@/components/clear-stale-session";
+import { EH_HUB } from "@/lib/app";
 import { auth } from "@/lib/auth";
 
 export default async function ProtectedLayout({
@@ -14,6 +15,9 @@ export default async function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Vitrine sem contas: entrar/cadastrar acontece dentro de cada ferramenta.
+  if (EH_HUB) notFound();
+
   const session = await auth();
   if (session) redirect("/");
 

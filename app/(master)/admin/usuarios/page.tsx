@@ -31,7 +31,7 @@ import {
   parsePaginacao,
   queryDaTabela,
 } from "@/lib/admin";
-import { APP, IDENTIDADE } from "@/lib/app";
+import { appComConta, moduloDaPlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { ROTULO_MODULO } from "@/lib/modulos";
 import { prisma } from "@/lib/prisma";
@@ -82,8 +82,8 @@ export default async function UsuariosPage({
   // dois sites, mas o /admin de um NUNCA lista (nem promove a master) contas
   // do outro.
   const where: Prisma.UserWhereInput = busca
-    ? { app: APP, id: { in: await idsDaBuscaDeUsuarios(prisma, busca, APP) } }
-    : { app: APP };
+    ? { app: appComConta(), id: { in: await idsDaBuscaDeUsuarios(prisma, busca, appComConta()) } }
+    : { app: appComConta() };
 
   const [total, usuarios] = await Promise.all([
     prisma.user.count({ where }),
@@ -102,7 +102,7 @@ export default async function UsuariosPage({
     by: ["userId", "modulo"],
     where: {
       userId: { in: usuarios.map((u) => u.id) },
-      modulo: IDENTIDADE.modulo,
+      modulo: moduloDaPlataforma(),
     },
     _count: { _all: true },
     _max: { createdAt: true },
@@ -203,8 +203,8 @@ export default async function UsuariosPage({
               const acessos = linha?._count._all ?? 0;
               const modulos = [
                 {
-                  modulo: IDENTIDADE.modulo,
-                  rotulo: ROTULO_MODULO[IDENTIDADE.modulo],
+                  modulo: moduloDaPlataforma(),
+                  rotulo: ROTULO_MODULO[moduloDaPlataforma()],
                   quantidade: acessos,
                   ultimo: linha?._max.createdAt
                     ? dataCurta.format(linha._max.createdAt)

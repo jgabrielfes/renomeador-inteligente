@@ -9,7 +9,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { APP } from '@/lib/app';
+import { appComConta } from '@/lib/app';
 import { requireMaster } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -38,7 +38,7 @@ export async function responderFeedback(
   }
   try {
     const r = await prisma.feedback.updateMany({
-      where: { id: parsed.data.id, app: APP },
+      where: { id: parsed.data.id, app: appComConta() },
       data: { resposta: parsed.data.resposta, respondidoEm: new Date() },
     });
     if (r.count === 0) return { ok: false, erro: 'Relato não encontrado.' };
@@ -58,7 +58,7 @@ export async function alterarStatusFeedback(
   try {
     // Fronteira dos sites: só relatos DESTE site podem ser classificados aqui.
     const r = await prisma.feedback.updateMany({
-      where: { id: parsed.data.id, app: APP },
+      where: { id: parsed.data.id, app: appComConta() },
       data: { status: parsed.data.status },
     });
     if (r.count === 0) return { ok: false, erro: 'Relato não encontrado.' };

@@ -10,7 +10,7 @@
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
-import { APP } from "@/lib/app";
+import { appComConta } from "@/lib/app";
 import { prisma } from "@/lib/prisma";
 
 const registerSchema = z.object({
@@ -29,7 +29,7 @@ export async function registerUser(input: unknown): Promise<RegisterResult> {
 
   const email = parsed.data.email.toLowerCase();
   const existing = await prisma.user.findUnique({
-    where: { email_app: { email, app: APP } },
+    where: { email_app: { email, app: appComConta() } },
   });
   if (existing) {
     return { ok: false, error: "Já existe uma conta com este e-mail." };
@@ -39,7 +39,7 @@ export async function registerUser(input: unknown): Promise<RegisterResult> {
     data: {
       name: parsed.data.name,
       email,
-      app: APP,
+      app: appComConta(),
       passwordHash: await hash(parsed.data.password, 12),
       role: "USER",
     },

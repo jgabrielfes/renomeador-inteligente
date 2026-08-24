@@ -32,6 +32,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { EH_HUB } from "@/lib/app";
+
 const USUARIO = process.env.BASIC_AUTH_USER;
 const SENHA = process.env.BASIC_AUTH_PASSWORD;
 
@@ -82,7 +84,32 @@ function lerCredenciais(
   return { usuario: texto.slice(0, corte), senha: texto.slice(corte + 1) };
 }
 
+/**
+ * O HUB é uma vitrine de UMA página: `/` e os arquivos de identidade visual.
+ * Tudo o mais — login, /admin, rotas do Sucessorista, rotas de API, inclusive
+ * as do NextAuth — não existe lá.
+ *
+ * O bloqueio é aqui, e não gate a gate nas páginas, porque assim vale por
+ * padrão: rota nova criada para outro site já nasce invisível na vitrine, sem
+ * depender de alguém lembrar de adicionar o gate.
+ */
+const CAMINHOS_DO_HUB = new Set([
+  "/",
+  "/favicon.ico",
+  "/icon.svg",
+  "/apple-icon.png",
+  "/manifest.webmanifest",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
+
 export function proxy(request: NextRequest) {
+  if (EH_HUB && !CAMINHOS_DO_HUB.has(request.nextUrl.pathname)) {
+    // 404 e não 403: a rota não existe nesta plataforma — mesma disciplina do
+    // requirePlataforma()/foraDaPlataforma() nas outras.
+    return new NextResponse(null, { status: 404 });
+  }
+
   // Produção (sem as envs): nada a fazer — segue direto para a aplicação.
   if (!USUARIO || !SENHA) return NextResponse.next();
 

@@ -1,4 +1,4 @@
-# Deploy de PRODUÇÃO da plataforma — os TRÊS sites publicados deste repositório.
+# Deploy de PRODUÇÃO da plataforma — os QUATRO sites publicados deste repositório.
 #
 # Por que existe: no plano Hobby da Vercel, o deploy de produção fica
 # "Blocked" quando o autor do commit no Git não é o dono da conta — foi o que
@@ -7,12 +7,13 @@
 # DONO da conta, então a Vercel o atribui a ele e não bloqueia, seja de quem
 # for o commit que entrou na `main`.
 #
-# São três projetos na Vercel apontando para o MESMO repositório; o que os
+# São quatro projetos na Vercel apontando para o MESMO repositório; o que os
 # diferencia é a variável de ambiente APP (ver lib/app.ts), configurada no
 # painel de cada projeto:
-#   renomeador   -> APP=renomeador   -> renomeador-inteligente.vercel.app
-#   sucessorista -> APP=sucessorista -> osucessorista.vercel.app
-#   notas        -> APP=notas        -> resolvedor de notas devolutivas
+#   hub          -> APP=hub          -> lexcausa.com.br (vitrine da marca)
+#   renomeador   -> APP=renomeador   -> renomeadorinteligente.lexcausa.com.br
+#   sucessorista -> APP=sucessorista -> osucessorista.lexcausa.com.br
+#   notas        -> APP=notas        -> notasdevolutivas.lexcausa.com.br
 # O `vercel pull` traz as envs do projeto, então cada job compila com o APP
 # certo sem que este arquivo precise saber qual é qual.
 #
@@ -28,6 +29,7 @@
 #   VERCEL_PROJECT_ID_RENOMEADOR    — `projectId` do projeto do Renomeador
 #   VERCEL_PROJECT_ID_SUCESSORISTA  — `projectId` do projeto do Sucessorista
 #   VERCEL_PROJECT_ID_NOTAS         — `projectId` do projeto do Resolvedor de Notas
+#   VERCEL_PROJECT_ID_HUB           — `projectId` do projeto da vitrine (lexcausa.com.br)
 #
 # O token precisa ter escopo de CONTA ("Full Account"): com escopo de projeto
 # a CLI não passa do primeiro comando, porque ela lê recursos de usuário e de
@@ -55,6 +57,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - site: hub
+            project_id_secret: VERCEL_PROJECT_ID_HUB
           - site: renomeador
             project_id_secret: VERCEL_PROJECT_ID_RENOMEADOR
           - site: sucessorista

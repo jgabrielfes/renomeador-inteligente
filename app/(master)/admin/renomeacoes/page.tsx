@@ -30,7 +30,7 @@ import {
   parsePeriodo,
   queryDaTabela,
 } from "@/lib/admin";
-import { APP } from "@/lib/app";
+import { appComConta } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -71,10 +71,10 @@ export default async function RenomeacoesPage({
   const query = queryDaTabela({ periodo, paginacao, ordenacao });
 
   const [total, eventos] = await Promise.all([
-    prisma.renameEvent.count({ where: { createdAt, app: APP } }),
+    prisma.renameEvent.count({ where: { createdAt, app: appComConta() } }),
     prisma.renameEvent.findMany({
       // Só os lotes deste site: no Sucessorista, os feitos no cofre dos casos.
-      where: { createdAt, app: APP },
+      where: { createdAt, app: appComConta() },
       include: { user: { select: { name: true, email: true } } },
       orderBy: ordemDoPrisma(ordenacao.coluna, ordenacao.direcao),
       skip: (paginacao.pagina - 1) * paginacao.porPagina,

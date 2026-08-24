@@ -38,7 +38,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { filtroDeData, parsePeriodo } from "@/lib/admin";
-import { APP, EH_NOTAS, EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
+import { EH_NOTAS, EH_SUCESSORISTA, IDENTIDADE, appComConta, moduloDaPlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
@@ -88,21 +88,21 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       // Total de contas do site (sem recorte de data): é o que a listagem
       // mostra. O recorte do período entra como "novas no período", no rodapé
       // — misturar os dois num número só era o que confundia antes.
-      prisma.user.count({ where: { app: APP } }),
-      prisma.user.count({ where: { createdAt, app: APP } }),
+      prisma.user.count({ where: { app: appComConta() } }),
+      prisma.user.count({ where: { createdAt, app: appComConta() } }),
       prisma.renameEvent.aggregate({
         _sum: { quantidade: true },
         _count: { _all: true },
-        where: { createdAt, app: APP },
+        where: { createdAt, app: appComConta() },
       }),
-      prisma.errorEvent.count({ where: { createdAt, app: APP } }),
+      prisma.errorEvent.count({ where: { createdAt, app: appComConta() } }),
       // Uma linha de CALCULO por inventário: conta casos, não recálculos.
       prisma.sucessoristaEvent.count({ where: { createdAt, acao: "CALCULO" } }),
       prisma.sucessoristaEvent.count({
         where: { createdAt, acao: "DOCUMENTO" },
       }),
       prisma.moduleAccess.count({
-        where: { createdAt, modulo: IDENTIDADE.modulo },
+        where: { createdAt, modulo: moduloDaPlataforma() },
       }),
       // Notas triadas no período (a tabela inteira é do site do resolvedor).
       prisma.notaEvent.aggregate({
@@ -115,7 +115,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       prisma.advogadoPerfil.count({ where: { situacao: "pendente" } }),
       prisma.radarDenuncia.count({ where: { status: "pendente" } }),
       // Feedback do shell (bugs e sugestões) — estado atual, não período.
-      prisma.feedback.count({ where: { app: APP, status: { not: "resolvido" } } }),
+      prisma.feedback.count({ where: { app: appComConta(), status: { not: "resolvido" } } }),
     ]);
 
     const arquivos = renomeacoes._sum.quantidade ?? 0;

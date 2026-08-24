@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-import { APP } from '@/lib/app';
+import { appComConta } from '@/lib/app';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -40,7 +40,7 @@ export async function enviarFeedback(
   try {
     await prisma.feedback.create({
       data: {
-        app: APP,
+        app: appComConta(),
         userId: session.user.id,
         userEmail: session.user.email ?? null,
         tipo: d.tipo,
@@ -72,7 +72,7 @@ export async function meusFeedbacks(): Promise<MeuFeedback[]> {
   if (!session?.user?.id) return [];
   try {
     const linhas = await prisma.feedback.findMany({
-      where: { app: APP, userId: session.user.id },
+      where: { app: appComConta(), userId: session.user.id },
       orderBy: { createdAt: 'desc' },
       take: 30,
       select: {

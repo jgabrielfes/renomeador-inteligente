@@ -10,7 +10,7 @@ import { AvatarSessao } from "@/components/lexcausa/avatar-sessao";
 import { LexTopbar } from "@/components/lexcausa/topbar";
 import { TourLexCausa } from "@/components/lexcausa/tour";
 import { UserMenu } from "@/components/user-menu";
-import { IDENTIDADE } from "@/lib/app";
+import { moduloDaPlataforma } from "@/lib/app";
 import { isMaster } from "@/lib/auth";
 import { radarAtivo } from "@/lib/radar/config";
 import { prisma } from "@/lib/prisma";
@@ -48,7 +48,7 @@ export async function PaginaSucessorista({
   const { default: SucessoristaClient } = await import("./sucessorista-client");
   return (
     <>
-      <AccessTracker modulo={IDENTIDADE.modulo} />
+      <AccessTracker modulo={moduloDaPlataforma()} />
       {/* Tour de primeiro acesso por PERFIL — 4 passos, dispensável; o
           conteúdo completo fica em /ajuda/sucessorista. */}
       <TourLexCausa
