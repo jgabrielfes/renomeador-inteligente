@@ -413,6 +413,8 @@
   .lexcausa h1 { font-size: var(--t-xl); }
   .lexcausa h2 { font-size: var(--t-lg); }
   .lexcausa .lc-sub { font-size: var(--t-base); }
-  .lexcausa .lc-topo { padding: var(--e-3) var(--e-4); }
+  /* o topo QUEBRA linha (marca + guias numa, sino/⌘K/sessão na outra) —
+     sem isso a faixa de sessão estoura a tela e cria rolagem horizontal */
+  .lexcausa .lc-topo { padding: var(--e-3) var(--e-4); flex-wrap: wrap; row-gap: var(--e-2); }
   .lexcausa .lc-miolo { padding: 0 var(--e-4) var(--e-6); }
 }
