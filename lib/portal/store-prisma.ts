@@ -143,4 +143,34 @@ export const store: PortalStore = {
     }
     return memoryStore.salvarPreferencias(token, prefs);
   },
+
+  async marcarEspolioVisto(token, quando) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        if (!c.espolioVistoEm) {
+          c.espolioVistoEm = quando;
+          await gravarNoBanco(c);
+        }
+        return;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    await memoryStore.marcarEspolioVisto(token, quando);
+  },
+
+  async salvarAdvogadoProprio(token, dados) {
+    try {
+      const c = await lerDoBanco(token);
+      if (c) {
+        c.advogadoProprio = dados;
+        await gravarNoBanco(c);
+        return c;
+      }
+    } catch {
+      // banco fora — tenta a memória
+    }
+    return memoryStore.salvarAdvogadoProprio(token, dados);
+  },
 };

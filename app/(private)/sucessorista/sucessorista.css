@@ -344,6 +344,24 @@
 
 .sucessorista .doc-linha-fio { flex: 1; border-bottom: 1px dotted var(--fio); }
 
+/* "+ bem": abre outra linha da MESMA categoria (matrícula do 2º imóvel…).
+   Discreto como as demais ações da linha; alvo mínimo preservado. */
+.sucessorista .doc-mais-bem {
+  flex-shrink: 0;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px dashed var(--fio-forte);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tinta-media);
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+.sucessorista .doc-mais-bem:hover {
+  border-color: var(--bronze);
+  color: var(--bronze);
+}
+
 /* A ação fica discreta e ganha corpo no hover/focus da linha. */
 .sucessorista .doc-linha-acao { opacity: 0.55; }
 .sucessorista .doc-linha:hover .doc-linha-acao,
@@ -1107,7 +1125,19 @@
 .sucessorista .espelho-tabela {
   border-top: 2px solid var(--tinta);
   font-variant-numeric: tabular-nums;
+  width: 100%;
 }
+
+/* SEM rolagem lateral nos espelhos (pedido do escritório): o texto do
+   lançamento e o fundamento QUEBRAM linha para caber na tela — o Table do
+   shadcn traz whitespace-nowrap por padrão e aqui isso vira `normal`. Só
+   os NÚMEROS (.num) seguem sem quebra, para o valor nunca partir ao meio. */
+.sucessorista .espelho-tabela th,
+.sucessorista .espelho-tabela td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sucessorista .espelho-tabela td.num { white-space: nowrap; overflow-wrap: normal; }
 
 .sucessorista .espelho-tabela th {
   font-size: var(--t-xs);
@@ -1449,8 +1479,10 @@
 }
 
 /* Botão de ação do PORTAL DO HERDEIRO (página pública sem shadcn montado):
-   tinta sobre papel, mesmo desenho dos botões do módulo. */
-.sucessorista button.acao {
+   tinta sobre papel, mesmo desenho dos botões do módulo. Vale também para
+   LINK vestido de botão (a.acao) — as páginas públicas navegam por âncora. */
+.sucessorista button.acao,
+.sucessorista a.acao {
   appearance: none;
   border: 1px solid var(--tinta);
   background: var(--tinta);
@@ -1463,8 +1495,20 @@
   border-radius: 6px;
 }
 
-.sucessorista button.acao:hover { background: #2c3833; }
+.sucessorista button.acao:hover,
+.sucessorista a.acao:hover { background: #2c3833; }
 .sucessorista button.acao:disabled { opacity: 0.6; cursor: default; }
+
+/* Variante SECUNDÁRIA (responder cenário: conversar/não aceito) — contorno
+   de tinta sobre o papel, mesmo desenho e alvo do botão cheio. */
+.sucessorista button.acao.secundaria,
+.sucessorista a.acao.secundaria {
+  background: transparent;
+  color: var(--tinta);
+}
+
+.sucessorista button.acao.secundaria:hover,
+.sucessorista a.acao.secundaria:hover { background: var(--papel-alto); color: var(--tinta); }
 
 /* ---------- responsivo ---------- */
 
@@ -1674,6 +1718,125 @@
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+}
+
+/* Barra das 5 FASES do inventário (remodelagem LexCausa) — trilho clicável
+   no topo do dashboard: cada passo navega para a aba correspondente; o
+   check marca a fase que a folha já alimentou. Informa, nunca bloqueia. */
+.sucessorista .fases-caso { margin-bottom: var(--e-4); }
+.sucessorista .fases-cabeca {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--e-3);
+  flex-wrap: wrap;
+}
+.sucessorista .fases-trilho {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: var(--e-2);
+  margin: var(--e-2) 0 0;
+  padding: 0;
+}
+.sucessorista .fases-trilho .fase {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 40px;
+  padding: var(--e-2) var(--e-3);
+  border: 1px solid var(--fio);
+  border-radius: 8px;
+  background: var(--papel-alto);
+  color: var(--tinta);
+  text-align: left;
+}
+.sucessorista .fases-trilho .fase:hover { border-color: var(--bronze); }
+.sucessorista .fases-trilho .fase.completa { border-color: var(--verde-registro); }
+.sucessorista .fases-trilho .fase-numero {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--tinta-media);
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sucessorista .fases-trilho .fase.completa .fase-numero {
+  color: var(--papel-alto);
+  background: var(--verde-registro);
+  border-color: var(--verde-registro);
+}
+.sucessorista .fases-trilho .fase-rotulo { font-weight: 600; font-size: var(--t-sm); }
+.sucessorista .fases-trilho .fase-resumo { font-size: var(--t-xs); color: var(--tinta-media); }
+@media (max-width: 860px) {
+  .sucessorista .fases-trilho { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- veste FAMÍLIAS (remodelagem LexCausa) ---------- */
+/* Público enlutado: corpo um degrau acima na ESCALA EXISTENTE (--t-lg —
+   sem sétimo degrau), mais respiro e alvos maiores. Aplicada pelo layout
+   de /familias; nenhuma cor nova e nenhuma urgência artificial. */
+.veste-familias .sucessorista .folha {
+  font-size: var(--t-lg);
+  line-height: var(--lh-corpo);
+}
+.veste-familias .sucessorista .folha .fund { font-size: var(--t-base); }
+.veste-familias .sucessorista .folha .eyebrow { font-size: var(--t-sm); }
+.veste-familias .sucessorista .folha .acao { min-height: 48px; }
+.veste-familias .sucessorista .folha .nota { padding: var(--e-5); }
+
+/* Tarefas do caso — a fila operacional do dashboard (LexCausa fase 2). */
+.sucessorista .tarefas-caso { margin-bottom: var(--e-4); }
+.sucessorista .tarefas-lista {
+  list-style: none;
+  margin: var(--e-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.sucessorista .tarefas-lista li {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  padding: var(--e-1) var(--e-2);
+  border-radius: 6px;
+}
+.sucessorista .tarefas-lista li:hover { background: var(--papel-alto); }
+.sucessorista .tarefas-lista li.feita .tarefa-texto {
+  text-decoration: line-through;
+  color: var(--tinta-media);
+}
+.sucessorista .tarefas-lista .tarefa-chip {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  border: 1px solid var(--fio-forte);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.sucessorista .tarefas-lista .tarefa-prazo {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  white-space: nowrap;
+}
+.sucessorista .tarefas-lista .tarefa-prazo.vencida {
+  color: var(--estado-vencido);
+  font-weight: 700;
+}
+.sucessorista .tarefas-form {
+  display: flex;
+  gap: var(--e-3);
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: var(--e-3);
+  padding-top: var(--e-3);
+  border-top: 1px solid var(--fio);
 }
 
 /* Alternador de tema claro/escuro — pílula no topo do dashboard. */

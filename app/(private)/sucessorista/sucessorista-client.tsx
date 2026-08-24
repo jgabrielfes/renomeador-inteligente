@@ -32,12 +32,7 @@ import {
 } from '@/components/ui/table';
 
 import { partilhar } from '@/lib/partilha/engine';
-import {
-  apurarAtribuicao,
-  TABELA_SP_2026,
-  type TitularidadeBem,
-  type TituloCessao,
-} from '@/lib/partilha/atribuicao';
+import { type TituloCessao } from '@/lib/partilha/atribuicao';
 import { montarChecklistAcervo, type StatusItemAcervo } from '@/lib/partilha/acervo';
 import type { Caso, Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
 import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFalecido, type Qualificacao } from '@/lib/partilha/familia';
@@ -64,6 +59,10 @@ import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 import { porteDoAcervo } from '@/lib/porte';
 import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
+import { FasesCaso } from './fases-caso';
+import { TarefasCaso, type TarefaCaso } from './tarefas-caso';
+import { intakeParaCaso } from '@/lib/familias/intake-para-caso';
+import { confirmarImportacaoIntake, resgatarIntake } from './familias-actions';
 import { FamiliaView, Pilula, type EstadoFamilia } from './familia';
 import { AcervoView, paraDecimal } from './acervo-view';
 import { CofreView } from './cofre';
@@ -143,6 +142,20 @@ import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
 import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import {
+  apurarCenario,
+  direitosDoResultado,
+  ehFracao,
+  fracaoBonita,
+  mmc,
+  participantesDoResultado,
+  pctNum,
+  resumoDoCenario,
+  temAlocacao,
+  type DespesaAdiantada,
+} from '@/lib/partilha/cenario';
+import { montarCenarioCompartilhado } from '@/lib/portal/espolio';
+import { fatosDoEspolio, salvarCenario } from './painel-actions';
+import {
   PainelFamiliaCard,
   PAINEL_FAMILIA_INICIAL,
   type EstadoPainelFamilia,
@@ -196,55 +209,6 @@ function preencherVazios(
   }
   return ficha;
 }
-
-/** Célula da matriz que é FRAÇÃO ("1/3", "2/5") em vez de percentual. */
-const ehFracao = (v: string | undefined): boolean => /^\s*\d+\s*\/\s*\d+\s*$/.test(v ?? '');
-
-/**
- * Célula da matriz da partilha → percentual numérico. Aceita percentual com
- * vírgula ("33,33") E fração exata ("1/3" = 33,333…%) — a fração existe para
- * a dízima não fabricar torna que a família não combinou.
- */
-const pctNum = (v: string | undefined): number => {
-  if (!v) return 0;
-  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (m && Number(m[2]) > 0) return (Number(m[1]) / Number(m[2])) * 100;
-  const n = Number(v.replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-
-/**
- * Célula como fração EXATA {n, d} do bem (1 = bem inteiro): "1/3" vira 1/3
- * de verdade; percentual vira n/1.000.000 (até 4 casas). É o que a
- * atribuição usa para montar titularidades sem erro de arredondamento.
- */
-const fracaoDaCelula = (v: string | undefined): { n: number; d: number } => {
-  if (!v) return { n: 0, d: 1 };
-  const m = v.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (m && Number(m[2]) > 0) return { n: Number(m[1]), d: Number(m[2]) };
-  return { n: Math.round(pctNum(v) * 10000), d: 1_000_000 };
-};
-
-const mdc = (a: number, b: number): number => (b === 0 ? a : mdc(b, a % b));
-const mmc = (a: number, b: number): number => (a / mdc(a, b)) * b;
-
-/**
- * Percentual → fração "bonita" (denominador pequeno) quando o valor casa de
- * perto com uma — "33,33" e "33,34" viram "1/3", "50" vira "1/2". Sem
- * casamento limpo, devolve null (a célula fica como está).
- */
-const fracaoBonita = (pct: number): string | null => {
-  const v = pct / 100;
-  if (v <= 0 || v > 1) return null;
-  for (let d = 1; d <= 99; d++) {
-    const n = Math.round(v * d);
-    if (n > 0 && Math.abs(n / d - v) <= 0.0001) {
-      const g = mdc(n, d);
-      return `${n / g}/${d / g}`;
-    }
-  }
-  return null;
-};
 
 /** Descrição enxuta do bem para a matriz (o título completo fica no title). */
 const descricaoCurta = (s: string): string =>
@@ -354,11 +318,14 @@ interface CasoSalvo {
   painelFamilia?: EstadoPainelFamilia;
   /** Coluna "Responsável" da aba Documentos (docId → quem entrega). */
   responsaveisDocs?: Record<string, string>;
+  /** Fila de TAREFAS do caso (LexCausa fase 2) — viaja no caso.json. */
+  tarefas?: TarefaCaso[];
 }
 
 export default function SucessoristaClient({
   licoesRenomeador = null,
   menu,
+  shell = null,
   perfilConta = null,
   ehMaster = false,
   equipe = null,
@@ -366,6 +333,7 @@ export default function SucessoristaClient({
   nomeConta = null,
   casoInicialId = null,
   etapaInicial = null,
+  radarAtivo = false,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -373,6 +341,9 @@ export default function SucessoristaClient({
   /** Faixa de sessão (nome, papel, Administração, Sair). Vem pronta de um
    *  server component — este arquivo é client e não pode chamar auth(). */
   menu?: React.ReactNode;
+  /** Barra LexCausa (topbar) — renderizada SÓ fora da folha do caso (painel
+   *  Meus casos e telas de espera): dentro do caso a lombada é o shell. */
+  shell?: React.ReactNode;
   /** Perfil VINCULADO À CONTA (banco): null = primeiro acesso, ainda não
    *  escolhido — o módulo abre a escolha obrigatória. */
   perfilConta?: Perfil | null;
@@ -389,6 +360,9 @@ export default function SucessoristaClient({
    *  e link colado entre membros da equipe voltam ao caso certo. */
   casoInicialId?: string | null;
   etapaInicial?: string | null;
+  /** Radar de famílias ligado neste deploy (env) — mostra o atalho /radar
+   *  no painel Meus casos para o perfil Advogado(a). */
+  radarAtivo?: boolean;
 }) {
   // A etapa e o CASO vivem na URL (/caso/<id>/<etapa>; ?etapa= segue como
   // compatibilidade): sobrevivem ao F5 e o recorte é compartilhável. A troca
@@ -457,6 +431,15 @@ export default function SucessoristaClient({
   const [painelFamilia, setPainelFamilia] = useState<EstadoPainelFamilia>(PAINEL_FAMILIA_INICIAL);
   /* Coluna "Responsável" por item do catálogo de documentos. */
   const [responsaveisDocs, setResponsaveisDocs] = useState<Record<string, string>>({});
+  const [tarefasCaso, setTarefasCaso] = useState<TarefaCaso[]>([]);
+  /* Despesas adiantadas RECONHECIDAS (Espaço do Espólio) — entram nas
+     linhas dos cenários de partilha (ressarcir × compensar). */
+  const [despesasCenario, setDespesasCenario] = useState<DespesaAdiantada[]>([]);
+  /* Propor a atribuição atual como CENÁRIO para a família (Etapa 4). */
+  const [proporAberto, setProporAberto] = useState(false);
+  const [tituloCenario, setTituloCenario] = useState('');
+  const [descricaoCenario, setDescricaoCenario] = useState('');
+  const [enviandoCenario, setEnviandoCenario] = useState(false);
 
   /* --- V: estado fiscal (isenções, reforma, protocolo) — alimenta o painel --- */
   const [fiscal, setFiscal] = useState<EstadoFiscal>(ESTADO_FISCAL_INICIAL);
@@ -735,15 +718,16 @@ export default function SucessoristaClient({
 
   /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
      favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
-     volta à raiz (o ?etapa= antigo segue aceito na chegada) — mas NUNCA
-     durante a restauração: apagar /caso/<id> antes de o caso abrir fazia o
-     F5 seguinte cair em Meus casos. */
+     volta a /s, a casa do módulo desde a remodelagem LexCausa (o ?etapa=
+     antigo segue aceito na chegada) — mas NUNCA durante a restauração:
+     apagar /caso/<id> antes de o caso abrir fazia o F5 seguinte cair em
+     Meus casos. */
   useEffect(() => {
     const id = casoAberto?.cabecalho.caseId;
     if (id) {
       window.history.replaceState(null, '', `/caso/${encodeURIComponent(id)}/${abaProc}`);
     } else if (!restaurandoCasoRef.current && window.location.pathname.startsWith('/caso/')) {
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', '/s');
     }
   }, [casoAberto, abaProc]);
 
@@ -878,6 +862,7 @@ export default function SucessoristaClient({
         ? salvo.responsaveisDocs
         : {},
     );
+    setTarefasCaso(Array.isArray(salvo.tarefas) ? salvo.tarefas : []);
   };
 
   const montarSnapshot = (): CasoSalvo => {
@@ -905,6 +890,7 @@ export default function SucessoristaClient({
       custosAdicionais,
       painelFamilia,
       responsaveisDocs,
+      tarefas: tarefasCaso,
     };
   };
 
@@ -928,87 +914,108 @@ export default function SucessoristaClient({
 
         /* painel "Meus casos": decide o modo de persistência e pinta do
            cache antes da varredura (nunca tela vazia esperando I/O). A
-           pasta-raiz é POR CONTA: o escopo entra antes de qualquer leitura. */
-        definirContaAtiva(contaId);
-        const nomeDisp = (await dispositivoSalvo()) ?? '';
-        setDispositivo(nomeDisp);
-        const rascunho = await carregarRascunho();
-        const migrado = await idbGet<boolean>(STORES.config, 'rascunho-migrado');
-        setTemRascunhoLegado(Boolean(rascunho) && !migrado);
-        if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
+           pasta-raiz é POR CONTA: o escopo entra antes de qualquer leitura.
+           TODA chamada abaixo tem fallback próprio: uma falha isolada
+           (IndexedDB em modo restrito, server action fora do ar, permissão
+           negada) não pode matar o efeito antes do setEstadoPainel — foi o
+           que congelava o painel no "carregando" sem erro visível. */
+        let nomeDisp = '';
+        try {
+          definirContaAtiva(contaId);
+          nomeDisp = (await dispositivoSalvo()) ?? '';
+          setDispositivo(nomeDisp);
+          const rascunho = await carregarRascunho();
+          const migrado = await idbGet<boolean>(STORES.config, 'rascunho-migrado');
+          setTemRascunhoLegado(Boolean(rascunho) && !migrado);
+          if (rascunho) setRascunhoSalvoEm(rascunho.salvoEm);
+        } catch {
+          // IndexedDB indisponível — segue sem rascunho/nome do dispositivo
+        }
 
         // NUVEM DE ARQUIVOS conectada tem prioridade: a "pasta do processo"
         // vive na conta Google/Microsoft/Dropbox do usuário e vale em
         // qualquer dispositivo — sem seletor de pasta local (é o que resolve
         // o conflito entre máquinas). Com mais de uma conectada, a ordem é
         // Google → OneDrive → Dropbox (desconecte para cair na seguinte).
+        const nuvemFora = { disponivel: false, conectado: false, email: null };
         const [eDrive, eOneDrive, eDropbox] = await Promise.all([
-          estadoDrive(),
-          estadoOneDrive(),
-          estadoDropbox(),
+          estadoDrive().catch(() => nuvemFora),
+          estadoOneDrive().catch(() => nuvemFora),
+          estadoDropbox().catch(() => nuvemFora),
         ]);
         setDrive(eDrive);
         setOneDrive(eOneDrive);
         setDropbox(eDropbox);
-        if (eDrive.conectado) {
-          const s = new DriveCaseStore(
-            new TokenDrivePool(tokenDrive),
-            nomeDisp || 'Google Drive',
-          );
-          setStore(s);
-          setEstadoPainel('drive');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (eOneDrive.conectado) {
-          const s = new OneDriveCaseStore(
-            new TokenDrivePool(tokenOneDrive),
-            nomeDisp || 'OneDrive',
-          );
-          setStore(s);
-          setEstadoPainel('onedrive');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (eDropbox.conectado) {
-          const s = new DropboxCaseStore(
-            new TokenDrivePool(tokenDropbox),
-            nomeDisp || 'Dropbox',
-          );
-          setStore(s);
-          setEstadoPainel('dropbox');
-          setResumos(null);
-          s.listarCasos().then(setResumos).catch(() => setResumos([]));
-          void s.linkExterno().then(setLinkNuvem);
-        } else if (pastaDisponivel()) {
-          const { estado, raiz } = await estadoDaRaiz();
-          if (estado === 'granted' && raiz) {
-            const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+        try {
+          if (eDrive.conectado) {
+            const s = new DriveCaseStore(
+              new TokenDrivePool(tokenDrive),
+              nomeDisp || 'Google Drive',
+            );
             setStore(s);
-            setNomeRaiz(raiz.name);
-            setEstadoPainel('pasta');
-            setResumos(await cacheDeResumos());
-            void s.listarCasos().then(setResumos);
-          } else if ((estado === 'prompt' || estado === 'denied') && raiz) {
-            setEstadoPainel('pasta-bloqueada');
-            setResumos(await cacheDeResumos());
+            setEstadoPainel('drive');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (eOneDrive.conectado) {
+            const s = new OneDriveCaseStore(
+              new TokenDrivePool(tokenOneDrive),
+              nomeDisp || 'OneDrive',
+            );
+            setStore(s);
+            setEstadoPainel('onedrive');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (eDropbox.conectado) {
+            const s = new DropboxCaseStore(
+              new TokenDrivePool(tokenDropbox),
+              nomeDisp || 'Dropbox',
+            );
+            setStore(s);
+            setEstadoPainel('dropbox');
+            setResumos(null);
+            s.listarCasos().then(setResumos).catch(() => setResumos([]));
+            void s.linkExterno().then(setLinkNuvem).catch(() => {});
+          } else if (pastaDisponivel()) {
+            const { estado, raiz } = await estadoDaRaiz();
+            if (estado === 'granted' && raiz) {
+              const s = new FolderCaseStore(raiz, nomeDisp || 'Este computador');
+              setStore(s);
+              setNomeRaiz(raiz.name);
+              setEstadoPainel('pasta');
+              setResumos(await cacheDeResumos());
+              void s.listarCasos().then(setResumos).catch(() => {});
+            } else if ((estado === 'prompt' || estado === 'denied') && raiz) {
+              setEstadoPainel('pasta-bloqueada');
+              setResumos(await cacheDeResumos());
+            } else {
+              setEstadoPainel('sem-raiz');
+              setResumos([]);
+            }
           } else {
-            setEstadoPainel('sem-raiz');
-            setResumos([]);
+            const s = new PortableCaseStore(nomeDisp || 'Este navegador');
+            setStore(s);
+            setEstadoPainel('portatil');
+            void s.listarCasos().then(setResumos).catch(() => setResumos([]));
           }
-        } else {
+        } catch {
+          // Último recurso: qualquer falha inesperada acima cai no modo
+          // portátil — painel utilizável em vez de congelado.
           const s = new PortableCaseStore(nomeDisp || 'Este navegador');
           setStore(s);
           setEstadoPainel('portatil');
-          void s.listarCasos().then(setResumos);
+          s.listarCasos().then(setResumos).catch(() => setResumos([]));
         }
 
         // Nuvem (conta ou equipe): os casos espelhados entram no painel
         // junto dos locais (melhor-esforço — falha vira lista vazia).
         if (nuvemAtiva) {
-          void listarCasosNuvem().then((lista) => {
-            if (lista) setResumosNuvem(lista);
-          });
+          void listarCasosNuvem()
+            .then((lista) => {
+              if (lista) setResumosNuvem(lista);
+            })
+            .catch(() => {});
         }
       })();
     }, 0);
@@ -1628,28 +1635,19 @@ export default function SucessoristaClient({
     return () => clearTimeout(t);
   }, [sociedades, falecido.nome, nomeSobrev, temSobrevivente, regime]);
 
-  /** Quem tem direito no caso (meação e/ou quinhão) — as opções do "fica com". */
-  const participantes = useMemo(() => {
-    if (!resultado || resultado.bloqueios.length > 0) return [];
-    const lista: { id: string; nome: string }[] = [];
-    if (resultado.meacao) {
-      lista.push({ id: '__sobrevivente__', nome: resultado.meacao.beneficiario });
-    }
-    for (const q of resultado.quinhoes) {
-      if (!lista.some((x) => x.id === q.herdeiroId)) lista.push({ id: q.herdeiroId, nome: q.nome });
-    }
-    return lista;
-  }, [resultado]);
+  /** Quem tem direito no caso (meação e/ou quinhão) — as opções do "fica com".
+   *  Derivações do motor de cenários (lib/partilha/cenario.ts) — o mesmo que
+   *  o Espaço do Espólio usa. */
+  const participantes = useMemo(
+    () => (!resultado || resultado.bloqueios.length > 0 ? [] : participantesDoResultado(resultado)),
+    [resultado],
+  );
 
   /** Quinhão de direito em R$ por participante (meação + quinhões). */
-  const direitoPorParticipante = useMemo(() => {
-    const mapa: Record<string, number> = {};
-    if (!resultado || resultado.bloqueios.length > 0) return mapa;
-    if (resultado.meacao) mapa['__sobrevivente__'] = Number(resultado.meacao.valor);
-    for (const q of resultado.quinhoes)
-      mapa[q.herdeiroId] = (mapa[q.herdeiroId] ?? 0) + Number(q.valor);
-    return mapa;
-  }, [resultado]);
+  const direitoPorParticipante = useMemo(
+    () => (!resultado || resultado.bloqueios.length > 0 ? {} : direitosDoResultado(resultado)),
+    [resultado],
+  );
 
   /** Pendências da minuta: o que ainda vira lacuna na escritura/petição. */
   const pendenciasMinuta = useMemo(
@@ -1689,84 +1687,103 @@ export default function SucessoristaClient({
    * fechar 100%. O desvio entre recebido e direito vira o acerto (torna),
    * com o imposto da cessão.
    */
-  const atribuicao = useMemo(() => {
+  // Despesas adiantadas reconhecidas: carregadas do servidor (best-effort)
+  // quando o caso tem convites do cofre — só elas entram na conta.
+  const temConvites = Object.keys(convites).length > 0;
+  useEffect(() => {
+    if (!temConvites) return;
+    let vivo = true;
+    void fatosDoEspolio(casoId).then((r) => {
+      if (!vivo || !r.ok) return;
+      setDespesasCenario(
+        (r.despesas ?? [])
+          .filter((d) => d.status === 'reconhecida' && d.herdeiroId)
+          .map((d) => ({
+            participanteId: d.herdeiroId as string,
+            descricao: d.descricao,
+            valor: Number(d.valor) || 0,
+            tratamento: d.tratamento === 'compensar' ? ('compensar' as const) : ('ressarcir' as const),
+          })),
+      );
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [casoId, temConvites]);
+
+  const apuracaoCenario = useMemo(() => {
     if (!resultado || resultado.bloqueios.length > 0 || bens.length === 0) return null;
     if (participantes.length === 0) return null;
+    if (!temAlocacao(matriz, bens, participantes)) return null; // tudo na proporção do direito
 
-    const linhas = bens.map((b, i) => {
-      const linha = matriz[b.id] ?? {};
-      const pcts = participantes.map((p) => pctNum(linha[p.id]));
-      return { bem: b, indice: i, pcts, total: pcts.reduce((a, v) => a + v, 0) };
+    // Apuração pelo MOTOR DE CENÁRIOS (lib/partilha/cenario.ts) — o mesmo do
+    // Espaço do Espólio: matriz → frações exatas → apurarAtribuicao. A
+    // isenção de doação por donatário/ano (art. 6º, II, "a") é 2.500 UFESPs.
+    // As despesas adiantadas RECONHECIDAS entram nas linhas do cenário
+    // (ressarcir × compensar) — não mexem na atribuição técnica.
+    const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
+    const cenario = apurarCenario({
+      caso,
+      resultado,
+      alocacoes: matriz,
+      titulo,
+      isencaoDoacaoAnual: 2500 * ufespAtual,
+      despesas: despesasCenario,
     });
-    if (!linhas.some((l) => l.total > 0)) return null; // tudo na proporção do direito
+    if (!cenario.atribuicao && cenario.bloqueios.length === 0) return null;
+    return cenario;
+  }, [resultado, titulo, caso, bens, matriz, participantes, despesasCenario]);
 
-    // Linha preenchida tem de fechar 100% (tolerância de dízima: ±0,05).
-    const invalidas = linhas.filter((l) => l.total > 0 && Math.abs(l.total - 100) > 0.05);
-    if (invalidas.length > 0) {
-      return {
+  const atribuicao = useMemo(() => {
+    if (!apuracaoCenario) return null;
+    return (
+      apuracaoCenario.atribuicao ?? {
         posicoes: [],
         transferencias: [],
         totalTorna: '0.00',
         avisos: [],
-        bloqueios: invalidas.map(
-          (l) =>
-            `Bem ${l.indice + 1}: os percentuais somam ${l.total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% — a linha precisa fechar 100% (ou ficar toda vazia para seguir a proporção do direito).`,
-        ),
-      };
-    }
-
-    const direitoCents = new Map<string, number>();
-    for (const [id, v] of Object.entries(direitoPorParticipante)) {
-      direitoCents.set(id, Math.round(v * 100));
-    }
-    const totalCents = [...direitoCents.values()].reduce((a, v) => a + v, 0);
-    if (totalCents <= 0) return null;
-
-    const titularidades: TitularidadeBem[] = [];
-    for (const l of linhas) {
-      if (l.total === 0) {
-        for (const [id, cents] of direitoCents) {
-          if (cents <= 0) continue;
-          titularidades.push({
-            bemId: l.bem.id,
-            titularId: id,
-            direito: 'PLENA',
-            fracao: `${cents}/${totalCents}`,
-          });
-        }
-        continue;
+        bloqueios: apuracaoCenario.bloqueios,
       }
-      // Frações EXATAS normalizadas pela PRÓPRIA soma (o motor exige soma 1
-      // por bem): "33,33" três vezes vira 3333/9999 = 1/3 de cada — a dízima
-      // é absorvida na proporção, sem despejar o resto numa das partes (era
-      // o ajuste a 10000 que fabricava uma torna de centavos que a família
-      // nunca combinou). Célula em fração ("1/3") já entra exata.
-      const celulas = participantes.map((p) => fracaoDaCelula((matriz[l.bem.id] ?? {})[p.id]));
-      const den = celulas.reduce((a, f) => (f.n > 0 ? mmc(a, f.d) : a), 1);
-      const pesos = celulas.map((f) => (f.n > 0 ? f.n * (den / f.d) : 0));
-      const somaPesos = pesos.reduce((a, v) => a + v, 0);
-      participantes.forEach((p, i) => {
-        if (pesos[i] > 0)
-          titularidades.push({
-            bemId: l.bem.id,
-            titularId: p.id,
-            direito: 'PLENA',
-            fracao: `${pesos[i]}/${somaPesos}`,
-          });
-      });
-    }
+    );
+  }, [apuracaoCenario]);
 
-    // Isenção de doação por donatário/ano (art. 6º, II, "a"): 2.500 UFESPs.
-    const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
-    return apurarAtribuicao(caso, resultado, {
-      titularidades,
-      titulosPorCedente: Object.fromEntries(participantes.map((p) => [p.id, titulo])),
-      tabela: {
-        ...TABELA_SP_2026,
-        isencaoDoacaoAnualPorDonatario: (2500 * ufespAtual).toFixed(2),
-      },
-    });
-  }, [resultado, titulo, caso, bens, matriz, participantes, direitoPorParticipante]);
+  /** Propõe a atribuição ATUAL como cenário do Espaço do Espólio: o snapshot
+   *  leigo é montado aqui (allowlist) e a família responde pelo portal. */
+  const proporCenario = async () => {
+    if (!apuracaoCenario || apuracaoCenario.bloqueios.length > 0) return;
+    setEnviandoCenario(true);
+    try {
+      const cenario = montarCenarioCompartilhado({
+        titulo: tituloCenario.trim(),
+        descricao: descricaoCenario,
+        // Autoria visível (camada 4): cenário do escritório titular leva o
+        // nome de quem propôs — os do advogado constituído também levarão.
+        autor: nomeConta ?? undefined,
+        bens: bens.map((b) => ({ id: b.id, descricao: b.descricao })),
+        participantes: participantes.map((p) => ({ id: p.id, nome: p.nome })),
+        alocacoes: matriz,
+        linhas: apuracaoCenario.linhas,
+        resumo: resumoDoCenario(apuracaoCenario),
+        avisos: apuracaoCenario.avisos,
+        totalTorna: apuracaoCenario.totalTorna,
+        totalDespesasReconhecidas: apuracaoCenario.totalDespesasReconhecidas,
+      });
+      const r = await salvarCenario({ casoId, cenario });
+      if (r.ok) {
+        setProporAberto(false);
+        setTituloCenario('');
+        setDescricaoCenario('');
+        toast.success('Cenário proposto à família', {
+          description:
+            'Cada herdeiro responde pelo próprio link — o cenário aparece com o espaço do espólio ABERTO e o painel publicado.',
+        });
+      } else {
+        toast.error('Não foi possível propor', { description: r.erro });
+      }
+    } finally {
+      setEnviandoCenario(false);
+    }
+  };
 
   // Espelho para a telemetria do caso (o retrato é montado antes daqui).
   useEffect(() => {
@@ -1986,6 +2003,70 @@ export default function SucessoristaClient({
     }
     return linhas;
   }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo]);
+
+  /**
+   * ESPAÇO DO ESPÓLIO — os fatos compartilháveis, já no formato de allowlist
+   * do motor (lib/portal/espolio.ts): participantes SÓ com nome+papel, bens
+   * com a fonte leiga da avaliação, dívidas e os quinhões de todos. O que
+   * não está aqui não tem como subir.
+   */
+  const espolioDadosPainel = useMemo((): import('@/lib/portal/espolio').EntradaEspolio => {
+    const papelDe = (id: string): import('@/lib/portal/espolio').PapelParticipante =>
+      id === '__sobrevivente__'
+        ? 'cônjuge meeiro(a)'
+        : id === familia.inventarianteId
+          ? 'inventariante'
+          : 'herdeiro(a)';
+    const fonteDe = (b: Bem): string =>
+      Number(b.valorAvaliacao) > 0
+        ? 'avaliação lançada no caso'
+        : Number(b.valorVenal) > 0 || Number(b.imovel?.valorVenalAtual) > 0
+          ? 'valor venal (IPTU/ITR)'
+          : 'valor declarado pela família';
+    const ok = resultado && resultado.bloqueios.length === 0;
+    return {
+      nomeFalecido: falecido.nome,
+      participantes: ok
+        ? participantesDoResultado(resultado).map((p) => ({ nome: p.nome, papel: papelDe(p.id) }))
+        : herdeiros.map((h) => ({ nome: h.nome, papel: papelDe(h.id) })),
+      bens: bens.map((b) => ({
+        id: b.id,
+        descricao: b.descricao,
+        valor: String(b.valor ?? '0'),
+        fonteAvaliacao: fonteDe(b),
+      })),
+      totalAcervo: ok ? String(resultado.acervo.massaPartilhavel) : undefined,
+      dividas:
+        Number(dividasEspolio.replace(/\./g, '').replace(',', '.')) > 0
+          ? [
+              {
+                descricao: 'Dívidas do espólio (total declarado)',
+                valor: Number(dividasEspolio.replace(/\./g, '').replace(',', '.')).toFixed(2),
+              },
+            ]
+          : [],
+      quinhoes: ok
+        ? [
+            ...(resultado.meacao
+              ? [
+                  {
+                    nome: resultado.meacao.beneficiario,
+                    papel: 'cônjuge meeiro(a)' as const,
+                    valor: String(resultado.meacao.valor),
+                    fracao: 'meação (não é herança)',
+                  },
+                ]
+              : []),
+            ...resultado.quinhoes.map((q) => ({
+              nome: q.nome,
+              papel: papelDe(q.herdeiroId),
+              valor: String(q.valor),
+              fracao: q.fracaoHeranca,
+            })),
+          ]
+        : [],
+    };
+  }, [resultado, falecido.nome, familia.inventarianteId, herdeiros, bens, dividasEspolio]);
 
   /**
    * Alertas da leitura: herdeiro DECLARADO na certidão de óbito sem
@@ -2323,7 +2404,7 @@ export default function SucessoristaClient({
       void salvarAgoraRef.current();
     }, 1000);
     return () => clearTimeout(t);
-  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, casoAberto]);
+  }, [familia, bens, dividasEspolio, checklistAcervo, sociedades, fiscal, modulosFiscais, sobrepartilhaAberta, notasCaso, colacoes, custosAdicionais, passo, matriz, anotacoesMatriz, titulo, condicoesHonorarios, casoId, convites, painelFamilia, responsaveisDocs, tarefasCaso, casoAberto]);
 
   // Flush ao esconder/perder o foco/fechar — o que der para gravar, grava.
   useEffect(() => {
@@ -3072,10 +3153,72 @@ export default function SucessoristaClient({
     }
     // Recomeçar do zero exige RELOAD de verdade (navegação client-side
     // preservaria os estados preenchidos) — exceção consciente à regra.
-    // A raiz É o módulo neste site (a rota /sucessorista não existe mais).
+    // Desde a remodelagem LexCausa o módulo mora em /s (a raiz é o hub).
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = '/';
+    window.location.href = '/s';
   };
+
+  /**
+   * "Converter em inventário" (LexCausa fase 3): a contratação do Radar chega
+   * por /s?importar=<código do handoff> e vira um caso NOVO no store ativo —
+   * resgata o intake, monta o CasoSalvo no navegador (intakeParaCaso), cria a
+   * pasta e confirma a importação (o servidor PODA o intake).
+   */
+  const importarDoRadar = async (codigo: string) => {
+    const s = storeRef.current;
+    if (!s) return;
+    const r = await resgatarIntake(codigo);
+    if (!r.ok || !r.respostas) {
+      toast.error('Não foi possível importar o caso prospectado', { description: r.erro });
+      return;
+    }
+    const dados = intakeParaCaso(r.respostas, {
+      casoId: `caso-${crypto.randomUUID().slice(0, 8)}-${Date.now().toString(36)}`,
+      gerarId: (p) => `${p}-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    try {
+      origemNuvemRef.current = false;
+      baseNuvemRef.current = null;
+      avisoNuvemRef.current = false;
+      const caso = await s.criarCaso(
+        r.nome ? `Família ${r.nome}` : `Novo negócio ${codigo}`,
+        dados,
+      );
+      manifestoRef.current = [];
+      baseAtualizadoEmRef.current = caso.cabecalho.atualizadoEm;
+      aplicarSnapshot(dados as unknown as CasoSalvo);
+      setCasoAberto({ cabecalho: caso.cabecalho });
+      setSalvamento({ estado: 'salvo', quando: caso.cabecalho.atualizadoEm });
+      irPara('caso');
+      await confirmarImportacaoIntake(codigo);
+      toast.success('Caso prospectado virou inventário — confira a folha', {
+        description:
+          (r.nome || r.email
+            ? `Contato de quem respondeu: ${[r.nome, r.email].filter(Boolean).join(' · ')}. `
+            : '') +
+          'Valores por faixa e fichas em branco: complete com os documentos. Os dados saíram do servidor.',
+      });
+    } catch (e) {
+      toast.error('Não consegui criar a pasta do caso.', {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
+
+  /* Chegada por /s?importar=<código> — espera o store ficar pronto e roda
+     UMA vez; o parâmetro sai da URL antes (F5 não importa duas vezes). */
+  const importarRadarRef = useRef(false);
+  useEffect(() => {
+    if (importarRadarRef.current || casoAberto || casoInicialId || !store) return;
+    const codigo = new URLSearchParams(window.location.search).get('importar');
+    if (!codigo) return;
+    importarRadarRef.current = true;
+    window.history.replaceState(null, '', '/s');
+    // Diferido (convenção): o efeito só agenda; nada de setState direto aqui.
+    const t = setTimeout(() => void importarDoRadar(codigo.trim().toUpperCase()), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, casoAberto, casoInicialId]);
 
   /** Contexto textual do caso para a redação por IA (nunca os documentos). */
   const contextoDoCaso = (): string => {
@@ -3510,11 +3653,14 @@ export default function SucessoristaClient({
 
   return (
     <div className={`sucessorista${tema === 'escuro' ? ' tema-escuro' : ''}`}>
+    {/* Barra LexCausa FORA da folha do caso (pedido do escritório): no painel
+        Meus casos dá para voltar ao hub; dentro do caso a lombada assume. */}
+    {casoAberto === null && shell}
     {/* Rota /caso/<id> que não abriu: tela própria com o caminho de volta
         — nunca um redirecionamento silencioso (T1 da auditoria). */}
     {casoAberto === null && casoNaoEncontrado ? (
       <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <h1>Caso não encontrado</h1>
         <p className="subtitulo">
           O link aponta um caso que não está nesta máquina nem na sua nuvem — ele pode ter
@@ -3523,7 +3669,7 @@ export default function SucessoristaClient({
         <Button
           onClick={() => {
             setCasoNaoEncontrado(false);
-            window.history.replaceState(null, '', '/');
+            window.history.replaceState(null, '', '/s');
           }}
         >
           Ir para Meus casos
@@ -3533,7 +3679,7 @@ export default function SucessoristaClient({
       /* F5 dentro do caso: a folha está sendo reaberta — mostrar o painel
          Meus casos aqui daria a impressão de ter "voltado" para a lista. */
       <div className="folha" style={{ maxWidth: 720, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <h1>Reabrindo o caso…</h1>
         <p className="subtitulo">
           Restaurando a folha e os documentos deste inventário. Um instante.
@@ -3541,8 +3687,12 @@ export default function SucessoristaClient({
       </div>
     ) : casoAberto === null ? (
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
-        {menu}
+        {shell ? null : menu}
         <CasosView
+          radarHref={radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null}
+          onImportarFamilia={
+            perfil === 'ADVOGADO' || ehMaster ? (codigo) => importarDoRadar(codigo) : null
+          }
           estado={estadoPainel}
           resumos={(() => {
             // A nuvem entra no painel junto dos casos locais; caso
@@ -3741,6 +3891,78 @@ export default function SucessoristaClient({
         </div>
         {abaProc === 'caso' && (
           <CasoView
+            tarefas={
+              <TarefasCaso
+                tarefas={tarefasCaso}
+                onChange={setTarefasCaso}
+                sugestoes={[
+                  ...(nomeConta ? [nomeConta] : []),
+                  ...(equipe?.membros.map((m) => m.nome) ?? []),
+                ].filter((n, i, a) => a.indexOf(n) === i)}
+              />
+            }
+            fases={
+              <FasesCaso
+                irPara={(aba) => irPara(aba as Aba)}
+                fases={[
+                  {
+                    aba: 'familia',
+                    rotulo: 'Composição',
+                    completa: falecido.nome.trim().length > 0 && herdeiros.length > 0,
+                    resumo:
+                      herdeiros.length > 0
+                        ? `${herdeiros.length} herdeiro(s)`
+                        : 'família e qualificação',
+                  },
+                  {
+                    aba: 'acervo',
+                    rotulo: 'Acervo',
+                    completa: bens.length > 0,
+                    resumo: bens.length > 0 ? `${bens.length} bem(ns) lançado(s)` : 'bens e dívidas',
+                  },
+                  {
+                    aba: 'partilha',
+                    rotulo: 'Quinhões',
+                    completa: resultado !== null,
+                    resumo: resultado !== null ? 'partilha calculada' : 'aguarda família e acervo',
+                  },
+                  {
+                    aba: 'documentos',
+                    rotulo: 'Cofre',
+                    completa: Object.values(anexosProcesso).some((fs) => fs.length > 0),
+                    resumo: (() => {
+                      const n = Object.values(anexosProcesso).reduce((acc, fs) => acc + fs.length, 0);
+                      return n > 0 ? `${n} documento(s)` : 'documentos do processo';
+                    })(),
+                  },
+                  {
+                    aba: 'itcmd',
+                    rotulo: 'Espelho ITCMD',
+                    completa: fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO',
+                    resumo:
+                      fiscal.itcmdSituacao === 'PAGO'
+                        ? 'imposto pago'
+                        : fiscal.itcmdSituacao === 'DECLARADO'
+                        ? 'declarado'
+                        : 'declaração e provisão',
+                  },
+                ]}
+                acoes={
+                  perfil === 'ADVOGADO'
+                    ? [
+                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
+                        { rotulo: 'Projetar custos', aba: 'custos' },
+                        { rotulo: 'Sugerir honorários', aba: 'honorarios' },
+                        { rotulo: 'Gerar minuta', aba: 'minutas' },
+                      ]
+                    : [
+                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
+                        { rotulo: 'Projetar custos', aba: 'custos' },
+                        { rotulo: 'Gerar escritura', aba: 'escritura' },
+                      ]
+                }
+              />
+            }
             aplicarLeitura={aplicarLeitura}
             reclassificarArquivos={reclassificarArquivos}
             onInicioRapido={inicioRapido}
@@ -3767,6 +3989,7 @@ export default function SucessoristaClient({
                 convites={Object.values(convites)}
                 quinhoes={quinhoesPainel}
                 custosVisiveis={custosVisiveisPainel}
+                espolioDados={espolioDadosPainel}
                 estado={painelFamilia}
                 onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
                 onConviteAtualizado={(c) =>
@@ -3775,7 +3998,40 @@ export default function SucessoristaClient({
                     return chave ? { ...prev, [chave]: c } : prev;
                   })
                 }
+                onNovoConvite={(c) =>
+                  // Convite de mediador(a) nasce no card — chave pelo token
+                  // (os de herdeiro são chaveados pelo herdeiroId no cofre).
+                  setConvites((prev) => ({ ...prev, [c.token]: c }))
+                }
                 onEncerrado={() => setConvites({})}
+                onLevarParaPartilha={(alocacoes, tituloCenarioAplicado) => {
+                  // Consenso vira partilha: as alocações do cenário são o
+                  // MESMO formato da matriz da seção III — cópia direta. O
+                  // eco fica no caso.json (o .json transporta o consenso).
+                  setMatriz(alocacoes);
+                  setPainelFamilia((prev) => ({
+                    ...prev,
+                    consensoAplicado: {
+                      titulo: tituloCenarioAplicado,
+                      em: new Date().toISOString(),
+                    },
+                  }));
+                  irPara('partilha');
+                  toast.success('Cenário levado para a partilha', {
+                    description:
+                      'A matriz da seção III recebeu as alocações do cenário — confira o espelho e os acertos.',
+                  });
+                }}
+                onAplicarValor={(bemId, valor) =>
+                  // Sugestão de valor ACEITA pelo advogado: entra como
+                  // AVALIAÇÃO do bem (o venal do óbito segue sendo o
+                  // documento oficial; custas/ITCMD já usam o maior).
+                  setBens((prev) =>
+                    prev.map((b) =>
+                      b.id === bemId ? { ...b, valorAvaliacao: Number(valor).toFixed(2) } : b,
+                    ),
+                  )
+                }
                 irParaDocumentos={() => irPara('documentos')}
               />
             }
@@ -4079,8 +4335,78 @@ export default function SucessoristaClient({
                             {a}
                           </p>
                         ))}
+
+                        {/* Simulador do Espaço do Espólio: a atribuição atual
+                            vira um CENÁRIO que a família responde pelo portal. */}
+                        {temConvites && (
+                          <div className="nota" style={{ marginTop: 12 }}>
+                            <span className="eyebrow">Espaço do espólio</span>
+                            <p>
+                              Esta divisão pode virar um <strong>cenário proposto à família</strong>:
+                              cada herdeiro vê os números em linguagem simples no próprio link e
+                              responde aceito · não aceito · quero conversar. Quando todos aceitam,
+                              o cenário congela como consenso.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setProporAberto(true)}
+                            >
+                              Propor este cenário à família
+                            </Button>
+                          </div>
+                        )}
                       </>
                     )}
+
+                    <Dialog
+                      open={proporAberto}
+                      onOpenChange={(o) => !enviandoCenario && setProporAberto(o)}
+                    >
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Propor este cenário à família</DialogTitle>
+                          <DialogDescription>
+                            A família vê quem fica com o quê, o acerto em dinheiro e o total de
+                            cada um — em linguagem simples, com os mesmos números para todos.
+                            Honorários e anotações internas nunca entram.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <label className="campo">
+                          Nome do cenário (como a família vai chamá-lo)
+                          <Input
+                            value={tituloCenario}
+                            placeholder="Ex.: Casa para Ana, apartamento para Bruno"
+                            onChange={(e) => setTituloCenario(e.target.value)}
+                          />
+                        </label>
+                        <label className="campo">
+                          Explicação curta (opcional)
+                          <Input
+                            value={descricaoCenario}
+                            placeholder="Ex.: Evita vender a casa; a diferença é compensada em dinheiro"
+                            onChange={(e) => setDescricaoCenario(e.target.value)}
+                          />
+                        </label>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            disabled={enviandoCenario}
+                            onClick={() => setProporAberto(false)}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            loading={enviandoCenario}
+                            disabled={tituloCenario.trim() === ''}
+                            onClick={() => void proporCenario()}
+                          >
+                            Propor à família
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                     {atribuicao?.bloqueios.map((b, i) => (
                       <p key={i} className="mono-alerta">
                         {b}
@@ -4204,6 +4530,8 @@ export default function SucessoristaClient({
                 return s.excluirDocumento(aberto.cabecalho.caseId, file.name);
               }}
               onMontado={(formato, itens) => registrarDoc(formato, { itens })}
+              casoId={casoId}
+              municipioSugestao={bens.find((b) => b.imovel?.municipio)?.imovel?.municipio}
             />
           </section>
         )}

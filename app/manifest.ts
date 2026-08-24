@@ -6,7 +6,8 @@ import { EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
 // recebe nome, descrição, atalho e CORES próprios (o Sucessorista abre no
 // papel da identidade, não num flash branco).
 export default function manifest(): MetadataRoute.Manifest {
-  const cor = EH_SUCESSORISTA ? "#f6f4ee" : "#ffffff";
+  // Papel da LexCausa no site do Sucessorista (o PWA abre no hub).
+  const cor = EH_SUCESSORISTA ? "#f4f3ef" : "#ffffff";
   return {
     name: IDENTIDADE.nome,
     short_name: IDENTIDADE.nomeCurto,

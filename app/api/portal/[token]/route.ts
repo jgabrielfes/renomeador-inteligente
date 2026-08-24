@@ -61,12 +61,163 @@ export async function GET(req: Request, ctx: Ctx) {
   // visita do herdeiro: a revalidação do advogado não precisa do painel e
   // não deve carregá-lo para dentro do snapshot do caso.
   let painel: unknown = null;
+  let espolio: unknown = null;
+  // Camada 4 — advogados constituídos: visíveis a TODOS os tokens do caso
+  // (transparência: cada herdeiro sabe quem representa quem), e o convite de
+  // ADVOGADO recebe os painéis dos SEUS representados (por nome — o token
+  // dos herdeiros é credencial e nunca sai daqui).
+  let advogadosDoCaso: { nome: string; oab: string; representa: string[] }[] = [];
+  let paineisRepresentados: { nome: string; painel: unknown }[] = [];
+  let espolioNotas: unknown[] = [];
+  let espolioDespesas: unknown[] = [];
+  let espolioCenarios: unknown[] = [];
+  let espolioVotacoes: unknown[] = [];
+  let espolioMural: unknown[] = [];
   if (visita) {
     try {
       const linha = await prisma.portalPainel.findUnique({
         where: { casoId: convite.casoId },
-        select: { snapshot: true },
+        select: { snapshot: true, espolio: true },
       });
+      // Espaço do Espólio: o snapshot é UM só — igual para todos os tokens
+      // do caso. O 1º acesso de cada herdeiro fica registrado.
+      espolio = linha?.espolio ?? null;
+      if (espolio && !convite.espolioVistoEm) {
+        const quando = new Date().toISOString();
+        convite.espolioVistoEm = quando;
+        await store.marcarEspolioVisto(token, quando);
+        void registrarEventoPortal(
+          convite.casoId,
+          'ESPOLIO_VISTO',
+          { herdeiro: convite.nomeHerdeiro },
+          token,
+        );
+      }
+      // Fatos do espólio são COMPARTILHADOS — o que um herdeiro comenta, os
+      // outros veem (com autor). O token de cada autor NUNCA sai daqui: é a
+      // credencial do convite dele; `minha` marca só os fatos deste token.
+      if (espolio) {
+        const [notas, despesas, cenarios, adesoes, votacoes, votos, mural] = await Promise.all([
+          prisma.espolioNota.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+          }),
+          prisma.espolioDespesa.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+          }),
+          prisma.espolioCenario.findMany({
+            where: { casoId: convite.casoId, status: { not: 'retirado' } },
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+          }),
+          prisma.espolioAdesao.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 1000,
+          }),
+          prisma.espolioVotacao.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+          }),
+          prisma.espolioVoto.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 2000,
+          }),
+          prisma.espolioMural.findMany({
+            where: { casoId: convite.casoId },
+            orderBy: { createdAt: 'asc' },
+            take: 300,
+          }),
+        ]);
+        // Mural com MODERAÇÃO PRÉVIA: a família só vê as APROVADAS; cada um
+        // vê também as PRÓPRIAS pendentes/recusadas (com o motivo da recusa).
+        espolioMural = mural
+          .filter((m) => m.status === 'aprovada' || m.token === token)
+          .map((m) => ({
+            id: m.id,
+            autor: m.autor,
+            texto: m.texto,
+            status: m.status,
+            motivo: m.token === token ? m.motivo : null,
+            criadaEm: m.createdAt.toISOString().slice(0, 10),
+            minha: m.token === token,
+          }));
+        // Votações formais: mesma disciplina dos cenários — o voto mais
+        // recente de cada herdeiro vale; tokens alheios nunca saem.
+        espolioVotacoes = votacoes.map((v) => {
+          const daVotacao = votos.filter((x) => x.votacaoId === v.id);
+          const ultimaPorToken = new Map<string, number>();
+          daVotacao.forEach((x, i) => ultimaPorToken.set(x.token, i));
+          const meu = [...daVotacao].reverse().find((x) => x.token === token);
+          return {
+            id: v.id,
+            status: v.status,
+            dados: v.dados,
+            encerradaEm: v.encerradaEm ? v.encerradaEm.toISOString().slice(0, 10) : null,
+            votos: daVotacao.map((x, i) => ({
+              autor: x.autor,
+              opcaoId: x.opcaoId,
+              comentario: x.comentario,
+              em: x.createdAt.toISOString().slice(0, 10),
+              atual: ultimaPorToken.get(x.token) === i,
+              minha: x.token === token,
+            })),
+            meuVoto: meu?.opcaoId ?? null,
+          };
+        });
+        // Cenários de divisão: a família vê os mesmos números; a resposta
+        // mais recente de cada herdeiro é a que vale (append-only).
+        espolioCenarios = cenarios.map((c) => {
+          const doCenario = adesoes.filter((a) => a.cenarioId === c.id);
+          const ultimaPorToken = new Map<string, number>();
+          doCenario.forEach((a, i) => ultimaPorToken.set(a.token, i));
+          const minha = [...doCenario].reverse().find((a) => a.token === token);
+          return {
+            id: c.id,
+            status: c.status,
+            dados: c.dados,
+            adesoes: doCenario.map((a, i) => ({
+              autor: a.autor,
+              resposta: a.resposta,
+              comentario: a.comentario,
+              em: a.createdAt.toISOString().slice(0, 10),
+              atual: ultimaPorToken.get(a.token) === i,
+              minha: a.token === token,
+            })),
+            minhaResposta: minha?.resposta ?? null,
+          };
+        });
+        espolioNotas = notas.map((n) => ({
+          id: n.id,
+          autor: n.autor,
+          bemId: n.bemId,
+          tipo: n.tipo,
+          texto: n.texto,
+          valorSugerido: n.valorSugerido,
+          status: n.status,
+          motivo: n.motivo,
+          criadaEm: n.createdAt.toISOString().slice(0, 10),
+          minha: n.token === token,
+        }));
+        espolioDespesas = despesas.map((d) => ({
+          id: d.id,
+          autor: d.autor,
+          categoria: d.categoria,
+          valor: d.valor,
+          data: d.data,
+          descricao: d.descricao,
+          status: d.status,
+          motivo: d.motivo,
+          tratamento: d.tratamento,
+          criadaEm: d.createdAt.toISOString().slice(0, 10),
+          minha: d.token === token,
+        }));
+      }
       const recorte = (linha?.snapshot as Record<string, unknown> | undefined)?.[token] ?? null;
       if (recorte && typeof recorte === 'object') {
         // "Atualizações do caso" AO VIVO: eventos do caso inteiro (fase) +
@@ -92,14 +243,71 @@ export async function GET(req: Request, ctx: Ctx) {
       } else {
         painel = recorte;
       }
+
+      const vinculos = await prisma.casoAdvogado.findMany({
+        where: { casoId: convite.casoId, status: 'ativo' },
+      });
+      if (vinculos.length > 0) {
+        const convitesAdv = await prisma.portalConvite.findMany({
+          where: { token: { in: vinculos.map((v) => v.conviteToken) } },
+          select: { token: true, dados: true },
+        });
+        const dadosPor = new Map(
+          convitesAdv.map((c) => [
+            c.token,
+            c.dados as { nomeHerdeiro?: string; oabAdvogado?: string; representa?: string[] },
+          ]),
+        );
+        advogadosDoCaso = vinculos.map((v) => {
+          const d = dadosPor.get(v.conviteToken);
+          return {
+            nome: d?.nomeHerdeiro ?? 'Advogado(a)',
+            oab: d?.oabAdvogado ?? '',
+            representa: Array.isArray(d?.representa) ? d.representa : [],
+          };
+        });
+        if (convite.papelConvite === 'advogado') {
+          const meu = vinculos.find((v) => v.conviteToken === token);
+          const tokensRep = Array.isArray(meu?.representaTokens)
+            ? (meu.representaTokens as string[])
+            : [];
+          const snap = (linha?.snapshot ?? {}) as Record<string, unknown>;
+          paineisRepresentados = tokensRep
+            .map((t) => snap[t])
+            .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+            .map((p) => ({ nome: String(p.nomeHerdeiro ?? 'Herdeiro(a)'), painel: p }));
+        }
+      }
     } catch {
       painel = null;
+      espolio = null;
+      espolioNotas = [];
+      espolioDespesas = [];
+      espolioCenarios = [];
+      espolioVotacoes = [];
+      espolioMural = [];
     }
   }
 
   // `emailAtivo` diz à página se a seção "avisos por e-mail" existe neste
   // deploy (env-gated) — o cliente não conhece as envs do servidor.
-  return Response.json(visita ? { ...convite, painel, emailAtivo: emailHabilitado() } : convite);
+  return Response.json(
+    visita
+      ? {
+          ...convite,
+          painel,
+          espolio,
+          espolioNotas,
+          espolioDespesas,
+          espolioCenarios,
+          espolioVotacoes,
+          espolioMural,
+          advogadosDoCaso,
+          paineisRepresentados,
+          emailAtivo: emailHabilitado(),
+        }
+      : convite,
+  );
 }
 
 /**
@@ -131,6 +339,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     confirmarEnvio?: boolean;
     novoPedido?: { id?: string; titulo?: string; descricao?: string };
     preferencias?: { email?: string; notificacoes?: string };
+    advogadoProprio?: { nome?: string; oab?: string; contato?: string };
   };
   try {
     body = await req.json();
@@ -199,6 +408,28 @@ export async function PATCH(req: Request, ctx: Ctx) {
         : {}),
     });
     if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    return Response.json(atualizado);
+  }
+
+  // Advogado(a) próprio(a) do herdeiro (Provimento 205/2021) — SÓ estrutura:
+  // fica no convite, o escritório vê no card e o evento registra a data.
+  // Nenhum acesso novo nasce daqui.
+  if (body?.advogadoProprio && typeof body.advogadoProprio === 'object') {
+    const nome = String(body.advogadoProprio.nome ?? '').trim().slice(0, 160);
+    if (!nome) return Response.json({ erro: 'Informe o nome do(a) advogado(a).' }, { status: 422 });
+    const atualizado = await store.salvarAdvogadoProprio(token, {
+      nome,
+      oab: String(body.advogadoProprio.oab ?? '').trim().slice(0, 40) || undefined,
+      contato: String(body.advogadoProprio.contato ?? '').trim().slice(0, 200) || undefined,
+      informadoEm: new Date().toISOString(),
+    });
+    if (!atualizado) return Response.json({ erro: 'Convite não encontrado' }, { status: 404 });
+    void registrarEventoPortal(
+      atualizado.casoId,
+      'ADVOGADO_PROPRIO',
+      { herdeiro: atualizado.nomeHerdeiro },
+      token,
+    );
     return Response.json(atualizado);
   }
 

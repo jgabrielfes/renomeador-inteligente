@@ -185,10 +185,284 @@ model PortalPainel {
   snapshot     Json
   // VisibilidadePainel vigente (contato/custos/quinhão) — para reabrir a UI.
   visibilidade Json
+  // Espaço do Espólio (camada 2): o snapshot COMPARTILHADO — igual para
+  // todos os herdeiros do caso (lib/portal/espolio.ts). Null = fechado.
+  espolio      Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@map("portal_paineis")
+}
+
+// FATOS VIVOS do Espaço do Espólio — imutáveis por desenho: o texto nunca é
+// editado nem apagado; a decisão do advogado só muda status/motivo, e
+// correção é uma LINHA NOVA. Sem FK (mesma lição de portal_eventos); quem
+// apaga é o Encerrar compartilhamento. Nomes de herdeiro são dado do
+// próprio escritório — NUNCA em /admin.
+
+// Comentário ou sugestão de valor de um HERDEIRO sobre um bem do espólio.
+// Nada muda no caso sem o advogado: sugestão aceita é aplicada por ELE no
+// acervo local (e só vale para a família após republicar).
+model EspolioNota {
+  id            String    @id @default(cuid())
+  casoId        String
+  // Convite autor + nome (os herdeiros veem uns aos outros no espólio).
+  token         String
+  autor         String
+  bemId         String
+  tipo          String    // 'comentario' | 'sugestao_valor'
+  texto         String
+  valorSugerido String?
+  status        String    @default("pendente") // pendente|aceita|recusada
+  motivo        String?
+  decididaEm    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_notas")
+}
+
+// Despesa ADIANTADA por um herdeiro (funeral, IPTU, condomínio, ITCMD…):
+// a maior fonte de ressentimento em inventário, agora contabilizada. O
+// comprovante é o pedido `despesa-<id>` do convite (reusa portal_arquivos).
+// Reconhecida entra nos cenários de partilha (ressarcir × compensar).
+model EspolioDespesa {
+  id         String    @id @default(cuid())
+  casoId     String
+  token      String
+  autor      String
+  // Herdeiro do caso (participanteId nos cenários) — vem do convite.
+  herdeiroId String?
+  categoria  String
+  valor      String
+  data       String
+  descricao  String
+  status     String    @default("pendente") // pendente|reconhecida|nao_reconhecida
+  motivo     String?
+  tratamento String    @default("ressarcir") // ressarcir|compensar
+  decididaEm DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_despesas")
+}
+
+// CENÁRIO de divisão proposto à família (simulador do Espaço do Espólio):
+// `dados` é o snapshot LEIGO montado no navegador do advogado (título,
+// linhas por participante, mapa bem→destino, avisos) + as `alocacoes` (o
+// MESMO formato do `atribuicoesPct` da seção III — "levar para a partilha"
+// é cópia direta). Enquanto `proposto`, o advogado pode ajustar; `congelado`
+// (consenso ou fecho manual) trava tudo; `retirado` sai da conversa mas fica
+// registrado. Sem FK; quem apaga é o Encerrar compartilhamento.
+model EspolioCenario {
+  id        String   @id @default(cuid())
+  casoId    String
+  dados     Json
+  status    String   @default("proposto") // proposto|congelado|retirado
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([casoId, createdAt])
+  @@map("espolio_cenarios")
+}
+
+// ADESÃO de um herdeiro a um cenário — imutável e append-only: mudar de
+// ideia é registrar resposta nova (a mais recente vale); o histórico inteiro
+// fica para o registro de atendimento. Consenso = a resposta mais recente de
+// TODO convite ativo é "aceito" — congela o cenário.
+model EspolioAdesao {
+  id         String   @id @default(cuid())
+  cenarioId  String
+  casoId     String
+  token      String
+  autor      String
+  resposta   String   // aceito|nao_aceito|conversar
+  comentario String?
+  createdAt  DateTime @default(now())
+
+  @@index([cenarioId, createdAt])
+  @@index([casoId, createdAt])
+  @@map("espolio_adesoes")
+}
+
+// VOTAÇÃO formal do espólio (deliberação em duas etapas): o advogado ABRE
+// (pergunta + opções fechadas em `dados`, com aviso por e-mail) e ENCERRA
+// (apuração + termo de deliberação em PDF no navegador). `dados` é leigo,
+// montado no cliente; encerrada não reabre — deliberação nova é outra linha.
+// Sem FK; quem apaga é o Encerrar compartilhamento.
+model EspolioVotacao {
+  id          String    @id @default(cuid())
+  casoId      String
+  dados       Json
+  status      String    @default("aberta") // aberta|encerrada
+  encerradaEm DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([casoId, createdAt])
+  @@map("espolio_votacoes")
+}
+
+// VOTO de um herdeiro — imutável e append-only: mudar o voto é linha nova
+// enquanto a votação está aberta (a mais recente vale); o histórico inteiro
+// fica para o termo e o registro de atendimento.
+model EspolioVoto {
+  id         String   @id @default(cuid())
+  votacaoId  String
+  casoId     String
+  token      String
+  autor      String
+  opcaoId    String
+  comentario String?
+  createdAt  DateTime @default(now())
+
+  @@index([votacaoId, createdAt])
+  @@index([casoId, createdAt])
+  @@map("espolio_votos")
+}
+
+// MURAL da família — mensagem de herdeiro com MODERAÇÃO PRÉVIA: só aparece
+// para os demais depois que o escritório aprova (recusa exige motivo, que o
+// autor lê). Imutável e append-only: a mensagem nunca é editada; a moderação
+// só muda status/motivo/decididaEm. Sem FK; quem apaga é o Encerrar.
+model EspolioMural {
+  id         String    @id @default(cuid())
+  casoId     String
+  token      String
+  autor      String
+  texto      String
+  status     String    @default("pendente") // pendente|aprovada|recusada
+  motivo     String?
+  decididaEm DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("espolio_mural")
+}
+
+// ÁREA PÚBLICA "Para famílias" (camada 3): o questionário salvo. AQUI a
+// plataforma é CONTROLADORA (LGPD) — diferente das camadas 1–2. Sem dado
+// sensível por desenho (sem CPF, sem nome do falecido, sem endereço; bens
+// por FAIXA). `tokenGestao` é a credencial do link "meu resultado" (mesmo
+// padrão do portal: token = credencial, sem login). Retenção: intake não
+// reclamado expira em 90 dias (expiraEm); retirado é APAGADO na hora.
+model FamiliaIntake {
+  id                String    @id @default(cuid())
+  respostas         Json
+  resultado         Json
+  nome              String?
+  email             String?
+  emailConfirmadoEm DateTime?
+  consentimentoEm   DateTime?
+  status            String    @default("resultado") // rascunho|resultado|publicado|em_conversa|contratado|retirado|expirado
+  uf                String
+  cidade            String
+  pequenoValor      Boolean   @default(false)
+  tokenGestao       String    @unique
+  expiraEm          DateTime
+  // RADAR — publicação anonimizada (camada 3, etapa 4): a publicação SÓ
+  // acontece com consentimento específico + e-mail confirmado pelo link
+  // (confirmacaoToken, uso único). aviso72hEm marca o aviso honesto de
+  // "ninguém respondeu ainda" (enviado uma vez pela varredura do admin).
+  confirmacaoToken  String?   @unique
+  publicadoEm       DateTime?
+  aviso72hEm        DateTime?
+  // Conversa 1:1 (etapa 5): a família escolhe UM(A) advogado(a) por vez —
+  // "Quero conversar" grava quem; encerrar limpa e o caso volta ao Radar;
+  // 30 dias sem confirmação de contratação reabrem sozinhos (na leitura).
+  conversaAdvogadoUserId String?
+  conversaAbertaEm       DateTime?
+  contratadoEm           DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, uf, createdAt])
+  @@map("familia_intakes")
+}
+
+// RADAR — lado do(a) advogado(a) (camada 3, etapa 5). Ética OAB (Provimento
+// 205/2021): verificação da OAB é MANUAL (fila no /admin), a assinatura é
+// MENSAL e marcada à mão por UF (nunca comissão por caso), a resposta não tem
+// campo de honorários e a lista não tem ranking — ordenação única por data.
+model AdvogadoPerfil {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  oab                String
+  oabUf              String
+  situacao           String    @default("pendente") // pendente|aprovado|recusado|suspenso
+  motivoRecusa       String?
+  quizAprovadoEm     DateTime?
+  aceitaPequenoValor Boolean   @default(false)
+  /// Última visita à lista do Radar — o que separa "caso novo" de "já visto"
+  /// (o aviso é DENTRO da plataforma; e-mail de caso novo não existe).
+  radarVistoEm       DateTime?
+  /// VITRINE pública (o que a família vê junto da candidatura, sempre com
+  /// nome + OAB): áreas de atuação e experiência — informação sóbria, sem
+  /// promessa de resultado (Provimento 205/2021). Avaliações NÃO existem.
+  areasAtuacao       String?
+  experiencia        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("advogado_perfis")
+}
+
+model RadarAssinatura {
+  id        String   @id @default(cuid())
+  userId    String
+  uf        String
+  origem    String   @default("assinante_manual") // sem gateway de pagamento (fora de escopo)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, uf])
+  @@map("radar_assinaturas")
+}
+
+// Resposta de apresentação a um caso anônimo: teto de 5 por caso (validado na
+// action), uma por advogado(a), textos limitados (600/800) e SEM valores.
+model RadarResposta {
+  id             String   @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  apresentacao   String
+  conducao       String
+  createdAt      DateTime @default(now())
+
+  @@unique([intakeId, advogadoUserId])
+  @@index([intakeId, createdAt])
+  @@map("radar_respostas")
+}
+
+// Canal 1:1 aberto pelo "Quero conversar" — só a família e o(a) advogado(a)
+// escolhido(a) leem; o histórico permanece para a família mesmo após encerrar.
+model RadarMensagem {
+  id             String   @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  autor          String   // advogado|familia
+  texto          String
+  createdAt      DateTime @default(now())
+
+  @@index([intakeId, advogadoUserId, createdAt])
+  @@map("radar_mensagens")
+}
+
+// HANDOFF do intake ao advogado: a família gera um CÓDIGO de uso único e o
+// advogado, logado, "Importa caso de família" — o caso nasce NO NAVEGADOR
+// dele (local-first; intakeParaCaso), nunca no servidor. Confirmada a
+// importação, o intake é PODADO (respostas/resultado apagados; fica só o
+// histórico da solicitação e do aceite).
+model IntakeHandoff {
+  id             String    @id @default(cuid())
+  intakeId       String
+  codigo         String    @unique
+  advogadoUserId String?
+  importadoEm    DateTime?
+  confirmadoEm   DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([intakeId])
+  @@map("intake_handoffs")
 }
 
 // Registro de atendimento do Painel do Cliente: convites, acessos, fases,
@@ -225,6 +499,14 @@ model User {
   emailVerified DateTime?
   // Null = conta criada via Google (entra só pelo OAuth, sem senha).
   passwordHash String?
+  // PERFIL do usuário (/config): foto pequena (data URL JPEG redimensionada
+  // NO NAVEGADOR — nunca arquivo bruto), bio/apresentação, endereço do
+  // escritório e contatos de trabalho. Tudo opcional, editado pelo próprio.
+  fotoPerfil         String?
+  bio                String?
+  enderecoEscritorio String?
+  telefoneContato    String?
+  emailContato       String?
   role         Role      @default(USER)
   // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
   perfilSucessorista PerfilSucessorista?
@@ -425,4 +707,165 @@ model SucessoristaEvent {
 
   @@index([casoId, acao])
   @@map("sucessorista_events")
+}
+
+// Denúncia da FAMÍLIA sobre uma resposta/conduta no Radar (promessa de
+// resultado, cobrança pela plataforma, contato fora do combinado…). Decisão
+// do admin em /admin/radar: ACATAR suspende o perfil; arquivar mantém.
+model RadarDenuncia {
+  id             String    @id @default(cuid())
+  intakeId       String
+  advogadoUserId String
+  motivo         String
+  status         String    @default("pendente") // pendente|acatada|arquivada
+  createdAt      DateTime  @default(now())
+  decididoEm     DateTime?
+
+  @@index([status, createdAt])
+  @@map("radar_denuncias")
+}
+
+// CAMADA 4 — Rede advogado-advogado, pilar A: o SEGUNDO advogado no caso.
+// Ele entra por CONTA (OAB aprovada, camada 3) — token é credencial de
+// leigo; a janela dele no caso é um convite-espelho do portal
+// (papelConvite 'advogado'). `representaTokens` = convites de herdeiro que
+// ele representa (o escopo de leitura dos painéis individuais).
+model CasoAdvogado {
+  id                 String   @id @default(cuid())
+  casoId             String
+  advogadoUserId     String
+  convidadoPorUserId String
+  indicadoPor        String   @default("titular") // titular|herdeiro
+  representaTokens   Json
+  conviteToken       String   @unique
+  status             String   @default("ativo") // ativo|removido
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([casoId, advogadoUserId])
+  @@index([advogadoUserId, status])
+  @@map("caso_advogados")
+}
+
+// Canal 1:1 entre os advogados do caso (pilar A, etapa A2) — registrado e
+// exportável; nada disto circula para herdeiros nem para /admin.
+model CasoAdvogadoMensagem {
+  id        String   @id @default(cuid())
+  casoId    String
+  deUserId  String
+  texto     String
+  createdAt DateTime @default(now())
+
+  @@index([casoId, createdAt])
+  @@map("caso_advogado_mensagens")
+}
+
+// CAMADA 4, pilar B — CORRESPONDENTES de sucessões por comarca. Extensão do
+// perfil verificado (camada 3): comarcas por código IBGE (sem dígito), tipos
+// de diligência e prazos. Só aparece nas buscas com selo (OAB aprovada +
+// quiz) e perfil ATIVO; a ordem de exibição é NEUTRA (motor puro em
+// lib/rede/diligencias.ts) — nunca por preço ou nota.
+model CorrespondentePerfil {
+  userId         String   @id
+  comarcas       Json     // number[] — códigos IBGE
+  tipos          Json     // TipoDiligencia[]
+  prazoMedioDias Int      @default(5)
+  raioKm         Int      @default(0)
+  ativo          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("correspondente_perfis")
+}
+
+// A DILIGÊNCIA: nasce de um caso (casoId) ou avulsa; a PASTA é o conjunto
+// isolado de arquivos (DiligenciaArquivo) — o correspondente NUNCA vê o
+// caso. termoJson registra o combinado ENTRE os advogados (escopo, prazo,
+// valor em texto livre) — a plataforma não processa pagamento.
+model Diligencia {
+  id                     String    @id @default(cuid())
+  solicitanteUserId      String
+  casoId                 String?
+  comarcaIbge            Int
+  municipio              String
+  uf                     String
+  tipo                   String
+  descricao              String
+  prazoEm                DateTime?
+  status                 String    @default("aberta") // lib/rede/diligencias.ts
+  correspondenteUserId   String?
+  termoJson              Json?
+  justificativaAtraso    String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([status, uf, comarcaIbge])
+  @@index([solicitanteUserId])
+  @@index([correspondenteUserId])
+  @@map("diligencias")
+}
+
+// Arquivo da PASTA da diligência: origem 'pasta' (anexado pelo solicitante)
+// ou 'relatorio' (entregue pelo correspondente). Fora da pasta, nada circula
+// (conteudoDaPasta, com teste). NUNCA em /admin.
+model DiligenciaArquivo {
+  id           String   @id @default(cuid())
+  diligenciaId String
+  origem       String   // pasta|relatorio
+  nome         String
+  mime         String
+  tamanho      Int
+  conteudo     Bytes
+  createdAt    DateTime @default(now())
+
+  @@index([diligenciaId])
+  @@map("diligencia_arquivos")
+}
+
+model DiligenciaOferta {
+  id                   String   @id @default(cuid())
+  diligenciaId         String
+  correspondenteUserId String
+  mensagem             String
+  prazoDias            Int
+  createdAt            DateTime @default(now())
+
+  @@unique([diligenciaId, correspondenteUserId])
+  @@map("diligencia_ofertas")
+}
+
+// Avaliação MÚTUA por critérios objetivos (prazo/relatório/comunicação,
+// 1–5) — agregada no perfil só para assinantes logados; nunca pública.
+model DiligenciaAvaliacao {
+  id             String   @id @default(cuid())
+  diligenciaId   String
+  avaliadorUserId String
+  avaliadoUserId String
+  criterios      Json
+  createdAt      DateTime @default(now())
+
+  @@unique([diligenciaId, avaliadorUserId])
+  @@map("diligencia_avaliacoes")
+}
+
+// FEEDBACK da plataforma (dialog "Reportar problema" / "Sugestão" do shell):
+// título + descrição livres do usuário, com a página registrada
+// automaticamente. Sem FK de propósito (o relato sobrevive à conta); a
+// coluna app segue a fronteira dos três sites — /admin filtra por ela.
+// A severidade/status é classificada pela equipe em /admin/feedback.
+model Feedback {
+  id        String     @id @default(cuid())
+  app       Plataforma
+  userId    String?
+  userEmail String?
+  tipo      String // 'bug' | 'sugestao'
+  categoria String? // sugestão: funcionalidade | usabilidade | outro
+  titulo    String
+  descricao String
+  pagina    String?
+  status    String     @default("aberto") // aberto | em_analise | resolvido
+  createdAt DateTime   @default(now())
+
+  @@index([app, createdAt])
+  @@map("feedbacks")
 }

@@ -101,6 +101,94 @@ export async function notificarQuinhaoLiberado(
   }
 }
 
+/**
+ * Votação formal do espólio — as DUAS etapas da deliberação avisam a família
+ * inteira ('tudo' E 'fases', como a mudança de fase: é marco do caso):
+ * a ABERTURA chama para votar; o ENCERRAMENTO comunica o resultado apurado.
+ */
+export async function notificarVotacao(
+  casoId: string,
+  nomeFalecido: string,
+  pergunta: string,
+  etapa: 'aberta' | 'encerrada',
+  resultado: string | undefined,
+  origin: string,
+): Promise<void> {
+  if (!emailHabilitado()) return;
+  for (const c of await convitesDoCaso(casoId)) {
+    const d = destino(c);
+    if (!d) continue;
+    const ok = await enviarEmailPortal({
+      para: d.para,
+      assunto:
+        etapa === 'aberta'
+          ? `Inventário de ${nomeFalecido}: nova votação da família`
+          : `Inventário de ${nomeFalecido}: votação encerrada`,
+      titulo: etapa === 'aberta' ? 'A família foi chamada a decidir' : 'A votação foi encerrada',
+      paragrafos:
+        etapa === 'aberta'
+          ? [
+              `Olá, ${c.nomeHerdeiro}.`,
+              `Uma nova votação foi aberta no inventário de ${nomeFalecido}: "${pergunta}".`,
+              'Abra o seu portal para ler as opções e registrar o seu voto — você pode mudá-lo enquanto a votação estiver aberta.',
+            ]
+          : [
+              `Olá, ${c.nomeHerdeiro}.`,
+              `A votação "${pergunta}" do inventário de ${nomeFalecido} foi encerrada.`,
+              resultado
+                ? `Resultado apurado: ${resultado}.`
+                : 'O resultado apurado está disponível no seu portal.',
+              'A deliberação da família orienta o trabalho do escritório; o ato formal continua sendo a escritura ou a decisão judicial.',
+            ],
+      urlPortal: urlDoPortal(origin, c.token),
+    });
+    if (ok) {
+      void registrarEventoPortal(
+        casoId,
+        'NOTIFICACAO',
+        { herdeiro: c.nomeHerdeiro, votacao: pergunta.slice(0, 160) },
+        c.token,
+      );
+    }
+  }
+}
+
+/**
+ * RESUMO (digest) do caso enviado pelo advogado com um clique: compila os
+ * marcos do caso inteiro desde o último resumo (só eventos SEM token —
+ * conteúdo idêntico para todos) e manda a 'tudo' e 'fases'.
+ */
+export async function notificarDigest(
+  casoId: string,
+  nomeFalecido: string,
+  itens: { data: string; texto: string }[],
+  origin: string,
+): Promise<number> {
+  if (!emailHabilitado() || itens.length === 0) return 0;
+  let enviados = 0;
+  for (const c of await convitesDoCaso(casoId)) {
+    const d = destino(c);
+    if (!d) continue;
+    const ok = await enviarEmailPortal({
+      para: d.para,
+      assunto: `Inventário de ${nomeFalecido}: resumo do que aconteceu`,
+      titulo: 'Resumo do período',
+      paragrafos: [
+        `Olá, ${c.nomeHerdeiro}.`,
+        `O que aconteceu no inventário de ${nomeFalecido} desde o último resumo:`,
+        ...itens.map((i) => `${i.data} — ${i.texto}`),
+        'Os detalhes estão no seu portal.',
+      ],
+      urlPortal: urlDoPortal(origin, c.token),
+    });
+    if (ok) {
+      enviados += 1;
+      void registrarEventoPortal(casoId, 'NOTIFICACAO', { herdeiro: c.nomeHerdeiro }, c.token);
+    }
+  }
+  return enviados;
+}
+
 /** Documento aprovado/devolvido OU nova pendência — aviso a UM herdeiro. */
 export async function notificarHerdeiro(
   convite: ConviteHerdeiro,

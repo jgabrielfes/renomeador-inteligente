@@ -47,6 +47,9 @@ function linhaDoEvento(e: EventoDoRelatorio): string {
   if (e.detalhe?.herdeiro) partes.push(`herdeiro(a): ${e.detalhe.herdeiro}`);
   if (e.detalhe?.documento) partes.push(`documento: ${e.detalhe.documento}`);
   if (e.detalhe?.fase) partes.push(`fase: ${e.detalhe.fase}`);
+  if (e.detalhe?.cenario) partes.push(`cenário: ${e.detalhe.cenario}`);
+  if (e.detalhe?.votacao) partes.push(`votação: ${e.detalhe.votacao}`);
+  if (e.detalhe?.meio) partes.push(`meio: ${e.detalhe.meio}`);
   if (e.detalhe?.motivo) partes.push(`motivo: "${e.detalhe.motivo}"`);
   return partes.join(' — ');
 }

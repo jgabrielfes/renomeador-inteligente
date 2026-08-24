@@ -34,10 +34,15 @@ export function EconomiaView({
     <div className="economias">
       <h2>Oportunidades de economia</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
-        Mapeadas automaticamente a partir da folha — {garantidas > 0 ? `${garantidas} já garantida(s) nesta montagem e ` : ''}
+        Montagens de <strong>menor custo tributário</strong> mapeadas
+        automaticamente a partir da folha — {garantidas > 0 ? `${garantidas} já garantida(s) nesta montagem e ` : ''}
         o restante depende de decisão da família. Economia estimada somada:{' '}
-        <strong className="num">{brl(total)}</strong>. Sugestões de planejamento
-        sucessório lícito — a validação jurídica é do(a) advogado(a).
+        <strong className="num">{brl(total)}</strong>.
+      </p>
+      <p className="fund" style={{ marginTop: -4, marginBottom: 10 }}>
+        Comparação aritmética entre montagens lícitas, com as premissas à vista em
+        cada card — não é recomendação nem aconselhamento jurídico: a decisão é do(a)
+        advogado(a) com a família.
       </p>
       {economias.map((o) => (
         <div key={o.id} className={`nota oportunidade${o.aplicada ? ' registro' : ''}`}>

@@ -106,6 +106,27 @@ export interface ConviteHerdeiro {
    *  preferência no próprio portal. Sem e-mail válido, nada é enviado. */
   emailNotificacao?: string;
   notificacoes?: 'tudo' | 'fases' | 'nada';
+  /** Espaço do Espólio: 1º acesso deste herdeiro ao espaço compartilhado —
+   *  o advogado vê a confirmação de que cada um viu. */
+  espolioVistoEm?: string;
+  /** Papel do convite (ausente = 'herdeiro'). MEDIADOR(A) acompanha tudo do
+   *  espaço — números, cenários, votações, mural — mas NÃO delibera: não
+   *  vota, não adere a cenário, não conta para consenso, não lança despesa
+   *  e não tem pedidos de documentos nem quinhão. ADVOGADO(A) (camada 4) é
+   *  o(a) constituído(a) de herdeiros específicos: lê tudo do espólio,
+   *  comenta, JUNTA documentos (pedido `docs-advogado`) e lê os painéis dos
+   *  representados — sem deliberar (matriz em lib/rede/escopo.ts). */
+  papelConvite?: 'herdeiro' | 'mediador' | 'advogado';
+  /** Convite de ADVOGADO(A): nomes dos herdeiros representados (exibição —
+   *  o vínculo real, por token, vive em caso_advogados). */
+  representa?: string[];
+  /** Convite de ADVOGADO(A): inscrição exibida nos cabeçalhos ("OAB/SP 123"). */
+  oabAdvogado?: string;
+  /** ADVOGADO(A) PRÓPRIO(A) do herdeiro (Provimento 205/2021): SÓ a
+   *  estrutura — o herdeiro informa pelo portal, o escritório vê no card e
+   *  passa a copiar o(a) colega nas comunicações. Nenhum acesso novo nasce
+   *  daqui; o contato informado não circula entre os demais herdeiros. */
+  advogadoProprio?: { nome: string; oab?: string; contato?: string; informadoEm?: string };
 }
 
 export interface PortalStore {
@@ -133,6 +154,13 @@ export interface PortalStore {
   salvarPreferencias(
     token: string,
     prefs: { emailNotificacao?: string; notificacoes?: 'tudo' | 'fases' | 'nada' },
+  ): Promise<ConviteHerdeiro | null>;
+  /** Espaço do Espólio: carimba o 1º acesso (idempotente). */
+  marcarEspolioVisto(token: string, quando: string): Promise<void>;
+  /** Advogado(a) próprio(a) do herdeiro — informado por ele no portal. */
+  salvarAdvogadoProprio(
+    token: string,
+    dados: { nome: string; oab?: string; contato?: string; informadoEm?: string },
   ): Promise<ConviteHerdeiro | null>;
 }
 
@@ -185,6 +213,16 @@ export const memoryStore: PortalStore = {
     if (!c) return null;
     if (prefs.emailNotificacao !== undefined) c.emailNotificacao = prefs.emailNotificacao;
     if (prefs.notificacoes !== undefined) c.notificacoes = prefs.notificacoes;
+    return c;
+  },
+  async marcarEspolioVisto(token, quando) {
+    const c = mem.get(token);
+    if (c && !c.espolioVistoEm) c.espolioVistoEm = quando;
+  },
+  async salvarAdvogadoProprio(token, dados) {
+    const c = mem.get(token);
+    if (!c) return null;
+    c.advogadoProprio = dados;
     return c;
   },
 };
