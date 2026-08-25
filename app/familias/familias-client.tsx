@@ -27,7 +27,12 @@ import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativ
 import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { GerarCodigoAdvogado, PedirAnalise, ResultadoView } from './resultado-view';
+import {
+  GerarCodigoAdvogado,
+  PedirAnalise,
+  RadarComAdvogado,
+  ResultadoView,
+} from './resultado-view';
 
 const TOTAL_TELAS = 12;
 
@@ -240,6 +245,10 @@ function TelaResultado({
         garantirToken={garantirToken}
       />
     ) : null;
+  // A chamada do topo aparece mesmo quando não há convite: com advogado(a)
+  // constituído(a) o Radar não é oferecido, e a nota diz isso em vez de deixar
+  // a folha muda. No pé fica só o convite — a explicação não precisa de eco.
+  const chamada = convite ?? (radarAtivo && r.jaTemAdvogado === 'sim' ? <RadarComAdvogado /> : null);
 
   return (
     <div className="sucessorista">
@@ -249,7 +258,7 @@ function TelaResultado({
           triagem={triagem}
           estimativa={estimativa}
           docs={docs}
-          chamadaRadar={convite}
+          chamadaRadar={chamada}
           acoes={
             <AcoesResultado
               r={r}

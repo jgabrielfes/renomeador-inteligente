@@ -97,6 +97,35 @@ export function GerarCodigoAdvogado({ token }: { token: string }) {
 }
 
 /**
+ * A ausência do Radar, dita em voz alta.
+ *
+ * Quem respondeu que a família JÁ TEM advogado(a) não recebe o convite — o
+ * Radar existe para quem ainda procura, e oferecê-lo a cliente constituído
+ * seria captação. O que não pode é sumir em silêncio: a folha ficava sem
+ * nenhuma menção e o recurso parecia quebrado ("cadê a opção de publicar?").
+ * Esta nota explica a ausência e aponta o caminho que existe — o código do
+ * caso para quem já atende a família.
+ */
+export function RadarComAdvogado() {
+  return (
+    <div className="nota" style={{ marginTop: 12 }}>
+      <span className="eyebrow">Radar Sucessório</span>
+      <p>
+        Você respondeu que a família <strong>já tem advogado(a)</strong> para o
+        inventário. Por isso não oferecemos aqui a publicação do caso para outros
+        profissionais.
+      </p>
+      <p style={{ marginTop: 6 }}>
+        Para levar este resultado a quem já acompanha o caso, use o código do caso
+        no fim da página (salve o resultado antes, se ainda não salvou): com ele,
+        o(a) advogado(a) abre tudo isto já preenchido. Se a resposta foi um
+        engano, volte ao questionário e altere a pergunta sobre advogado(a).
+      </p>
+    </div>
+  );
+}
+
+/**
  * "Pedir análise de advogados especializados" — a porta do Radar, no ritmo do
  * herdeiro. O consentimento ESPECÍFICO (LGPD) é o aceite do diálogo de
  * confirmação, e é ele que PUBLICA — não há link de validação no caminho, que

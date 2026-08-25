@@ -48,6 +48,13 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
    o novo sem republicar.
    A página `/familias/confirmar/[codigo]` continua de pé para os links já
    enviados na era da confirmação por e-mail.
+   **Quem respondeu que já tem advogado(a) não recebe o convite** — o Radar é
+   para quem ainda procura, e oferecê-lo a cliente constituído seria captação.
+   A ausência é DITA (`RadarComAdvogado` em `resultado-view.tsx`): a folha
+   explica por que o convite não está ali e aponta o código do caso, o caminho
+   de levar o resultado a quem já atende. A regra vale nas DUAS telas — o fim
+   do questionário e o link salvo (`/familias/resultado/[token]`), que antes
+   discordavam entre si.
 3. **Advogado(a)** (`/radar`, logado): habilitação em três passos —
    inscrição na OAB (verificação **manual** no `/admin/radar`), quiz
    deontológico (10 de 10, `lib/radar/quiz.ts`) e assinatura **mensal** por UF

@@ -13,7 +13,12 @@ import type { EstimativaCompleta } from '@/lib/familias/estimativas';
 import type { ItemChecklist } from '@/lib/familias/documentos';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
-import { GerarCodigoAdvogado, PedirAnalise, ResultadoView } from '../../resultado-view';
+import {
+  GerarCodigoAdvogado,
+  PedirAnalise,
+  RadarComAdvogado,
+  ResultadoView,
+} from '../../resultado-view';
 
 export function ResultadoSalvoClient({
   token,
@@ -26,8 +31,12 @@ export function ResultadoSalvoClient({
 }: {
   token: string;
   r: RespostasFamilia;
-  /** Estado do Radar para este resultado (env-gated no servidor). */
-  radar?: 'inativo' | 'disponivel' | 'publicado';
+  /**
+   * Estado do Radar para este resultado (env-gated no servidor).
+   * `com-advogado`: o Radar está ligado, mas a família já tem advogado(a)
+   * constituído(a) — em vez do convite, a folha explica a ausência.
+   */
+  radar?: 'inativo' | 'disponivel' | 'publicado' | 'com-advogado';
   emailInicial?: string;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
@@ -38,7 +47,7 @@ export function ResultadoSalvoClient({
   // publicar num deles atualize o outro.
   const [publicado, setPublicado] = useState(radar === 'publicado');
   const convite =
-    radar === 'inativo' ? null : (
+    radar === 'inativo' || radar === 'com-advogado' ? null : (
       <PedirAnalise
         token={token}
         emailInicial={emailInicial}
@@ -46,6 +55,9 @@ export function ResultadoSalvoClient({
         onPublicado={() => setPublicado(true)}
       />
     );
+  // No topo, a nota substitui o convite quando ele não existe por já haver
+  // advogado(a); no pé fica só o convite, sem eco da explicação.
+  const chamada = convite ?? (radar === 'com-advogado' ? <RadarComAdvogado /> : null);
   const baixarPdf = async () => {
     setGerandoPdf(true);
     try {
@@ -70,7 +82,7 @@ export function ResultadoSalvoClient({
           triagem={triagem}
           estimativa={estimativa}
           docs={docs}
-          chamadaRadar={convite}
+          chamadaRadar={chamada}
           acoes={
             <>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>

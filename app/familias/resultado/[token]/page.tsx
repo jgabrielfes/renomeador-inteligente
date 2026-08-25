@@ -74,6 +74,18 @@ export default async function ResultadoSalvoPage({
   const estimativa = estimarCustos(respostas, hoje, triagem.via);
   const docs = montarChecklistDocumentos(respostas, triagem.via);
 
+  // A regra do questionário vale aqui também: quem já tem advogado(a)
+  // constituído(a) não recebe o convite do Radar — antes o link salvo o
+  // oferecia assim mesmo, e as duas telas do mesmo caso discordavam. Caso já
+  // publicado continua publicado, venha a resposta que vier.
+  const radar = !radarAtivo()
+    ? 'inativo'
+    : linha.publicadoEm
+      ? 'publicado'
+      : respostas.jaTemAdvogado === 'sim'
+        ? 'com-advogado'
+        : 'disponivel';
+
   return (
     <ResultadoSalvoClient
       token={token}
@@ -81,7 +93,7 @@ export default async function ResultadoSalvoPage({
       triagem={triagem}
       estimativa={estimativa}
       docs={docs}
-      radar={radarAtivo() ? (linha.publicadoEm ? 'publicado' : 'disponivel') : 'inativo'}
+      radar={radar}
       emailInicial={linha.email ?? respostas.email}
     />
   );
