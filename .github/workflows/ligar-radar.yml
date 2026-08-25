@@ -1,0 +1,89 @@
+# Liga (ou desliga) o RADAR SUCESSÓRIO em produção, sem abrir o painel.
+#
+# O Radar é env-gated por `RADAR_ATIVO=1` (lib/radar/config.ts): sem a
+# variável, nenhuma tela dele existe — nem para a família, nem para o(a)
+# advogado(a). Como a variável mora no PROJETO da Vercel e não no
+# repositório, ligá-la sempre exigiu o painel; esta action faz o mesmo
+# trabalho pela CLI oficial, com o `VERCEL_TOKEN` que já publica a produção.
+#
+# ‼️ Variável de ambiente só vale para deploys NOVOS. Por isso a action
+# republica a produção do Sucessorista no fim — sem esse passo a mudança
+# fica gravada no projeto e o site continua servindo o build antigo.
+#
+# Segredos: os MESMOS do deploy de produção (VERCEL_TOKEN, VERCEL_ORG_ID,
+# VERCEL_PROJECT_ID_SUCESSORISTA). Nenhum segredo novo.
+#
+# Só roda a mão (workflow_dispatch): é ato de operação, não de código.
+
+name: Ligar o Radar em produção
+
+on:
+  workflow_dispatch:
+    inputs:
+      estado:
+        description: "Radar Sucessório em produção"
+        required: true
+        default: "ligado"
+        type: choice
+        options:
+          - ligado
+          - desligado
+
+concurrency:
+  group: deploy-producao
+  cancel-in-progress: false
+
+jobs:
+  configurar:
+    name: RADAR_ATIVO = ${{ inputs.estado }}
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar a CLI da Vercel
+        run: npm install --global vercel@latest
+
+      - name: Vincular o projeto do Sucessorista
+        run: |
+          mkdir -p .vercel
+          org=$(printf '%s' "${{ secrets.VERCEL_ORG_ID }}" | tr -d '[:space:]"')
+          proj=$(printf '%s' "${{ secrets.VERCEL_PROJECT_ID_SUCESSORISTA }}" | tr -d '[:space:]"')
+          if [ -z "$proj" ]; then
+            echo "::error::Secret VERCEL_PROJECT_ID_SUCESSORISTA não configurado."
+            exit 1
+          fi
+          printf '{"orgId":"%s","projectId":"%s"}' "$org" "$proj" > .vercel/project.json
+
+      - name: Gravar a variável
+        # `--force` sobrescreve o valor que já exista no mesmo alvo; desligar
+        # é REMOVER a variável, não gravar "0" — `radarAtivo()` compara com
+        # "1", e uma variável presente com outro valor confunde quem lê o
+        # painel depois.
+        run: |
+          if [ "${{ inputs.estado }}" = "ligado" ]; then
+            printf '1' | vercel env add RADAR_ATIVO production --force --token="$VERCEL_TOKEN"
+            echo "RADAR_ATIVO=1 gravado no ambiente Production." >> "$GITHUB_STEP_SUMMARY"
+          else
+            vercel env rm RADAR_ATIVO production --yes --token="$VERCEL_TOKEN" || true
+            echo "RADAR_ATIVO removido do ambiente Production." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Puxar as variáveis de produção
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Compilar
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Republicar a produção
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "### Produção republicada com a mudança" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
