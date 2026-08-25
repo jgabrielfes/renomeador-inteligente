@@ -9,6 +9,15 @@
 
 import { useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { RespostasFamilia } from '@/lib/familias/tipos';
 import type { Triagem } from '@/lib/familias/triagem';
 import type { EstimativaCompleta } from '@/lib/familias/estimativas';
@@ -88,54 +97,136 @@ export function GerarCodigoAdvogado({ token }: { token: string }) {
 }
 
 /**
- * "Pedir análise de advogados especializados" — a porta do Radar, no ritmo
- * do herdeiro: consentimento ESPECÍFICO (LGPD), e-mail e a publicação só
- * depois do clique no link de confirmação. Sem pop-up, sem pressão.
+ * "Pedir análise de advogados especializados" — a porta do Radar, no ritmo do
+ * herdeiro. O consentimento ESPECÍFICO (LGPD) é o aceite do diálogo de
+ * confirmação, e é ele que PUBLICA: não há mais link por e-mail no caminho
+ * (exigia e-mail de quem só queria ser respondido e deixava solicitações
+ * paradas para sempre). O e-mail vem DEPOIS e é opcional, só para avisos.
+ *
+ * O bloco aparece DUAS vezes na folha (topo e pé) — por isso é CONTROLADO:
+ * `publicado`/`onPublicado` vivem em quem chama, e publicar num lugar
+ * atualiza o outro na hora.
  */
-export function PedirAnalise({ token, emailInicial }: { token: string; emailInicial: string }) {
-  const [aberto, setAberto] = useState(false);
+export function PedirAnalise({
+  token,
+  emailInicial,
+  publicado,
+  onPublicado,
+  garantirToken,
+}: {
+  /** null no fim do questionário, enquanto o caso ainda não foi salvo. */
+  token: string | null;
+  emailInicial: string;
+  publicado: boolean;
+  onPublicado: () => void;
+  /**
+   * Salva o caso e devolve o token, quando ainda não existe — é o que
+   * permite publicar direto do resultado recém-calculado, sem obrigar a
+   * família a clicar antes em "Salvar".
+   */
+  garantirToken?: () => Promise<string | null>;
+}) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [publicando, setPublicando] = useState(false);
   const [email, setEmail] = useState(emailInicial);
-  const [consentiu, setConsentiu] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const [enviado, setEnviado] = useState(false);
-  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [avisosSalvos, setAvisosSalvos] = useState(false);
+  const [salvandoAvisos, setSalvandoAvisos] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  /** Token de agora: o que veio por prop ou o que `garantirToken` salvar. */
+  const obterToken = async (): Promise<string> => {
+    const atual = token ?? (garantirToken ? await garantirToken() : null);
+    if (!atual) throw new Error('Não foi possível salvar seu caso — tente de novo.');
+    return atual;
+  };
+
+  const chamar = async (corpo: Record<string, unknown>) => {
+    const r = await fetch('/api/familias/radar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: await obterToken(), ...corpo }),
+    });
+    const dados = (await r.json().catch(() => null)) as { erro?: string } | null;
+    if (!r.ok) throw new Error(dados?.erro ?? 'Não foi possível concluir — tente de novo.');
+  };
 
   const publicar = async () => {
-    setErroEnvio(null);
-    if (!consentiu) {
-      setErroEnvio('Marque o consentimento para continuar.');
-      return;
-    }
-    if (!/.+@.+\..+/.test(email.trim())) {
-      setErroEnvio('Informe um e-mail válido — a confirmação vai por ele.');
-      return;
-    }
-    setEnviando(true);
+    setErro(null);
+    setPublicando(true);
     try {
-      const r = await fetch('/api/familias/radar', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token, email: email.trim(), consentimento: true }),
-      });
-      const corpo = (await r.json().catch(() => null)) as { erro?: string } | null;
-      if (r.ok) setEnviado(true);
-      else setErroEnvio(corpo?.erro ?? 'Não foi possível enviar — tente de novo.');
-    } catch {
-      setErroEnvio('Não foi possível enviar — verifique a conexão.');
+      await chamar({ consentimento: true });
+      setConfirmando(false);
+      onPublicado();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível publicar — tente de novo.');
     } finally {
-      setEnviando(false);
+      setPublicando(false);
     }
   };
 
-  if (enviado) {
+  const salvarAvisos = async () => {
+    setErro(null);
+    if (!/.+@.+\..+/.test(email.trim())) {
+      setErro('Esse e-mail não parece válido — confira.');
+      return;
+    }
+    setSalvandoAvisos(true);
+    try {
+      await chamar({ email: email.trim() });
+      setAvisosSalvos(true);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível salvar — tente de novo.');
+    } finally {
+      setSalvandoAvisos(false);
+    }
+  };
+
+  if (publicado) {
     return (
       <div className="nota registro" style={{ marginTop: 12 }}>
-        <span className="eyebrow">Confira seu e-mail</span>
+        <span className="eyebrow">Caso publicado</span>
         <p>
-          Enviamos um link de confirmação para <strong>{email.trim()}</strong>. A
-          solicitação só é publicada depois do seu clique — e sai do ar quando você
-          quiser.
+          Pronto — advogados de sucessões da sua região já podem responder. Seu nome e
+          seu contato não foram publicados. Guarde este endereço para acompanhar as
+          respostas ou retirar a solicitação quando quiser:
         </p>
+        {token && (
+          <p className="num" style={{ wordBreak: 'break-all', marginTop: 4 }}>
+            <a href={`/familias/minha-solicitacao/${token}`}>
+              {typeof location !== 'undefined' ? location.origin : ''}
+              /familias/minha-solicitacao/{token}
+            </a>
+          </p>
+        )}
+        {avisosSalvos ? (
+          <p className="fund" style={{ marginTop: 8 }}>
+            Avisaremos <strong>{email.trim()}</strong> quando alguém responder.
+          </p>
+        ) : (
+          <>
+            <label className="campo" style={{ marginTop: 10 }}>
+              Quer ser avisado(a) por e-mail quando alguém responder? (opcional)
+              <input
+                type="text"
+                inputMode="email"
+                value={email}
+                placeholder="seu@email.com"
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            {erro && <p className="mono-alerta">{erro}</p>}
+            <div style={{ marginTop: 8 }}>
+              <button
+                className="acao secundaria"
+                type="button"
+                disabled={salvandoAvisos}
+                onClick={() => void salvarAvisos()}
+              >
+                {salvandoAvisos ? 'Salvando…' : 'Quero ser avisado(a)'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -150,44 +241,55 @@ export function PedirAnalise({ token, emailInicial }: { token: string; emailInic
           conversa — um por vez.
         </span>
       </p>
-      {!aberto ? (
-        <button className="acao secundaria" type="button" onClick={() => setAberto(true)}>
-          Pedir análise de advogados especializados
-        </button>
-      ) : (
-        <>
-          <label className="campo" style={{ marginTop: 8 }}>
-            Seu e-mail (a confirmação e os avisos vão por ele)
-            <input
-              type="text"
-              inputMode="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label className="marcar" style={{ marginTop: 8, fontWeight: 400 }}>
-            <input
-              type="checkbox"
-              checked={consentiu}
-              onChange={(e) => setConsentiu(e.target.checked)}
-            />
-            Autorizo a publicação ANÔNIMA do meu caso (cidade, via provável, faixa de
-            valor e particularidades — nunca meu nome, contato ou o nome de quem faleceu)
-            para que advogados respondam à minha solicitação. Posso retirar a solicitação
-            a qualquer momento, apagando tudo.
-          </label>
-          {erroEnvio && <p className="mono-alerta">{erroEnvio}</p>}
-          <div style={{ marginTop: 8 }}>
-            <button className="acao" type="button" disabled={enviando} onClick={() => void publicar()}>
-              {enviando ? 'Enviando…' : 'Receber o link de confirmação'}
-            </button>
-          </div>
-        </>
-      )}
+      <button className="acao" type="button" onClick={() => setConfirmando(true)}>
+        Pedir análise de advogados especializados
+      </button>
+      {erro && !confirmando && <p className="mono-alerta">{erro}</p>}
       <p className="fund" style={{ marginTop: 6 }}>
         Esta plataforma não intermedeia honorários nem indica advogados — os
         profissionais respondem voluntariamente à sua solicitação.
       </p>
+
+      {/* Dupla confirmação: o aceite AQUI é o consentimento que publica. */}
+      <Dialog
+        open={confirmando}
+        onOpenChange={(aberto) => {
+          if (!aberto && !publicando) {
+            setConfirmando(false);
+            setErro(null);
+          }
+        }}
+      >
+        <DialogContent className="sucessorista">
+          <DialogHeader>
+            <DialogTitle>Publicar seu caso para advogados?</DialogTitle>
+            <DialogDescription>
+              Serão publicados apenas: a sua cidade e estado, o caminho provável do
+              inventário, a faixa de valor e as particularidades que você respondeu.{' '}
+              <strong>
+                Seu nome, seu contato e o nome de quem faleceu NÃO são publicados.
+              </strong>{' '}
+              Advogados poderão responder com uma apresentação; você escolhe se e com
+              quem conversa — um por vez —, e só então o seu contato é liberado. Pode
+              retirar a solicitação a qualquer momento, apagando tudo.
+            </DialogDescription>
+          </DialogHeader>
+          {erro && <p className="mono-alerta">{erro}</p>}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={publicando}
+              onClick={() => setConfirmando(false)}
+            >
+              Agora não
+            </Button>
+            <Button type="button" loading={publicando} onClick={() => void publicar()}>
+              Sim, publicar meu caso
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -198,12 +300,19 @@ export function ResultadoView({
   estimativa,
   docs,
   acoes,
+  chamadaRadar,
 }: {
   r: RespostasFamilia;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
   docs: ItemChecklist[];
   acoes?: React.ReactNode;
+  /**
+   * O convite do Radar no TOPO da folha (o mesmo bloco que `acoes` repete no
+   * pé): quem chega ao resultado vê a oferta sem precisar rolar tudo, e quem
+   * leu até o fim a reencontra na hora de decidir.
+   */
+  chamadaRadar?: React.ReactNode;
 }) {
   return (
     <>
@@ -214,6 +323,8 @@ export function ResultadoView({
         Os números são estimativas por faixa — servem para você chegar preparado(a) à
         conversa com um advogado, não para substituí-la.
       </p>
+
+      {chamadaRadar}
 
       <h2>Por que esse caminho</h2>
       {triagem.motivos.map((m, i) => (

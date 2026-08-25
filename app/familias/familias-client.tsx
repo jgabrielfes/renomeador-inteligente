@@ -43,22 +43,30 @@ function AcoesResultado({
   triagem,
   estimativa,
   docs,
-  radarAtivo,
+  conviteRadar,
+  email,
+  setEmail,
+  tokenSalvo,
+  setTokenSalvo,
   onRevisar,
 }: {
   r: RespostasFamilia;
   triagem: Triagem;
   estimativa: EstimativaCompleta;
   docs: ItemChecklist[];
-  radarAtivo: boolean;
+  /** O mesmo bloco do Radar que a folha repete no topo (estado no pai). */
+  conviteRadar: React.ReactNode;
+  /** E-mail e token vivem no PAI: o convite do Radar também precisa deles. */
+  email: string;
+  setEmail: (v: string) => void;
+  tokenSalvo: string | null;
+  setTokenSalvo: (v: string | null) => void;
   onRevisar: () => void;
 }) {
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [salvando, setSalvando] = useState<'salvar' | 'email' | null>(null);
   const [urlSalvo, setUrlSalvo] = useState<string | null>(null);
-  const [tokenSalvo, setTokenSalvo] = useState<string | null>(null);
   const [emailEnviado, setEmailEnviado] = useState(false);
-  const [email, setEmail] = useState(r.email);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   const baixarPdf = async () => {
@@ -171,10 +179,94 @@ function AcoesResultado({
         </div>
       )}
       {tokenSalvo && r.jaTemAdvogado === 'sim' && <GerarCodigoAdvogado token={tokenSalvo} />}
-      {tokenSalvo && radarAtivo && r.jaTemAdvogado !== 'sim' && (
-        <PedirAnalise token={tokenSalvo} emailInicial={email} />
-      )}
+      {conviteRadar}
     </>
+  );
+}
+
+/**
+ * A folha de resultado do questionário. O convite do Radar mora AQUI porque
+ * aparece duas vezes (topo e pé) com o mesmo estado — e porque publicar exige
+ * um token: se a família ainda não salvou, salvamos por baixo antes de
+ * publicar (`garantirToken`), para que o caminho seja mesmo "confirmar e
+ * pronto".
+ */
+function TelaResultado({
+  r,
+  triagem,
+  estimativa,
+  docs,
+  radarAtivo,
+  onRevisar,
+}: {
+  r: RespostasFamilia;
+  triagem: Triagem;
+  estimativa: EstimativaCompleta;
+  docs: ItemChecklist[];
+  radarAtivo: boolean;
+  onRevisar: () => void;
+}) {
+  const [email, setEmail] = useState(r.email);
+  const [tokenSalvo, setTokenSalvo] = useState<string | null>(null);
+  const [publicado, setPublicado] = useState(false);
+
+  const garantirToken = async (): Promise<string | null> => {
+    if (tokenSalvo) return tokenSalvo;
+    try {
+      const resp = await fetch('/api/familias', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          respostas: { ...r, email: email.trim() || r.email },
+          acao: 'salvar',
+        }),
+      });
+      const corpo = (await resp.json().catch(() => null)) as { token?: string } | null;
+      if (!resp.ok || !corpo?.token) return null;
+      setTokenSalvo(corpo.token);
+      return corpo.token;
+    } catch {
+      return null;
+    }
+  };
+
+  const convite =
+    radarAtivo && r.jaTemAdvogado !== 'sim' ? (
+      <PedirAnalise
+        token={tokenSalvo}
+        emailInicial={email}
+        publicado={publicado}
+        onPublicado={() => setPublicado(true)}
+        garantirToken={garantirToken}
+      />
+    ) : null;
+
+  return (
+    <div className="sucessorista">
+      <main className="folha" style={{ margin: '0 auto', maxWidth: 720 }}>
+        <ResultadoView
+          r={r}
+          triagem={triagem}
+          estimativa={estimativa}
+          docs={docs}
+          chamadaRadar={convite}
+          acoes={
+            <AcoesResultado
+              r={r}
+              triagem={triagem}
+              estimativa={estimativa}
+              docs={docs}
+              conviteRadar={convite}
+              email={email}
+              setEmail={setEmail}
+              tokenSalvo={tokenSalvo}
+              setTokenSalvo={setTokenSalvo}
+              onRevisar={onRevisar}
+            />
+          }
+        />
+      </main>
+    </div>
   );
 }
 
@@ -303,26 +395,14 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
     const { triagem, estimativa } = resultado;
     const docs = montarChecklistDocumentos(r, triagem.via);
     return (
-      <div className="sucessorista">
-        <main className="folha" style={{ margin: '0 auto', maxWidth: 720 }}>
-          <ResultadoView
-            r={r}
-            triagem={triagem}
-            estimativa={estimativa}
-            docs={docs}
-            acoes={
-              <AcoesResultado
-                r={r}
-                triagem={triagem}
-                estimativa={estimativa}
-                docs={docs}
-                radarAtivo={radarAtivo}
-                onRevisar={() => setTela(TOTAL_TELAS)}
-              />
-            }
-          />
-        </main>
-      </div>
+      <TelaResultado
+        r={r}
+        triagem={triagem}
+        estimativa={estimativa}
+        docs={docs}
+        radarAtivo={radarAtivo}
+        onRevisar={() => setTela(TOTAL_TELAS)}
+      />
     );
   }
 

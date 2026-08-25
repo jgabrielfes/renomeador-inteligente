@@ -31,8 +31,10 @@ export async function varrerAviso72h(
         status: 'publicado',
         publicadoEm: { lt: limite },
         aviso72hEm: null,
+        // Basta o e-mail informado: a confirmação por link deixou de existir
+        // (o aceite na tela publica), e `emailConfirmadoEm` só sobrevive nos
+        // registros da era do link.
         email: { not: null },
-        emailConfirmadoEm: { not: null },
       },
       take: LOTE,
     });

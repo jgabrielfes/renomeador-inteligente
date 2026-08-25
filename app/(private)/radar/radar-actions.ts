@@ -458,7 +458,7 @@ export async function responderCasoRadar(
     });
 
     // Aviso à família (melhor-esforço): a resposta espera no link dela.
-    if (intake.email && intake.emailConfirmadoEm) {
+    if (intake.email) {
       const h = await headers();
       const origin = `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host') ?? ''}`;
       void enviarEmailPortal({
@@ -539,7 +539,7 @@ export async function enviarMensagemRadar(
     });
     // Avisa a família que há resposta esperando (só quando ela confirmou o
     // e-mail) — o CONTEÚDO fica na plataforma; melhor-esforço.
-    if (intake.email && intake.emailConfirmadoEm) {
+    if (intake.email) {
       const h = await headers();
       void notificarMensagemRadar({
         destinatario: 'familia',

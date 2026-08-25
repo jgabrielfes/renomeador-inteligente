@@ -72,7 +72,6 @@ export default async function AdminRadarPage() {
             publicadoEm: { lt: limiteAviso() },
             aviso72hEm: null,
             email: { not: null },
-            emailConfirmadoEm: { not: null },
           },
         }),
         // Pediu a análise e o link de confirmação FOI enviado, mas ninguém

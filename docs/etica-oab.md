@@ -26,8 +26,12 @@ passa por ele antes do merge.
   candidatura vale pelo plano de assinatura do(a) advogado(a) (gate no motor
   puro lib/radar/candidatura.ts — o plano em desenvolvimento entra ali).
 - **LGPD**: a plataforma é CONTROLADORA dos dados do intake; publicação exige
-  consentimento específico + e-mail confirmado; retirar apaga tudo; retenção
-  máxima de 90 dias; pós-importação o servidor poda o conteúdo.
+  **consentimento específico**, colhido no diálogo de dupla confirmação que
+  descreve exatamente o que vai ao ar e o que nunca vai (a validação por link
+  de e-mail saiu — deixava solicitações paradas e cobrava e-mail de quem só
+  queria ser respondido; o e-mail hoje é opcional, e só para avisos); retirar
+  apaga tudo; retenção máxima de 90 dias; pós-importação o servidor poda o
+  conteúdo.
 
 ## Texto legal fixo
 

@@ -34,6 +34,18 @@ export function ResultadoSalvoClient({
   docs: ItemChecklist[];
 }) {
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  // O convite do Radar aparece no topo E no pé: o estado vive AQUI para que
+  // publicar num deles atualize o outro.
+  const [publicado, setPublicado] = useState(radar === 'publicado');
+  const convite =
+    radar === 'inativo' ? null : (
+      <PedirAnalise
+        token={token}
+        emailInicial={emailInicial}
+        publicado={publicado}
+        onPublicado={() => setPublicado(true)}
+      />
+    );
   const baixarPdf = async () => {
     setGerandoPdf(true);
     try {
@@ -58,6 +70,7 @@ export function ResultadoSalvoClient({
           triagem={triagem}
           estimativa={estimativa}
           docs={docs}
+          chamadaRadar={convite}
           acoes={
             <>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
@@ -66,15 +79,7 @@ export function ResultadoSalvoClient({
                 </button>
               </div>
               <GerarCodigoAdvogado token={token} />
-              {radar === 'disponivel' && <PedirAnalise token={token} emailInicial={emailInicial} />}
-              {radar === 'publicado' && (
-                <div className="nota registro" style={{ marginTop: 12 }}>
-                  <p>
-                    Sua solicitação está publicada no Radar.{' '}
-                    <a href={`/familias/minha-solicitacao/${token}`}>Acompanhar ou retirar</a>.
-                  </p>
-                </div>
-              )}
+              {convite}
             </>
           }
         />

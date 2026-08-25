@@ -7,9 +7,11 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 
 ## Interruptores
 
-- `RADAR_ATIVO=1` **e** `RESEND_API_KEY` presentes (`lib/radar/config.ts` →
-  `radarAtivo()`): sem os dois, nenhuma UI do Radar existe (o desenho exige
-  e-mail confirmado para publicar). A área `/familias` funciona sem o Radar.
+- `RADAR_ATIVO=1` (`lib/radar/config.ts` → `radarAtivo()`) é a ÚNICA condição:
+  sem ela nenhuma UI do Radar existe. A área `/familias` funciona sem o Radar.
+  O `RESEND_API_KEY` deixou de ser exigido aqui quando a publicação passou a
+  ser imediata — o e-mail virou opcional, e cada envio é env-gated por conta
+  própria.
 - Tudo é exclusivo do site do Sucessorista (`requirePlataforma`/`foraDaPlataforma`).
 - `CRON_SECRET` (opcional): liga a rota `POST /api/radar/varredura`, que a
   GitHub Action `varredura-radar.yml` chama uma vez por dia. Sem a env a rota
@@ -21,10 +23,18 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 1. **Questionário** (`/familias`, sem cadastro): até 12 perguntas, valores por
    FAIXA, nenhum dado sensível. Resultado na hora (triagem + estimativas +
    documentos — motores puros em `lib/familias/*`).
-2. **Publicação** (opt-in): o herdeiro pede análise → informa e-mail e marca o
-   consentimento específico → link de confirmação de USO ÚNICO
-   (`/familias/confirmar/[codigo]`) carimba `emailConfirmadoEm`,
-   `consentimentoEm` e `publicadoEm` (status `publicado`).
+2. **Publicação** (opt-in, IMEDIATA): o convite "Pedir análise de advogados"
+   aparece em DOIS lugares da folha de resultado — logo abaixo do resultado e
+   no pé — com o mesmo estado (publicar num deles atualiza o outro). O clique
+   abre o **diálogo de dupla confirmação**, que diz o que vai ao ar e o que
+   nunca vai; o aceite É o consentimento e publica na hora
+   (`consentimentoEm` + `publicadoEm`, status `publicado`). No fim do
+   questionário, publicar salva o caso por baixo antes (`garantirToken`), para
+   não obrigar a família a clicar em "Salvar" primeiro.
+   O **e-mail é opcional e vem DEPOIS**, só para avisos (alguém respondeu,
+   aviso de 72h) — a mesma rota grava/atualiza o e-mail sem republicar.
+   A página `/familias/confirmar/[codigo]` continua de pé para os links já
+   enviados na era da confirmação por e-mail.
 3. **Advogado(a)** (`/radar`, logado): habilitação em três passos —
    inscrição na OAB (verificação **manual** no `/admin/radar`), quiz
    deontológico (10 de 10, `lib/radar/quiz.ts`) e assinatura **mensal** por UF
