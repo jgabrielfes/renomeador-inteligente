@@ -17,6 +17,7 @@ import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import { CurrencyInput } from '@/components/currency-input';
+import { mascararMoeda, moedaParaNumero } from '@/lib/moeda';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
@@ -31,6 +32,12 @@ import {
   type DossieOrcamento,
 } from '@/lib/partilha/orcamento';
 import { baixarBlob } from '@/lib/partilha/xlsx';
+import {
+  CUSTOS_MANUAIS_VAZIOS,
+  parcelasManuais,
+  totalCustosManuais,
+  type CustosManuais,
+} from '@/lib/partilha/custos-manuais';
 import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import type { SucessaoCumulada } from './itcmd-view';
 
@@ -90,6 +97,14 @@ async function montarDossie(
 
 const VALOR_PTBR = /^\d{1,3}(\.\d{3})*(,\d{2})?$|^\d+(,\d{2})?$/;
 const paraDecimal = (v: string) => Number(v.replace(/\./g, '').replace(',', '.')).toFixed(2);
+
+/* Conversão dos campos MANUAIS (edição inline contínua, convenção da folha):
+   o estado persiste em decimal "1234.56" e o input mostra "1.234,56". */
+const decimalParaMascara = (v: string) => (v ? mascararMoeda(v) : '');
+const mascaraParaDecimal = (m: string) => {
+  const n = moedaParaNumero(m);
+  return n === undefined ? '' : n.toFixed(2);
+};
 
 const esquemaDespesa = z.object({
   descricao: z.string().trim().min(1, 'Descreva a despesa — ex.: "Certidões estaduais avulsas".'),
@@ -206,6 +221,9 @@ export function CustosView({
   setIssPct,
   adicionais,
   setAdicionais,
+  manuais = null,
+  setManuais,
+  ufsForaDetectadas = [],
   nomeCaso = '',
   dataObito,
   caso,
@@ -226,6 +244,15 @@ export function CustosView({
   /** Custos ADICIONAIS lançados à mão — persistem no caso. */
   adicionais: DespesaAdicional[];
   setAdicionais: (d: DespesaAdicional[]) => void;
+  /**
+   * CASO FORA DE SP — os valores manuais que substituem a projeção (a
+   * projeção automática vem NULA quando o modo está ativo; o client silencia
+   * os motores). null/inativo = projeção paulista normal.
+   */
+  manuais?: CustosManuais | null;
+  setManuais?: (m: CustosManuais) => void;
+  /** UFs fora de SP detectadas no caso (domicílio/registros) — só aviso. */
+  ufsForaDetectadas?: string[];
   /** Autor(a) da herança e óbito — cabeçalho da folha de orçamento. */
   nomeCaso?: string;
   dataObito?: string;
@@ -248,23 +275,46 @@ export function CustosView({
   rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
 }) {
   const [gerando, setGerando] = useState<'pdf' | 'docx' | null>(null);
+  const manuaisAtivos = Boolean(manuais?.ativo);
+  const totalManual = totalCustosManuais(manuais);
   const temTaxaJudicial = custos?.parcelas.some((p) => p.id === 'taxa-judiciaria') ?? false;
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
   const totalAdicionais = somaAdicionais(adicionais);
 
   /** Folha de orçamento — mesma tabela do espelho, em PDF ou DOCX editável. */
   const gerarOrcamento = async (formato: 'pdf' | 'docx') => {
-    if (!custos) return;
+    if (!custos && !(manuaisAtivos && manuais)) return;
     setGerando(formato);
     try {
       const { montarOrcamentoPdf, montarOrcamentoDocx } = await import('@/lib/partilha/orcamento');
+      // Modo manual (fora de SP): a folha sai com os valores informados —
+      // o ITCMD entra como a "provisão" e as demais parcelas com o
+      // fundamento honesto de que são do profissional, não das tabelas.
+      const fonteManual = manuaisAtivos && manuais
+        ? {
+            parcelas: parcelasManuais(manuais)
+              .filter((l) => l.id !== 'manual-itcmd')
+              .map((l) => ({
+                rotulo: l.rotulo,
+                valor: l.valor,
+                detalhe: `Valor informado pelo(a) profissional${manuais.uf ? ` — legislação de ${manuais.uf}` : ''}.`,
+                aproximado: false,
+              })),
+            avisos: manuais.observacao ? [`Nota do escritório: ${manuais.observacao}`] : [],
+            provisaoTotal: Number(manuais.itcmd) > 0 ? Number(manuais.itcmd) : null,
+          }
+        : null;
       const dados = montarDadosOrcamento({
         nomeCaso,
         dataObito,
         rito,
-        parcelas: custos.parcelas,
-        avisos: custos.avisos,
-        provisaoTotal: provisao ? provisao.total : null,
+        parcelas: fonteManual ? fonteManual.parcelas : custos!.parcelas,
+        avisos: fonteManual ? fonteManual.avisos : custos!.avisos,
+        provisaoTotal: fonteManual
+          ? fonteManual.provisaoTotal
+          : provisao
+            ? provisao.total
+            : null,
         sucessoes: provisoesSucessoes.map(({ sucessao, provisao: pv }) => ({
           nome: sucessao.nome,
           dataObito: sucessao.dataObito,
@@ -300,7 +350,7 @@ export function CustosView({
           dashboard &quot;O Caso&quot;
         </p>
       )}
-      {rito === 'JUDICIAL' ? (
+      {!manuaisAtivos && (rito === 'JUDICIAL' ? (
         <p className="subtitulo">
           A planilha completa além do imposto, no RITO JUDICIAL: a taxa judiciária entra
           por faixas FIXAS de UFESPs sobre o monte-mor (Lei 11.608/2003, art. 4º, §7º, na
@@ -317,27 +367,165 @@ export function CustosView({
           renunciante; torna/cessão de direitos hereditários é ato próprio pela base do
           valor da torna, além do imposto inter vivos, se o caso.
         </p>
+      ))}
+
+      {/* CASO FORA DE SP — o interruptor honesto: a projeção desta aba é
+          calibrada para a legislação paulista; inventário regido por outro
+          estado desliga o motor e o profissional informa os valores apurados
+          na legislação local. NUNCA liga sozinho — a detecção só avisa. */}
+      {!manuaisAtivos && setManuais && (
+        <div className={ufsForaDetectadas.length > 0 ? 'nota exigencia' : 'nota'} style={{ marginBottom: 14 }}>
+          <span className="eyebrow">Caso fora de São Paulo?</span>
+          <p>
+            {ufsForaDetectadas.length > 0 && (
+              <>
+                Este caso tem elementos fora de SP (<strong>{ufsForaDetectadas.join(', ')}</strong>
+                ) — último domicílio ou imóvel registrado em outro estado.{' '}
+              </>
+            )}
+            A projeção automática desta aba vale para a <strong>legislação paulista</strong>{' '}
+            (ITCMD da Lei 10.705/2000 e tabelas de custas de SP). Cada estado tem lei,
+            alíquotas, isenções e emolumentos próprios — para inventário regido por outro
+            estado, desligue a projeção e informe os valores apurados na legislação local.
+            As demais ferramentas do caso continuam valendo normalmente.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setManuais({
+                ...(manuais ?? CUSTOS_MANUAIS_VAZIOS),
+                ativo: true,
+                uf: manuais?.uf || ufsForaDetectadas[0] || '',
+              })
+            }
+          >
+            Preencher custos manualmente
+          </Button>
+        </div>
       )}
 
-      {!custos && (
+      {manuaisAtivos && manuais && setManuais && (
+        <div className="nota" style={{ marginBottom: 14 }}>
+          <span className="eyebrow">
+            Custos informados pelo profissional{manuais.uf ? ` — ${manuais.uf}` : ''}
+          </span>
+          <p className="fund" style={{ margin: '4px 0 8px' }}>
+            A projeção automática (SP) está <strong>desligada</strong> neste caso: os
+            valores abaixo são os que você apurou na legislação do estado — eles valem no
+            painel do caso, no custo projetado e na folha de orçamento. Campo sem valor
+            não entra na soma.
+          </p>
+          <div className="grade c2" style={{ maxWidth: 640 }}>
+            <label className="campo" style={{ maxWidth: 120 }}>
+              UF do inventário
+              <Input
+                maxLength={2}
+                value={manuais.uf}
+                onChange={(e) =>
+                  setManuais({ ...manuais, uf: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })
+                }
+              />
+            </label>
+            <label className="campo">
+              ITCMD/ITCD (R$)
+              <CurrencyInput
+                value={decimalParaMascara(manuais.itcmd)}
+                onChange={(m) => setManuais({ ...manuais, itcmd: mascaraParaDecimal(m) })}
+              />
+            </label>
+            <label className="campo">
+              Cartório ou custas judiciais (R$)
+              <CurrencyInput
+                value={decimalParaMascara(manuais.cartorioJustica)}
+                onChange={(m) => setManuais({ ...manuais, cartorioJustica: mascaraParaDecimal(m) })}
+              />
+            </label>
+            <label className="campo">
+              Registros (R$)
+              <CurrencyInput
+                value={decimalParaMascara(manuais.registros)}
+                onChange={(m) => setManuais({ ...manuais, registros: mascaraParaDecimal(m) })}
+              />
+            </label>
+            <label className="campo">
+              Certidões (R$)
+              <CurrencyInput
+                value={decimalParaMascara(manuais.certidoes)}
+                onChange={(m) => setManuais({ ...manuais, certidoes: mascaraParaDecimal(m) })}
+              />
+            </label>
+            <label className="campo campo-longo">
+              Nota do escritório (fundamento, guia, referência)
+              <Input
+                value={manuais.observacao}
+                title={manuais.observacao}
+                placeholder="Ex.: ITCD-MG 5% (Lei 14.941/2003), guia emitida no SIARE em 20/08"
+                onChange={(e) => setManuais({ ...manuais, observacao: e.target.value })}
+              />
+            </label>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setManuais({ ...manuais, ativo: false })}
+            >
+              Voltar à projeção automática (SP)
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {manuaisAtivos && manuais && (
+        <Espelho colunas={['Parcela', 'Fundamento', 'Valor']}>
+          {parcelasManuais(manuais).map((l) => (
+            <LinhaEspelho
+              key={l.id}
+              nome={l.rotulo}
+              meio={`informado pelo(a) profissional${manuais.uf ? ` — ${manuais.uf}` : ''}`}
+              valor={brl(l.valor)}
+              valorStyle={{ fontSize: 'var(--t-base)' }}
+            />
+          ))}
+          {adicionais.map((a) => (
+            <LinhaEspelho
+              key={a.id}
+              nome={a.descricao || 'Despesa adicional'}
+              meio="custo adicional — lançamento do escritório"
+              valor={brl(Number(a.valor) || 0)}
+              valorStyle={{ fontSize: 'var(--t-base)' }}
+            />
+          ))}
+          <LinhaEspelho
+            nome={<>CUSTO TOTAL INFORMADO{totalAdicionais > 0 ? ' + adicionais' : ''}</>}
+            valor={brl(totalManual + totalAdicionais)}
+            valorStyle={{ fontSize: 'var(--t-lg)' }}
+          />
+        </Espelho>
+      )}
+
+      {!custos && !manuaisAtivos && (
         <p className="mono-alerta">
           Lance a família e os bens (itens I e II) para o cálculo dos custos aparecer.
         </p>
       )}
 
-      <div className="grade c2" style={{ marginBottom: 14, maxWidth: 420 }}>
-        <label className="campo">
-          <span>
-            ISS do município da serventia (%){' '}
-            <span className="dica">— a tabela oficial é publicada com 5%, o maior do estado</span>
-          </span>
-          <Input
-            inputMode="decimal"
-            value={issPct}
-            onChange={(e) => setIssPct(e.target.value.replace(/[^\d.,]/g, '').slice(0, 5))}
-          />
-        </label>
-      </div>
+      {!manuaisAtivos && (
+        <div className="grade c2" style={{ marginBottom: 14, maxWidth: 420 }}>
+          <label className="campo">
+            <span>
+              ISS do município da serventia (%){' '}
+              <span className="dica">— a tabela oficial é publicada com 5%, o maior do estado</span>
+            </span>
+            <Input
+              inputMode="decimal"
+              value={issPct}
+              onChange={(e) => setIssPct(e.target.value.replace(/[^\d.,]/g, '').slice(0, 5))}
+            />
+          </label>
+        </div>
+      )}
 
       {custos && (
         <>
@@ -413,7 +601,7 @@ export function CustosView({
 
       <EditorDespesasAdicionais adicionais={adicionais} setAdicionais={setAdicionais} />
 
-      {custos && (
+      {(custos || manuaisAtivos) && (
         <div style={{ marginTop: 18 }}>
           <span className="eyebrow">Folha de orçamento</span>
           <p className="fund" style={{ margin: '4px 0 8px' }}>
