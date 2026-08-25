@@ -4571,6 +4571,9 @@ export default function SucessoristaClient({
             setAdicionais={setCustosAdicionais}
             nomeCaso={falecido.nome}
             dataObito={falecido.dataObito}
+            caso={caso}
+            resultado={resultado}
+            atribuicoes={matriz}
             onOrcamento={(formato) => registrarDoc(formato)}
             irParaFamilia={() => irPara('familia')}
             irParaAcervo={() => irPara('acervo')}

@@ -21,15 +21,72 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
 import type { ProvisaoItcmd } from '@/lib/partilha/itcmd';
+import type { Caso, Resultado } from '@/lib/partilha/types';
+import type { Alocacoes } from '@/lib/partilha/cenario';
 import { formatarData } from '@/lib/partilha/familia';
 import {
   somaAdicionais,
   montarDadosOrcamento,
   type DespesaAdicional,
+  type DossieOrcamento,
 } from '@/lib/partilha/orcamento';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import type { SucessaoCumulada } from './itcmd-view';
+
+/**
+ * As seções do PDF completo, montadas a partir do que a folha já tem: as
+ * partes, o acervo com a avaliação, as fatias do gráfico (na MESMA ordem da
+ * pizza da aba III — meação primeiro) e o quadro bem a bem do motor puro
+ * `quadro-bens.ts`. Nada é recalculado aqui: só recortado para o papel.
+ */
+async function montarDossie(
+  caso: Caso,
+  resultado: Resultado,
+  atribuicoes: Alocacoes = {},
+): Promise<DossieOrcamento> {
+  const { montarQuadroPorBem } = await import('@/lib/partilha/quadro-bens');
+  const massa = Number(resultado.acervo.massaPartilhavel) || 0;
+  const pct = (v: number) => (massa > 0 ? (v / massa) * 100 : 0);
+  const quadro = montarQuadroPorBem(caso, resultado, atribuicoes);
+  return {
+    meeiro: resultado.meacao
+      ? {
+          nome: resultado.meacao.beneficiario,
+          fracao: resultado.meacao.fracao,
+          valor: Number(resultado.meacao.valor) || 0,
+        }
+      : undefined,
+    herdeiros: resultado.quinhoes.map((q) => ({
+      nome: q.nome,
+      fracao: q.fracaoHeranca,
+      valor: Number(q.valor) || 0,
+      pctMassa: pct(Number(q.valor) || 0),
+    })),
+    acervo: caso.bens.map((b) => ({
+      descricao: b.descricao,
+      natureza: b.natureza === 'COMUM' ? ('COMUM' as const) : ('PARTICULAR' as const),
+      valor: Number(b.valor) || 0,
+      avaliacao: b.valorAvaliacao ? Number(b.valorAvaliacao) || undefined : undefined,
+    })),
+    fatias: [
+      ...(resultado.meacao
+        ? [{ nome: `${resultado.meacao.beneficiario} — meação`, valor: Number(resultado.meacao.valor) || 0 }]
+        : []),
+      ...resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) || 0 })),
+    ],
+    massaPartilhavel: massa,
+    quadro: quadro.linhas.map((l) => ({
+      bem: l.bem,
+      natureza: l.natureza,
+      nome: l.nome,
+      proporcao: l.proporcao,
+      valor: l.valor,
+      meacao: l.meacao,
+    })),
+    avisosQuadro: quadro.avisos,
+  };
+}
 
 const VALOR_PTBR = /^\d{1,3}(\.\d{3})*(,\d{2})?$|^\d+(,\d{2})?$/;
 const paraDecimal = (v: string) => Number(v.replace(/\./g, '').replace(',', '.')).toFixed(2);
@@ -151,6 +208,9 @@ export function CustosView({
   setAdicionais,
   nomeCaso = '',
   dataObito,
+  caso,
+  resultado,
+  atribuicoes = {},
   onOrcamento,
   irParaFamilia,
   irParaAcervo,
@@ -169,6 +229,15 @@ export function CustosView({
   /** Autor(a) da herança e óbito — cabeçalho da folha de orçamento. */
   nomeCaso?: string;
   dataObito?: string;
+  /**
+   * O caso e a partilha apurada — o PDF sai COMPLETO com eles (partes,
+   * acervo, pizza e quadro bem a bem antes da folha de custos). Sem partilha
+   * lançada, o PDF cai na folha enxuta de sempre.
+   */
+  caso?: Caso;
+  resultado?: Resultado | null;
+  /** Matriz da partilha diferenciada, quando o escritório lançou alguma. */
+  atribuicoes?: Alocacoes;
   /** Telemetria: a folha de orçamento saiu (formato). */
   onOrcamento?: (formato: 'ORCAMENTO_PDF' | 'ORCAMENTO_DOCX') => void;
   irParaFamilia: () => void;
@@ -204,7 +273,14 @@ export function CustosView({
         adicionais,
         geradoEm: new Date().toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' }),
       });
-      const blob = formato === 'pdf' ? await montarOrcamentoPdf(dados) : await montarOrcamentoDocx(dados);
+      // O PDF sai COMPLETO quando há partilha apurada; o DOCX segue enxuto —
+      // é a folha que o escritório edita e manda para a família.
+      const completo =
+        formato === 'pdf' && caso && resultado ? await montarDossie(caso, resultado, atribuicoes) : undefined;
+      const blob =
+        formato === 'pdf'
+          ? await montarOrcamentoPdf({ ...dados, completo })
+          : await montarOrcamentoDocx(dados);
       baixarBlob(
         blob,
         `Orçamento do inventário${nomeCaso ? ` - ${nomeCaso}` : ''}.${formato === 'pdf' ? 'pdf' : 'docx'}`,
@@ -341,8 +417,22 @@ export function CustosView({
         <div style={{ marginTop: 18 }}>
           <span className="eyebrow">Folha de orçamento</span>
           <p className="fund" style={{ margin: '4px 0 8px' }}>
-            A planilha acima numa folha apresentável à família, enxuta (Item · Valor) —
-            em PDF nas cores do módulo, ou em DOCX para editar antes de entregar.
+            {caso && resultado ? (
+              <>
+                O <strong>PDF sai completo</strong>, para apresentar à família: autor(a)
+                da herança, meeiro(a) e herdeiros, o acervo com os valores de avaliação, o
+                gráfico da divisão, o quadro da partilha bem a bem e, ao final, esta
+                planilha de custos. O <strong>DOCX</strong> traz só a planilha (Item ·
+                Valor), para editar antes de entregar.
+              </>
+            ) : (
+              <>
+                A planilha acima numa folha apresentável à família, enxuta (Item · Valor) —
+                em PDF nas cores do módulo, ou em DOCX para editar antes de entregar.
+                Lance a partilha (item III) e o PDF passa a sair completo, com as partes, o
+                acervo, o gráfico da divisão e o quadro bem a bem.
+              </>
+            )}
           </p>
           <div className="escolha">
             <Button
@@ -351,7 +441,7 @@ export function CustosView({
               disabled={gerando !== null}
               onClick={() => void gerarOrcamento('pdf')}
             >
-              Baixar orçamento (PDF)
+              {caso && resultado ? 'Baixar PDF completo' : 'Baixar orçamento (PDF)'}
             </Button>
             <Button
               type="button"
