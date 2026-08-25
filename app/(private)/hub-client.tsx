@@ -14,7 +14,6 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
-import { noHub } from '@/components/lexcausa/sites';
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { useProgressRouter } from '@/components/navigation-progress';
 
@@ -26,11 +25,22 @@ export function HubLexCausa({
   ehMaster,
   radarAtivo,
   radarNovos = 0,
+  baseHub,
 }: {
   menu: ReactNode;
   perfil: 'ADVOGADO' | 'ESCREVENTE' | null;
   ehMaster: boolean;
   radarAtivo: boolean;
+  /**
+   * Base do apex para os links de /produtos/* — `noHub('')` resolvido NO
+   * SERVIDOR (vazio no próprio apex, absoluto vindo daqui).
+   *
+   * Não dá para chamar `noHub()` aqui: ele lê `lib/app.ts`, que lê
+   * `process.env.APP` — inexistente no navegador. Importá-lo de um
+   * componente client arrasta o módulo para o bundle e a página inteira
+   * morre na avaliação. A plataforma chega por prop, sempre.
+   */
+  baseHub: string;
   /** Casos novos no Radar desde a última visita — o aviso é AQUI, na
    *  plataforma (e-mail de caso novo não existe por decisão do escritório). */
   radarNovos?: number;
@@ -99,7 +109,7 @@ export function HubLexCausa({
                 )}
                 <div className="lc-acoes">
                   {radarSemEnv ? (
-                    <Link className="lc-acao secundaria" href={noHub(p.landing)}>
+                    <Link className="lc-acao secundaria" href={`${baseHub}${p.landing}`}>
                       Conhecer o produto
                     </Link>
                   ) : (

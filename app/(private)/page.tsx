@@ -26,6 +26,7 @@
 
 import { AccessTracker } from "@/components/access-tracker";
 import { AvatarSessao } from "@/components/lexcausa/avatar-sessao";
+import { noHub } from "@/components/lexcausa/sites";
 import { UserMenu } from "@/components/user-menu";
 import { APP, moduloDaPlataforma } from "@/lib/app";
 import { auth, isMaster, requireSession } from "@/lib/auth";
@@ -73,6 +74,9 @@ export default async function Home() {
         ehMaster={isMaster(session)}
         radarAtivo={radarAtivo()}
         radarNovos={radarNovos}
+        // O endereço do apex é resolvido AQUI, no servidor: `noHub()` lê
+        // `lib/app.ts`, que não existe no navegador.
+        baseHub={noHub("")}
       />
     );
   }
