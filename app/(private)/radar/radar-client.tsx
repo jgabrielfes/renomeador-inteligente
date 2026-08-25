@@ -231,6 +231,75 @@ function CardCaso({ item, aoResponder, aoConversar }: {
 }
 
 /**
+ * FICHA do(a) profissional — a PRÉVIA exata do que a família vê no alto de
+ * cada candidatura: foto (ou iniciais), nome completo, OAB/UF e endereço do
+ * escritório.
+ *
+ * Por que uma prévia e não mais um formulário: nome, foto e endereço são do
+ * PERFIL da conta e se editam em `/config`. Duplicar os campos aqui criaria
+ * duas verdades para o mesmo dado. Então o Radar mostra o resultado e manda
+ * para o lugar certo quando falta algo.
+ *
+ * O aviso de ficha incompleta é uma FAIXA que fica — e não um diálogo de
+ * primeiro acesso. Diálogo dispensado é diálogo esquecido, e a ficha é
+ * justamente o que a família lê antes de decidir; a faixa some sozinha
+ * quando a foto e o endereço estiverem lá.
+ */
+export function FichaProfissionalPrevia({
+  ficha,
+  oab,
+  aviso = true,
+}: {
+  ficha: { nome: string; foto: string | null; enderecoEscritorio: string | null };
+  /** "OAB/SP 123.456" — vazio enquanto a inscrição não foi cadastrada. */
+  oab: string;
+  /** false na prévia de dentro do formulário de resposta (a faixa já apareceu). */
+  aviso?: boolean;
+}) {
+  const falta = [
+    !ficha.foto ? 'a sua foto' : null,
+    !ficha.enderecoEscritorio ? 'o endereço do escritório' : null,
+  ].filter(Boolean) as string[];
+
+  return (
+    <div className="nota" style={{ marginTop: 8 }}>
+      <span className="eyebrow">Como a família vê você</span>
+      <div className="ficha-advogado">
+        {ficha.foto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="ficha-foto" src={ficha.foto} alt="" />
+        ) : (
+          <span className="ficha-foto ficha-foto-vazia" aria-hidden>
+            {iniciaisDoNome(ficha.nome)}
+          </span>
+        )}
+        <div className="ficha-dados">
+          <strong>{ficha.nome}</strong>
+          <span className="fund">{oab || 'Inscrição na OAB ainda não cadastrada'}</span>
+          {ficha.enderecoEscritorio && <span className="fund">{ficha.enderecoEscritorio}</span>}
+        </div>
+      </div>
+      {aviso && falta.length > 0 && (
+        <p className="mono-alerta" style={{ marginTop: 8 }}>
+          Sua ficha está incompleta: falta {falta.join(' e ')}. É o primeiro contato da
+          família com você — vale completar antes de se candidatar.{' '}
+          <Link href="/config">Completar meu perfil</Link>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Iniciais para o círculo de quem ainda não subiu foto. */
+function iniciaisDoNome(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '?';
+  const primeira = partes[0][0] ?? '';
+  const ultima = partes.length > 1 ? (partes[partes.length - 1][0] ?? '') : '';
+  return (primeira + ultima).toUpperCase();
+}
+
+/**
  * VITRINE do(a) advogado(a) — o que a família vê junto da candidatura.
  * Informação sóbria por regra (Provimento 205/2021): áreas e experiência,
  * sem promessa, sem valores, sem avaliações.
@@ -457,6 +526,17 @@ export function RadarClient({
           <div className="nota exigencia">
             <p>Não foi possível carregar o seu estado no Radar — recarregue a página.</p>
           </div>
+        )}
+
+        {/* A FICHA abre a tela — antes dos passos de habilitação. É o topo da
+            candidatura que a família lê, e o aviso de "falta foto/endereço"
+            precisa dar as caras logo no primeiro acesso, não escondido num
+            <details> lá embaixo que ninguém abre. */}
+        {estado && (
+          <FichaProfissionalPrevia
+            ficha={estado.ficha}
+            oab={perfil ? `OAB/${perfil.oabUf} ${perfil.oab}` : ''}
+          />
         )}
 
         {estado && !perfil && !estado.master && (

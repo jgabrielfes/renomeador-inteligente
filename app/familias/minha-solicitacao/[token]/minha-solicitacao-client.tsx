@@ -30,6 +30,16 @@ const ROTULO_VIA: Record<string, string> = {
   ALVARA: 'alvará (simplificado)',
 };
 
+/** Iniciais do círculo de quem ainda não subiu foto — a ausência não vira
+ *  buraco no layout nem ícone genérico de "usuário desconhecido". */
+function iniciaisDoNome(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '?';
+  const primeira = partes[0][0] ?? '';
+  const ultima = partes.length > 1 ? (partes[partes.length - 1][0] ?? '') : '';
+  return (primeira + ultima).toUpperCase();
+}
+
 export function MinhaSolicitacaoClient({
   token,
   dados,
@@ -300,8 +310,28 @@ export function MinhaSolicitacaoClient({
             <div style={{ display: 'grid', gap: 12 }}>
               {dados.respostas.map((r) => (
                 <section key={r.advogadoId} className="nota" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span className="eyebrow">{r.oab || 'Advogado(a)'} · respondeu em {r.em.split('-').reverse().join('/')}</span>
-                  <h3 style={{ margin: 0 }}>{r.nome}</h3>
+                  <span className="eyebrow">respondeu em {r.em.split('-').reverse().join('/')}</span>
+                  {/* FICHA: rosto, nome completo, OAB e endereço do escritório.
+                      A identificação do profissional é dever ético (Prov.
+                      205/2021) e é o primeiro contato da família com quem
+                      respondeu — antes vinha só uma linha de OAB e o nome. */}
+                  <div className="ficha-advogado">
+                    {r.foto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="ficha-foto" src={r.foto} alt="" />
+                    ) : (
+                      <span className="ficha-foto ficha-foto-vazia" aria-hidden>
+                        {iniciaisDoNome(r.nome)}
+                      </span>
+                    )}
+                    <div className="ficha-dados">
+                      <h3 style={{ margin: 0 }}>{r.nome}</h3>
+                      <span className="fund">{r.oab || 'Advogado(a)'}</span>
+                      {r.enderecoEscritorio && (
+                        <span className="fund">{r.enderecoEscritorio}</span>
+                      )}
+                    </div>
+                  </div>
                   {r.areasAtuacao && (
                     <p className="fund" style={{ margin: 0 }}>
                       <strong>Atua com:</strong> {r.areasAtuacao}

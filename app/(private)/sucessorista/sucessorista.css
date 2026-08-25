@@ -2347,3 +2347,41 @@
 .sucessorista .lista-privacidade { margin: 8px 0 0; padding-left: 20px; }
 .sucessorista .lista-privacidade li { margin-bottom: 8px; }
 .sucessorista .rodape-etico a { text-decoration: underline; color: inherit; }
+
+/* FICHA DO(A) ADVOGADO(A) — o topo de toda candidatura do Radar: foto (ou
+   iniciais), nome completo, OAB/UF e endereço do escritório. É a
+   identificação que o Provimento 205/2021 exige, e o primeiro contato da
+   família com quem respondeu. Vale nos dois lados: a prévia em /radar e o
+   card real em "Minha solicitação". */
+.sucessorista .ficha-advogado {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  margin-top: var(--e-2);
+}
+.sucessorista .ficha-foto {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--fio-forte);
+  background: var(--papel-alto);
+}
+/* Sem foto cadastrada: o círculo com as iniciais — a ausência não pode virar
+   um buraco no layout nem um ícone genérico de "usuário desconhecido". */
+.sucessorista .ficha-foto-vazia {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--t-lg);
+  font-weight: 600;
+  color: var(--bronze);
+  letter-spacing: 0.5px;
+}
+.sucessorista .ficha-dados {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
