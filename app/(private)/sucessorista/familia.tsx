@@ -30,6 +30,7 @@ import { useState } from 'react';
 
 import { mascararCpf } from '@/lib/cpf';
 import { CurrencyInput } from '@/components/currency-input';
+import { SeletorMunicipio, SeletorMunicipioTexto } from '@/components/seletor-municipio';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
   composicaoFamiliar,
@@ -251,13 +252,13 @@ export function FamiliaView({
             onChange={(iso) => setFalecido({ dataObito: iso })}
           />
         </label>
-        <label className="campo">
-          Último domicílio (cidade/UF)
-          <Input
-            value={falecido.ultimoDomicilio}
-            onChange={(e) => setFalecido({ ultimoDomicilio: e.target.value })}
-          />
-        </label>
+        {/* Último domicílio: escolha (UF → município), gravada como a MESMA
+            linha "Cidade/UF" que a escritura e as petições já consomem. */}
+        <SeletorMunicipioTexto
+          valor={falecido.ultimoDomicilio}
+          rotuloMunicipio="Último domicílio (município)"
+          onChange={(v) => setFalecido({ ultimoDomicilio: v })}
+        />
         {/* Campos de texto LONGO ocupam a linha inteira do grid (T5): local
             do falecimento e as matrículas de certidão cortavam o valor sem
             forma de ver o conteúdo — e o title guarda o texto completo. */}
@@ -1063,8 +1064,19 @@ function EditorSucessoes({
 
 /* ---------- qualificação ---------- */
 
+/**
+ * Marcador do PAR estado→município dentro da lista de campos.
+ *
+ * O editor renderiza os campos por um loop genérico (um <label> por chave da
+ * Qualificacao), e cidade+UF deixaram de ser dois campos independentes: viraram
+ * um controle só, em que escolher a UF carrega a lista daquele estado. Em vez
+ * de quebrar o loop em dois, a lista carrega este marcador na POSIÇÃO em que o
+ * par deve aparecer (entre bairro e CEP) e o loop o troca pelo seletor.
+ */
+const PAR_MUNICIPIO = '__municipio__' as const;
+
 interface CampoQualificacao {
-  campo: keyof Qualificacao;
+  campo: keyof Qualificacao | typeof PAR_MUNICIPIO;
   rotulo: string;
 }
 
@@ -1092,8 +1104,7 @@ const GRUPOS_QUALIFICACAO: { rotulo: string; campos: CampoQualificacao[] }[] = [
       { campo: 'endereco', rotulo: 'Endereço (rua e número)' },
       { campo: 'complemento', rotulo: 'Complemento' },
       { campo: 'bairro', rotulo: 'Bairro' },
-      { campo: 'cidade', rotulo: 'Cidade' },
-      { campo: 'uf', rotulo: 'Estado (UF)' },
+      { campo: PAR_MUNICIPIO, rotulo: 'Cidade' },
       { campo: 'cep', rotulo: 'CEP' },
     ],
   },
@@ -1182,7 +1193,21 @@ export function QualificacaoEditor({
         <div key={grupo.rotulo} style={{ marginTop: 12 }}>
           <p className="q-grupo">{grupo.rotulo}</p>
           <div className="grade q-grid">
-            {grupo.campos.map(({ campo, rotulo }) => (
+            {grupo.campos.map(({ campo, rotulo }) =>
+              // O par estado→município é um controle só e traz os próprios
+              // rótulos — fica FORA do <label> genérico (label dentro de label
+              // é HTML inválido e rouba o clique do controle de dentro).
+              campo === PAR_MUNICIPIO ? (
+                <SeletorMunicipio
+                  key={campo}
+                  uf={valor.uf}
+                  municipio={valor.cidade}
+                  rotuloMunicipio={rotulo}
+                  onChange={({ uf, municipio }) =>
+                    onChange({ ...valor, uf, cidade: municipio })
+                  }
+                />
+              ) : (
               <label
                 className={`campo${CAMPOS_LONGOS.has(campo) ? ' campo-longo' : ''}`}
                 key={campo}
@@ -1230,7 +1255,8 @@ export function QualificacaoEditor({
                   />
                 )}
               </label>
-            ))}
+              ),
+            )}
             {grupo === GRUPOS_QUALIFICACAO[0] && (
               <label className="marcar" style={{ margin: 0, fontWeight: 400, alignSelf: 'end' }}>
                 <Checkbox

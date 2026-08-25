@@ -316,8 +316,11 @@ export function PedirAnalise({
           <DialogHeader>
             <DialogTitle>Publicar seu caso para advogados?</DialogTitle>
             <DialogDescription>
-              Serão publicados apenas: a sua cidade e estado, o caminho provável do
-              inventário, a faixa de valor e as particularidades que você respondeu.{' '}
+              Serão publicados: a sua cidade e estado, o caminho provável do
+              inventário, a faixa de valor, as particularidades e{' '}
+              <strong>as respostas do questionário</strong> — inclusive o que você
+              escreveu no campo livre, se preencheu. Do falecimento vai só o mês e o
+              ano, nunca o dia.{' '}
               <strong>
                 Seu nome, seu contato e o nome de quem faleceu NÃO são publicados.
               </strong>{' '}

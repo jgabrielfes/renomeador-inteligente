@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { CurrencyInput } from '@/components/currency-input';
+import { SeletorMunicipioTexto } from '@/components/seletor-municipio';
 
 import type { Bem, Resultado } from '@/lib/partilha/types';
 import type { Qualificacao } from '@/lib/partilha/familia';
@@ -421,10 +422,13 @@ export function HonorariosView({
           Endereço profissional
           <Input value={escritorio.endereco} onChange={(e) => setE({ endereco: e.target.value })} />
         </label>
-        <label className="campo">
-          Cidade/UF
-          <Input value={escritorio.cidadeUf} onChange={(e) => setE({ cidadeUf: e.target.value })} />
-        </label>
+        {/* Escolha UF → município; o valor gravado segue sendo a linha
+            "Cidade/UF" que entra na proposta e no contrato. */}
+        <SeletorMunicipioTexto
+          valor={escritorio.cidadeUf}
+          rotuloMunicipio="Cidade do escritório"
+          onChange={(v) => setE({ cidadeUf: v })}
+        />
         <label className="campo">
           E-mail
           <Input value={escritorio.email} onChange={(e) => setE({ email: e.target.value })} />

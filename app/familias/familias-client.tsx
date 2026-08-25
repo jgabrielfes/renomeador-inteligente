@@ -25,6 +25,7 @@ import {
 import { classificarVia, type Triagem } from '@/lib/familias/triagem';
 import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativas';
 import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
+import { SeletorMunicipio } from '@/components/seletor-municipio';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import {
@@ -701,25 +702,13 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
         {tela === 11 && (
           <>
             <h1>Onde a família está?</h1>
-            <p className="fund">Cidade e estado — só para contextualizar a orientação.</p>
+            <p className="fund">Estado e município — só para contextualizar a orientação.</p>
             <div className="grade q-grid">
-              <label className="campo">
-                Cidade
-                <input
-                  type="text"
-                  value={r.cidade}
-                  onChange={(e) => patch({ cidade: e.target.value })}
-                />
-              </label>
-              <label className="campo">
-                Estado (UF)
-                <select value={r.ufFamilia} onChange={(e) => patch({ ufFamilia: e.target.value })}>
-                  <option value="">Selecione…</option>
-                  {UFS.map((uf) => (
-                    <option key={uf}>{uf}</option>
-                  ))}
-                </select>
-              </label>
+              <SeletorMunicipio
+                uf={r.ufFamilia}
+                municipio={r.cidade}
+                onChange={({ uf, municipio }) => patch({ ufFamilia: uf, cidade: municipio })}
+              />
             </div>
           </>
         )}
@@ -756,9 +745,14 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
                 placeholder="Ex.: a casa ainda está no nome dos avós; um irmão mora fora; a empresa está parada…"
               />
             </label>
+            {/* Aviso obrigatório: este campo é livre e a família precisa
+                saber, ANTES de escrever, que ele viaja junto da publicação —
+                é o que transforma "vazamento" em escolha informada. */}
             <p className="fund" style={{ marginTop: 4 }}>
-              Essas observações acompanham o seu caso se você levá-lo a um(a)
-              advogado(a) — não entram no resumo anônimo do Radar.
+              Essas observações acompanham o seu caso e <strong>são lidas pelos
+              advogados</strong> se você publicar no Radar. Escreva sobre a situação,
+              não sobre as pessoas: <strong>não inclua nomes, endereços ou telefones</strong> —
+              o resto do seu caso é publicado sem nada que identifique você.
             </p>
           </>
         )}

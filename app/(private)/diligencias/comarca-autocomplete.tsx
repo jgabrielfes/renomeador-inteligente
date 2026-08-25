@@ -1,75 +1,90 @@
 'use client';
 
 /**
- * Autocomplete de comarca — pergunta ao servidor (a base dos 5.587
- * municípios nunca entra no bundle). Usado no hub /diligencias e no dialog
- * "Solicitar diligência" da aba Documentos do caso.
+ * Escolha de COMARCA — estado primeiro, município depois.
  *
- * ATENÇÃO: não monte este componente dentro de um <label> — o clique no
- * item do dropdown seria re-encaminhado pelo label ao primeiro controle
- * rotulável remanescente, desfazendo a escolha (bug real de navegador).
+ * Era um autocomplete por digitação sobre os 5.587 municípios do país: quem
+ * não lembrava a grafia exata não achava, e "São" trazia dezenas de lugares de
+ * estados diferentes. Virou o mesmo par UF → lista que a plataforma inteira
+ * usa nos campos de município: escolhida a UF, desce a lista daquele estado.
+ *
+ * A base continua NO SERVIDOR — o cliente pede a lista de um estado por vez
+ * (`listarMunicipiosDaUf`) e nunca carrega o país no bundle. O contrato de
+ * quem chama não mudou: `onEscolher` recebe o `Municipio` completo, com o
+ * código do IBGE, que é o que a diligência grava.
+ *
+ * ATENÇÃO: não monte este componente dentro de um <label> — ele traz os
+ * próprios rótulos, e label dentro de label é HTML inválido (o clique do
+ * controle de dentro seria roubado pelo de fora).
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { Input } from '@/components/ui/input';
+import { listarMunicipiosDaUf } from '@/lib/rede/municipios-actions';
 import type { Municipio } from '@/lib/rede/municipios';
-import { buscarComarcas } from './diligencias-actions';
 
-export function ComarcaAutocomplete({
-  onEscolher,
-  placeholder = 'Digite a comarca…',
-}: {
-  onEscolher: (m: Municipio) => void;
-  placeholder?: string;
-}) {
-  const [texto, setTexto] = useState('');
-  const [opcoes, setOpcoes] = useState<Municipio[]>([]);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+const UFS = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+] as const;
+
+export function ComarcaAutocomplete({ onEscolher }: { onEscolher: (m: Municipio) => void }) {
+  const [uf, setUf] = useState('');
+  // Mesmo desenho do seletor geral: o cache carrega a UF a que pertence, e
+  // "carregando" é derivado — nada de setState síncrono dentro do efeito.
+  const [cache, setCache] = useState<{ uf: string; itens: Municipio[] } | null>(null);
+  const daUfAtual = cache?.uf === uf;
+  const lista = daUfAtual ? (cache?.itens ?? []) : [];
+  const carregando = uf.length === 2 && !daUfAtual;
+
+  useEffect(() => {
+    if (uf.length !== 2) return;
+    let vivo = true;
+    void listarMunicipiosDaUf(uf)
+      .then((m) => {
+        if (vivo) setCache({ uf, itens: m });
+      })
+      .catch(() => {
+        if (vivo) setCache({ uf, itens: [] });
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [uf]);
+
   return (
-    <div style={{ position: 'relative' }}>
-      <Input
-        value={texto}
-        placeholder={placeholder}
-        onChange={(e) => {
-          const v = e.target.value;
-          setTexto(v);
-          if (debounce.current) clearTimeout(debounce.current);
-          debounce.current = setTimeout(() => {
-            void buscarComarcas(v).then(setOpcoes);
-          }, 250);
-        }}
-      />
-      {opcoes.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            zIndex: 20,
-            insetInlineStart: 0,
-            insetInlineEnd: 0,
-            background: 'var(--background, #fff)',
-            border: '1px solid var(--border, #ddd)',
-            borderRadius: 8,
-            maxHeight: 200,
-            overflowY: 'auto',
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <label className="campo" style={{ maxWidth: 120 }}>
+        Estado (UF)
+        <select value={uf} onChange={(e) => setUf(e.target.value)}>
+          <option value="">UF…</option>
+          {UFS.map((u) => (
+            <option key={u} value={u}>
+              {u}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="campo" style={{ flex: '1 1 220px' }}>
+        Comarca (município)
+        <select
+          value=""
+          disabled={uf.length !== 2}
+          onChange={(e) => {
+            const escolhido = lista.find((m) => String(m.ibge) === e.target.value);
+            if (escolhido) onEscolher(escolhido);
           }}
         >
-          {opcoes.map((m) => (
-            <button
-              key={m.ibge}
-              type="button"
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px' }}
-              onClick={() => {
-                onEscolher(m);
-                setTexto('');
-                setOpcoes([]);
-              }}
-            >
-              {m.nome}/{m.uf}
-            </button>
+          <option value="">
+            {uf.length !== 2 ? 'Escolha o estado primeiro' : carregando ? 'Carregando…' : 'Selecione…'}
+          </option>
+          {lista.map((m) => (
+            <option key={m.ibge} value={m.ibge}>
+              {m.nome}
+            </option>
           ))}
-        </div>
-      )}
+        </select>
+      </label>
     </div>
   );
 }

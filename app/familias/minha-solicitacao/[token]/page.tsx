@@ -31,6 +31,10 @@ export interface RespostaParaFamilia {
   advogadoId: string;
   nome: string;
   oab: string;
+  /** FICHA da conta: o rosto e o endereço de quem respondeu (Prov. 205/2021
+   *  — identificação do profissional; anônima é só a família). */
+  foto: string | null;
+  enderecoEscritorio: string | null;
   /** VITRINE do(a) profissional — informação sóbria, sem avaliações. */
   areasAtuacao: string | null;
   experiencia: string | null;
@@ -96,10 +100,19 @@ export default async function MinhaSolicitacaoPage({
         });
         const ids = [...new Set(linhas.map((l) => l.advogadoUserId))];
         const [usuarios, perfis] = await Promise.all([
-          prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+          prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true, fotoPerfil: true, enderecoEscritorio: true },
+          }),
           prisma.advogadoPerfil.findMany({ where: { userId: { in: ids } } }),
         ]);
         const nomePor = new Map(usuarios.map((u) => [u.id, u.name ?? 'Advogado(a)']));
+        const fichaPor = new Map(
+          usuarios.map((u) => [
+            u.id,
+            { foto: u.fotoPerfil, enderecoEscritorio: u.enderecoEscritorio },
+          ]),
+        );
         const oabPor = new Map(perfis.map((p) => [p.userId, `OAB/${p.oabUf} ${p.oab}`]));
         const vitrinePor = new Map(
           perfis.map((p) => [p.userId, { areasAtuacao: p.areasAtuacao, experiencia: p.experiencia }]),
@@ -109,6 +122,8 @@ export default async function MinhaSolicitacaoPage({
             advogadoId: l.advogadoUserId,
             nome: nomePor.get(l.advogadoUserId) ?? 'Advogado(a)',
             oab: oabPor.get(l.advogadoUserId) ?? '',
+            foto: fichaPor.get(l.advogadoUserId)?.foto ?? null,
+            enderecoEscritorio: fichaPor.get(l.advogadoUserId)?.enderecoEscritorio ?? null,
             areasAtuacao: vitrinePor.get(l.advogadoUserId)?.areasAtuacao ?? null,
             experiencia: vitrinePor.get(l.advogadoUserId)?.experiencia ?? null,
             apresentacao: l.apresentacao,
@@ -157,6 +172,7 @@ export default async function MinhaSolicitacaoPage({
                 respostas,
                 pequenoValor: intake.pequenoValor,
                 publicadoEm: intake.publicadoEm.toISOString(),
+                hoje: new Date().toISOString(),
               })
             : null,
         urlResultado: `/familias/resultado/${intake.tokenGestao}`,

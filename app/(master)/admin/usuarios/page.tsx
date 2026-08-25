@@ -10,6 +10,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { MasterToggle } from "@/components/admin/master-toggle";
+import { PerfilSucessoristaSelect } from "@/components/admin/perfil-sucessorista-select";
 import { QueryPagination } from "@/components/admin/query-pagination";
 import { SearchFilter } from "@/components/admin/search-filter";
 import { SortableHeader } from "@/components/admin/sortable-header";
@@ -31,7 +32,7 @@ import {
   parsePaginacao,
   queryDaTabela,
 } from "@/lib/admin";
-import { appComConta, moduloDaPlataforma } from "@/lib/app";
+import { appComConta, EH_SUCESSORISTA, moduloDaPlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { ROTULO_MODULO } from "@/lib/modulos";
 import { prisma } from "@/lib/prisma";
@@ -192,6 +193,9 @@ export default async function UsuariosPage({
               >
                 Acessos
               </SortableHeader>
+              {/* Perfil de uso é do Sucessorista: nos outros sites a coluna
+                  nem existe (o /admin de cada site mostra só o que é dele). */}
+              {EH_SUCESSORISTA && <TableHead>Perfil de uso</TableHead>}
               <TableHead>Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -252,6 +256,15 @@ export default async function UsuariosPage({
                       />
                     </span>
                   </TableCell>
+                  {EH_SUCESSORISTA && (
+                    <TableCell>
+                      <PerfilSucessoristaSelect
+                        userId={u.id}
+                        nome={u.name}
+                        perfil={u.perfilSucessorista}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     {u.id === session.user.id ? (
                       <span className="text-xs text-muted-foreground">
@@ -271,7 +284,7 @@ export default async function UsuariosPage({
             {usuarios.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={EH_SUCESSORISTA ? 8 : 7}
                   className="text-center text-muted-foreground"
                 >
                   {busca

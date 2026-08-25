@@ -31,6 +31,23 @@ export function municipioPorIbge(ibge: number): Municipio | null {
   return t ? { ibge: t[0], nome: t[1], uf: t[2] } : null;
 }
 
+/**
+ * Todos os municípios de uma UF, em ordem alfabética.
+ *
+ * É o que alimenta o seletor "UF primeiro, município depois" da plataforma
+ * inteira: escolhida a UF, a lista daquele estado desce pronta e a pessoa não
+ * digita (nem erra) o nome. A maior é MG, com 853 entradas — algumas dezenas
+ * de KB de JSON por consulta, contra os 5.587 municípios que jamais entram no
+ * bundle do cliente.
+ */
+export function municipiosDaUf(uf: string): Municipio[] {
+  const alvo = uf.trim().toUpperCase();
+  if (alvo.length !== 2) return [];
+  return TUPLAS.filter(([, , u]) => u === alvo)
+    .map(([ibge, nome, u]) => ({ ibge, nome, uf: u }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
 /** Busca indiferente a caixa/acento; começos de palavra vêm primeiro. */
 export function buscarMunicipios(consulta: string, limite = 12): Municipio[] {
   const q = semAcento(consulta.trim());

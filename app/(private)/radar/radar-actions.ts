@@ -51,8 +51,27 @@ async function reabrirConversasParadas(): Promise<void> {
   });
 }
 
+/**
+ * A FICHA que acompanha toda candidatura — a identificação do(a) profissional
+ * que o Provimento 205/2021 exige, com o rosto que a família procura.
+ *
+ * Os dados são os do PERFIL da conta (`/config`), não uma segunda cópia no
+ * Radar: nome, foto e endereço do escritório já são editados lá, e duplicar o
+ * formulário só criaria duas verdades. Aqui eles são lidos para a PRÉVIA (o
+ * advogado vê exatamente o que a família vê) e para o aviso de ficha
+ * incompleta.
+ */
+export interface FichaProfissional {
+  nome: string;
+  /** Data URI reduzida no navegador (users.fotoPerfil) — null = iniciais. */
+  foto: string | null;
+  enderecoEscritorio: string | null;
+}
+
 export interface EstadoAdvogado {
   master: boolean;
+  /** Dados da CONTA que a família enxerga junto da candidatura. */
+  ficha: FichaProfissional;
   perfil: {
     oab: string;
     oabUf: string;
@@ -72,9 +91,13 @@ export async function estadoRadarAdvogado(): Promise<EstadoAdvogado | null> {
   const ctx = await contexto();
   if (!ctx) return null;
   try {
-    const [perfil, assinaturas] = await Promise.all([
+    const [perfil, assinaturas, conta] = await Promise.all([
       prisma.advogadoPerfil.findUnique({ where: { userId: ctx.userId } }),
       prisma.radarAssinatura.findMany({ where: { userId: ctx.userId } }),
+      prisma.user.findUnique({
+        where: { id: ctx.userId },
+        select: { name: true, fotoPerfil: true, enderecoEscritorio: true },
+      }),
     ]);
     const ufsAssinadas = assinaturas.map((a) => a.uf);
     const habilitado =
@@ -85,6 +108,11 @@ export async function estadoRadarAdvogado(): Promise<EstadoAdvogado | null> {
         ufsAssinadas.length > 0);
     return {
       master: ctx.master,
+      ficha: {
+        nome: conta?.name ?? 'Advogado(a)',
+        foto: conta?.fotoPerfil ?? null,
+        enderecoEscritorio: conta?.enderecoEscritorio ?? null,
+      },
       perfil: perfil
         ? {
             oab: perfil.oab,
@@ -256,6 +284,9 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
     const minhasSet = new Set(minhas.map((m) => m.intakeId));
     const porId = new Map(contagens.map((c) => [c.intakeId, c._count._all]));
 
+    // Uma leitura do relógio para o lote inteiro (o "há quanto tempo" do
+    // falecimento) — o motor de anonimização é puro e recebe a data de fora.
+    const agoraIso = new Date().toISOString();
     const casos: CasoRadar[] = [];
     for (const l of linhas) {
       // Conversa aberta: o caso só continua visível para o(a) escolhido(a).
@@ -270,6 +301,7 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
           respostas: r,
           pequenoValor: l.pequenoValor,
           publicadoEm: l.publicadoEm.toISOString(),
+          hoje: agoraIso,
         }),
         respostas: porId.get(l.id) ?? 0,
         minhaResposta: minhasSet.has(l.id),
@@ -387,6 +419,7 @@ export async function minhasRespostasRadar(): Promise<
             respostas: r,
             pequenoValor: intake.pequenoValor,
             publicadoEm: intake.publicadoEm.toISOString(),
+            hoje: new Date().toISOString(),
           });
           cidade = anon.cidade;
           uf = anon.uf;

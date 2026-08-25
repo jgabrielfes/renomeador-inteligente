@@ -3747,34 +3747,17 @@ export default function SucessoristaClient({
           O Sucessorista
           <small>Folha de trabalho do inventário</small>
         </div>
-        {/* O perfil é da CONTA: usuário comum vê o próprio perfil fixo;
-            só MASTER circula pelos dois (administração). */}
-        {ehMaster ? (
-          <div className="perfil" role="radiogroup" aria-label="Perfil de uso">
-            {(
-              [
-                ['ADVOGADO', 'Advogado(a)'],
-                ['ESCREVENTE', 'Escrevente Notarial'],
-              ] as const
-            ).map(([id, rotulo]) => (
-              <button
-                key={id}
-                role="radio"
-                aria-checked={perfil === id}
-                className={perfil === id ? 'ativo' : ''}
-                onClick={() => setPerfil(id)}
-              >
-                {rotulo}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="perfil" aria-label="Perfil da conta">
-            <button className="ativo" disabled aria-disabled="true">
-              {perfil === 'ADVOGADO' ? 'Advogado(a)' : 'Escrevente Notarial'}
-            </button>
-          </div>
-        )}
+        {/* O perfil é da CONTA e NÃO se alterna aqui — nem para o MASTER.
+            Havia um par de botões nesta faixa que trocava Advogado ×
+            Escrevente na sessão; ele saiu por decisão do escritório: o perfil
+            é escolhido no primeiro acesso e só a administração troca depois
+            (/admin/usuarios), para que a folha de um mesmo login nunca mude
+            de balcão no meio do trabalho. Fica só a etiqueta do que a conta é. */}
+        <div className="perfil" aria-label="Perfil da conta">
+          <button className="ativo" disabled aria-disabled="true">
+            {perfil === 'ADVOGADO' ? 'Advogado(a)' : 'Escrevente Notarial'}
+          </button>
+        </div>
         {(
           [
             ['caso', '0', 'Página Inicial'],
