@@ -10,15 +10,23 @@
  * falha de e-mail jamais derruba a ação que o originou.
  */
 
+import { IDENTIDADE } from '@/lib/app';
+
 export function emailHabilitado(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
 
-/** Remetente: configure EMAIL_FROM com um domínio VERIFICADO no Resend
- *  (ex.: "O Sucessorista <avisos@osucessorista.com.br>"); sem a env vale o
- *  remetente de teste do próprio Resend. */
+/**
+ * Remetente. Configure EMAIL_FROM com um domínio VERIFICADO no Resend
+ * (ex.: "LexCausa <avisos@lexcausa.com.br>") — sem domínio próprio o Resend
+ * só entrega ao e-mail da PRÓPRIA conta, então a família não receberia nada.
+ *
+ * O NOME DE EXIBIÇÃO é o que a caixa de entrada mostra: sem ele o Gmail
+ * escreve a parte local do endereço ("onboarding"). Por isso o padrão sai da
+ * identidade da plataforma, e não de uma string presa a uma marca antiga.
+ */
 function remetente(): string {
-  return process.env.EMAIL_FROM ?? 'O Sucessorista <onboarding@resend.dev>';
+  return process.env.EMAIL_FROM ?? `${IDENTIDADE.nome} <onboarding@resend.dev>`;
 }
 
 const escapeHtml = (s: string) =>
