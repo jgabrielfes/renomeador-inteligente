@@ -3,10 +3,19 @@
 // O repositório é um só, mas publica QUATRO sites independentes na Vercel. A
 // variável de ambiente `APP` é o que os diferencia:
 //
-//   APP=hub           → lexcausa.com.br (a vitrine da marca — sem conta)
-//   APP=renomeador    → renomeadorinteligente.lexcausa.com.br
-//   APP=sucessorista  → osucessorista.lexcausa.com.br
+//   APP=sucessorista  → lexcausa.com.br + osucessorista.lexcausa.com.br
+//   APP=renomeador    → renomeador.lexcausa.com.br
 //   APP=notas         → notasdevolutivas.lexcausa.com.br
+//   APP=hub           → (sem domínio hoje — ver abaixo)
+//
+// A RAIZ DA MARCA é o deploy do SUCESSORISTA: em lexcausa.com.br, deslogado
+// vê a landing institucional e logado cai no hub de produtos. Houve uma
+// tentativa de pôr no apex um quarto deploy — `APP=hub`, uma vitrine pública
+// sem conta listando as três ferramentas —, mas o escritório preferiu a
+// interface do ofício ali. A vitrine continua no código (`EH_HUB`,
+// `components/lexcausa/vitrine.tsx`), sem domínio apontado; se ninguém a
+// quiser em outro endereço, o caminho é remover a plataforma inteira, e não
+// deixá-la disputar o apex.
 //
 // Tudo que é "só de um dos lados" pergunta a este módulo: qual módulo mora na
 // raiz `/`, quais telas de administração existem, de qual plataforma são as

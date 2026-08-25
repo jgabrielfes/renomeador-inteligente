@@ -58,7 +58,7 @@ export const SITES_LEXCAUSA: SiteLexCausa[] = [
     descricao:
       'Arraste RG, CNH, certidões, matrículas e contratos: a ferramenta lê cada documento e propõe o nome do arquivo pelo conteúdo. Otimiza fotos com aspecto de digitalização, separa PDFs com vários documentos e monta o processo em subpastas numeradas — com as regras de nomenclatura do seu escritório.',
     perfis: ['Escritórios', 'Cartórios'],
-    sub: 'renomeadorinteligente',
+    sub: 'renomeador',
   },
   {
     id: 'notas',
