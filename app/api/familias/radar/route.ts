@@ -55,6 +55,19 @@ export async function POST(req: Request) {
   }
 
   // Já publicado: o pedido só pode estar acrescentando o e-mail de avisos.
+  // Retirada pela MODERAÇÃO (dado particular no texto): a republicação do
+  // MESMO conteúdo fica bloqueada — o caminho é refazer o questionário sem o
+  // dado, como o e-mail enviado à família orienta.
+  if (intake.status === 'despublicado') {
+    return Response.json(
+      {
+        erro:
+          'Esta solicitação foi retirada do mural pela equipe da plataforma — veja o e-mail que enviamos com o motivo. Para voltar ao mural, refaça o questionário sem incluir dados que identifiquem pessoas.',
+      },
+      { status: 409 },
+    );
+  }
+
   if (JA_PUBLICADO.includes(intake.status)) {
     if (!emailValido) {
       return Response.json({ erro: 'Esta solicitação já está publicada.' }, { status: 409 });

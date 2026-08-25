@@ -39,6 +39,8 @@ import { QUALIFICACAO_VAZIA, PERGUNTAS_ITCMD_VAZIAS, nomeProprio, type DadosFale
 import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno, type ProvisaoItcmd } from '@/lib/partilha/itcmd';
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
+import { totalCustosManuais, ufsForaDeSp } from '@/lib/partilha/custos-manuais';
+import { QualificacaoConta } from '@/components/qualificacao-conta';
 import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
 import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
 import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
@@ -575,6 +577,25 @@ export default function SucessoristaClient({
    * Relógio do ITCMD: com o imposto DECLARADO/PAGO e a data informada (aba
    * IV), os encargos são projetados ATÉ ESSA DATA — o prazo para de correr.
    */
+  /**
+   * CASO FORA DE SP — o modo manual (aba V) SILENCIA os motores calibrados:
+   * a provisão do ITCMD, a projeção de custas e as sucessões cumuladas
+   * devolvem vazio, e os valores informados pelo profissional assumem o
+   * painel, o cabeçalho e o orçamento. Provisão de outro estado com a lei de
+   * SP seria número errado com cara de certo (decisão do escritório).
+   */
+  const manuais = fiscal.custosManuais?.ativo ? fiscal.custosManuais : null;
+  const totalManual = totalCustosManuais(manuais);
+  /** UFs fora de SP detectadas no caso (melhor-esforço) — só AVISA, nunca liga sozinho. */
+  const ufsFora = useMemo(
+    () =>
+      ufsForaDeSp({
+        ultimoDomicilio: falecido.ultimoDomicilio,
+        registrosImoveis: bens.map((b) => b.imovel?.registroImoveis),
+      }),
+    [falecido.ultimoDomicilio, bens],
+  );
+
   const referenciaItcmd = useMemo(() => {
     const marco =
       (fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO') &&
@@ -585,6 +606,8 @@ export default function SucessoristaClient({
   }, [fiscal.itcmdSituacao, fiscal.itcmdQuitadoEm, hoje]);
 
   const provisao = useMemo(() => {
+    // Modo manual (fora de SP): o motor da Lei 10.705/2000 fica mudo.
+    if (fiscal.custosManuais?.ativo) return null;
     if (!falecido.dataObito || !resultado || resultado.bloqueios.length > 0) return null;
     const herancaBruta = Number(resultado.heranca.total);
     // ITCMD pelo MAIOR entre o venal na data do óbito (bem.valor, que monta
@@ -1544,7 +1567,8 @@ export default function SucessoristaClient({
 
   const escolherPerfilConta = async (p: Perfil) => {
     setPerfil(p);
-    setEscolhendoPerfil(false);
+    // O dialog NÃO fecha aqui: a qualificação continua (identificação/quiz)
+    // e quem fecha é o aoConcluir do componente.
     try {
       const { salvarPerfilConta } = await import('./perfil-actions');
       const r = await salvarPerfilConta(p);
@@ -1847,6 +1871,8 @@ export default function SucessoristaClient({
    * taxa judiciária quando o rito é o judicial.
    */
   const custos = useMemo(() => {
+    // Modo manual (fora de SP): tabelas paulistas ficam mudas.
+    if (fiscal.custosManuais?.ativo) return null;
     if (!resultado || resultado.bloqueios.length > 0) return null;
     const atribuicaoOk = atribuicao && atribuicao.bloqueios.length === 0;
     const transferencias = atribuicaoOk
@@ -1934,7 +1960,7 @@ export default function SucessoristaClient({
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, matriz, anotacoesMatriz, participantes]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, fiscal.custosManuais, matriz, anotacoesMatriz, participantes]);
 
 
   /**
@@ -1942,6 +1968,8 @@ export default function SucessoristaClient({
    * UFESP do ano do óbito respectivo, prazos e encargos independentes.
    */
   const provisoesSucessoes = useMemo(() => {
+    // Modo manual (fora de SP): UFESP/prazos de SP não valem para o caso.
+    if (fiscal.custosManuais?.ativo) return [];
     return (fiscal.sucessoes ?? [])
       .map((su) => ({ su, base: basesSucessoes[su.id] ?? 0 }))
       .filter(({ su, base }) => su.dataObito && base > 0)
@@ -1954,7 +1982,7 @@ export default function SucessoristaClient({
           baseCalculo: base,
         }),
       }));
-  }, [fiscal.sucessoes, basesSucessoes, referenciaItcmd]);
+  }, [fiscal.sucessoes, basesSucessoes, referenciaItcmd, fiscal.custosManuais]);
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
@@ -1975,6 +2003,35 @@ export default function SucessoristaClient({
   const custosVisiveisPainel = useMemo(() => {
     const linhas: import('@/lib/portal/painel').CustoVisivel[] = [];
     const pago = fiscal.itcmdSituacao === 'PAGO';
+    // Modo manual (fora de SP): as linhas publicáveis são as informadas.
+    if (manuais) {
+      if (Number(manuais.itcmd) > 0) {
+        linhas.push({
+          rotulo: 'Imposto sobre a herança (ITCMD/ITCD)',
+          valor: (Number(manuais.itcmd) || 0).toFixed(2),
+          situacao: pago ? 'PAGO' : 'PREVISTO',
+        });
+      }
+      const resto =
+        (Number(manuais.cartorioJustica) || 0) +
+        (Number(manuais.registros) || 0) +
+        (Number(manuais.certidoes) || 0);
+      if (resto > 0) {
+        linhas.push({
+          rotulo: 'Cartório/justiça, registros e certidões',
+          valor: resto.toFixed(2),
+          situacao: 'PREVISTO',
+        });
+      }
+      for (const a of custosAdicionais) {
+        linhas.push({
+          rotulo: a.descricao || 'Despesa adicional',
+          valor: (Number(a.valor) || 0).toFixed(2),
+          situacao: 'PREVISTO',
+        });
+      }
+      return linhas;
+    }
     if (provisao) {
       linhas.push({
         rotulo: 'Imposto sobre a herança (ITCMD)',
@@ -2007,7 +2064,7 @@ export default function SucessoristaClient({
       });
     }
     return linhas;
-  }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo]);
+  }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo, manuais]);
 
   /**
    * ESPAÇO DO ESPÓLIO — os fatos compartilháveis, já no formato de allowlist
@@ -2265,8 +2322,10 @@ export default function SucessoristaClient({
     });
     manifestoRef.current = manifesto;
     const totalAdicionais = somaAdicionais(custosAdicionais);
-    const custoTotal =
-      provisao && custos
+    // Modo manual (fora de SP): o custo do cabeçalho é o informado.
+    const custoTotal = manuais
+      ? totalManual + totalAdicionais
+      : provisao && custos
         ? provisao.total + custos.total + totalAdicionais
         : provisao
           ? provisao.total + totalAdicionais
@@ -3823,18 +3882,26 @@ export default function SucessoristaClient({
           ) : (
             <span className="bs-prazo">Art. 611: informe a data do óbito</span>
           )}
-          <span>
+          <span
+            title={
+              manuais
+                ? 'Valores informados pelo profissional (caso fora de SP) — aba V'
+                : undefined
+            }
+          >
             Custo projetado:{' '}
-            {provisao
-              ? brl(
-                  (
-                    provisao.total +
-                    (custos?.total ?? 0) +
-                    impostoSucessoes +
-                    somaAdicionais(custosAdicionais)
-                  ).toFixed(2),
-                )
-              : '—'}
+            {manuais
+              ? `${brl((totalManual + somaAdicionais(custosAdicionais)).toFixed(2))} (informado)`
+              : provisao
+                ? brl(
+                    (
+                      provisao.total +
+                      (custos?.total ?? 0) +
+                      impostoSucessoes +
+                      somaAdicionais(custosAdicionais)
+                    ).toFixed(2),
+                  )
+                : '—'}
           </span>
           <span
             className="bs-salva"
@@ -4552,6 +4619,9 @@ export default function SucessoristaClient({
             provisoesSucessoes={provisoesSucessoes}
             adicionais={custosAdicionais}
             setAdicionais={setCustosAdicionais}
+            manuais={fiscal.custosManuais ?? null}
+            setManuais={(m) => setFiscal({ ...fiscal, custosManuais: m })}
+            ufsForaDetectadas={ufsFora}
             nomeCaso={falecido.nome}
             dataObito={falecido.dataObito}
             caso={caso}
@@ -4659,6 +4729,7 @@ export default function SucessoristaClient({
         custos={custos}
         impostoSucessoes={impostoSucessoes}
         custosAdicionais={somaAdicionais(custosAdicionais)}
+        custosManuais={manuais}
         alertasLeitura={[
           // Divergências ALTAS do conferidor entram como pontos de atenção
           // (alerta vermelho) — a correção é pedida no item I.
@@ -4696,27 +4767,15 @@ export default function SucessoristaClient({
     </div>
     )}
 
-    {/* primeiro acesso: a escolha do perfil é OBRIGATÓRIA e fica na conta —
-        um mesmo login não circula pelos dois (só MASTER). */}
-    <Dialog open={escolhendoPerfil} onOpenChange={() => undefined}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
-          <DialogDescription>
-            Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA ao seu
-            login — Advogado(a) trabalha com honorários e minutas ao Tabelionato/petição;
-            Escrevente Notarial trabalha com a minuta da escritura. Para trocar depois,
-            fale com a administração.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="escolha" style={{ marginTop: 8, gap: 10 }}>
-          <Button onClick={() => void escolherPerfilConta('ADVOGADO')}>Advogado(a)</Button>
-          <Button variant="outline" onClick={() => void escolherPerfilConta('ESCREVENTE')}>
-            Escrevente Notarial
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    {/* primeiro acesso: QUALIFICAÇÃO da conta — a escolha do perfil é
+        obrigatória (fica na conta, como sempre), e a identificação segue na
+        hora: advogado(a) informa nome + OAB (fila do /admin/radar) e faz o
+        quiz deontológico; escrevente informa nome completo + serventia. */}
+    <QualificacaoConta
+      aberta={escolhendoPerfil}
+      aoEscolherPerfil={(p) => void escolherPerfilConta(p)}
+      aoConcluir={() => setEscolhendoPerfil(false)}
+    />
 
     {/* guarda de conflito: outro computador salvou este caso depois de você abrir */}
     <Dialog open={conflito !== null} onOpenChange={() => undefined}>

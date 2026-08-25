@@ -13,6 +13,7 @@ import { requireMaster } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { EH_SUCESSORISTA } from '@/lib/app';
 import { UFS } from '@/lib/familias/tipos';
+import { enviarEmailPortal } from '@/lib/portal/email';
 import { notificarAssinaturaRadar, notificarDecisaoOab } from '@/lib/radar/notificar';
 import { varrerAviso72h } from '@/lib/radar/varredura';
 
@@ -141,5 +142,68 @@ export async function decidirDenuncia(
     return { ok: true };
   } catch {
     return { ok: false, erro: 'Não foi possível decidir a denúncia.' };
+  }
+}
+
+/**
+ * MODERAÇÃO DO MURAL — retirar uma publicação (dado particular no texto,
+ * conteúdo impróprio). A retirada NÃO apaga o resultado da família (isso é o
+ * "retirar" dela, que apaga tudo): o caso sai do mural, a republicação fica
+ * BLOQUEADA (status `despublicado` — a rota do Radar recusa; o caminho limpo
+ * é refazer o questionário sem o dado) e a família recebe o e-mail com o
+ * motivo — por isso o e-mail é obrigatório na publicação: é o canal desta
+ * conversa. Conversa 1:1 aberta é encerrada junto (o caso não está mais no
+ * ar); o histórico permanece no banco.
+ */
+export async function retirarPublicacaoRadar(
+  intakeId: string,
+  motivo: string,
+): Promise<Resultado & { emailEnviado?: boolean }> {
+  await requireMaster();
+  if (!EH_SUCESSORISTA) return { ok: false, erro: 'Só no site do Sucessorista.' };
+  const texto = String(motivo ?? '').trim().slice(0, 600);
+  if (texto.length < 5) {
+    return { ok: false, erro: 'Explique o motivo — a família vai ler exatamente este texto.' };
+  }
+  try {
+    const intake = await prisma.familiaIntake.findUnique({ where: { id: intakeId } });
+    if (!intake || !['publicado', 'em_conversa'].includes(intake.status)) {
+      return { ok: false, erro: 'Publicação não encontrada (já retirada ou contratada).' };
+    }
+    await prisma.familiaIntake.update({
+      where: { id: intakeId },
+      data: {
+        status: 'despublicado',
+        publicadoEm: null,
+        conversaAdvogadoUserId: null,
+        conversaAbertaEm: null,
+      },
+    });
+
+    // O aviso à família — melhor-esforço: falha de e-mail NÃO desfaz a
+    // retirada (o dado particular sai do ar de qualquer jeito), mas o admin
+    // fica sabendo que precisa avisar por outro canal.
+    let emailEnviado = false;
+    if (intake.email) {
+      const origem = await origemAtual();
+      emailEnviado = await enviarEmailPortal({
+        para: intake.email,
+        assunto: 'Sua publicação no Radar Sucessório foi retirada',
+        titulo: 'Retiramos a sua solicitação do mural',
+        paragrafos: [
+          'A equipe da plataforma retirou a sua solicitação de análise do mural de advogados. O motivo:',
+          `“${texto}”`,
+          'Isso protege você: o mural é visto por advogados de todo o estado, e informações pessoais (nomes, endereços, telefones) não devem circular nele.',
+          'Seu resultado continua disponível no seu link de sempre. Se quiser voltar ao mural, refaça o questionário — leva uns 5 minutos — sem incluir dados que identifiquem pessoas, e publique novamente.',
+        ],
+        urlPortal: `${origem}/familias`,
+        rotuloBotao: 'Refazer o questionário',
+        rodape:
+          'Aviso automático do Radar Sucessório — não responda a este e-mail. Esta plataforma não intermedeia honorários nem indica advogados.',
+      });
+    }
+    return { ok: true, emailEnviado };
+  } catch {
+    return { ok: false, erro: 'Não foi possível retirar — tente de novo.' };
   }
 }

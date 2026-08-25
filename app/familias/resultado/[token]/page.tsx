@@ -78,7 +78,10 @@ export default async function ResultadoSalvoPage({
   // constituído(a) não recebe o convite do Radar — antes o link salvo o
   // oferecia assim mesmo, e as duas telas do mesmo caso discordavam. Caso já
   // publicado continua publicado, venha a resposta que vier.
-  const radar = !radarAtivo()
+  // 'despublicado' = retirada pela MODERAÇÃO (dado particular no texto): o
+  // convite some — republicar o mesmo conteúdo é bloqueado pela rota, e o
+  // e-mail enviado à família explica o caminho (refazer o questionário).
+  const radar = !radarAtivo() || linha.status === 'despublicado'
     ? 'inativo'
     : linha.publicadoEm
       ? 'publicado'

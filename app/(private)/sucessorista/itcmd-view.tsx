@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+import { totalCustosManuais, type CustosManuais } from '@/lib/partilha/custos-manuais';
 import type { Bem, Herdeiro, Resultado } from '@/lib/partilha/types';
 import {
   formatarData,
@@ -85,6 +86,13 @@ export interface EstadoFiscal {
    * antecipador naquele rito.
    */
   rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
+  /**
+   * CASO FORA DE SP: com `ativo`, a projeção automática (calibrada só para
+   * SP) SILENCIA por inteiro — ITCMD, custas e sucessões cumuladas — e os
+   * valores informados pelo profissional valem no painel, no cabeçalho e no
+   * orçamento. Editado na aba V (lib/partilha/custos-manuais.ts).
+   */
+  custosManuais?: CustosManuais;
 }
 
 export interface SucessaoCumulada {
@@ -174,6 +182,28 @@ export function ItcmdView({
         A provisão é contada do fato gerador — a data do óbito. Cada parcela sai com o
         artigo da Lei 10.705/2000 que a fundamenta.
       </Doutrina>
+
+      {/* Caso FORA de SP: a provisão automática (Lei 10.705/2000) está
+          silenciada de propósito — provisão de outro estado com a lei de SP
+          seria número errado com cara de certo. Os valores são os informados
+          na aba V. */}
+      {fiscal.custosManuais?.ativo && (
+        <div className="nota" style={{ marginBottom: 12 }}>
+          <span className="eyebrow">
+            Caso fora de SP{fiscal.custosManuais.uf ? ` — ${fiscal.custosManuais.uf}` : ''}
+          </span>
+          <p>
+            A provisão automática desta aba é calibrada para a legislação
+            paulista e está <strong>desligada</strong> neste caso. O ITCMD/ITCD
+            considerado é o que você informou na aba <strong>V — Custos</strong>
+            {totalCustosManuais(fiscal.custosManuais) > 0
+              ? ` (${brl(Number(fiscal.custosManuais.itcmd) || 0)} de imposto)`
+              : ' (ainda sem valor lançado)'}
+            . Espelho da declaração e provisão por artigo são recursos de SP e ficam
+            ocultos enquanto este modo estiver ligado.
+          </p>
+        </div>
+      )}
 
       {faltaObito && (
         <div className="nota exigencia">

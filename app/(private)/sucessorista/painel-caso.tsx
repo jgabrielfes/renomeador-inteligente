@@ -17,6 +17,11 @@ import { formatarData, type DadosFalecido } from '@/lib/partilha/familia';
 import type { ProvisaoItcmd, ResultadoIsencoes } from '@/lib/partilha/itcmd';
 import { faixaDoPrazo } from '@/lib/partilha/prazo';
 import type { ProjecaoCustos } from '@/lib/partilha/custas';
+import {
+  parcelasManuais,
+  totalCustosManuais,
+  type CustosManuais,
+} from '@/lib/partilha/custos-manuais';
 
 const brl = (v: number | string) =>
   `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -43,6 +48,7 @@ export function PainelCaso({
   custos = null,
   impostoSucessoes = 0,
   custosAdicionais = 0,
+  custosManuais = null,
   alertasLeitura = [],
   notas = '',
   setNotas,
@@ -68,6 +74,12 @@ export function PainelCaso({
   custos?: ProjecaoCustos | null;
   /** Soma dos custos adicionais lançados à mão na aba V. */
   custosAdicionais?: number;
+  /**
+   * CASO FORA DE SP: valores informados pelo profissional (aba V). Quando
+   * presentes, provisao/custos vêm nulos — o motor de SP está silenciado — e
+   * o custo projetado do painel é o informado.
+   */
+  custosManuais?: CustosManuais | null;
   /** ITCMD das sucessões cumuladas (fatos geradores próprios). */
   impostoSucessoes?: number;
   /** Alertas da leitura (herdeiros declarados sem lançamento, frações ideais). */
@@ -340,11 +352,38 @@ export function PainelCaso({
       )}
 
       <div className="metrica">
-        <div className="k">Custo projetado do inventário</div>
-        <div className="v num">
-          {provisao ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes + custosAdicionais) : '—'}
+        <div className="k">
+          Custo projetado do inventário
+          {custosManuais ? ` — informado (${custosManuais.uf || 'fora de SP'})` : ''}
         </div>
-        {provisao ? (
+        <div className="v num">
+          {custosManuais
+            ? brl(totalCustosManuais(custosManuais) + custosAdicionais)
+            : provisao
+              ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes + custosAdicionais)
+              : '—'}
+        </div>
+        {/* Modo manual (fora de SP): a discriminação é a que o profissional
+            lançou na aba V — nada de artigos da lei paulista aqui. */}
+        {custosManuais ? (
+          <div className="pilha num">
+            {parcelasManuais(custosManuais).map((l) => (
+              <div key={l.id}>
+                <span className="rotulo">{l.rotulo}</span>
+                <span>{brl(l.valor)}</span>
+              </div>
+            ))}
+            {custosAdicionais > 0 && (
+              <div>
+                <span className="rotulo">Custos adicionais (lançados no item V)</span>
+                <span>{brl(custosAdicionais)}</span>
+              </div>
+            )}
+            <p className="rodape">
+              Valores informados pelo escritório — a projeção automática vale só para SP.
+            </p>
+          </div>
+        ) : provisao ? (
           <div className="pilha num">
             {/* ITCMD UNIFICADO no painel: imposto + encargos (atualização,
                 multa, juros, desconto) num só número — a discriminação por

@@ -86,6 +86,24 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
    (local-first). Confirmada a importação, o servidor **poda** o intake
    (respostas/resultado zerados, status `contratado`).
 
+## Moderação do mural (administração)
+
+- `/admin/radar` → seção **"Publicações no mural"**: o admin vê cada caso no
+  MESMO recorte anônimo que os advogados assinantes veem (`anonimizarIntake`,
+  observações incluídas — é o campo a moderar). NÃO é exceção ao "nunca
+  conteúdo de intake em /admin": o card é o conteúdo JÁ PÚBLICO do mural;
+  nome, e-mail e token seguem nunca aparecendo.
+- **Retirar do mural** (`retirarPublicacaoRadar`, motivo obrigatório): status
+  vira `despublicado`, `publicadoEm` limpa, conversa 1:1 aberta encerra. A
+  família recebe o e-mail com o MOTIVO (por isso o e-mail é obrigatório na
+  publicação — é o canal desta conversa); falha de envio não desfaz a retirada,
+  mas o admin é avisado para usar outro canal. A republicação do MESMO conteúdo
+  é recusada pela rota (409); o caminho limpo é refazer o questionário sem o
+  dado. O resultado da família continua acessível pelo link — retirar do mural
+  não é o "retirar" dela, que apaga tudo.
+- O funil do advogado mostra o caso despublicado com o rótulo neutro
+  "encerrado" ("Caso fora do ar") — a moderação não circula.
+
 ## Regras de tempo
 
 - **90 dias**: `expiraEm` — o intake e o resultado somem depois disso.

@@ -22,6 +22,8 @@ const ROTULO_STATUS: Record<string, string> = {
   publicado: 'Publicada — aguardando respostas de advogados',
   em_conversa: 'Em conversa com um(a) advogado(a)',
   contratado: 'Concluída — você contratou um(a) advogado(a)',
+  // Moderação: a plataforma retirou do mural (dado particular no texto).
+  despublicado: 'Retirada do mural pela plataforma — veja o e-mail que enviamos',
 };
 
 const ROTULO_VIA: Record<string, string> = {
