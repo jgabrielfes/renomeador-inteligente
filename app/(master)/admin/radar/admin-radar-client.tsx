@@ -104,8 +104,8 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
 
       {!dados.ativo && (
         <p className="rounded-md border border-amber-600/40 bg-amber-500/10 p-3 text-sm">
-          O Radar está DESLIGADO neste deploy (defina <code>RADAR_ATIVO=1</code> e{' '}
-          <code>RESEND_API_KEY</code>) — os cadastros abaixo continuam operáveis.
+          O Radar está DESLIGADO neste deploy (defina <code>RADAR_ATIVO=1</code>) — os
+          cadastros abaixo continuam operáveis.
         </p>
       )}
 
@@ -134,14 +134,21 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
             {dados.funil.porUf.map((l) => `${l.uf} (${l.casos})`).join(' · ')}
           </p>
         )}
-        {/* As duas etapas ANTES da publicação: sem elas, uma solicitação
-            parada no clique do e-mail some do painel e parece defeito. */}
+        {/* A etapa ANTES do Radar: quem respondeu o questionário e não pediu
+            análise. A publicação virou imediata (o aceite na tela publica), e
+            o primeiro contador guarda só o RESÍDUO da era do link por e-mail —
+            solicitações que ficaram paradas naquele passo e nunca voltaram. */}
         <p className="text-sm text-muted-foreground">
-          Antes do Radar: <strong>{dados.funil.aguardandoConfirmacao}</strong> pediram
-          análise e ainda não clicaram no link de confirmação do e-mail (o clique é o
-          consentimento — sem ele o caso não é publicado) ·{' '}
-          <strong>{dados.funil.semPedido}</strong> responderam o questionário e não
-          pediram análise.
+          Antes do Radar: <strong>{dados.funil.semPedido}</strong> responderam o
+          questionário e não pediram análise
+          {dados.funil.aguardandoConfirmacao > 0 && (
+            <>
+              {' '}· <strong>{dados.funil.aguardandoConfirmacao}</strong> pararam no antigo
+              link de confirmação por e-mail (antes de a publicação ser imediata) e nunca
+              voltaram
+            </>
+          )}
+          .
         </p>
       </section>
 
