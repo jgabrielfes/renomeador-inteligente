@@ -10,8 +10,9 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 - `RADAR_ATIVO=1` (`lib/radar/config.ts` → `radarAtivo()`) é a ÚNICA condição:
   sem ela nenhuma UI do Radar existe. A área `/familias` funciona sem o Radar.
   O `RESEND_API_KEY` deixou de ser exigido aqui quando a publicação passou a
-  ser imediata — o e-mail virou opcional, e cada envio é env-gated por conta
-  própria.
+  ser imediata: a família informa o e-mail (obrigatório, é o canal dela), mas
+  publicar não espera envio nenhum — cada aviso é env-gated por conta própria
+  e falha de e-mail nunca derruba a publicação.
 - Tudo é exclusivo do site do Sucessorista (`requirePlataforma`/`foraDaPlataforma`).
 - `CRON_SECRET` (opcional): liga a rota `POST /api/radar/varredura`, que a
   GitHub Action `varredura-radar.yml` chama uma vez por dia. Sem a env a rota
@@ -31,8 +32,13 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
    (`consentimentoEm` + `publicadoEm`, status `publicado`). No fim do
    questionário, publicar salva o caso por baixo antes (`garantirToken`), para
    não obrigar a família a clicar em "Salvar" primeiro.
-   O **e-mail é opcional e vem DEPOIS**, só para avisos (alguém respondeu,
-   aviso de 72h) — a mesma rota grava/atualiza o e-mail sem republicar.
+   O **e-mail é pedido NO diálogo e é OBRIGATÓRIO** — não como validação
+   (nada é enviado para conferir o endereço), mas porque é o CANAL da
+   família: é por ele que ela sabe que alguém respondeu, e é o que o aviso
+   de 72h usa. Publicar sem canal deixaria a família tendo de voltar ao site
+   por conta própria. O e-mail NÃO é publicado com o caso, e a folha oferece
+   trocá-lo (errar o próprio endereço na pressa é comum); a mesma rota grava
+   o novo sem republicar.
    A página `/familias/confirmar/[codigo]` continua de pé para os links já
    enviados na era da confirmação por e-mail.
 3. **Advogado(a)** (`/radar`, logado): habilitação em três passos —

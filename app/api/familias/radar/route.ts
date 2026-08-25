@@ -11,9 +11,12 @@
  * `/familias/confirmar/[codigo]` continua funcionando para os links antigos
  * que já foram enviados.
  *
- * O e-mail é OPCIONAL e serve só para AVISOS (alguém respondeu, aviso honesto
- * de 72h). Pode vir junto da publicação ou depois — republicar não acontece:
- * com o caso já publicado, esta rota só grava/atualiza o e-mail de avisos.
+ * O e-mail é OBRIGATÓRIO para publicar — não como validação (ninguém precisa
+ * clicar em link nenhum), mas porque é o CANAL da família: é por ele que ela
+ * sabe que um(a) advogado(a) respondeu, e é o que o aviso honesto de 72h usa.
+ * Publicar sem canal seria pedir que a família ficasse voltando ao site por
+ * conta própria. Com o caso já publicado, esta rota apenas ATUALIZA o e-mail
+ * (troca de endereço), sem republicar.
  */
 
 import { prisma } from '@/lib/prisma';
@@ -67,6 +70,13 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
+  // ...e o e-mail é o canal por onde a resposta chega.
+  if (!emailValido) {
+    return Response.json(
+      { erro: 'Informe um e-mail — é por ele que você recebe as respostas dos advogados.' },
+      { status: 422 },
+    );
+  }
 
   const agora = new Date();
   await prisma.familiaIntake.update({
@@ -77,9 +87,9 @@ export async function POST(req: Request) {
       publicadoEm: agora,
       // O link de confirmação deixou de existir: nenhum código fica pendurado.
       confirmacaoToken: null,
-      ...(emailValido ? { email } : {}),
+      email,
     },
   });
 
-  return Response.json({ ok: true, publicado: true, avisos: emailValido });
+  return Response.json({ ok: true, publicado: true, avisos: true });
 }

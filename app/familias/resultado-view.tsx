@@ -99,9 +99,13 @@ export function GerarCodigoAdvogado({ token }: { token: string }) {
 /**
  * "Pedir análise de advogados especializados" — a porta do Radar, no ritmo do
  * herdeiro. O consentimento ESPECÍFICO (LGPD) é o aceite do diálogo de
- * confirmação, e é ele que PUBLICA: não há mais link por e-mail no caminho
- * (exigia e-mail de quem só queria ser respondido e deixava solicitações
- * paradas para sempre). O e-mail vem DEPOIS e é opcional, só para avisos.
+ * confirmação, e é ele que PUBLICA — não há link de validação no caminho, que
+ * só deixava solicitações paradas para sempre.
+ *
+ * O e-mail é pedido NO diálogo e é OBRIGATÓRIO, por outro motivo: é o CANAL
+ * da família. Sem ele a resposta do(a) advogado(a) não chega a lugar nenhum e
+ * a pessoa teria de voltar ao site por conta própria para descobrir. Ele não
+ * é validado (nada é enviado para conferir) e não é publicado com o caso.
  *
  * O bloco aparece DUAS vezes na folha (topo e pé) — por isso é CONTROLADO:
  * `publicado`/`onPublicado` vivem em quem chama, e publicar num lugar
@@ -130,6 +134,7 @@ export function PedirAnalise({
   const [publicando, setPublicando] = useState(false);
   const [email, setEmail] = useState(emailInicial);
   const [avisosSalvos, setAvisosSalvos] = useState(false);
+  const [trocandoEmail, setTrocandoEmail] = useState(false);
   const [salvandoAvisos, setSalvandoAvisos] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -152,9 +157,15 @@ export function PedirAnalise({
 
   const publicar = async () => {
     setErro(null);
+    // O e-mail é o canal da família com quem responder — sem ele a resposta
+    // não chega a ninguém. Não é validação: nada é enviado para conferir.
+    if (!/.+@.+\..+/.test(email.trim())) {
+      setErro('Informe um e-mail — é por ele que você recebe as respostas.');
+      return;
+    }
     setPublicando(true);
     try {
-      await chamar({ consentimento: true });
+      await chamar({ consentimento: true, email: email.trim() });
       setConfirmando(false);
       onPublicado();
     } catch (e) {
@@ -174,6 +185,7 @@ export function PedirAnalise({
     try {
       await chamar({ email: email.trim() });
       setAvisosSalvos(true);
+      setTrocandoEmail(false);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível salvar — tente de novo.');
     } finally {
@@ -198,14 +210,16 @@ export function PedirAnalise({
             </a>
           </p>
         )}
-        {avisosSalvos ? (
-          <p className="fund" style={{ marginTop: 8 }}>
-            Avisaremos <strong>{email.trim()}</strong> quando alguém responder.
-          </p>
-        ) : (
+        <p className="fund" style={{ marginTop: 8 }}>
+          Avisaremos <strong>{email.trim()}</strong> assim que alguém responder.
+        </p>
+        {/* Errar o próprio e-mail na pressa é comum, e sem ele a resposta não
+            chega — daí a troca ficar à mão aqui, não só na página da
+            solicitação. */}
+        {trocandoEmail ? (
           <>
             <label className="campo" style={{ marginTop: 10 }}>
-              Quer ser avisado(a) por e-mail quando alguém responder? (opcional)
+              Novo e-mail
               <input
                 type="text"
                 inputMode="email"
@@ -222,10 +236,19 @@ export function PedirAnalise({
                 disabled={salvandoAvisos}
                 onClick={() => void salvarAvisos()}
               >
-                {salvandoAvisos ? 'Salvando…' : 'Quero ser avisado(a)'}
+                {salvandoAvisos ? 'Salvando…' : 'Salvar e-mail'}
               </button>
             </div>
           </>
+        ) : (
+          <button
+            className="acao secundaria"
+            type="button"
+            style={{ marginTop: 8 }}
+            onClick={() => setTrocandoEmail(true)}
+          >
+            {avisosSalvos ? 'E-mail atualizado — trocar de novo' : 'Trocar meu e-mail'}
+          </button>
         )}
       </div>
     );
@@ -274,6 +297,23 @@ export function PedirAnalise({
               retirar a solicitação a qualquer momento, apagando tudo.
             </DialogDescription>
           </DialogHeader>
+          {/* O e-mail é o CANAL, não uma validação: nada é enviado para
+              conferir o endereço, e a publicação não espera clique nenhum. */}
+          <label className="campo">
+            Seu e-mail
+            <input
+              type="text"
+              inputMode="email"
+              value={email}
+              placeholder="seu@email.com"
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <span className="fund">
+              É por aqui que você fica sabendo que um(a) advogado(a) respondeu. Ele
+              não é publicado com o caso — nenhum profissional o vê antes de você
+              escolher conversar.
+            </span>
+          </label>
           {erro && <p className="mono-alerta">{erro}</p>}
           <DialogFooter>
             <Button
