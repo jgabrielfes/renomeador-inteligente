@@ -1,0 +1,49 @@
+# Varredura diária do AVISO HONESTO de 72h do Radar Sucessório.
+#
+# O que faz: chama `POST /api/radar/varredura` no site de produção. A rota
+# procura solicitações publicadas há mais de 72h SEM nenhuma resposta e manda
+# à família UM e-mail dizendo isso com todas as letras (o carimbo
+# `aviso72hEm` garante que não se repete).
+#
+# Por que uma GitHub Action e não o Cron da Vercel: o repositório já publica
+# por Action (o plano Hobby limita os crons da Vercel), e aqui o agendamento
+# fica versionado junto do código, com histórico de execução visível.
+#
+# ‼️ SEGREDOS NECESSÁRIOS (Settings → Secrets → Actions)
+#   · CRON_SECRET  — o MESMO valor da env `CRON_SECRET` no projeto da Vercel
+#                    (ambiente Production). Sem ela dos dois lados, a rota
+#                    responde 404 e esta action falha de propósito.
+#   · SITE_URL     — endereço do site do Sucessorista em produção
+#                    (ex.: https://osucessorista.vercel.app).
+#
+# O botão manual da varredura continua no /admin/radar — esta action só
+# automatiza o mesmo trabalho.
+
+name: Varredura do Radar (aviso de 72h)
+
+on:
+  schedule:
+    # 12:00 UTC = 09:00 em Brasília (horário comercial, sem madrugada).
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  varrer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar a varredura
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$SITE_URL" ]; then
+            echo "::error::Configure os secrets CRON_SECRET e SITE_URL para a varredura rodar."
+            exit 1
+          fi
+          resposta=$(curl -sS -w '\n%{http_code}' -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SITE_URL/api/radar/varredura")
+          corpo=$(echo "$resposta" | head -n -1)
+          codigo=$(echo "$resposta" | tail -n 1)
+          echo "HTTP $codigo — $corpo"
+          [ "$codigo" = "200" ] || exit 1

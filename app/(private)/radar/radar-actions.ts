@@ -26,6 +26,7 @@ import { corrigirQuiz, type CorrecaoQuiz } from '@/lib/radar/quiz';
 import { sanitizarRespostas } from '@/lib/familias/sanitizar';
 import { UFS } from '@/lib/familias/tipos';
 import { enviarEmailPortal } from '@/lib/portal/email';
+import { notificarMensagemRadar } from '@/lib/radar/notificar';
 
 /** Conversa aberta há mais de 30 dias sem contratação volta ao Radar. */
 const DIAS_REABRIR_CONVERSA = 30;
@@ -536,6 +537,17 @@ export async function enviarMensagemRadar(
     await prisma.radarMensagem.create({
       data: { intakeId, advogadoUserId: ctx.userId, autor: 'advogado', texto: t },
     });
+    // Avisa a família que há resposta esperando (só quando ela confirmou o
+    // e-mail) — o CONTEÚDO fica na plataforma; melhor-esforço.
+    if (intake.email && intake.emailConfirmadoEm) {
+      const h = await headers();
+      void notificarMensagemRadar({
+        destinatario: 'familia',
+        email: intake.email,
+        origin: `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host') ?? ''}`,
+        tokenGestao: intake.tokenGestao,
+      });
+    }
     return { ok: true };
   } catch {
     return { ok: false, erro: 'Não foi possível enviar — tente de novo.' };

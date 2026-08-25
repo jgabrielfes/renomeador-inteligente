@@ -13,11 +13,26 @@ import { requireMaster } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { EH_SUCESSORISTA } from '@/lib/app';
 import { UFS } from '@/lib/familias/tipos';
-import { enviarEmailPortal } from '@/lib/portal/email';
-
-const HORAS_AVISO = 72;
+import { notificarAssinaturaRadar, notificarDecisaoOab } from '@/lib/radar/notificar';
+import { varrerAviso72h } from '@/lib/radar/varredura';
 
 type Resultado = { ok: boolean; erro?: string };
+
+/** Origem da requisição (para montar os links dos e-mails). */
+async function origemAtual(): Promise<string> {
+  const h = await headers();
+  return `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host') ?? ''}`;
+}
+
+/** E-mail da conta (melhor-esforço — nunca derruba a decisão do admin). */
+async function emailDoUsuario(userId: string): Promise<string | null> {
+  try {
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    return u?.email ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function decidirPerfil(
   userId: string,
@@ -36,6 +51,16 @@ export async function decidirPerfil(
             ? { situacao: 'suspenso', motivoRecusa: (motivo ?? '').trim().slice(0, 300) || null }
             : { situacao: 'aprovado', motivoRecusa: null };
     await prisma.advogadoPerfil.update({ where: { userId }, data: dados });
+    // A verificação da OAB é MANUAL: sem este aviso quem se cadastrou fica no
+    // escuro esperando. Reativar não avisa (volta ao estado normal).
+    if (acao !== 'reativar') {
+      void notificarDecisaoOab({
+        email: await emailDoUsuario(userId),
+        origin: await origemAtual(),
+        situacao: dados.situacao,
+        motivo: dados.motivoRecusa,
+      });
+    }
     return { ok: true };
   } catch {
     return { ok: false, erro: 'Não foi possível atualizar o perfil.' };
@@ -52,6 +77,12 @@ export async function concederAssinatura(userId: string, uf: string): Promise<Re
       where: { userId_uf: { userId, uf: ufNorm } },
       update: {},
       create: { userId, uf: ufNorm },
+    });
+    // A assinatura é concedida à mão — avisar é o que faz a pessoa voltar.
+    void notificarAssinaturaRadar({
+      email: await emailDoUsuario(userId),
+      origin: await origemAtual(),
+      uf: ufNorm,
     });
     return { ok: true };
   } catch {
@@ -70,55 +101,12 @@ export async function revogarAssinatura(userId: string, uf: string): Promise<Res
   }
 }
 
-/** Varredura do aviso HONESTO de 72h: famílias publicadas há mais de 72h SEM
- *  nenhuma resposta recebem UM e-mail dizendo isso com todas as letras (o
- *  aviso72hEm garante que não se repete). Devolve quantos foram avisados. */
+/** Varredura MANUAL do aviso de 72h (botão do /admin) — o motor é o mesmo
+ *  da rota do cron (`lib/radar/varredura.ts`), que roda sozinha todo dia. */
 export async function executarVarredura72h(): Promise<{ ok: boolean; avisados?: number; erro?: string }> {
   await requireMaster();
   if (!EH_SUCESSORISTA) return { ok: false, erro: 'Recurso de outro site.' };
-  try {
-    const limite = new Date(Date.now() - HORAS_AVISO * 3_600_000);
-    const pendentes = await prisma.familiaIntake.findMany({
-      where: {
-        status: 'publicado',
-        publicadoEm: { lt: limite },
-        aviso72hEm: null,
-        email: { not: null },
-        emailConfirmadoEm: { not: null },
-      },
-      take: 50,
-    });
-    const h = await headers();
-    const origin = `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host') ?? ''}`;
-    let avisados = 0;
-    for (const intake of pendentes) {
-      const respostas = await prisma.radarResposta.count({ where: { intakeId: intake.id } });
-      if (respostas > 0) continue; // já tem resposta — nada a avisar
-      const enviado = await enviarEmailPortal({
-        para: intake.email!,
-        assunto: 'Sua solicitação segue publicada — ainda sem respostas',
-        titulo: 'Sendo honestos com você',
-        paragrafos: [
-          `Olá${intake.nome ? `, ${intake.nome.split(/\s+/)[0]}` : ''}. Já se passaram ${HORAS_AVISO} horas e nenhum(a) advogado(a) respondeu à sua solicitação ainda.`,
-          'Ela continua publicada (o caso fica visível por 90 dias) e avisaremos assim que chegar uma resposta. Enquanto isso, o seu resultado — estimativas, prazo e lista de documentos — funciona igual com um(a) advogado(a) da sua confiança, de onde você quiser.',
-          'Se preferir, você pode retirar a solicitação a qualquer momento pelo link abaixo — isso apaga tudo do nosso servidor.',
-        ],
-        urlPortal: `${origin}/familias/minha-solicitacao/${intake.tokenGestao}`,
-        rotuloBotao: 'Ver minha solicitação',
-        rodape: 'Esta plataforma não intermedeia honorários nem indica advogados.',
-      });
-      if (enviado) {
-        await prisma.familiaIntake.update({
-          where: { id: intake.id },
-          data: { aviso72hEm: new Date() },
-        });
-        avisados++;
-      }
-    }
-    return { ok: true, avisados };
-  } catch {
-    return { ok: false, erro: 'Não foi possível executar a varredura.' };
-  }
+  return varrerAviso72h(await origemAtual());
 }
 
 export async function decidirDenuncia(
@@ -140,6 +128,14 @@ export async function decidirDenuncia(
       await prisma.advogadoPerfil.updateMany({
         where: { userId: denuncia.advogadoUserId },
         data: { situacao: 'suspenso', motivoRecusa: 'Suspenso após denúncia acatada.' },
+      });
+      // Suspensão é decisão grave: a pessoa precisa saber (o MOTIVO da
+      // denúncia em si não circula — só a suspensão e o caminho de revisão).
+      void notificarDecisaoOab({
+        email: await emailDoUsuario(denuncia.advogadoUserId),
+        origin: await origemAtual(),
+        situacao: 'suspenso',
+        motivo: 'Suspenso após denúncia acatada pela equipe.',
       });
     }
     return { ok: true };

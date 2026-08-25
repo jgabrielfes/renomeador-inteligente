@@ -11,6 +11,10 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
   `radarAtivo()`): sem os dois, nenhuma UI do Radar existe (o desenho exige
   e-mail confirmado para publicar). A área `/familias` funciona sem o Radar.
 - Tudo é exclusivo do site do Sucessorista (`requirePlataforma`/`foraDaPlataforma`).
+- `CRON_SECRET` (opcional): liga a rota `POST /api/radar/varredura`, que a
+  GitHub Action `varredura-radar.yml` chama uma vez por dia. Sem a env a rota
+  **não existe** (404) e a varredura de 72h continua só no botão do
+  `/admin/radar`.
 
 ## Fluxo, de ponta a ponta
 
@@ -46,9 +50,11 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 ## Regras de tempo
 
 - **90 dias**: `expiraEm` — o intake e o resultado somem depois disso.
-- **72 horas**: publicado sem NENHUMA resposta → a varredura do
-  `/admin/radar` envia UM aviso honesto ("ainda sem respostas") e carimba
-  `aviso72hEm` (nunca repete).
+- **72 horas**: publicado sem NENHUMA resposta → a varredura envia UM aviso
+  honesto ("ainda sem respostas") e carimba `aviso72hEm` (nunca repete). O
+  motor é `lib/radar/varredura.ts`, com DOIS chamadores: o botão do
+  `/admin/radar` (manual, sempre disponível) e a rota do cron
+  (`/api/radar/varredura`, diária).
 - **30 dias**: conversa aberta sem "Contratei" → reabre sozinha (na leitura,
   em `/radar` e na página da solicitação): status volta a `publicado` e o
   caso aceita outra escolha.
@@ -116,3 +122,27 @@ a mecânica é a mesma). Do lado do(a) advogado(a):
 - **/config** mostra a situação do perfil no Radar (verificação da OAB +
   UFs assinadas) e o gancho do plano de assinatura ("em implantação") — a
   habilitação continua acontecendo no próprio Radar.
+
+## Avisos por e-mail (`lib/radar/notificar.ts`)
+
+Env-gated pelo `RESEND_API_KEY` como todo e-mail da plataforma; melhor-esforço
+— falha de envio nunca derruba a ação de origem. **Caso novo não gera e-mail**
+(decisão do escritório): descobre-se pelo sino e pela lista. O que os avisos
+cobrem é o ciclo JÁ ABERTO e as decisões que a pessoa não tem como adivinhar:
+
+| Gatilho | Quem recebe | Onde dispara |
+| --- | --- | --- |
+| mensagem nova na conversa 1:1 | o OUTRO lado (família ou advogado) | `radar-actions.ts#enviarMensagemRadar` e `POST /api/familias/conversa` |
+| "Contratei" confirmado | advogado(a), **com o código do handoff** | `POST /api/familias/conversa` |
+| verificação da OAB decidida (aprovado/recusado/suspenso) | advogado(a), com o motivo da equipe | `/admin/radar#decidirPerfil` e `#decidirDenuncia` (acatar) |
+| assinatura de UF concedida | advogado(a) | `/admin/radar#concederAssinatura` |
+| 72h sem resposta | família | varredura (botão + cron) |
+
+Regras de conteúdo (trilhos de [`etica-oab.md`](./etica-oab.md)): o corpo do
+e-mail **não repete o texto da conversa** — só avisa que chegou algo, e o
+conteúdo fica na plataforma; nunca valores, ranking ou "indicação"; todo aviso
+à família leva o rodapé "não intermedeia honorários nem indica advogados".
+
+**Reativar** um perfil suspenso não avisa (volta ao estado normal). O motivo
+de uma denúncia nunca circula — o e-mail de suspensão diz apenas que houve
+suspensão e como pedir revisão.
