@@ -30,10 +30,26 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * RENDERIZAÇÃO POR REQUISIÇÃO — de propósito.
+ *
+ * `radarAtivo()` lê `RADAR_ATIVO` do ambiente. Enquanto esta página era
+ * ESTÁTICA, a flag entrava no BUILD: ligar o Radar no painel da Vercel (ou
+ * pela action) não mudava nada até alguém republicar o site — e, pior, o
+ * `/admin/radar` (que é dinâmico) já dizia "LIGADO" enquanto a família
+ * continuava sem o convite. Foi exatamente esse descompasso que fez o Radar
+ * parecer quebrado depois de configurado.
+ *
+ * O custo é perder o cache estático de uma página de marketing; o HTML servido
+ * é o mesmo (os metadados de SEO acima continuam valendo), e o conteúdo não
+ * depende de banco. Vale menos que a armadilha de um interruptor que só liga
+ * no próximo deploy.
+ */
+export const dynamic = 'force-dynamic';
+
 export default async function FamiliasPage() {
   // Página do site do Sucessorista — nos demais deploys ela não existe.
   await requirePlataforma('SUCESSORISTA');
-  // O Radar é ligado pelo admin (RADAR_ATIVO=1 + e-mail configurado) — a
-  // página é estática, então a flag entra no build do site.
+  // O Radar é ligado pelo admin (RADAR_ATIVO=1) — lido a cada requisição.
   return <FamiliasClient radarAtivo={radarAtivo()} />;
 }

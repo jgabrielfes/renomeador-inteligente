@@ -13,6 +13,13 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
   ser imediata: a família informa o e-mail (obrigatório, é o canal dela), mas
   publicar não espera envio nenhum — cada aviso é env-gated por conta própria
   e falha de e-mail nunca derruba a publicação.
+- **A flag é lida em TEMPO DE EXECUÇÃO, e isso é obrigatório.** `/familias`
+  era uma página estática, então `radarAtivo()` entrava no BUILD: ligar a
+  variável na Vercel não mudava nada até alguém republicar, e o `/admin/radar`
+  (dinâmico) já dizia "LIGADO" enquanto a família seguia sem o convite — o
+  Radar parecia quebrado depois de configurado. Por isso o `page.tsx` de
+  `/familias` declara `export const dynamic = 'force-dynamic'`. Tela nova que
+  consulte `radarAtivo()` precisa ser dinâmica pelo mesmo motivo.
 - Tudo é exclusivo do site do Sucessorista (`requirePlataforma`/`foraDaPlataforma`).
 - `CRON_SECRET` (opcional): liga a rota `POST /api/radar/varredura`, que a
   GitHub Action `varredura-radar.yml` chama uma vez por dia. Sem a env a rota
