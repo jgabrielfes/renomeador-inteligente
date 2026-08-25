@@ -1,0 +1,151 @@
+# Move um DOMÍNIO de um projeto da Vercel para outro, sem abrir o painel.
+#
+# Serve à decisão do escritório de devolver `lexcausa.com.br` ao deploy do
+# Sucessorista (a interface do ofício no apex, em vez da vitrine sem conta) e
+# de dar ao Renomeador o endereço `renomeador.lexcausa.com.br`.
+#
+# A CLI não faz isto: `vercel domains remove` tira o domínio da CONTA (não do
+# projeto), o que é outra coisa e bem mais grave. O vínculo domínio↔projeto
+# vive na API REST, e é o que esta action chama com o MESMO `VERCEL_TOKEN` do
+# deploy:
+#   DELETE /v9/projects/{origem}/domains/{dominio}
+#   POST   /v10/projects/{destino}/domains   {"name": dominio}
+#
+# ‼️ ATENÇÃO — isto mexe num endereço VIVO. Entre a saída do projeto de
+# origem e a entrada no de destino há uma janela de alguns segundos em que o
+# domínio não responde. Rode fora do horário do balcão.
+#
+# ‼️ O que esta action NÃO faz, e continua sendo trabalho de painel de
+# terceiros: cadastrar as URLs de callback do domínio novo no Google Cloud
+# (login Google e Drive), no Azure/Entra (OneDrive) e no Dropbox. Sem isso,
+# nesse endereço, o login por senha funciona mas o login Google e as nuvens
+# não. São consoles de outras empresas — não há caminho por GitHub.
+#
+# Segredos: os MESMOS do deploy de produção. Nenhum segredo novo.
+
+name: Mover domínio entre projetos
+
+on:
+  workflow_dispatch:
+    inputs:
+      dominio:
+        description: "Domínio a mover (ex.: lexcausa.com.br)"
+        required: true
+        type: string
+      origem:
+        description: "Projeto que TEM o domínio hoje"
+        required: true
+        type: choice
+        options:
+          - hub
+          - sucessorista
+          - renomeador
+          - notas
+      destino:
+        description: "Projeto que passa a atender o domínio"
+        required: true
+        type: choice
+        options:
+          - sucessorista
+          - renomeador
+          - notas
+          - hub
+      confirmo:
+        description: 'Digite MOVER para confirmar (endereço vivo!)'
+        required: true
+        type: string
+
+concurrency:
+  group: dominios-vercel
+  cancel-in-progress: false
+
+jobs:
+  mover:
+    name: ${{ inputs.dominio }} — ${{ inputs.origem }} → ${{ inputs.destino }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir a confirmação
+        if: inputs.confirmo != 'MOVER'
+        run: |
+          echo "::error::Digite MOVER no campo de confirmação para executar."
+          exit 1
+
+      - name: Conferir que origem e destino são diferentes
+        if: inputs.origem == inputs.destino
+        run: |
+          echo "::error::Origem e destino são o mesmo projeto — nada a mover."
+          exit 1
+
+      - name: Mover
+        env:
+          TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ORG: ${{ secrets.VERCEL_ORG_ID }}
+          ID_HUB: ${{ secrets.VERCEL_PROJECT_ID_HUB }}
+          ID_SUCESSORISTA: ${{ secrets.VERCEL_PROJECT_ID_SUCESSORISTA }}
+          ID_RENOMEADOR: ${{ secrets.VERCEL_PROJECT_ID_RENOMEADOR }}
+          ID_NOTAS: ${{ secrets.VERCEL_PROJECT_ID_NOTAS }}
+          DOMINIO: ${{ inputs.dominio }}
+        run: |
+          set -euo pipefail
+          limpar() { printf '%s' "$1" | tr -d '[:space:]"'; }
+          id_de() {
+            case "$1" in
+              hub) limpar "$ID_HUB" ;;
+              sucessorista) limpar "$ID_SUCESSORISTA" ;;
+              renomeador) limpar "$ID_RENOMEADOR" ;;
+              notas) limpar "$ID_NOTAS" ;;
+            esac
+          }
+          org=$(limpar "$ORG")
+          origem=$(id_de "${{ inputs.origem }}")
+          destino=$(id_de "${{ inputs.destino }}")
+          if [ -z "$origem" ] || [ -z "$destino" ]; then
+            echo "::error::Falta o secret com o projectId de origem ou de destino."
+            exit 1
+          fi
+
+          echo "→ tirando $DOMINIO do projeto ${{ inputs.origem }}"
+          # 404 aqui é aceitável: significa que o domínio já não estava lá.
+          codigo=$(curl -sS -o /tmp/rm.json -w '%{http_code}' -X DELETE \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://api.vercel.com/v9/projects/$origem/domains/$DOMINIO?teamId=$org")
+          echo "   HTTP $codigo — $(cat /tmp/rm.json)"
+          if [ "$codigo" != "200" ] && [ "$codigo" != "204" ] && [ "$codigo" != "404" ]; then
+            echo "::error::Não consegui desvincular o domínio da origem."
+            exit 1
+          fi
+
+          echo "→ ligando $DOMINIO ao projeto ${{ inputs.destino }}"
+          codigo=$(curl -sS -o /tmp/add.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' \
+            -d "{\"name\":\"$DOMINIO\"}" \
+            "https://api.vercel.com/v10/projects/$destino/domains?teamId=$org")
+          echo "   HTTP $codigo — $(cat /tmp/add.json)"
+          if [ "$codigo" != "200" ] && [ "$codigo" != "201" ]; then
+            echo "::error::O domínio saiu da origem mas NÃO entrou no destino — resolva no painel antes de sair."
+            exit 1
+          fi
+
+          {
+            echo "### $DOMINIO agora atende pelo projeto ${{ inputs.destino }}"
+            echo ""
+            echo "Cadastre as URLs de callback deste domínio no Google Cloud,"
+            echo "no Azure/Entra e no Dropbox — o login por senha já funciona,"
+            echo "mas o login Google e as nuvens ainda não."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conferir que o endereço responde
+        # Propagação e emissão do certificado levam alguns segundos; tentamos
+        # por até um minuto antes de dizer que algo está errado.
+        run: |
+          for i in $(seq 1 12); do
+            codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+              "https://${{ inputs.dominio }}/" || echo "000")
+            echo "tentativa $i: HTTP $codigo"
+            case "$codigo" in
+              2*|3*) echo "O domínio está no ar." >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::warning::O domínio ainda não respondeu — costuma ser o certificado sendo emitido. Confira no painel em alguns minutos."
