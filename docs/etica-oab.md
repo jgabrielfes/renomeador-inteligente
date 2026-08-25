@@ -76,9 +76,12 @@ Antes de aprovar qualquer tela/e-mail que toque o Radar, conferir:
 ## O que o admin vê (e o que não vê)
 
 `/admin/radar` opera **cadastros e contadores**: fila da OAB, assinaturas,
-funil por status/UF, varredura de 72h e denúncias. NUNCA o conteúdo das
-conversas, das respostas ou dos intakes — a exceção é o MOTIVO da denúncia,
-escrito pela própria família para a moderação.
+funil por status/UF, varredura de 72h, denúncias e a **moderação do mural**
+(retirar publicação com motivo + e-mail à família). NUNCA o conteúdo das
+conversas, das respostas ou dos intakes — as exceções são o MOTIVO da
+denúncia, escrito pela própria família para a moderação, e o **card anônimo
+publicado** (o mesmo que os advogados veem, observações incluídas): moderar o
+que está no ar exige ver o que está no ar.
 
 ## Rede advogado-advogado (camada 4) — decisões que valem as mesmas regras
 

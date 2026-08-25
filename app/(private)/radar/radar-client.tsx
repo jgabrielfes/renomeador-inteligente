@@ -559,13 +559,26 @@ export function RadarClient({
           />
         )}
 
-        {estado && !perfil && !estado.master && (
+        {/* O formulário da OAB aparece TAMBÉM para o MASTER sem perfil: ele
+            navega habilitado por ofício, mas antes o passo 1 sumia da tela
+            dele e ninguém achava onde a inscrição se cadastra. A inscrição
+            do MASTER entra na MESMA fila de verificação do /admin/radar. */}
+        {estado && !perfil && (
           <div className="nota" style={{ marginTop: 8 }}>
-            <span className="eyebrow">Passo 1 de 3</span>
+            <span className="eyebrow">
+              {estado.master ? 'Passo 1 de 3 (o que o advogado comum vê)' : 'Passo 1 de 3'}
+            </span>
             <h3>Identifique-se: inscrição na OAB</h3>
             <p className="fund">
               A verificação é MANUAL, feita pela administração — anonimato aqui é só da
               família, nunca do(a) advogado(a).
+              {estado.master && (
+                <>
+                  {' '}Como administrador(a) você navega sem os passos de habilitação; se
+                  também for atuar como advogado(a), cadastre a sua inscrição aqui — ela
+                  entra na mesma fila de verificação do /admin/radar.
+                </>
+              )}
             </p>
             <FormOab aoSalvar={() => router.refresh()} />
           </div>

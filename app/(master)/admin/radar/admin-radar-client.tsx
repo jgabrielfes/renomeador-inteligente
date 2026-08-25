@@ -31,11 +31,14 @@ import {
 import { Toaster } from '@/components/ui/sonner';
 import { UFS } from '@/lib/familias/tipos';
 
+import type { CasoAnonimo } from '@/lib/radar/anonimizar';
+
 import {
   concederAssinatura,
   decidirDenuncia,
   decidirPerfil,
   executarVarredura72h,
+  retirarPublicacaoRadar,
   revogarAssinatura,
 } from './actions';
 
@@ -53,6 +56,13 @@ export interface DadosAdminRadar {
     ufs: string[];
   }[];
   denuncias: { id: string; advogado: string; motivo: string; status: string; em: string }[];
+  /**
+   * MODERAÇÃO: as publicações ativas do mural, no MESMO recorte anônimo que
+   * os advogados veem (inclusive as observações — o campo a moderar). Nunca
+   * o intake bruto: nome/e-mail/token não chegam aqui (temEmail é só a flag
+   * de que o aviso da retirada tem para onde ir).
+   */
+  publicacoes: { intakeId: string; status: string; temEmail: boolean; caso: CasoAnonimo }[];
   funil: {
     publicados: number;
     emConversa: number;
@@ -94,6 +104,10 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
       setAgindo(false);
     }
   };
+
+  /** Dialog de retirada do mural: publicação alvo + motivo que a família lê. */
+  const [retirando, setRetirando] = useState<{ intakeId: string; rotulo: string; temEmail: boolean } | null>(null);
+  const [motivoRetirada, setMotivoRetirada] = useState('');
 
   const pendentes = dados.perfis.filter((p) => p.situacao === 'pendente');
   const denunciasPendentes = dados.denuncias.filter((d) => d.status === 'pendente');
@@ -175,13 +189,74 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
         </Button>
       </section>
 
+      {/* MODERAÇÃO DO MURAL — o card é o MESMO recorte anônimo que os
+          advogados veem (observações incluídas: é o campo a moderar).
+          Retirar exige motivo, que a família lê no e-mail. */}
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">
+          Publicações no mural{' '}
+          {dados.publicacoes.length > 0 && <Badge>{dados.publicacoes.length}</Badge>}
+        </h2>
+        {dados.publicacoes.length === 0 && (
+          <p className="text-sm text-muted-foreground">Nenhuma publicação ativa no mural.</p>
+        )}
+        {dados.publicacoes.map((pub) => (
+          <div key={pub.intakeId} className="flex flex-wrap items-start gap-3 rounded-lg border p-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="font-medium">
+                {pub.caso.cidade ? `${pub.caso.cidade}/` : ''}
+                {pub.caso.uf} · {pub.caso.qtdHerdeiros} herdeiro(s) · acervo {pub.caso.faixaAcervo}
+                {pub.status === 'em_conversa' && (
+                  <Badge variant="secondary" className="ml-2">em conversa</Badge>
+                )}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                publicado em {pub.caso.publicadoEm.split('-').reverse().join('/')}
+                {' · '}
+                {pub.caso.respostas.map((l) => `${l.rotulo}: ${l.valor}`).join(' · ')}
+              </p>
+              {pub.caso.observacoes && (
+                <p className="text-sm">
+                  <strong>A família escreveu:</strong> “{pub.caso.observacoes}”
+                </p>
+              )}
+              {!pub.temEmail && (
+                <p className="text-sm text-amber-600">
+                  Sem e-mail cadastrado (publicação antiga) — retirar funciona, mas o aviso
+                  não tem para onde ir.
+                </p>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={agindo}
+              onClick={() => {
+                setMotivoRetirada('');
+                setRetirando({
+                  intakeId: pub.intakeId,
+                  rotulo: `${pub.caso.cidade ? `${pub.caso.cidade}/` : ''}${pub.caso.uf}`,
+                  temEmail: pub.temEmail,
+                });
+              }}
+            >
+              Retirar do mural
+            </Button>
+          </div>
+        ))}
+      </section>
+
       {/* Fila de verificação — OAB conferida À MÃO. */}
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">
           Fila de verificação {pendentes.length > 0 && <Badge>{pendentes.length}</Badge>}
         </h2>
         {pendentes.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhum perfil aguardando verificação.</p>
+          <p className="text-sm text-muted-foreground">
+            Nenhum perfil aguardando verificação. A inscrição é feita pelo(a) próprio(a)
+            advogado(a) em <strong>/radar</strong> (passo 1 — número da OAB + seccional);
+            enviada, ela aparece aqui para você aprovar ou recusar.
+          </p>
         )}
         {pendentes.map((p) => (
           <div key={p.userId} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
@@ -368,6 +443,60 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
               }}
             >
               Recusar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Retirar do mural: destrutivo para a publicação (não para o resultado
+          da família) — motivo obrigatório, porque é ELE que a família lê no
+          e-mail. A republicação do mesmo conteúdo fica bloqueada; o caminho
+          limpo é refazer o questionário sem o dado. */}
+      <Dialog open={retirando !== null} onOpenChange={(o) => !o && setRetirando(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Retirar a publicação de {retirando?.rotulo} do mural?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            O caso sai do mural na hora e a família não consegue republicar o mesmo
+            conteúdo — o e-mail que ela recebe explica o motivo e orienta a refazer o
+            questionário sem dados que identifiquem pessoas. O resultado dela continua
+            acessível pelo link de sempre.
+            {retirando && !retirando.temEmail && (
+              <strong> Atenção: esta publicação não tem e-mail — avise por outro canal.</strong>
+            )}
+          </p>
+          <label className="text-sm font-medium" htmlFor="motivo-retirada">
+            Motivo (a família lê exatamente este texto)
+          </label>
+          <Input
+            id="motivo-retirada"
+            value={motivoRetirada}
+            placeholder="Ex.: o texto livre continha nome e endereço de familiares"
+            onChange={(e) => setMotivoRetirada(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRetirando(null)} disabled={agindo}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              loading={agindo}
+              disabled={motivoRetirada.trim().length < 5}
+              onClick={() => {
+                if (!retirando) return;
+                void rodar(async () => {
+                  const r = await retirarPublicacaoRadar(retirando.intakeId, motivoRetirada);
+                  if (r.ok && retirando.temEmail && !r.emailEnviado) {
+                    toast.warning(
+                      'Publicação retirada, mas o e-mail à família NÃO saiu (envio desligado ou falhou) — avise por outro canal.',
+                    );
+                  }
+                  return r;
+                }, 'Publicação retirada do mural.').then(() => setRetirando(null));
+              }}
+            >
+              Retirar e avisar a família
             </Button>
           </DialogFooter>
         </DialogContent>

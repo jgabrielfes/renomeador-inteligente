@@ -10,6 +10,8 @@ import { requirePlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { radarAtivo } from "@/lib/radar/config";
+import { anonimizarIntake } from "@/lib/radar/anonimizar";
+import { sanitizarRespostas } from "@/lib/familias/sanitizar";
 import { AdminRadarClient, type DadosAdminRadar } from "./admin-radar-client";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,7 @@ export default async function AdminRadarPage() {
     ativo: radarAtivo(),
     perfis: [],
     denuncias: [],
+    publicacoes: [],
     funil: {
       publicados: 0,
       emConversa: 0,
@@ -87,6 +90,37 @@ export default async function AdminRadarPage() {
           where: { status: "resultado", confirmacaoToken: null },
         }),
       ]);
+    // MODERAÇÃO DO MURAL: as publicações ativas, no MESMO recorte anônimo
+    // que os advogados assinantes veem (anonimizarIntake) — inclusive as
+    // observações livres da família, que são exatamente o campo a moderar.
+    // Isto NÃO fura a regra "nunca conteúdo de intake em /admin": o card é o
+    // conteúdo JÁ PÚBLICO do mural, não o intake bruto — nome, e-mail e
+    // token seguem nunca aparecendo aqui.
+    const linhasPublicadas = await prisma.familiaIntake.findMany({
+      where: { status: { in: ["publicado", "em_conversa"] } },
+      orderBy: { publicadoEm: "asc" },
+      take: 100,
+    });
+    const agoraIso = new Date().toISOString();
+    const publicacoes = linhasPublicadas.flatMap((l) => {
+      const r = sanitizarRespostas(l.respostas);
+      if (!r || !l.publicadoEm) return [];
+      return [
+        {
+          intakeId: l.id,
+          status: l.status,
+          temEmail: Boolean(l.email),
+          caso: anonimizarIntake({
+            id: l.id,
+            respostas: r,
+            pequenoValor: l.pequenoValor,
+            publicadoEm: l.publicadoEm.toISOString(),
+            hoje: agoraIso,
+          }),
+        },
+      ];
+    });
+
     const ids = perfis.map((p) => p.userId);
     const usuarios = await prisma.user.findMany({
       where: { id: { in: ids } },
@@ -110,6 +144,7 @@ export default async function AdminRadarPage() {
         aceitaPequenoValor: p.aceitaPequenoValor,
         ufs: (assinaturasPor.get(p.userId) ?? []).sort(),
       })),
+      publicacoes,
       denuncias: denuncias.map((d) => ({
         id: d.id,
         advogado: usuarioPor.get(d.advogadoUserId)?.name ?? d.advogadoUserId,
