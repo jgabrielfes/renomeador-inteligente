@@ -26,12 +26,33 @@ export default async function AdminRadarPage() {
     ativo: radarAtivo(),
     perfis: [],
     denuncias: [],
-    funil: { publicados: 0, emConversa: 0, contratados: 0, retirados: 0, respostas: 0, porUf: [] },
+    funil: {
+      publicados: 0,
+      emConversa: 0,
+      contratados: 0,
+      retirados: 0,
+      respostas: 0,
+      aguardandoConfirmacao: 0,
+      semPedido: 0,
+      porUf: [],
+    },
     elegiveis72h: 0,
   };
   try {
-    const [perfis, assinaturas, denuncias, publicados, emConversa, contratados, retirados, respostas, porUf, semAviso] =
-      await Promise.all([
+    const [
+      perfis,
+      assinaturas,
+      denuncias,
+      publicados,
+      emConversa,
+      contratados,
+      retirados,
+      respostas,
+      porUf,
+      semAviso,
+      aguardandoConfirmacao,
+      semPedido,
+    ] = await Promise.all([
         prisma.advogadoPerfil.findMany({ orderBy: { createdAt: "asc" }, take: 200 }),
         prisma.radarAssinatura.findMany(),
         prisma.radarDenuncia.findMany({ orderBy: { createdAt: "asc" }, take: 100 }),
@@ -53,6 +74,18 @@ export default async function AdminRadarPage() {
             email: { not: null },
             emailConfirmadoEm: { not: null },
           },
+        }),
+        // Pediu a análise e o link de confirmação FOI enviado, mas ninguém
+        // clicou: o caso NÃO está no Radar (o clique é o consentimento).
+        // Sem este contador a etapa era invisível — parecia que a
+        // publicação tinha falhado.
+        prisma.familiaIntake.count({
+          where: { status: "resultado", confirmacaoToken: { not: null } },
+        }),
+        // Respondeu o questionário e nunca pediu análise — nem chegou ao
+        // Radar por escolha da família.
+        prisma.familiaIntake.count({
+          where: { status: "resultado", confirmacaoToken: null },
         }),
       ]);
     const ids = perfis.map((p) => p.userId);
@@ -91,6 +124,8 @@ export default async function AdminRadarPage() {
         contratados,
         retirados,
         respostas,
+        aguardandoConfirmacao,
+        semPedido,
         porUf: porUf
           .map((l) => ({ uf: l.uf, casos: l._count._all }))
           .sort((a, b) => b.casos - a.casos),
