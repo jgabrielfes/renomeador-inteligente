@@ -507,6 +507,9 @@ model User {
   enderecoEscritorio String?
   telefoneContato    String?
   emailContato       String?
+  // Escrevente Notarial: a serventia onde trabalha (qualificação do
+  // primeiro acesso — o advogado tem o AdvogadoPerfil, o escrevente tem isto).
+  serventia          String?
   role         Role      @default(USER)
   // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
   perfilSucessorista PerfilSucessorista?

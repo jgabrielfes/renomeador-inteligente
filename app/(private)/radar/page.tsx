@@ -19,6 +19,7 @@ import {
   type CasoRadar,
   type RespostaMinha,
 } from './radar-actions';
+import { prisma } from '@/lib/prisma';
 import { RadarClient } from './radar-client';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,23 @@ export default async function RadarPage() {
     if (m.ok) minhas = m.respostas;
   }
   const session = await auth();
+  // QUALIFICAÇÃO DE PRIMEIRO ACESSO: quem chega ao Radar sem perfil escolhido
+  // passa pelo MESMO dialog do Sucessorista (perfil → identificação → quiz).
+  let perfilConta: 'ADVOGADO' | 'ESCREVENTE' | null = null;
+  let nomeConta = '';
+  try {
+    const u = session?.user?.id
+      ? await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { perfilSucessorista: true, name: true },
+        })
+      : null;
+    perfilConta = u?.perfilSucessorista ?? null;
+    nomeConta = u?.name ?? '';
+  } catch {
+    // banco fora: degrada sem pedir a qualificação (nunca quebra a página)
+    perfilConta = 'ADVOGADO';
+  }
   return (
     <>
       <LexTopbar
@@ -58,7 +76,13 @@ export default async function RadarPage() {
           { titulo: 'A família escolhe', texto: 'Só quem ela chamar para conversar recebe o contato. Fechou? O funil "Minhas respostas" ganha o botão "Converter em inventário", que cria o caso pronto no Sucessorista.' },
         ]}
       />
-      <RadarClient estado={estado} casos={casos} minhasRespostas={minhas} />
+      <RadarClient
+        estado={estado}
+        casos={casos}
+        minhasRespostas={minhas}
+        perfilConta={perfilConta}
+        nomeConta={nomeConta}
+      />
     </>
   );
 }

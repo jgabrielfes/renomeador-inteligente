@@ -40,6 +40,7 @@ import { analisarIsencoesPorBem, provisionarItcmd, ufespDoAno, type ProvisaoItcm
 import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { totalCustosManuais, ufsForaDeSp } from '@/lib/partilha/custos-manuais';
+import { QualificacaoConta } from '@/components/qualificacao-conta';
 import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
 import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
 import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
@@ -1566,7 +1567,8 @@ export default function SucessoristaClient({
 
   const escolherPerfilConta = async (p: Perfil) => {
     setPerfil(p);
-    setEscolhendoPerfil(false);
+    // O dialog NÃO fecha aqui: a qualificação continua (identificação/quiz)
+    // e quem fecha é o aoConcluir do componente.
     try {
       const { salvarPerfilConta } = await import('./perfil-actions');
       const r = await salvarPerfilConta(p);
@@ -4765,27 +4767,15 @@ export default function SucessoristaClient({
     </div>
     )}
 
-    {/* primeiro acesso: a escolha do perfil é OBRIGATÓRIA e fica na conta —
-        um mesmo login não circula pelos dois (só MASTER). */}
-    <Dialog open={escolhendoPerfil} onOpenChange={() => undefined}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
-          <DialogDescription>
-            Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA ao seu
-            login — Advogado(a) trabalha com honorários e minutas ao Tabelionato/petição;
-            Escrevente Notarial trabalha com a minuta da escritura. Para trocar depois,
-            fale com a administração.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="escolha" style={{ marginTop: 8, gap: 10 }}>
-          <Button onClick={() => void escolherPerfilConta('ADVOGADO')}>Advogado(a)</Button>
-          <Button variant="outline" onClick={() => void escolherPerfilConta('ESCREVENTE')}>
-            Escrevente Notarial
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    {/* primeiro acesso: QUALIFICAÇÃO da conta — a escolha do perfil é
+        obrigatória (fica na conta, como sempre), e a identificação segue na
+        hora: advogado(a) informa nome + OAB (fila do /admin/radar) e faz o
+        quiz deontológico; escrevente informa nome completo + serventia. */}
+    <QualificacaoConta
+      aberta={escolhendoPerfil}
+      aoEscolherPerfil={(p) => void escolherPerfilConta(p)}
+      aoConcluir={() => setEscolhendoPerfil(false)}
+    />
 
     {/* guarda de conflito: outro computador salvou este caso depois de você abrir */}
     <Dialog open={conflito !== null} onOpenChange={() => undefined}>

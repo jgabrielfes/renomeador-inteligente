@@ -38,7 +38,8 @@ import {
   marcadorCandidaturas,
   TETO_CANDIDATURAS_POR_CASO,
 } from '@/lib/radar/candidatura';
-import { QUESTOES_RADAR, type CorrecaoQuiz } from '@/lib/radar/quiz';
+import { QualificacaoConta } from '@/components/qualificacao-conta';
+import { QuizDeontologico } from '@/components/quiz-deontologico';
 import { ROTULO_VIA, dataBr } from '../../familias/resultado-view';
 import {
   conversaRadar,
@@ -105,73 +106,9 @@ function FormOab({ aoSalvar }: { aoSalvar: () => void }) {
   );
 }
 
+/** O quiz do /radar corrige pela action DO PRODUTO (gated por radarAtivo). */
 function Quiz({ aoAprovar }: { aoAprovar: () => void }) {
-  const [respostas, setRespostas] = useState<Record<string, number>>({});
-  const [correcao, setCorrecao] = useState<CorrecaoQuiz | null>(null);
-  const [enviando, setEnviando] = useState(false);
-
-  const corrigir = async () => {
-    setEnviando(true);
-    try {
-      const r = await responderQuizRadar(respostas);
-      if (!r.ok || !r.correcao) {
-        toast.error(r.erro ?? 'Não foi possível corrigir.');
-        return;
-      }
-      setCorrecao(r.correcao);
-      if (r.correcao.aprovado) {
-        toast.success('Aprovado(a) — as regras do Radar valem para todas as suas respostas.');
-        aoAprovar();
-      }
-    } finally {
-      setEnviando(false);
-    }
-  };
-
-  return (
-    <div className="nota" style={{ marginTop: 12 }}>
-      <span className="eyebrow">Questionário deontológico</span>
-      <h3>Antes de responder famílias: 10 perguntas sobre as regras</h3>
-      <p className="fund">
-        A aprovação exige as 10 corretas — pode refazer quantas vezes precisar. É o
-        compromisso com o Provimento 205/2021 e com o Código de Ética que sustenta o
-        Radar.
-      </p>
-      {QUESTOES_RADAR.map((q, i) => (
-        <fieldset key={q.id} style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
-          <legend style={{ fontWeight: 600 }}>
-            {i + 1}. {q.enunciado}
-            {correcao && (
-              <span className={correcao.erradas.includes(q.id) ? 'mono-alerta' : ''} style={{ marginLeft: 6 }}>
-                {correcao.erradas.includes(q.id) ? '✗ rever' : '✓'}
-              </span>
-            )}
-          </legend>
-          {q.opcoes.map((op, j) => (
-            <label key={j} className="marcar" style={{ fontWeight: 400, display: 'flex', marginTop: 4 }}>
-              <input
-                type="radio"
-                name={`quiz-${q.id}`}
-                checked={respostas[q.id] === j}
-                onChange={() => setRespostas((prev) => ({ ...prev, [q.id]: j }))}
-              />
-              {op}
-            </label>
-          ))}
-        </fieldset>
-      ))}
-      <div style={{ marginTop: 14 }}>
-        <Button loading={enviando} onClick={() => void corrigir()}>
-          Corrigir
-        </Button>
-        {correcao && !correcao.aprovado && (
-          <p className="mono-alerta" style={{ marginTop: 8 }}>
-            {correcao.acertos} de {correcao.total} — reveja as marcadas com ✗ e corrija de novo.
-          </p>
-        )}
-      </div>
-    </div>
-  );
+  return <QuizDeontologico responder={responderQuizRadar} aoAprovar={aoAprovar} />;
 }
 
 const ROTULO_FLAG: Record<string, string> = {
@@ -454,12 +391,19 @@ export function RadarClient({
   estado,
   casos,
   minhasRespostas = [],
+  perfilConta = 'ADVOGADO',
+  nomeConta = '',
 }: {
   estado: EstadoAdvogado | null;
   casos: CasoRadar[];
   minhasRespostas?: RespostaMinha[];
+  /** null = a conta ainda não se qualificou — o dialog de primeiro acesso abre AQUI também. */
+  perfilConta?: 'ADVOGADO' | 'ESCREVENTE' | null;
+  nomeConta?: string;
 }) {
   const router = useRouter();
+  /** Qualificação de primeiro acesso (perfil null): mesma do Sucessorista. */
+  const [qualificando, setQualificando] = useState(perfilConta === null);
   const [filtroUf, setFiltroUf] = useState('');
   const [filtroVia, setFiltroVia] = useState('');
   const [filtroDias, setFiltroDias] = useState('');
@@ -532,6 +476,25 @@ export function RadarClient({
   return (
     <div className="sucessorista">
       <Toaster position="bottom-right" duration={4000} visibleToasts={1} />
+      <QualificacaoConta
+        aberta={qualificando}
+        nomeInicial={nomeConta}
+        aoEscolherPerfil={async (p) => {
+          const { salvarPerfilConta } = await import(
+            '@/app/(private)/sucessorista/perfil-actions'
+          );
+          const r = await salvarPerfilConta(p);
+          if (!r.ok && r.motivo === 'ja-escolhido') {
+            toast.error('O perfil desta conta já foi definido', {
+              description: 'Trocar de perfil é ato de administração.',
+            });
+          }
+        }}
+        aoConcluir={() => {
+          setQualificando(false);
+          router.refresh();
+        }}
+      />
       <main className="folha" style={{ margin: '0 auto', maxWidth: 860 }}>
         <span className="eyebrow">Radar Sucessório · by LexCausa</span>
         <h1>Radar Sucessório</h1>
@@ -545,6 +508,19 @@ export function RadarClient({
         {!estado && (
           <div className="nota exigencia">
             <p>Não foi possível carregar o seu estado no Radar — recarregue a página.</p>
+          </div>
+        )}
+
+        {/* Escrevente qualificado: o Radar é o mural de ADVOGADOS — a conta
+            de escrevente não segue os passos de habilitação. */}
+        {perfilConta === 'ESCREVENTE' && !estado?.master && (
+          <div className="nota" style={{ marginTop: 8 }}>
+            <span className="eyebrow">Perfil da conta: Escrevente Notarial</span>
+            <p>
+              O Radar Sucessório é o mural onde ADVOGADOS respondem famílias — o seu
+              balcão é a folha de trabalho do inventário.{' '}
+              <Link href="/s">Ir para O Sucessorista</Link>
+            </p>
           </div>
         )}
 
