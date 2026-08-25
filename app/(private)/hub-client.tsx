@@ -14,6 +14,7 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
+import { noHub } from '@/components/lexcausa/sites';
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { useProgressRouter } from '@/components/navigation-progress';
 
@@ -98,7 +99,7 @@ export function HubLexCausa({
                 )}
                 <div className="lc-acoes">
                   {radarSemEnv ? (
-                    <Link className="lc-acao secundaria" href={p.landing}>
+                    <Link className="lc-acao secundaria" href={noHub(p.landing)}>
                       Conhecer o produto
                     </Link>
                   ) : (

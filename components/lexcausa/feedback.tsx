@@ -89,7 +89,7 @@ function FormBug({ onEnviado }: { onEnviado: () => void }) {
           } else toast.error(r.erro ?? 'Não foi possível enviar.');
         })(e)
       }
-      style={{ display: 'grid', gap: 12 }}
+      className="grid gap-4"
     >
       <Field data-invalid={Boolean(errors.titulo)}>
         <FieldLabel htmlFor="bug-titulo">Título</FieldLabel>
@@ -107,11 +107,11 @@ function FormBug({ onEnviado }: { onEnviado: () => void }) {
         />
         <FieldError errors={[errors.descricao]} />
       </Field>
-      <p className="lc-fund" style={{ margin: 0 }}>
+      <p className="text-xs text-muted-foreground">
         O report vai sem captura de tela. A página atual é registrada
         automaticamente; a severidade será classificada pela equipe.
       </p>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="flex justify-end">
         <Button type="submit" loading={isSubmitting}>
           Enviar bug
         </Button>
@@ -152,7 +152,7 @@ function FormSugestao({ onEnviado }: { onEnviado: () => void }) {
           } else toast.error(r.erro ?? 'Não foi possível enviar.');
         })(e)
       }
-      style={{ display: 'grid', gap: 12 }}
+      className="grid gap-4"
     >
       <Field data-invalid={Boolean(errors.titulo)}>
         <FieldLabel htmlFor="sug-titulo">Título</FieldLabel>
@@ -188,7 +188,7 @@ function FormSugestao({ onEnviado }: { onEnviado: () => void }) {
         />
         <FieldError errors={[errors.descricao]} />
       </Field>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="flex justify-end">
         <Button type="submit" loading={isSubmitting}>
           Enviar sugestão
         </Button>
@@ -207,29 +207,28 @@ function MeusEnvios({ recarregar }: { recarregar: number }) {
     }, 0);
     return () => clearTimeout(t);
   }, [recarregar]);
-  if (itens === null) return <p className="lc-fund">Carregando…</p>;
+  if (itens === null)
+    return <p className="py-4 text-sm text-muted-foreground">Carregando…</p>;
   if (itens.length === 0) {
-    return <p className="lc-fund">Você ainda não enviou bugs nem sugestões.</p>;
+    return (
+      <p className="py-4 text-sm text-muted-foreground">
+        Você ainda não enviou bugs nem sugestões.
+      </p>
+    );
   }
   return (
-    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 8 }}>
+    <ul className="grid list-none gap-3 p-0">
       {itens.map((f) => (
-        <li key={f.id} style={{ display: 'grid', gap: 2 }}>
+        <li key={f.id} className="grid gap-0.5">
           <span>
             {f.tipo === 'bug' ? '🐞' : '💡'} <strong>{f.titulo}</strong>
           </span>
-          <span className="lc-fund">
+          <span className="text-xs text-muted-foreground">
             {new Date(f.criadoEm).toLocaleDateString('pt-BR')} · situação:{' '}
             {ROTULO_STATUS[f.status] ?? f.status}
           </span>
           {f.resposta && (
-            <span
-              style={{
-                borderLeft: '3px solid var(--lc-acento)',
-                paddingLeft: 10,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
+            <span className="mt-1 border-l-[3px] border-l-[var(--lc-acento)] pl-2.5 whitespace-pre-wrap">
               <strong>Resposta da equipe</strong>
               {f.respondidoEm
                 ? ` (${new Date(f.respondidoEm).toLocaleDateString('pt-BR')})`
@@ -265,7 +264,7 @@ export function FeedbackDialog({
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="lexcausa" style={{ background: 'var(--lc-alto)' }}>
+      <DialogContent className="lexcausa sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Feedback</DialogTitle>
           <DialogDescription>

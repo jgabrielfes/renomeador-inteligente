@@ -85,14 +85,16 @@ function lerCredenciais(
 }
 
 /**
- * O HUB é uma vitrine de UMA página: `/` e os arquivos de identidade visual.
- * Tudo o mais — login, /admin, rotas do Sucessorista, rotas de API, inclusive
- * as do NextAuth — não existe lá.
+ * O APEX (lexcausa.com.br) é a cara pública da marca: a landing em `/` e as
+ * páginas institucionais de produto. Tudo o mais — login, /admin, o portal do
+ * herdeiro, a área das famílias, rotas de API, inclusive as do NextAuth —
+ * mora no deploy da ferramenta e não existe aqui.
  *
- * O bloqueio é aqui, e não gate a gate nas páginas, porque assim vale por
- * padrão: rota nova criada para outro site já nasce invisível na vitrine, sem
+ * O bloqueio é neste ponto, e não gate a gate nas páginas, porque assim vale
+ * por padrão: rota nova criada para outro site já nasce invisível no apex, sem
  * depender de alguém lembrar de adicionar o gate.
  */
+const PREFIXOS_DO_HUB = ["/produtos/"];
 const CAMINHOS_DO_HUB = new Set([
   "/",
   "/favicon.ico",
@@ -104,7 +106,11 @@ const CAMINHOS_DO_HUB = new Set([
 ]);
 
 export function proxy(request: NextRequest) {
-  if (EH_HUB && !CAMINHOS_DO_HUB.has(request.nextUrl.pathname)) {
+  const caminho = request.nextUrl.pathname;
+  const noApex =
+    CAMINHOS_DO_HUB.has(caminho) ||
+    PREFIXOS_DO_HUB.some((p) => caminho.startsWith(p));
+  if (EH_HUB && !noApex) {
     // 404 e não 403: a rota não existe nesta plataforma — mesma disciplina do
     // requirePlataforma()/foraDaPlataforma() nas outras.
     return new NextResponse(null, { status: 404 });

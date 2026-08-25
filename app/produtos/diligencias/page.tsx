@@ -25,7 +25,8 @@ const PASSOS = [
 ] as const;
 
 export default async function ProdutoDiligenciasPage() {
-  await requirePlataforma('SUCESSORISTA');
+  // Página institucional: vive no apex da marca (lexcausa.com.br).
+  await requirePlataforma('HUB');
   return (
     <div className="lexcausa">
       <header className="lc-topo">

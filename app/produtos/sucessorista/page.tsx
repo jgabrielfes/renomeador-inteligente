@@ -1,4 +1,4 @@
-// Página institucional de O SUCESSORISTA — pública, no site da LexCausa.
+// Página institucional de O SUCESSORISTA — pública, no apex da LexCausa.
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -23,7 +23,8 @@ const FASES = [
 ] as const;
 
 export default async function ProdutoSucessoristaPage() {
-  await requirePlataforma('SUCESSORISTA');
+  // Página institucional: vive no apex da marca (lexcausa.com.br).
+  await requirePlataforma('HUB');
   return (
     <div className="lexcausa">
       <header className="lc-topo">

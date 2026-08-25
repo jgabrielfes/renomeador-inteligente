@@ -1,8 +1,15 @@
-// Landing PÚBLICA da LEXCAUSA — quem chega em `/` DESLOGADO vê a marca-mãe:
-// hero institucional, os produtos (O Sucessorista e Radar Sucessório), a
-// porta acolhedora das famílias e as áreas de atuação em linguagem acessível
-// (educação do mercado + SEO). Quem já tem sessão nunca vê esta tela — a
-// raiz logada é o HUB de produtos (gate em app/(private)/page.tsx).
+// LANDING INSTITUCIONAL DA LEXCAUSA — a raiz do apex (lexcausa.com.br,
+// APP=hub): hero da marca, os produtos, a porta acolhedora das famílias e as
+// áreas de atuação em linguagem acessível (educação do mercado + SEO).
+//
+// Ela morava na raiz do Sucessorista, mostrada a quem chegava deslogado. Com
+// o apex ganhando deploy próprio, a marca passou a ter endereço só dela e a
+// ferramenta ficou sem porta pública: em osucessorista.lexcausa.com.br quem
+// não tem sessão vai direto para o login.
+//
+// Login, cadastro, /familias e /portal continuam no deploy da ferramenta, daí
+// o `noSucessorista()` nos links — que segue relativo se um dia esta tela for
+// montada lá de novo.
 
 import Link from 'next/link';
 
@@ -10,20 +17,21 @@ import '@/app/lexcausa.css';
 
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
+import { noSucessorista } from '@/components/lexcausa/sites';
 
-export function EntradaSucessorista() {
+export function LandingLexCausa() {
   return (
     <div className="lexcausa">
       <header className="lc-topo">
         <MarcaLexCausa href="/" />
         <nav aria-label="Entrar na plataforma">
-          <Link className="lc-acao secundaria" href="/familias">
+          <Link className="lc-acao secundaria" href={noSucessorista("/familias")}>
             Para famílias
           </Link>
-          <Link className="lc-acao secundaria" href="/cadastro">
+          <Link className="lc-acao secundaria" href={noSucessorista("/cadastro")}>
             Criar conta
           </Link>
-          <Link className="lc-acao" href="/login">
+          <Link className="lc-acao" href={noSucessorista("/login")}>
             Entrar
           </Link>
         </nav>
@@ -43,7 +51,7 @@ export function EntradaSucessorista() {
             que a sua conta pode usar.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link className="lc-acao" href="/login">
+            <Link className="lc-acao" href={noSucessorista("/login")}>
               Entrar
             </Link>
             <Link className="lc-acao secundaria" href="#produtos">
@@ -63,7 +71,7 @@ export function EntradaSucessorista() {
                 <p className="lc-fund" style={{ margin: 0 }}>{p.tagline}</p>
                 <p style={{ margin: 0 }}>{p.descricao}</p>
                 <div className="lc-acoes">
-                  <Link className="lc-acao" href="/login">
+                  <Link className="lc-acao" href={noSucessorista("/login")}>
                     Entrar
                   </Link>
                   <Link className="lc-acao secundaria" href={p.landing}>
@@ -95,17 +103,17 @@ export function EntradaSucessorista() {
               sensível — os valores entram por faixa.
             </p>
             <div className="lc-acoes">
-              <Link className="lc-acao" href="/familias">
+              <Link className="lc-acao" href={noSucessorista("/familias")}>
                 Começar agora
               </Link>
-              <Link className="lc-acao secundaria" href="/familias/guias">
+              <Link className="lc-acao secundaria" href={noSucessorista("/familias/guias")}>
                 Ler os guias
               </Link>
             </div>
           </div>
           <p className="lc-fund" style={{ marginTop: 12 }}>
             Recebeu do escritório um link do cofre da família? O próprio link é
-            a sua entrada — se o perdeu, <Link href="/portal">peça um novo aqui</Link>.
+            a sua entrada — se o perdeu, <Link href={noSucessorista("/portal")}>peça um novo aqui</Link>.
           </p>
         </section>
 

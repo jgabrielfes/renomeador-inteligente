@@ -80,6 +80,17 @@
 
 .lexcausa * { box-sizing: border-box; }
 
+/* A identidade também veste conteúdo em PORTAL (dialog, popover, dropdown).
+   Ali o `min-height: 100%` da página não faz sentido: o dialog é `fixed` e
+   centralizado, então herdar a altura da tela o esticava inteiro e empurrava
+   o conteúdo para baixo de um vão enorme — era o defeito do dialog de
+   feedback. */
+.lexcausa[data-slot='dialog-content'],
+.lexcausa[data-slot='popover-content'],
+.lexcausa[data-slot='dropdown-menu-content'] {
+  min-height: 0;
+}
+
 /* acento por produto — aplicado num wrapper (card ou página do produto) */
 .lexcausa .produto-sucessorista { --lc-acento: #6f5527; --ring: #6f5527; }
 .lexcausa .produto-radar { --lc-acento: #20565c; --ring: #20565c; }
@@ -301,6 +312,33 @@
   --ring: var(--lc-noite-acento);
 }
 .lexcausa.lc-shell .lc-topo { padding: var(--e-2) var(--e-5); max-width: none; }
+
+/* Rótulo dos botões da barra: some no estreito, onde o ícone já diz o que é
+   (e o título/aria-label continuam para leitor de tela). */
+@media (max-width: 720px) {
+  .lexcausa .lc-so-largo {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* A tecla de atalho dentro do botão Buscar — dica discreta, não rótulo. */
+.lexcausa .lc-atalho {
+  font-family: inherit;
+  font-size: var(--t-xs);
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+@media (max-width: 720px) {
+  .lexcausa .lc-atalho { display: none; }
+}
 .lexcausa.lc-shell .lc-marca { color: var(--lc-noite-tinta); }
 .lexcausa.lc-shell .lc-marca .lc-marca-lex { color: var(--lc-noite-acento); }
 .lexcausa.lc-shell nav a.lc-guia {
@@ -348,75 +386,6 @@
 
 /* sino de notificações do shell (central unificada) — a MESMA veste serve
    aos botões Ajuda/Reportar/Sugestão da barra (Ajuda é um Link) */
-.lexcausa a.lc-sino { text-decoration: none; }
-.lexcausa .lc-sino {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  color: var(--muted-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  font-size: var(--t-xs);
-}
-.lexcausa .lc-sino-badge {
-  background: var(--lc-noite-acento);
-  color: var(--lc-noite);
-  border-radius: 999px;
-  min-width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  padding: 0 5px;
-}
-.lexcausa .lc-sino-painel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 40;
-  width: min(360px, 88vw);
-  background: var(--lc-alto);
-  color: var(--lc-tinta);
-  border: 1px solid var(--lc-fio);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(22, 29, 38, 0.18);
-  padding: var(--e-3);
-  display: grid;
-  gap: var(--e-2);
-}
-.lexcausa .lc-sino-cabeca {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--e-2);
-  flex-wrap: wrap;
-}
-.lexcausa .lc-sino-cabeca button {
-  background: transparent;
-  border: 1px solid var(--lc-fio);
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: var(--t-xs);
-  color: var(--lc-tinta-media);
-}
-.lexcausa .lc-sino-cabeca button.ativa {
-  border-color: var(--lc-acento);
-  color: var(--lc-acento);
-  font-weight: 600;
-}
-.lexcausa .lc-sino-painel > a {
-  display: grid;
-  gap: 2px;
-  padding: var(--e-2);
-  border-radius: 8px;
-  color: var(--lc-tinta);
-  text-decoration: none;
-  font-size: var(--t-sm);
-}
-.lexcausa .lc-sino-painel > a:hover { background: var(--accent); }
 
 /* paleta de comandos (composta de Dialog + Input) */
 .lexcausa .lc-paleta-lista {

@@ -14,6 +14,10 @@ import type { ReactNode } from 'react';
 
 import '@/app/lexcausa.css';
 
+import { CircleHelp, MessageSquareWarning, Search } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+
 import { comandosPadrao } from '@/components/lexcausa/comandos';
 import { FeedbackDialog } from '@/components/lexcausa/feedback';
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
@@ -51,36 +55,45 @@ export function LexTopbar({
       <header className="lc-topo">
         <MarcaLexCausa href="/?hub=1" sub={sub} />
         <span style={{ marginRight: 'auto' }} />
-        <Link className="lc-sino" href="/ajuda" title="Ajuda e tutoriais">
-          Ajuda
-        </Link>
+        {/* Os botões da barra são o Button do shadcn (convenção): a barra-noite
+            já re-mapeia as variáveis de tema em `.lc-shell`, então o ghost
+            veste o escuro sozinho — antes eram <button> crus com a classe do
+            sino e um deles com estilo inline. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/ajuda" />}
+          title="Ajuda e tutoriais"
+        >
+          <CircleHelp />
+          <span className="lc-so-largo">Ajuda</span>
+        </Button>
         {/* Um botão só (pedido do escritório): o dialog traz as abas de
             bug E sugestão — dois botões abriam "a mesma coisa". */}
-        <button
-          type="button"
-          className="lc-sino"
-          title="Reportar um problema ou sugerir uma melhoria"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={abrirFeedback}
+          title="Reportar um problema ou sugerir uma melhoria"
         >
-          Reportar
-        </button>
+          <MessageSquareWarning />
+          <span className="lc-so-largo">Reportar</span>
+        </Button>
         <SinoNotificacoes />
-        <button
-          type="button"
+        {/* "Buscar" diz o que faz; o ⌘K vira a dica do atalho, no lugar de ser
+            o rótulo inteiro do botão. */}
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setPaletaAberta(true)}
-          aria-label="Abrir a paleta de comandos"
+          aria-label="Buscar e navegar (Ctrl+K)"
           title="Buscar e navegar (Ctrl+K)"
-          style={{
-            background: 'transparent',
-            color: 'var(--muted-foreground)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '4px 10px',
-            fontSize: 'var(--t-xs)',
-          }}
         >
-          ⌘K
-        </button>
+          <Search />
+          <span className="lc-so-largo">Buscar</span>
+          <kbd className="lc-atalho">⌘K</kbd>
+        </Button>
         {menu}
       </header>
       <PaletaComandos

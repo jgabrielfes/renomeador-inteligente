@@ -1,17 +1,23 @@
 // A RAIZ DE CADA SITE.
 //
-// O repositório publica quatro sites (lib/app.ts). No HUB (lexcausa.com.br) a
-// raiz é a VITRINE PÚBLICA da marca: sem login, sem banco — só os cartões das
-// ferramentas. É a única página deste grupo `(private)` que não exige sessão,
-// e por isso o retorno acontece antes de qualquer `auth()`. No Renomeador e no
-// Resolvedor de Notas, `/` é o próprio módulo — não existe painel de escolha
-// de ferramenta, e as rotas `/renomeador` e `/notas` não existem.
+// O repositório publica quatro sites (lib/app.ts):
 //
-// No site da LEXCAUSA (APP=sucessorista) a raiz mudou com a remodelagem de
-// marca: DESLOGADO vê a landing institucional (produtos + porta das
-// famílias); LOGADO cai no HUB de produtos — O Sucessorista mora em `/s`
-// (montagem compartilhada com /caso/<id>/<etapa>) e o Radar Sucessório em
-// /radar. A preferência "abrir direto" do hub devolve o clique único a quem
+//   HUB (lexcausa.com.br) — a LANDING INSTITUCIONAL da marca, pública: hero,
+//   produtos, porta das famílias e áreas de atuação. É a única página deste
+//   grupo `(private)` que não exige sessão, e por isso o retorno acontece
+//   antes de qualquer `auth()`. Login e cadastro não existem no apex: os
+//   botões apontam para o deploy da ferramenta (components/lexcausa/sites.ts).
+//
+//   SUCESSORISTA — a raiz é SÓ o hub de produtos, para quem tem sessão. Quem
+//   chega deslogado vai direto para o login: a apresentação da marca virou
+//   trabalho do apex, e uma segunda landing aqui só duplicaria a porta de
+//   entrada. O Sucessorista mora em `/s` (montagem compartilhada com
+//   /caso/<id>/<etapa>) e o Radar Sucessório em /radar.
+//
+//   RENOMEADOR e NOTAS — `/` é o próprio módulo; as rotas `/renomeador` e
+//   `/notas` não existem.
+//
+// A preferência "abrir direto" do hub devolve o clique único a quem
 // só usa um produto.
 //
 // O `await import()` do módulo ativo é proposital: o outro client não entra no
@@ -30,16 +36,17 @@ import { carregarLicoes } from "./renomeador/licoes-actions";
 
 export default async function Home() {
   if (APP === "HUB") {
-    const { VitrineLexCausa } = await import("@/components/lexcausa/vitrine");
-    return <VitrineLexCausa />;
+    const { LandingLexCausa } = await import("@/components/lexcausa/landing");
+    return <LandingLexCausa />;
   }
 
   if (APP === "SUCESSORISTA") {
-    const session = await auth();
-    if (!session?.user) {
-      const { EntradaSucessorista } = await import("./sucessorista/entrada");
-      return <EntradaSucessorista />;
-    }
+    // Sem sessão, a raiz da ferramenta é o login — a landing da marca mora no
+    // apex. `requireSession` leva o `callbackUrl`, então quem entra volta
+    // para cá e cai no hub de produtos.
+    // requireSession devolve a sessão OU redireciona levando o callbackUrl —
+    // quem entra volta para cá e cai no hub de produtos.
+    const session = await requireSession("/");
     // HUB LexCausa — o perfil decide quais cards aparecem; falha de banco
     // degrada para null (o hub mostra tudo e os gates reais ficam nas rotas).
     // As duas cargas rodam em PARALELO (velocidade): o aviso de casos novos
