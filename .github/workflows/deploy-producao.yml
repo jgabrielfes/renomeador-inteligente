@@ -106,7 +106,10 @@ jobs:
       - name: Publicar
         id: deploy
         run: |
-          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          # --archive=tgz sobe UM tarball em vez de ~1.400 arquivos soltos.
+          # O plano Hobby limita 5.000 uploads/24h (api-upload-free) e os
+          # quatro sites juntos passavam disso numa execução só.
+          url=$(vercel deploy --prebuilt --prod --archive=tgz --token="$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "### Produção publicada — ${{ matrix.site }}" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
