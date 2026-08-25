@@ -50,6 +50,11 @@ on:
           - renomeador
           - notas
           - hub
+      redirecionar_para:
+        description: "Opcional: redirecionar este domínio para outro (ex.: o www apontando para o apex)"
+        required: false
+        default: ""
+        type: string
       confirmo:
         description: 'Digite MOVER para confirmar (endereço vivo!)'
         required: true
@@ -85,6 +90,7 @@ jobs:
           ID_RENOMEADOR: ${{ secrets.VERCEL_PROJECT_ID_RENOMEADOR }}
           ID_NOTAS: ${{ secrets.VERCEL_PROJECT_ID_NOTAS }}
           DOMINIO: ${{ inputs.dominio }}
+          REDIRECT: ${{ inputs.redirecionar_para }}
         run: |
           set -euo pipefail
           limpar() { printf '%s' "$1" | tr -d '[:space:]"'; }
@@ -115,11 +121,19 @@ jobs:
             exit 1
           fi
 
-          echo "→ ligando $DOMINIO ao projeto ${{ inputs.destino }}"
+          # Com `redirecionar_para`, o domínio entra como REDIRECT (é o caso do
+          # www apontando para o apex) em vez de servir o site por si.
+          if [ -n "$REDIRECT" ]; then
+            corpo="{\"name\":\"$DOMINIO\",\"redirect\":\"$REDIRECT\",\"redirectStatusCode\":308}"
+            echo "→ ligando $DOMINIO ao projeto ${{ inputs.destino }}, redirecionando para $REDIRECT"
+          else
+            corpo="{\"name\":\"$DOMINIO\"}"
+            echo "→ ligando $DOMINIO ao projeto ${{ inputs.destino }}"
+          fi
           codigo=$(curl -sS -o /tmp/add.json -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $TOKEN" \
             -H 'content-type: application/json' \
-            -d "{\"name\":\"$DOMINIO\"}" \
+            -d "$corpo" \
             "https://api.vercel.com/v10/projects/$destino/domains?teamId=$org")
           echo "   HTTP $codigo — $(cat /tmp/add.json)"
           if [ "$codigo" != "200" ] && [ "$codigo" != "201" ]; then
