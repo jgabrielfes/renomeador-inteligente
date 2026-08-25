@@ -59,6 +59,10 @@ export interface DadosAdminRadar {
     contratados: number;
     retirados: number;
     respostas: number;
+    /** Pediu análise, recebeu o link e ainda NÃO clicou — fora do Radar. */
+    aguardandoConfirmacao: number;
+    /** Respondeu o questionário e nunca pediu análise. */
+    semPedido: number;
     porUf: { uf: string; casos: number }[];
   };
   elegiveis72h: number;
@@ -130,6 +134,15 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
             {dados.funil.porUf.map((l) => `${l.uf} (${l.casos})`).join(' · ')}
           </p>
         )}
+        {/* As duas etapas ANTES da publicação: sem elas, uma solicitação
+            parada no clique do e-mail some do painel e parece defeito. */}
+        <p className="text-sm text-muted-foreground">
+          Antes do Radar: <strong>{dados.funil.aguardandoConfirmacao}</strong> pediram
+          análise e ainda não clicaram no link de confirmação do e-mail (o clique é o
+          consentimento — sem ele o caso não é publicado) ·{' '}
+          <strong>{dados.funil.semPedido}</strong> responderam o questionário e não
+          pediram análise.
+        </p>
       </section>
 
       {/* Varredura 72h — o aviso honesto, um por família. */}
