@@ -2385,3 +2385,24 @@
   gap: 2px;
   min-width: 0;
 }
+
+/* "O que a família respondeu" no cartão do Radar: rótulo curto acima do
+   valor, em duas colunas quando cabe. Lista de definição de verdade (<dl>) —
+   é par rótulo·valor, não parágrafo. */
+.sucessorista .respostas-caso {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--e-1) var(--e-4);
+  margin: var(--e-1) 0 0;
+}
+.sucessorista .respostas-caso > div { min-width: 0; }
+.sucessorista .respostas-caso dt {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sucessorista .respostas-caso dd {
+  margin: 0;
+  font-size: var(--t-sm);
+}

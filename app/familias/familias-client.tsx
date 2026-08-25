@@ -756,9 +756,14 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
                 placeholder="Ex.: a casa ainda está no nome dos avós; um irmão mora fora; a empresa está parada…"
               />
             </label>
+            {/* Aviso obrigatório: este campo é livre e a família precisa
+                saber, ANTES de escrever, que ele viaja junto da publicação —
+                é o que transforma "vazamento" em escolha informada. */}
             <p className="fund" style={{ marginTop: 4 }}>
-              Essas observações acompanham o seu caso se você levá-lo a um(a)
-              advogado(a) — não entram no resumo anônimo do Radar.
+              Essas observações acompanham o seu caso e <strong>são lidas pelos
+              advogados</strong> se você publicar no Radar. Escreva sobre a situação,
+              não sobre as pessoas: <strong>não inclua nomes, endereços ou telefones</strong> —
+              o resto do seu caso é publicado sem nada que identifique você.
             </p>
           </>
         )}

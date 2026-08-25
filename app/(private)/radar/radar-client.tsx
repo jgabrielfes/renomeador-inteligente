@@ -207,6 +207,26 @@ function CardCaso({ item, aoResponder, aoConversar }: {
         {c.qtdHerdeiros} herdeiro(s){c.ufsBens.length > 1 ? ` · bens em ${c.ufsBens.join(', ')}` : ''}
         {flags.length > 0 ? ` · ${flags.join(' · ')}` : ''}
       </p>
+      {/* O QUE A FAMÍLIA RESPONDEU — as perguntas que os chips acima não
+          cobrem (quando faleceu, cônjuge e regime, bens classe a classe,
+          advogado constituído). Linhas curtas para o cartão continuar
+          escaneável; nada aqui identifica a família. */}
+      {c.respostas.length > 0 && (
+        <dl className="respostas-caso">
+          {c.respostas.map((l) => (
+            <div key={l.rotulo}>
+              <dt>{l.rotulo}</dt>
+              <dd>{l.valor}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {/* Texto livre da própria família, publicado com o consentimento dela. */}
+      {c.observacoes && (
+        <p className="fund" style={{ margin: 0 }}>
+          <strong>A família escreveu:</strong> “{c.observacoes}”
+        </p>
+      )}
       <p className="fund num" style={{ margin: 0 }}>
         {marcadorCandidaturas(item.respostas)}
         {item.minhaResposta ? ' — você entre eles(as)' : completo ? ' — caso completo' : ''}

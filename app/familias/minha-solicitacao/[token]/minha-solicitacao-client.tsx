@@ -469,6 +469,21 @@ export function MinhaSolicitacaoClient({
                     .join(' · ') || 'nenhuma'}
                 </span>
               </li>
+              {/* As demais respostas do questionário, exatamente como o(a)
+                  advogado(a) as lê — esta lista é a prova de que "nada além
+                  disto" é verdade. */}
+              {dados.casoAnonimo.respostas.map((l) => (
+                <li key={l.rotulo}>
+                  <span>{l.rotulo}</span>
+                  <span>{l.valor}</span>
+                </li>
+              ))}
+              {dados.casoAnonimo.observacoes && (
+                <li>
+                  <span>O que você escreveu</span>
+                  <span>“{dados.casoAnonimo.observacoes}”</span>
+                </li>
+              )}
             </ul>
             <p className="fund" style={{ marginTop: 4 }}>
               Seu nome, e-mail e o nome de quem faleceu NÃO aparecem — nunca. O contato só

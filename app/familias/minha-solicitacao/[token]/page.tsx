@@ -172,6 +172,7 @@ export default async function MinhaSolicitacaoPage({
                 respostas,
                 pequenoValor: intake.pequenoValor,
                 publicadoEm: intake.publicadoEm.toISOString(),
+                hoje: new Date().toISOString(),
               })
             : null,
         urlResultado: `/familias/resultado/${intake.tokenGestao}`,

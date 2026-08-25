@@ -284,6 +284,9 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
     const minhasSet = new Set(minhas.map((m) => m.intakeId));
     const porId = new Map(contagens.map((c) => [c.intakeId, c._count._all]));
 
+    // Uma leitura do relógio para o lote inteiro (o "há quanto tempo" do
+    // falecimento) — o motor de anonimização é puro e recebe a data de fora.
+    const agoraIso = new Date().toISOString();
     const casos: CasoRadar[] = [];
     for (const l of linhas) {
       // Conversa aberta: o caso só continua visível para o(a) escolhido(a).
@@ -298,6 +301,7 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
           respostas: r,
           pequenoValor: l.pequenoValor,
           publicadoEm: l.publicadoEm.toISOString(),
+          hoje: agoraIso,
         }),
         respostas: porId.get(l.id) ?? 0,
         minhaResposta: minhasSet.has(l.id),
@@ -415,6 +419,7 @@ export async function minhasRespostasRadar(): Promise<
             respostas: r,
             pequenoValor: intake.pequenoValor,
             publicadoEm: intake.publicadoEm.toISOString(),
+            hoje: new Date().toISOString(),
           });
           cidade = anon.cidade;
           uf = anon.uf;

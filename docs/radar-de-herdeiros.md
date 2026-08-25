@@ -116,8 +116,17 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 
 - O caso publicado é o `CasoAnonimo` (allowlist testada em
   `lib/radar/anonimizar.test.ts`): UF/cidade, via, faixa leiga do acervo,
-  nº de herdeiros e flags booleanas. Nome, e-mail, data do óbito, token e as
-  **observações livres** jamais entram.
+  nº de herdeiros, flags booleanas e — desde a decisão do escritório de
+  publicar as respostas por inteiro — as `respostas` (linhas curtas com o
+  falecimento, cônjuge/regime, bens classe a classe e advogado constituído;
+  o que já é chip não se repete) mais as `observacoes`.
+- Do falecimento sai **mês/ano + tempo decorrido**, nunca o dia: o advogado
+  precisa do relógio (art. 611, multa do ITCMD), e o dia exato somado à cidade
+  seria chave de busca em obituário e cartório.
+- As **observações livres** são a ÚNICA exceção ao "nada de campo livre", e
+  valem só com o aviso à família — no próprio campo do questionário e no
+  diálogo de publicação. Nome, e-mail, telefone, nome de quem faleceu e o
+  token jamais entram.
 - O contato da família só chega ao(à) advogado(a) que ELA escolheu, enquanto
   a conversa durar.
 - Nada do Radar aparece em `/admin` além de **contadores e cadastros**

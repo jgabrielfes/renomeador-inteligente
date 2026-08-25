@@ -95,7 +95,11 @@ export interface RespostasFamilia {
   nome: string;
   email: string;
   /** 12. Observações livres (curtas) — algo que a família queira explicar.
-   *  Seguem ao advogado no handoff; NUNCA entram no resumo anônimo do Radar. */
+   *  Seguem ao advogado no handoff E, por decisão do escritório, entram no
+   *  resumo anônimo do Radar. Único campo LIVRE que atravessa a
+   *  anonimização: a família é avisada disso no próprio campo do
+   *  questionário e no diálogo de publicação (consentimento informado), e
+   *  o texto pede que ela escreva sobre a situação, não sobre as pessoas. */
   observacoes: string;
 }
 

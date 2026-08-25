@@ -54,8 +54,15 @@ Antes de aprovar qualquer tela/e-mail que toque o Radar, conferir:
       de resultado ou prazo.
 - [ ] **Identificação do profissional**: nome + OAB/UF visíveis em toda
       resposta; anonimato é SÓ da família.
-- [ ] **Anonimato da família**: nada identificável antes do "Quero conversar"
-      (nome, e-mail, nome do falecido, observações livres — nunca).
+- [ ] **Anonimato da família**: nada identificável antes do "Quero conversar" —
+      nome, e-mail, telefone, nome do falecido e o DIA exato do óbito nunca
+      atravessam (do falecimento sai só mês/ano + tempo decorrido, porque dia
+      exato somado à cidade é chave de busca em obituário e cartório).
+      **Exceção consentida**: as observações livres da família passaram a ser
+      publicadas por decisão do escritório — e só valem assim porque a família
+      é avisada ANTES de escrever (texto de apoio do campo) e DE NOVO no
+      diálogo de publicação. Mexeu numa dessas telas, confira se o aviso
+      continua lá: sem ele, isto vira vazamento.
 - [ ] **Iniciativa da família**: nenhum botão/fluxo permite ao(à) advogado(a)
       iniciar contato; um(a) por vez; encerrar/denunciar sempre à mão.
 - [ ] **Texto legal fixo** presente na tela.
