@@ -25,6 +25,7 @@ import {
 import { classificarVia, type Triagem } from '@/lib/familias/triagem';
 import { estimarCustos, type EstimativaCompleta } from '@/lib/familias/estimativas';
 import { montarChecklistDocumentos, type ItemChecklist } from '@/lib/familias/documentos';
+import { SeletorMunicipio } from '@/components/seletor-municipio';
 import { montarResultadoPdf } from '@/lib/familias/resultado-pdf';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import {
@@ -701,25 +702,13 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
         {tela === 11 && (
           <>
             <h1>Onde a família está?</h1>
-            <p className="fund">Cidade e estado — só para contextualizar a orientação.</p>
+            <p className="fund">Estado e município — só para contextualizar a orientação.</p>
             <div className="grade q-grid">
-              <label className="campo">
-                Cidade
-                <input
-                  type="text"
-                  value={r.cidade}
-                  onChange={(e) => patch({ cidade: e.target.value })}
-                />
-              </label>
-              <label className="campo">
-                Estado (UF)
-                <select value={r.ufFamilia} onChange={(e) => patch({ ufFamilia: e.target.value })}>
-                  <option value="">Selecione…</option>
-                  {UFS.map((uf) => (
-                    <option key={uf}>{uf}</option>
-                  ))}
-                </select>
-              </label>
+              <SeletorMunicipio
+                uf={r.ufFamilia}
+                municipio={r.cidade}
+                onChange={({ uf, municipio }) => patch({ ufFamilia: uf, cidade: municipio })}
+              />
             </div>
           </>
         )}

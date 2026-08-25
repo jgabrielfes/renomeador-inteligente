@@ -142,6 +142,31 @@ Documentos são sensíveis (RG, certidões, escrituras). O processamento é no n
 - **Painel do caso**: o **bloco de notas** ABRE o painel (acima do prazo do art. 611; textarea maior, campo `notas` do snapshot — o antigo "Rito provável" saiu); tabelinha Monte-mor · Meação · Legítima entre o prazo e o custo; ITCMD UNIFICADO no custo projetado (a discriminação por artigo é do item V). Na aba fiscal, os módulos aparecem na ordem 1 → 4 (ganho de capital, declaração final, alvará, radar). A aba Partilha abre com o **gráfico de pizza VIVO** da divisão do acervo (`grafico-quinhoes.tsx`: meação + quinhões animados ao entrar; cores da PALETA DA IDENTIDADE em ordem fixa alternando escuro × claro (slots `--graf-1..8` do sucessorista.css — o tema escuro re-mapeia sozinho; fill/stroke por `style`, pois var() não resolve em atributo SVG), legenda sempre com nome/%/valor).
 - **Imposto de Renda e GCAP** (ferramenta `fiscal`, dentro de Ferramentas Sucessórias; `fiscal-view.tsx`): os módulos 1 e 2 (ganho de capital e Declaração Final). Os módulos 3 (Alvará da Lei 6.858/80) e 4 (radar de bens fora) SAÍRAM da tela a pedido do escritório — a menção passou para a aba Acervo (VGBL/PGBL e seguro com beneficiário fora do inventário; alvará como caminho mais barato), e os motores `alvara.ts`/`radar-bens.ts` seguem no repo com testes, além dos tipos que o `caso.json` já persiste. Ficha histórica: quatro MOTORES PUROS com testes, todos consumindo os dados que já existem no caso (bens da etapa II, herdeiros/quinhões da III), com disclaimer de estimativa de apoio. Os valores de referência ficam em `lib/partilha/parametros-fiscais.ts` (tabela VERSIONADA, como as UFESP/Selic do ITCMD): (1) **Ganho de capital do espólio** (`ganho-capital.ts`) — declarado × mercado bem a bem, reduções art. 18/FR1/FR2, isenções (único imóvel ≤ 440k, pequeno valor), alíquotas progressivas da L13.259, recomendação `ATUALIZAR_SEM_CUSTO`/`ATUALIZAR_COMPENSA`/`MANTER_DECLARADO`, DARF 4600; (2) **Declaração Final de Espólio** (`declaracao-final.ts`) — datas inicial/intermediárias/final (último dia útil de abril), status OK/PENDENTE/ATRASADO, herdeiros/quinhões para a DIRPF; (3) **Detector de Alvará da Lei 6.858/80** (`alvara.ts`) — dispensa total × alvará simplificado × inventário, teto 500 OTN configurável por comarca, mini-parecer; (4) **Radar de bens fora do inventário** (`radar-bens.ts`) — VGBL/PGBL/seguro fora do ITCMD (STF Tema 1214, art. 794 CC), conta conjunta 50%, verbas 6.858, com economia de ITCMD estimada. Estado extra persistido em `EstadoModulosFiscais` (campo `modulosFiscais` do snapshot v1, opcional/retrocompatível).
 
+# Município: estado primeiro, lista depois
+
+TODO campo de município da plataforma é o par **UF → município**, nunca texto
+livre: `components/seletor-municipio.tsx` (e a variante `SeletorMunicipioTexto`,
+para os campos que guardam a linha pronta "Cidade/UF" — último domicílio do
+falecido, Cidade/UF do escritório). Escolhida a UF, a lista daquele estado
+desce pronta; trocar a UF ZERA o município.
+
+- A base dos 5.587 municípios continua **no servidor** (`lib/rede/municipios.ts`,
+  agora com `municipiosDaUf`): o cliente pede um estado por vez pela server
+  action `lib/rede/municipios-actions.ts#listarMunicipiosDaUf` — **sem gate de
+  sessão de propósito**, porque as telas sem login (o questionário `/familias`,
+  o portal do herdeiro por token) consomem a mesma lista, e a divisão do IBGE é
+  dado público.
+- **Valor gravado que não consta da lista** (texto livre da era anterior) entra
+  como opção extra, marcada. Seletor que não sabe representar o que recebeu
+  APAGARIA o dado no primeiro salvamento.
+- No editor de qualificação (`familia.tsx`) o par entra pelo marcador
+  `PAR_MUNICIPIO` na lista de campos e é renderizado FORA do `<label>` do loop
+  genérico — o componente traz os próprios rótulos, e label dentro de label é
+  HTML inválido.
+- A escolha de **comarca** das diligências (`comarca-autocomplete.tsx`) segue a
+  mesma forma: era autocomplete por digitação sobre o país inteiro, virou
+  UF → lista, com o mesmo contrato (`onEscolher` recebe o `Municipio` com IBGE).
+
 # Convenções do projeto
 
 ## UI: somente shadcn/ui

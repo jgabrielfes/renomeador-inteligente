@@ -10,7 +10,7 @@
  */
 
 import { use, useEffect, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import '../../(private)/sucessorista/sucessorista.css';
@@ -18,6 +18,7 @@ import { LupaPreview } from '../../(private)/sucessorista/preview';
 
 /** Alias estrutural — compatível com o ChangeEvent de input file. */
 type Ev = { target: { value: string; files?: FileList | null; checked?: boolean } };
+import { SeletorMunicipio } from '@/components/seletor-municipio';
 import { mascararCpf } from '@/lib/cpf';
 import type { ConviteHerdeiro } from '@/lib/portal/store';
 import type { PainelHerdeiro } from '@/lib/portal/painel';
@@ -843,12 +844,34 @@ export default function PortalHerdeiro({ params }: { params: Promise<{ token: st
           <Campo rotulo="Bairro (opcional)" erro={errors.bairro?.message}>
             <input type="text" {...register('bairro')} />
           </Campo>
-          <Campo rotulo="Cidade" erro={errors.cidade?.message}>
-            <input type="text" aria-invalid={!!errors.cidade} {...register('cidade')} />
-          </Campo>
-          <Campo rotulo="Estado (UF)" erro={errors.uf?.message}>
-            <input type="text" maxLength={2} aria-invalid={!!errors.uf} {...register('uf')} />
-          </Campo>
+          {/* Estado primeiro, município da lista — o herdeiro não digita (nem
+              erra) o nome da cidade. Controller porque o par é um controle
+              só: trocar a UF zera o município. */}
+          <Controller
+            control={control}
+            name="uf"
+            render={({ field: campoUf }) => (
+              <Controller
+                control={control}
+                name="cidade"
+                render={({ field: campoCidade }) => (
+                  <SeletorMunicipio
+                    uf={campoUf.value ?? ''}
+                    municipio={campoCidade.value ?? ''}
+                    onChange={({ uf, municipio }) => {
+                      campoUf.onChange(uf);
+                      campoCidade.onChange(municipio);
+                    }}
+                    rotuloMunicipio="Cidade"
+                    ariaInvalidUf={!!errors.uf}
+                    ariaInvalidMunicipio={!!errors.cidade}
+                    erroUf={errors.uf?.message}
+                    erroMunicipio={errors.cidade?.message}
+                  />
+                )}
+              />
+            )}
+          />
           <Campo rotulo="CEP" erro={errors.cep?.message}>
             <input type="text" inputMode="numeric" aria-invalid={!!errors.cep} {...register('cep')} />
           </Campo>
