@@ -17,6 +17,8 @@ export interface Paragrafo {
   /** Fonte menor (9pt) — linhas de contato do cabeçalho do escritório. */
   discreto?: boolean;
   sublinhado?: boolean;
+  /** Itálico no parágrafo inteiro — rodapés institucionais. */
+  italico?: boolean;
   /** Tamanho da fonte em half-points (22 = 11pt); default do documento. */
   tamanho?: number;
   /** Retângulo em volta do parágrafo (títulos de cláusula dos modelos). */
@@ -168,7 +170,7 @@ function paragrafoXml(par: Paragrafo, estilo: EstiloDoc): string {
   const rPrDe = (b: boolean, u: boolean) =>
     `<w:rPr><w:rFonts w:ascii="${estilo.fonte}" w:hAnsi="${estilo.fonte}"/>${
       b ? '<w:b/>' : ''
-    }${cor ? `<w:color w:val="${cor}"/>` : ''}${
+    }${par.italico ? '<w:i/>' : ''}${cor ? `<w:color w:val="${cor}"/>` : ''}${
       u ? '<w:u w:val="single"/>' : ''
     }<w:sz w:val="${sz}"/></w:rPr>`;
   // Retângulo do título (mesmas bordas do modelo notarial) ou filete inferior
