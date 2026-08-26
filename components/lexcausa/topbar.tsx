@@ -28,13 +28,13 @@ export function LexTopbar({
   menu,
   ehMaster,
   radarAtivo,
-  escrevente = false,
+  naoAdvogado = false,
   sub,
 }: {
   menu?: ReactNode;
   ehMaster: boolean;
   radarAtivo: boolean;
-  escrevente?: boolean;
+  naoAdvogado?: boolean;
   /** Submarca do produto ativo ("Radar Sucessório · by LexCausa"). */
   sub?: string;
 }) {
@@ -97,7 +97,7 @@ export function LexTopbar({
         {menu}
       </header>
       <PaletaComandos
-        comandos={comandosPadrao({ ehMaster, radarAtivo, escrevente })}
+        comandos={comandosPadrao({ ehMaster, radarAtivo, naoAdvogado })}
         aberta={paletaAberta}
         onFechar={() => setPaletaAberta(false)}
       />

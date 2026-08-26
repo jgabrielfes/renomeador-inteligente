@@ -17,19 +17,19 @@ export interface ComandoLexCausa {
 export function comandosPadrao(opcoes: {
   ehMaster: boolean;
   radarAtivo: boolean;
-  escrevente?: boolean;
+  naoAdvogado?: boolean;
 }): ComandoLexCausa[] {
   const lista: ComandoLexCausa[] = [
     { id: 'hub', rotulo: 'Ir ao hub de produtos', dica: 'LexCausa', href: '/?hub=1' },
     { id: 'casos', rotulo: 'Meus casos', dica: 'O Sucessorista', href: '/s' },
     { id: 'novo', rotulo: 'Novo inventário', dica: 'O Sucessorista', href: '/s' },
   ];
-  if (!opcoes.escrevente || opcoes.ehMaster) {
-    if (opcoes.radarAtivo) {
-      lista.push({ id: 'radar', rotulo: 'Radar Sucessório', dica: 'prospecção', href: '/radar' });
-    }
-    lista.push({ id: 'diligencias', rotulo: 'Diligências entre advogados', dica: 'rede', href: '/diligencias' });
+  // Radar é de advogado(a) verificado(a) e famílias; Diligências é dos DOIS
+  // perfis (decisão do escritório).
+  if ((!opcoes.naoAdvogado || opcoes.ehMaster) && opcoes.radarAtivo) {
+    lista.push({ id: 'radar', rotulo: 'Radar Sucessório', dica: 'prospecção', href: '/radar' });
   }
+  lista.push({ id: 'diligencias', rotulo: 'Diligências', dica: 'rede', href: '/diligencias' });
   if (opcoes.ehMaster) {
     lista.push({ id: 'admin', rotulo: 'Administração', dica: 'master', href: '/admin' });
   }
@@ -41,7 +41,7 @@ export function comandosPadrao(opcoes: {
     { id: 'familias', rotulo: 'Área para famílias', dica: 'público', href: '/familias' },
     { id: 'prod-s', rotulo: 'Página do produto: O Sucessorista', dica: 'institucional', href: '/produtos/sucessorista' },
     { id: 'prod-r', rotulo: 'Página do produto: Radar Sucessório', dica: 'institucional', href: '/produtos/radar' },
-    { id: 'prod-d', rotulo: 'Página do produto: Diligências entre advogados', dica: 'institucional', href: '/produtos/diligencias' },
+    { id: 'prod-d', rotulo: 'Página do produto: Diligências', dica: 'institucional', href: '/produtos/diligencias' },
   );
   return lista;
 }

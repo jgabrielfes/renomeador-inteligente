@@ -65,7 +65,7 @@ export default async function Home() {
         ? import("./radar/radar-actions").then((m) => m.casosNovosRadar())
         : Promise.resolve(0),
     ]);
-    const radarNovos = perfil === "ESCREVENTE" ? 0 : radarNovosBruto;
+    const radarNovos = perfil === "NAO_ADVOGADO" ? 0 : radarNovosBruto;
     const { HubLexCausa } = await import("./hub-client");
     return (
       <HubLexCausa

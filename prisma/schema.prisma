@@ -29,7 +29,7 @@ enum Plataforma {
 // no primeiro acesso; usuário comum não circula pelos dois (só MASTER).
 enum PerfilSucessorista {
   ADVOGADO
-  ESCREVENTE
+  NAO_ADVOGADO
 }
 
 // Papel dentro da EQUIPE: o chefe gere (convida/remove membros); o membro

@@ -29,7 +29,7 @@ export const PRODUTOS_LEXCAUSA: ProdutoLexCausa[] = [
     tagline: 'Gestão de inventários, do primeiro atendimento ao registro.',
     descricao:
       'A folha de trabalho do inventário inteira: composição familiar com a qualificação das partes, acervo com os valores que a lei pede, quinhões com fundamento legal, cofre de documentos com leitura por IA e o espelho do ITCMD-SP — além de custas, honorários, minutas e o portal da família.',
-    perfis: ['Advogado(a)', 'Escrevente Notarial'],
+    perfis: ['Advogado(a)', 'Não advogado(a)'],
     href: '/s',
     landing: '/produtos/sucessorista',
   },
@@ -40,18 +40,18 @@ export const PRODUTOS_LEXCAUSA: ProdutoLexCausa[] = [
     tagline: 'O encontro entre famílias e advogados, com ética por construção.',
     descricao:
       'Famílias que precisam resolver um inventário registram a situação de graça e sem juridiquês; advogados(as) verificados(as) — OAB aprovada e questionário deontológico — respondem com apresentação e condução técnica. A família escolhe com quem falar; a plataforma não intermedeia honorários nem indica advogados.',
-    perfis: ['Advogado(a)', 'Famílias'],
+    perfis: ['Advogado(a) verificado(a)', 'Famílias'],
     href: '/radar',
     landing: '/produtos/radar',
   },
   {
     id: 'diligencias',
-    nome: 'Diligências entre advogados',
+    nome: 'Diligências',
     classe: 'produto-diligencias',
     tagline: 'Correspondentes por comarca, com termo de referência e pasta isolada.',
     descricao:
       'Precisa de um ato em outra comarca — retirar certidão, acompanhar audiência, protocolo, ITCMD? Publique aos correspondentes verificados (OAB aprovada + questionário deontológico): as ofertas chegam em ordem neutra, o termo de referência registra escopo, prazo e valor combinados ENTRE os advogados, e a pasta isolada leva só os arquivos que você selecionar. O relatório entregue volta direto ao caso.',
-    perfis: ['Advogado(a)'],
+    perfis: ['Advogado(a)', 'Não advogado(a)'],
     href: '/diligencias',
     landing: '/produtos/diligencias',
   },

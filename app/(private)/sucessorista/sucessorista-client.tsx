@@ -130,7 +130,7 @@ import {
 } from '@/components/ui/dialog';
 import { HonorariosView } from './honorarios-view';
 import { MatriculaView } from './matricula-view';
-import { MinutasView, EscrituraView } from './minutas-view';
+import { MinutasView } from './minutas-view';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -279,7 +279,7 @@ const abaValida = (v: string | null): Aba =>
 const CHAVE_CASO = 'sucessorista-caso';
 
 /** Perfil de uso do módulo — muda as minutas da montagem do processo. */
-export type Perfil = 'ADVOGADO' | 'ESCREVENTE';
+export type Perfil = 'ADVOGADO' | 'NAO_ADVOGADO';
 const CHAVE_PERFIL = 'sucessorista-perfil';
 
 /** Tema do módulo (claro = identidade papel; escuro = mesma paleta invertida). */
@@ -972,7 +972,9 @@ export default function SucessoristaClient({
           // navegador só vale como transição para quem ainda não escolheu.
           if (perfilConta === null) {
             const p = localStorage.getItem(CHAVE_PERFIL);
-            if (p === 'ADVOGADO' || p === 'ESCREVENTE') setPerfil(p);
+            // 'ESCREVENTE' é a era anterior do espelho local — vira Não Advogado.
+            if (p === 'ADVOGADO' || p === 'NAO_ADVOGADO') setPerfil(p);
+            else if (p === 'ESCREVENTE') setPerfil('NAO_ADVOGADO');
           }
           const t = localStorage.getItem(CHAVE_TEMA);
           if (t === 'claro' || t === 'escuro') setTema(t);
@@ -1569,7 +1571,7 @@ export default function SucessoristaClient({
     });
   };
 
-  // Perfil (Advogado × Escrevente) agora é da CONTA; a chave do navegador
+  // Perfil (Advogado × Não Advogado) agora é da CONTA; a chave do navegador
   // segue gravada só como espelho de transição (contas antigas sem escolha).
   useEffect(() => {
     if (!restauradoRef.current) return;
@@ -1593,12 +1595,14 @@ export default function SucessoristaClient({
       } catch {
         // modo restrito
       }
-      if (guardado === 'ADVOGADO' || guardado === 'ESCREVENTE') {
-        setPerfil(guardado);
+      // 'ESCREVENTE' guardado é da era anterior: entra como Não Advogado.
+      const legado = guardado === 'ESCREVENTE' ? 'NAO_ADVOGADO' : guardado;
+      if (legado === 'ADVOGADO' || legado === 'NAO_ADVOGADO') {
+        setPerfil(legado);
         // Ressincronização silenciosa: quando o banco voltar (ou a migração
         // rodar), a escolha do navegador vira a da conta — sem toast.
         void import('./perfil-actions').then(({ salvarPerfilConta }) =>
-          salvarPerfilConta(guardado).catch(() => undefined),
+          salvarPerfilConta(legado).catch(() => undefined),
         );
       } else {
         setEscolhendoPerfil(true);
@@ -3406,9 +3410,9 @@ export default function SucessoristaClient({
   };
 
   /**
-   * Minuta da ESCRITURA (perfil escrevente) — determinística, do modelo do
+   * Minuta da ESCRITURA (os DOIS perfis) — determinística, do modelo do
    * balcão. Com o MODELO DA SERVENTIA anexado, a redação por IA preenche o
-   * padrão PRÓPRIO do escrevente com os dados do caso; se a IA falhar, sai o
+   * padrão PRÓPRIO do profissional com os dados do caso; se a IA falhar, sai o
    * modelo padrão do sistema — nunca vazia.
    */
   const gerarEscritura = async (
@@ -3850,13 +3854,13 @@ export default function SucessoristaClient({
         </div>
         {/* O perfil é da CONTA e NÃO se alterna aqui — nem para o MASTER.
             Havia um par de botões nesta faixa que trocava Advogado ×
-            Escrevente na sessão; ele saiu por decisão do escritório: o perfil
+            perfis na sessão; ele saiu por decisão do escritório: o perfil
             é escolhido no primeiro acesso e só a administração troca depois
             (/admin/usuarios), para que a folha de um mesmo login nunca mude
             de balcão no meio do trabalho. Fica só a etiqueta do que a conta é. */}
         <div className="perfil" aria-label="Perfil da conta">
           <button className="ativo" disabled aria-disabled="true">
-            {perfil === 'ADVOGADO' ? 'Advogado(a)' : 'Escrevente Notarial'}
+            {perfil === 'ADVOGADO' ? 'Advogado(a)' : 'Não advogado(a)'}
           </button>
         </div>
         {(
@@ -3868,17 +3872,22 @@ export default function SucessoristaClient({
             ['itcmd', 'IV', 'ITCMD'],
             ['custos', 'V', 'Custos'],
             ['documentos', 'VI', 'Documentos'],
-            // Abas finais por perfil: honorários e minutas são do advogado;
-            // a escritura é o item VII do balcão do escrevente. As TRÊS
-            // ferramentas de apoio (matrícula, fontes, IR/GCAP) viraram o
-            // agrupador "Ferramentas Sucessórias", SEM algarismo (pedido do
-            // escritório) — os ids individuais seguem válidos por URL.
+            // Abas finais por perfil: honorários e minutas (petição/proposta)
+            // são atos de advogado; a ESCRITURA é dos DOIS perfis — o banco
+            // de minutas de escritura serve advogado e não advogado (decisão
+            // do escritório). As TRÊS ferramentas de apoio (matrícula,
+            // fontes, IR/GCAP) viraram o agrupador "Ferramentas
+            // Sucessórias", SEM algarismo — os ids seguem válidos por URL.
+            // A aba de MINUTAS é a MESMA para os dois perfis (a escolha da
+            // peça — escritura, Tabelionato, petição — é interna); honorários
+            // segue sendo ato de advogado. O id 'escritura' continua válido
+            // por URL e cai na aba de Minutas com a escritura pré-escolhida.
             ...(perfil === 'ADVOGADO'
               ? ([
                   ['honorarios', 'VII', 'Honorários'],
                   ['minutas', 'VIII', 'Minutas'],
                 ] as const)
-              : ([['escritura', 'VII', 'Escritura']] as const)),
+              : ([['minutas', 'VII', 'Minutas']] as const)),
             ['ferramentas', '', 'Ferramentas Sucessórias'],
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -3887,6 +3896,7 @@ export default function SucessoristaClient({
             className="aba"
             aria-current={
               abaProc === id ||
+              (id === 'minutas' && abaProc === 'escritura') ||
               (id === 'ferramentas' &&
                 (abaProc === 'matricula' || abaProc === 'fontes' || abaProc === 'fiscal'))
             }
@@ -4054,7 +4064,7 @@ export default function SucessoristaClient({
                     : [
                         { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
                         { rotulo: 'Projetar custos', aba: 'custos' },
-                        { rotulo: 'Gerar escritura', aba: 'escritura' },
+                        { rotulo: 'Gerar minuta', aba: 'minutas' },
                       ]
                 }
               />
@@ -4699,24 +4709,16 @@ export default function SucessoristaClient({
           />
         )}
 
-        {abaProc === 'minutas' && perfil === 'ADVOGADO' && (
+        {(abaProc === 'minutas' || abaProc === 'escritura') && (
           <MinutasView
             onGerarPeticao={gerarPeticao}
             onGerarPeticaoJudicial={gerarPeticaoJudicial}
-            pendencias={pendenciasMinuta}
-            antecipador={relatorioAntecipador}
-            nomeCaso={falecido.nome}
-            onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
-          />
-        )}
-
-        {abaProc === 'escritura' && perfil === 'ESCREVENTE' && (
-          <EscrituraView
             onGerarEscritura={gerarEscritura}
             pendencias={pendenciasMinuta}
             antecipador={relatorioAntecipador}
             nomeCaso={falecido.nome}
             onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
+            tipoInicial={abaProc === 'escritura' ? 'escritura' : undefined}
           />
         )}
 
@@ -4812,7 +4814,7 @@ export default function SucessoristaClient({
     {/* primeiro acesso: QUALIFICAÇÃO da conta — a escolha do perfil é
         obrigatória (fica na conta, como sempre), e a identificação segue na
         hora: advogado(a) informa nome + OAB (fila do /admin/radar) e faz o
-        quiz deontológico; escrevente informa nome completo + serventia. */}
+        quiz deontológico; não advogado(a) informa o nome completo. */}
     <QualificacaoConta
       aberta={escolhendoPerfil}
       aoEscolherPerfil={(p) => void escolherPerfilConta(p)}

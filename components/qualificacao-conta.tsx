@@ -5,12 +5,12 @@
  * Sucessorista (/s) E no Radar (/radar).
  *
  * Etapas:
- *   1. perfil     — Advogado(a) × Escrevente Notarial (escolha ÚNICA da
- *                   conta, como sempre foi: trocar depois é ato de
- *                   administração em /admin/usuarios);
+ *   1. perfil     — Advogado(a) × Não advogado(a) (escolha ÚNICA da conta,
+ *                   como sempre foi: trocar depois é ato de administração em
+ *                   /admin/usuarios);
  *   2a. advogado  — nome completo + inscrição na OAB (entra na MESMA fila de
  *                   verificação manual do /admin/radar) → quiz deontológico;
- *   2b. escrevente — nome completo + serventia onde trabalha.
+ *   2b. não advogado — nome completo.
  *
  * A escolha do PERFIL é obrigatória (o dialog não fecha por fora antes dela).
  * A identificação e o quiz têm a saída discreta "concluir depois": travar a
@@ -44,11 +44,11 @@ import { UFS } from '@/lib/familias/tipos';
 import {
   responderQuizConta,
   salvarIdentificacaoAdvogado,
-  salvarIdentificacaoEscrevente,
+  salvarIdentificacaoNaoAdvogado,
 } from '@/app/(private)/sucessorista/perfil-actions';
 
-type Perfil = 'ADVOGADO' | 'ESCREVENTE';
-type Etapa = 'perfil' | 'advogado' | 'quiz' | 'escrevente';
+type Perfil = 'ADVOGADO' | 'NAO_ADVOGADO';
+type Etapa = 'perfil' | 'advogado' | 'quiz' | 'nao-advogado';
 
 const esquemaAdvogado = z.object({
   nomeCompleto: z.string().trim().min(5, 'Informe o seu nome completo.'),
@@ -56,9 +56,8 @@ const esquemaAdvogado = z.object({
   uf: z.string().min(2, 'Escolha a seccional (UF).'),
 });
 
-const esquemaEscrevente = z.object({
+const esquemaNaoAdvogado = z.object({
   nomeCompleto: z.string().trim().min(5, 'Informe o seu nome completo.'),
-  serventia: z.string().trim().min(3, 'Informe a serventia onde trabalha.'),
 });
 
 export function QualificacaoConta({
@@ -84,16 +83,16 @@ export function QualificacaoConta({
     resolver: zodResolver(esquemaAdvogado),
     defaultValues: { nomeCompleto: nomeInicial, oab: '', uf: '' },
   });
-  const formEsc = useForm<z.infer<typeof esquemaEscrevente>>({
-    resolver: zodResolver(esquemaEscrevente),
-    defaultValues: { nomeCompleto: nomeInicial, serventia: '' },
+  const formEsc = useForm<z.infer<typeof esquemaNaoAdvogado>>({
+    resolver: zodResolver(esquemaNaoAdvogado),
+    defaultValues: { nomeCompleto: nomeInicial },
   });
 
   const escolher = async (p: Perfil) => {
     // O perfil grava JÁ — se a pessoa fechar no meio da identificação, a
     // escolha única está feita e o dialog não volta no próximo acesso.
     await aoEscolherPerfil(p);
-    setEtapa(p === 'ADVOGADO' ? 'advogado' : 'escrevente');
+    setEtapa(p === 'ADVOGADO' ? 'advogado' : 'nao-advogado');
   };
 
   return (
@@ -105,15 +104,16 @@ export function QualificacaoConta({
               <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
               <DialogDescription>
                 Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA
-                ao seu login — Advogado(a) trabalha com honorários, minutas e o Radar
-                Sucessório; Escrevente Notarial trabalha com a minuta da escritura. Para
-                trocar depois, fale com a administração.
+                ao seu login — os DOIS perfis trabalham o caso, TODAS as minutas
+                (escritura, Tabelionato, petição) e as Diligências; honorários e o Radar
+                Sucessório são exclusivos de Advogado(a). Para trocar depois, fale com a
+                administração.
               </DialogDescription>
             </DialogHeader>
             <div className="escolha" style={{ marginTop: 8, gap: 10 }}>
               <Button onClick={() => void escolher('ADVOGADO')}>Advogado(a)</Button>
-              <Button variant="outline" onClick={() => void escolher('ESCREVENTE')}>
-                Escrevente Notarial
+              <Button variant="outline" onClick={() => void escolher('NAO_ADVOGADO')}>
+                Não advogado(a)
               </Button>
             </div>
           </>
@@ -220,21 +220,20 @@ export function QualificacaoConta({
           </>
         )}
 
-        {etapa === 'escrevente' && (
+        {etapa === 'nao-advogado' && (
           <>
             <DialogHeader>
-              <DialogTitle>Identifique-se: escrevente notarial</DialogTitle>
+              <DialogTitle>Identifique-se</DialogTitle>
               <DialogDescription>
-                Seu nome completo e a serventia onde trabalha — entram nas lacunas das
-                minutas e identificam a sua conta.
+                Seu nome completo identifica a sua conta na equipe e nos documentos que
+                você gerar.
               </DialogDescription>
             </DialogHeader>
             <form
               noValidate
               onSubmit={formEsc.handleSubmit(async (v) => {
-                const r = await salvarIdentificacaoEscrevente({
+                const r = await salvarIdentificacaoNaoAdvogado({
                   nomeCompleto: v.nomeCompleto,
-                  serventia: v.serventia,
                 });
                 if (!r.ok) {
                   toast.error('Não foi possível salvar a identificação', {
@@ -257,15 +256,6 @@ export function QualificacaoConta({
                   {...formEsc.register('nomeCompleto')}
                 />
                 <FieldError errors={[formEsc.formState.errors.nomeCompleto]} />
-              </Field>
-              <Field data-invalid={formEsc.formState.errors.serventia ? true : undefined}>
-                <FieldLabel>Serventia onde trabalha</FieldLabel>
-                <Input
-                  placeholder="ex.: 2º Tabelionato de Notas de Guarulhos/SP"
-                  aria-invalid={!!formEsc.formState.errors.serventia}
-                  {...formEsc.register('serventia')}
-                />
-                <FieldError errors={[formEsc.formState.errors.serventia]} />
               </Field>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button type="submit" loading={formEsc.formState.isSubmitting}>

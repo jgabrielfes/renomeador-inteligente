@@ -15,7 +15,7 @@ import { PORTES } from "@/lib/porte";
 import type { AcaoSucessorista } from "@/lib/generated/prisma/enums";
 import { EH_SUCESSORISTA } from "@/lib/app";
 
-const PERFIS = ["ADVOGADO", "ESCREVENTE"];
+const PERFIS = ["ADVOGADO", "NAO_ADVOGADO"];
 const TIPOS_BEM = ["IMOVEL", "VEICULO", "FINANCEIRO", "QUOTAS", "OUTRO"];
 const REGIMES = [
   "COMUNHAO_PARCIAL",

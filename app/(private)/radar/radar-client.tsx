@@ -398,7 +398,7 @@ export function RadarClient({
   casos: CasoRadar[];
   minhasRespostas?: RespostaMinha[];
   /** null = a conta ainda não se qualificou — o dialog de primeiro acesso abre AQUI também. */
-  perfilConta?: 'ADVOGADO' | 'ESCREVENTE' | null;
+  perfilConta?: 'ADVOGADO' | 'NAO_ADVOGADO' | null;
   nomeConta?: string;
 }) {
   const router = useRouter();
@@ -511,14 +511,16 @@ export function RadarClient({
           </div>
         )}
 
-        {/* Escrevente qualificado: o Radar é o mural de ADVOGADOS — a conta
-            de escrevente não segue os passos de habilitação. */}
-        {perfilConta === 'ESCREVENTE' && !estado?.master && (
+        {/* Não advogado(a): o Radar é o mural de ADVOGADOS verificados e das
+            famílias — a conta não advogada não segue os passos de
+            habilitação. */}
+        {perfilConta === 'NAO_ADVOGADO' && !estado?.master && (
           <div className="nota" style={{ marginTop: 8 }}>
-            <span className="eyebrow">Perfil da conta: Escrevente Notarial</span>
+            <span className="eyebrow">Perfil da conta: Não advogado(a)</span>
             <p>
-              O Radar Sucessório é o mural onde ADVOGADOS respondem famílias — o seu
-              balcão é a folha de trabalho do inventário.{' '}
+              O Radar Sucessório é o mural onde ADVOGADOS verificados respondem
+              famílias — o seu balcão é a folha de trabalho do inventário e as
+              Diligências.{' '}
               <Link href="/s">Ir para O Sucessorista</Link>
             </p>
           </div>
@@ -539,7 +541,7 @@ export function RadarClient({
             navega habilitado por ofício, mas antes o passo 1 sumia da tela
             dele e ninguém achava onde a inscrição se cadastra. A inscrição
             do MASTER entra na MESMA fila de verificação do /admin/radar. */}
-        {estado && !perfil && (
+        {estado && !perfil && (perfilConta !== 'NAO_ADVOGADO' || estado.master) && (
           <div className="nota" style={{ marginTop: 8 }}>
             <span className="eyebrow">
               {estado.master ? 'Passo 1 de 3 (o que o advogado comum vê)' : 'Passo 1 de 3'}

@@ -1,4 +1,4 @@
-// Diligências entre advogados (camada 4, pilar B) — perfil de correspondente,
+// Diligências (camada 4, pilar B) — perfil de correspondente,
 // diligências abertas e as minhas (como solicitante e como correspondente).
 // Rota do site do Sucessorista, só logado.
 
