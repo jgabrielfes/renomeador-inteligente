@@ -288,6 +288,7 @@ export function SobrepartilhaView({
               <LinhaEspelho
                 nome={<>{resultado.meacao.beneficiario} (meação)</>}
                 meio={resultado.meacao.fracao}
+                meioNum
                 valor={brl(resultado.meacao.valor)}
               />
             )}
@@ -296,6 +297,7 @@ export function SobrepartilhaView({
                 key={q.herdeiroId}
                 nome={q.nome}
                 meio={q.fracaoHeranca}
+                meioNum
                 valor={brl(q.valor)}
               />
             ))}

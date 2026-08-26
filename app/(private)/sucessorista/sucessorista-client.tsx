@@ -744,6 +744,48 @@ export default function SucessoristaClient({
     restaurandoCasoRef.current = restaurandoCaso;
   }, [restaurandoCaso]);
 
+  /* TAB rola até o campo (pedido do escritório): a barra de status no topo e
+     a .rodape-acoes no pé são STICKY — para o navegador, um campo atrás delas
+     está "visível", então a rolagem nativa do foco não dispara e quem navega
+     por Tab digita às cegas. O focusin corrige: campo focado sob uma das
+     barras (ou fora da janela, caso do rodapé estático do celular) rola a
+     janela até a folga. Dialogs e o painel ficam de fora — têm rolagem
+     própria. */
+  useEffect(() => {
+    const FOLGA = 16;
+    const aoFocar = (e: FocusEvent) => {
+      const alvo = e.target;
+      if (!(alvo instanceof HTMLElement)) return;
+      if (!alvo.matches('input, select, textarea')) return;
+      if (alvo.closest('[role="dialog"], .painel, .lombada')) return;
+      const r = alvo.getBoundingClientRect();
+      // Obstrução de cima: a barra de status, quando está PREGADA no topo.
+      const barra = document.querySelector('.sucessorista .barra-status')?.getBoundingClientRect();
+      const teto = (barra && barra.top <= 0 ? barra.bottom : 0) + FOLGA;
+      // Obstrução de baixo: rodapé de ações e a lombada-barra do celular,
+      // quando cobrem a borda inferior da janela.
+      let chao = window.innerHeight;
+      for (const sel of ['.sucessorista .rodape-acoes', '.sucessorista .lombada']) {
+        const b = document.querySelector(sel)?.getBoundingClientRect();
+        // `top > metade` separa a BARRA inferior (rodapé, lombada do celular)
+        // da lombada-coluna do desktop, que é sticky de altura inteira.
+        if (b && b.top > window.innerHeight / 2 && b.bottom >= window.innerHeight - 1) {
+          chao = Math.min(chao, b.top);
+        }
+      }
+      chao -= FOLGA;
+      if (r.top < teto) {
+        window.scrollBy({ top: r.top - teto, behavior: 'smooth' });
+      } else if (r.bottom > chao) {
+        // Campo mais alto que o vão (textarea): o topo dele nunca sobe além
+        // do teto — melhor cortar embaixo que esconder onde se digita.
+        window.scrollBy({ top: Math.min(r.bottom - chao, r.top - teto), behavior: 'smooth' });
+      }
+    };
+    document.addEventListener('focusin', aoFocar);
+    return () => document.removeEventListener('focusin', aoFocar);
+  }, []);
+
   /* A IDENTIDADE do caso vive no caminho (T1): /caso/<id>/<etapa> — F5,
      favorito e link colado restauram caso E etapa. Sem caso aberto, a URL
      volta a /s, a casa do módulo desde a remodelagem LexCausa (o ?etapa=
@@ -4955,7 +4997,7 @@ function PartilhaDeSucessao({
       <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
         {resultado.quinhoes.map((q) => (
           <Fragment key={q.herdeiroId}>
-            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} valor={brl(q.valor)} />
+            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} meioNum valor={brl(q.valor)} />
             <FundEspelho>{q.fundamento}</FundEspelho>
           </Fragment>
         ))}

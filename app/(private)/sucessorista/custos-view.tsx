@@ -52,7 +52,7 @@ async function montarDossie(
   resultado: Resultado,
   atribuicoes: Alocacoes = {},
 ): Promise<DossieOrcamento> {
-  const { montarQuadroPorBem } = await import('@/lib/partilha/quadro-bens');
+  const { matrizDoQuadro, montarQuadroPorBem } = await import('@/lib/partilha/quadro-bens');
   const massa = Number(resultado.acervo.massaPartilhavel) || 0;
   const pct = (v: number) => (massa > 0 ? (v / massa) * 100 : 0);
   const quadro = montarQuadroPorBem(caso, resultado, atribuicoes);
@@ -83,14 +83,7 @@ async function montarDossie(
       ...resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) || 0 })),
     ],
     massaPartilhavel: massa,
-    quadro: quadro.linhas.map((l) => ({
-      bem: l.bem,
-      natureza: l.natureza,
-      nome: l.nome,
-      proporcao: l.proporcao,
-      valor: l.valor,
-      meacao: l.meacao,
-    })),
+    matriz: matrizDoQuadro(quadro.linhas),
     avisosQuadro: quadro.avisos,
   };
 }

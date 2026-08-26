@@ -5,7 +5,7 @@
  *   npx tsx lib/partilha/quadro-bens.test.ts
  */
 
-import { montarQuadroPorBem } from './quadro-bens';
+import { matrizDoQuadro, montarQuadroPorBem } from './quadro-bens';
 import type { Caso, Resultado } from './types';
 
 let ok = 0, fail = 0;
@@ -99,6 +99,57 @@ const semMeacao = montarQuadroPorBem(
 );
 eq('sem meação: nenhuma linha de meação', semMeacao.linhas.some((l) => l.meacao), false);
 eq('sem meação: os bens fecham', semMeacao.total, 690_000);
+
+/* ---------- matriz bens × participantes (PDF do orçamento) ---------- */
+
+const m = matrizDoQuadro(q.linhas);
+eq(
+  'colunas: meação primeiro, herdeiros por aparição',
+  m.participantes,
+  [
+    { nome: 'Marta', meacao: true },
+    { nome: 'Ana', meacao: false },
+    { nome: 'Beto', meacao: false },
+    { nome: 'Caio', meacao: false },
+  ],
+);
+eq('uma linha por bem, na ordem do acervo', m.linhas.map((l) => l.bem), ['Apartamento', 'Terreno herdado']);
+eq(
+  'célula do bem comum: meação 1/2 + quinhões 1/6',
+  m.linhas[0].celulas.map((c) => c?.proporcao ?? null),
+  ['1/2', '1/6', '1/6', '1/6'],
+);
+eq(
+  'bem particular não tem célula de meação',
+  m.linhas[1].celulas.map((c) => c?.valor ?? null),
+  [null, 30_000, 30_000, 30_000],
+);
+eq('totais por coluna (rodapé)', m.totais, [300_000, 130_000, 130_000, 130_000]);
+eq('valor do bem viaja na linha', m.linhas.map((l) => l.valorBem), [600_000, 90_000]);
+
+// Sobrevivente que TAMBÉM herda: meação e quinhão são colunas distintas.
+const comViuvaHerdeira = matrizDoQuadro([
+  ...q.linhas,
+  { ...q.linhas[1], nome: 'Marta', meacao: false },
+]);
+eq(
+  'meação e quinhão da mesma pessoa são colunas separadas',
+  comViuvaHerdeira.participantes.filter((p) => p.nome === 'Marta').map((p) => p.meacao),
+  [true, false],
+);
+
+// Mesmo bem, mesma coluna, duas linhas: consolida somando (nada se perde).
+const duplicada = matrizDoQuadro([
+  q.linhas[1],
+  { ...q.linhas[1], proporcao: '1/12', valor: 50_000 },
+]);
+eq(
+  'linha repetida na mesma célula soma e justapõe',
+  duplicada.linhas[0].celulas[0],
+  { proporcao: '1/6 + 1/12', valor: 150_000 },
+);
+
+eq('matriz de quadro vazio', matrizDoQuadro([]), { participantes: [], linhas: [], totais: [] });
 
 /* ---------- acervo vazio ---------- */
 

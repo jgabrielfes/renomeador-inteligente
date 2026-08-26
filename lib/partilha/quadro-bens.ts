@@ -67,6 +67,76 @@ function comoProporcao(fracao: number, textoOriginal?: string): string {
   return `${(fracao * 100).toFixed(2).replace('.', ',')}%`;
 }
 
+/**
+ * O MESMO quadro, consolidado em MATRIZ bens × participantes — uma linha por
+ * bem, uma coluna por quem recebe (a meação primeiro, marcada como tal, pois
+ * não é herança) e a proporção + valor na célula. É o formato do PDF do
+ * orçamento completo: a lista linha a linha ficava extensa demais para
+ * apresentar à família (pedido do escritório).
+ */
+export interface MatrizPartilha {
+  /** Colunas, na ordem do ato: meação primeiro, depois herdeiros por aparição. */
+  participantes: { nome: string; meacao: boolean }[];
+  linhas: {
+    bem: string;
+    natureza: 'COMUM' | 'PARTICULAR';
+    valorBem: number;
+    /** Uma célula por participante; null = nada deste bem para essa coluna. */
+    celulas: ({ proporcao: string; valor: number } | null)[];
+  }[];
+  /** Total recebido por participante (rodapé da matriz). */
+  totais: number[];
+}
+
+export function matrizDoQuadro(linhas: LinhaQuadroBem[]): MatrizPartilha {
+  // O(a) sobrevivente pode aparecer DUAS vezes — meação e quinhão — e são
+  // colunas distintas de propósito: é como o ato descreve.
+  const chave = (l: { nome: string; meacao: boolean }) => `${l.meacao ? 'M' : 'H'}|${l.nome}`;
+  const participantes: { nome: string; meacao: boolean }[] = [];
+  const indice = new Map<string, number>();
+  for (const l of linhas.filter((x) => x.meacao)) {
+    if (!indice.has(chave(l))) {
+      indice.set(chave(l), participantes.length);
+      participantes.push({ nome: l.nome, meacao: true });
+    }
+  }
+  for (const l of linhas.filter((x) => !x.meacao)) {
+    if (!indice.has(chave(l))) {
+      indice.set(chave(l), participantes.length);
+      participantes.push({ nome: l.nome, meacao: false });
+    }
+  }
+
+  const porBem = new Map<string, MatrizPartilha['linhas'][number]>();
+  const ordem: string[] = [];
+  for (const l of linhas) {
+    let linha = porBem.get(l.bemId);
+    if (!linha) {
+      linha = {
+        bem: l.bem,
+        natureza: l.natureza,
+        valorBem: l.valorBem,
+        celulas: participantes.map(() => null),
+      };
+      porBem.set(l.bemId, linha);
+      ordem.push(l.bemId);
+    }
+    const i = indice.get(chave(l))!;
+    const atual = linha.celulas[i];
+    linha.celulas[i] = atual
+      ? // Mesmo bem, mesma coluna, duas linhas (raro): soma os valores e
+        // justapõe as proporções — nada se perde na consolidação.
+        { proporcao: `${atual.proporcao} + ${l.proporcao}`, valor: cent(atual.valor + l.valor) }
+      : { proporcao: l.proporcao, valor: l.valor };
+  }
+
+  const linhasMatriz = ordem.map((id) => porBem.get(id)!);
+  const totais = participantes.map((_, i) =>
+    cent(linhasMatriz.reduce((a, l) => a + (l.celulas[i]?.valor ?? 0), 0)),
+  );
+  return { participantes, linhas: linhasMatriz, totais };
+}
+
 export function montarQuadroPorBem(
   caso: Caso,
   resultado: Resultado,

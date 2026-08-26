@@ -13,6 +13,7 @@
 
 import { montarDocxRico, type BlocoDocx } from './docx';
 import { formatarData } from './familia';
+import type { MatrizPartilha } from './quadro-bens';
 
 /** Despesa extra lançada à mão na aba Custos (valor decimal "1234.56"). */
 export interface DespesaAdicional {
@@ -62,15 +63,12 @@ export interface DossieOrcamento {
   fatias: { nome: string; valor: number }[];
   /** Base do gráfico e dos percentuais. */
   massaPartilhavel: number;
-  /** Quadro herdeiro × bem × proporção × valor. */
-  quadro: {
-    bem: string;
-    natureza: 'COMUM' | 'PARTICULAR';
-    nome: string;
-    proporcao: string;
-    valor: number;
-    meacao: boolean;
-  }[];
+  /**
+   * Quadro da partilha CONSOLIDADO em matriz: linhas = bens, colunas =
+   * participantes (meação primeiro), célula = proporção + valor. A lista
+   * linha a linha ficava extensa demais no papel (pedido do escritório).
+   */
+  matriz: MatrizPartilha;
   /** Divergências do quadro (bem cuja partilha não fecha 100%). */
   avisosQuadro: string[];
 }
@@ -317,8 +315,14 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
    * Tabela de N colunas com cabeçalho que se REPETE quando a página vira —
    * sem isso uma partilha longa perde o cabeçalho no meio do caminho.
    */
-  const tabela = (colunas: Coluna[], linhas: string[][], rodape?: string[]) => {
+  const tabela = (
+    colunas: Coluna[],
+    linhas: string[][],
+    rodape?: string[],
+    opts?: { tamanho?: number },
+  ) => {
     const PAD = 5;
+    const tamanhoCorpo = opts?.tamanho ?? 8.5;
     const larguras = colunas.map((c) => c.peso * LARGURA);
     const desenhar = (
       celulas: string[],
@@ -370,12 +374,12 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
     precisa(desenhar(colunas.map((c) => c.titulo), { fonte: negrito, tamanho: 9 }).altura + 24);
     cabecalho();
     for (const celulas of linhas) {
-      const { altura } = desenhar(celulas, { fonte: corpo, tamanho: 8.5 });
+      const { altura } = desenhar(celulas, { fonte: corpo, tamanho: tamanhoCorpo });
       if (y - altura < MARGEM) {
         novaPagina();
         cabecalho();
       }
-      linhaNaPagina(celulas, { fonte: corpo, tamanho: 8.5 });
+      linhaNaPagina(celulas, { fonte: corpo, tamanho: tamanhoCorpo });
     }
     if (rodape) {
       const { altura } = desenhar(rodape, { fonte: negrito, tamanho: 9.5 });
@@ -506,22 +510,37 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
       y = Math.min(topo - LADO, ly) - 10;
     }
 
-    // 4. O quadro da partilha, bem a bem
-    if (dossie.quadro.length > 0) {
+    // 4. O quadro da partilha, bem a bem — MATRIZ consolidada: linhas = bens,
+    //    colunas = participantes, célula = proporção + valor (a lista linha a
+    //    linha ficava extensa demais para apresentar; pedido do escritório).
+    const parts = dossie.matriz.participantes;
+    if (dossie.matriz.linhas.length > 0 && parts.length > 0) {
       tituloSecao('Quadro da partilha — bem a bem');
+      // Sem o "R$ " nas células: a sigla única fica na nota sob a matriz e a
+      // coluna estreita não parte o valor no prefixo.
+      const compacto = (v: number) =>
+        v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const pesoBem = parts.length <= 3 ? 0.34 : 0.28;
       tabela(
         [
-          { titulo: 'Bem', peso: 0.4 },
-          { titulo: 'Quem recebe', peso: 0.28 },
-          { titulo: 'Proporção', peso: 0.14, direita: true },
-          { titulo: 'Valor', peso: 0.18, direita: true },
+          { titulo: 'Bem', peso: pesoBem },
+          ...parts.map((p) => ({
+            titulo: p.nome + (p.meacao ? ' (meação)' : ''),
+            peso: (1 - pesoBem) / parts.length,
+            direita: true,
+          })),
         ],
-        dossie.quadro.map((l) => [
+        dossie.matriz.linhas.map((l) => [
           l.bem,
-          l.nome + (l.meacao ? ' (meação — não é herança)' : ''),
-          l.proporcao,
-          brl(l.valor),
+          ...l.celulas.map((c) => (c ? `${c.proporcao} — ${compacto(c.valor)}` : '—')),
         ]),
+        ['TOTAL', ...dossie.matriz.totais.map(compacto)],
+        { tamanho: parts.length >= 5 ? 7.5 : 8.5 },
+      );
+      paragrafo(
+        'Valores em reais (R$). A coluna "(meação)" não é herança: essa parte já pertence ao(à) sobrevivente.',
+        8.5,
+        C.tintaMedia,
       );
       for (const aviso of dossie.avisosQuadro) paragrafo(aviso, 8.5, C.tintaMedia);
     }

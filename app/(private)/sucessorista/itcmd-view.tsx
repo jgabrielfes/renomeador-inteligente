@@ -236,6 +236,7 @@ export function ItcmdView({
             <LinhaEspelho
               nome={falecido.nome || '— informe no item I'}
               meio={falecido.cpf || 'CPF —'}
+              meioNum
               valor={<>óbito {formatarData(falecido.dataObito)}</>}
               valorStyle={{ fontSize: 'var(--t-base)' }}
             />
@@ -685,6 +686,7 @@ export function ItcmdView({
                       key={l.nome}
                       nome={l.nome}
                       meio={brl(l.fixo)}
+                      meioNum
                       valor={
                         <>
                           {brl(l.prog)} ({l.prog > l.fixo ? '+' : ''}
@@ -700,6 +702,7 @@ export function ItcmdView({
                   <LinhaEspelho
                     nome="Total"
                     meio={brl(totalFixo)}
+                    meioNum
                     valor={
                       <>
                         {brl(totalProg)} ({totalProg > totalFixo ? '+' : ''}
