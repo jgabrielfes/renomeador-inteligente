@@ -1131,13 +1131,21 @@
 /* SEM rolagem lateral nos espelhos (pedido do escritório): o texto do
    lançamento e o fundamento QUEBRAM linha para caber na tela — o Table do
    shadcn traz whitespace-nowrap por padrão e aqui isso vira `normal`. Só
-   os NÚMEROS (.num) seguem sem quebra, para o valor nunca partir ao meio. */
+   os NÚMEROS (.num) seguem sem quebra, para o valor nunca partir ao meio.
+   `break-word`, não `anywhere`: anywhere zera a largura mínima de toda
+   célula e, com o painel do caso aberto, a coluna do lançamento era esmagada
+   a uma letra por linha — break-word quebra igual, mas preserva a largura da
+   maior palavra como piso. */
 .sucessorista .espelho-tabela th,
 .sucessorista .espelho-tabela td {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .sucessorista .espelho-tabela td.num { white-space: nowrap; overflow-wrap: normal; }
+
+/* Piso da coluna do lançamento: a folha apertada tira espaço do FUNDAMENTO
+   (que quebra linha), nunca do nome da parcela. */
+.sucessorista .espelho-tabela .espelho-nome { min-width: 9em; }
 
 .sucessorista .espelho-tabela th {
   font-size: var(--t-xs);

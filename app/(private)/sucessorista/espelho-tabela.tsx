@@ -48,6 +48,7 @@ export function Espelho({
 export function LinhaEspelho({
   nome,
   meio,
+  meioNum,
   valor,
   nomeStyle,
   meioStyle,
@@ -55,6 +56,13 @@ export function LinhaEspelho({
 }: {
   nome: ReactNode;
   meio?: ReactNode;
+  /**
+   * Só quando o meio é NÚMERO (fração, CPF, valor): aplica o `.num`
+   * (tabular-nums SEM quebra). O padrão é TEXTO que quebra linha — um
+   * fundamento longo com nowrap exigia a largura do texto inteiro e esmagava
+   * a coluna do lançamento quando o painel do caso estava aberto.
+   */
+  meioNum?: boolean;
   valor: ReactNode;
   nomeStyle?: CSSProperties;
   meioStyle?: CSSProperties;
@@ -65,7 +73,7 @@ export function LinhaEspelho({
       <TableCell className="espelho-nome" style={nomeStyle}>
         {nome}
       </TableCell>
-      <TableCell className="num" style={meioStyle}>
+      <TableCell className={meioNum ? 'num' : undefined} style={meioStyle}>
         {meio}
       </TableCell>
       <TableCell className="num text-right" style={valorStyle}>

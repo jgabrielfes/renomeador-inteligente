@@ -4955,7 +4955,7 @@ function PartilhaDeSucessao({
       <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
         {resultado.quinhoes.map((q) => (
           <Fragment key={q.herdeiroId}>
-            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} valor={brl(q.valor)} />
+            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} meioNum valor={brl(q.valor)} />
             <FundEspelho>{q.fundamento}</FundEspelho>
           </Fragment>
         ))}
