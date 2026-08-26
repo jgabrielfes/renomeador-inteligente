@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 const PASSOS = [
-  ['1 · Habilitação', 'OAB com verificação manual, questionário deontológico (10 de 10) e assinatura mensal por UF — nunca comissão por caso. A candidatura vale pelo seu plano de assinatura (em implantação).'],
+  ['1 · Habilitação', 'OAB com verificação manual e questionário deontológico (10 de 10). O uso é por CRÉDITOS da assinatura do aplicativo: cada candidatura consome 1, em qualquer UF — preço de uso, nunca comissão por caso.'],
   ['2 · Casos abertos', 'A família publica o caso ANÔNIMO; você vê os das suas UFs em ordem única por data, com filtros de recorte (via, recência). Casos novos desde a sua última visita chegam com o chip NOVO — e o aviso aparece também no hub.'],
   ['3 · Candidatura', `Até ${TETO_CANDIDATURAS_POR_CASO} advogados(as) por caso (o marcador X/${TETO_CANDIDATURAS_POR_CASO}). A candidatura é a apresentação sóbria + como conduziria — sem valores e sem promessa; a sua vitrine (áreas e experiência) acompanha.`],
   ['4 · Conversa e contratação', 'A família escolhe com quem falar (um por vez) e só então o contato dela chega a você. Fechou? Ela confirma a contratação e o código aparece na conversa.'],

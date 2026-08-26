@@ -66,7 +66,8 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
    segue logo abaixo.
 4. **Advogado(a)** (`/radar`, logado): habilitação em três passos —
    inscrição na OAB (verificação **manual** no `/admin/radar`), quiz
-   deontológico (10 de 10, `lib/radar/quiz.ts`) e assinatura **mensal** por UF
+   deontológico (10 de 10, `lib/radar/quiz.ts`); o uso é por **CRÉDITOS** da
+   assinatura do aplicativo — cada candidatura consome 1, em qualquer UF
    (concedida à mão; nunca comissão por caso). Habilitado, vê os casos
    anônimos (`anonimizarIntake`, allowlist com testes anti-vazamento) das UFs
    assinadas, em **ordem única por data** — sem ranking. MASTER navega sem os
@@ -125,7 +126,8 @@ técnico; o dossiê ético está em [`etica-oab.md`](./etica-oab.md).
 | `familia_intakes` | respostas/resultado (Json), status (`rascunho→resultado→publicado→em_conversa→contratado`, `retirado`/`expirado`), tokens, consentimento, conversa (advogado escolhido + datas) |
 | `intake_handoffs` | códigos de uso único do handoff |
 | `advogado_perfis` | OAB/UF, situação (`pendente/aprovado/recusado/suspenso`), quiz, `aceitaPequenoValor` |
-| `radar_assinaturas` | assinatura manual por (userId, UF) |
+| `radar_assinaturas` | assinatura manual por (userId, UF) — DESATIVADA (histórico; a aplicação não lê mais) |
+| `radar_creditos` | ledger imutável dos créditos (concessão/ajuste/candidatura); saldo em `advogado_perfis.creditosRadar` |
 | `radar_respostas` | apresentação/condução — única por (intake, advogado) |
 | `radar_mensagens` | canal 1:1 (autor `advogado`/`familia`) |
 | `radar_denuncias` | denúncias da família; acatar = suspender o perfil |
@@ -186,7 +188,7 @@ a mecânica é a mesma). Do lado do(a) advogado(a):
   teto de candidaturas pela constante `TETO_CANDIDATURAS_POR_CASO`, nunca
   por número solto.
 - **/config** mostra a situação do perfil no Radar (verificação da OAB +
-  UFs assinadas) e o gancho do plano de assinatura ("em implantação") — a
+  créditos disponíveis) e o consumo de 1 crédito por candidatura — a
   habilitação continua acontecendo no próprio Radar.
 
 ## Avisos por e-mail (`lib/radar/notificar.ts`)
@@ -201,7 +203,7 @@ cobrem é o ciclo JÁ ABERTO e as decisões que a pessoa não tem como adivinhar
 | mensagem nova na conversa 1:1 | o OUTRO lado (família ou advogado) | `radar-actions.ts#enviarMensagemRadar` e `POST /api/familias/conversa` |
 | "Contratei" confirmado | advogado(a), **com o código do handoff** | `POST /api/familias/conversa` |
 | verificação da OAB decidida (aprovado/recusado/suspenso) | advogado(a), com o motivo da equipe | `/admin/radar#decidirPerfil` e `#decidirDenuncia` (acatar) |
-| assinatura de UF concedida | advogado(a) | `/admin/radar#concederAssinatura` |
+| créditos concedidos | advogado(a) | `/admin/radar#concederCreditosRadar` |
 | 72h sem resposta | família | varredura (botão + cron) |
 
 Regras de conteúdo (trilhos de [`etica-oab.md`](./etica-oab.md)): o corpo do

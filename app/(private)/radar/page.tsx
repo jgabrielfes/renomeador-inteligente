@@ -1,5 +1,5 @@
 // Radar de famílias — a tela do(a) ADVOGADO(A): habilitação (OAB verificada
-// manualmente + quiz deontológico + assinatura mensal por UF) e a lista de
+// manualmente + quiz deontológico; candidatura por CRÉDITOS) e a lista de
 // casos ANÔNIMOS publicados pelas famílias, em ordem única por data. A rota
 // só existe no site do Sucessorista e com o Radar ligado por env.
 

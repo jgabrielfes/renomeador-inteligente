@@ -401,10 +401,35 @@ model AdvogadoPerfil {
   /// promessa de resultado (Provimento 205/2021). Avaliações NÃO existem.
   areasAtuacao       String?
   experiencia        String?
+  /// CRÉDITOS do Radar: concedidos com a assinatura do aplicativo (geridos à
+  /// mão no /admin/radar) e consumidos 1 a 1 na CANDIDATURA — sem restrição
+  /// por UF. Crédito é preço de USO (consome tenha ou não retorno da
+  /// família): nunca comissão por caso ou por êxito. Saldo atualizado na
+  /// MESMA transação do ledger radar_creditos.
+  creditosRadar      Int       @default(0)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   @@map("advogado_perfis")
+}
+
+// Ledger IMUTÁVEL dos créditos do Radar: cada concessão/ajuste da
+// administração e cada consumo de candidatura vira uma linha — o saldo em
+// advogado_perfis.creditosRadar anda junto, na mesma transação.
+model RadarCredito {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Positivo = concessão/ajuste; negativo = consumo (candidatura = -1).
+  delta     Int
+  motivo    String   // 'assinatura' | 'ajuste' | 'candidatura'
+  /// Candidatura: o caso que consumiu o crédito.
+  intakeId  String?
+  /// Admin que concedeu/ajustou (null = consumo automático).
+  criadoPor String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("radar_creditos")
 }
 
 model RadarAssinatura {
