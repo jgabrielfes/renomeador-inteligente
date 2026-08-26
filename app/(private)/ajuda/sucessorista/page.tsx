@@ -58,7 +58,7 @@ export default async function AjudaSucessoristaPage() {
             <h2>Quem vê o quê</h2>
             <ul className="lc-lista">
               <li><strong>Advogado(a)</strong>: tudo — inclusive Honorários e Minutas (petição inicial e minuta ao Tabelionato), Radar Sucessório e Diligências.</li>
-              <li><strong>Não advogado(a)</strong>: a folha inteira, a aba Escritura (a minuta do balcão) e as Diligências; honorários, minutas de advogado e o Radar não aparecem.</li>
+              <li><strong>Não advogado(a)</strong>: a folha inteira, TODAS as minutas (escritura, Tabelionato, petição) e as Diligências; honorários e o Radar não aparecem.</li>
               <li><strong>Equipe</strong>: contas individuais por convite do(a) chefe — membro trabalha em tudo, só não gere a equipe; a nuvem da equipe sincroniza os casos (só o caso.json — documento nunca sobe).</li>
               <li><strong>Herdeiro (portal)</strong>: entra pelo LINK do convite, sem conta — envia qualificação e documentos e participa do espaço do espólio; nunca vê honorários nem os dados dos outros herdeiros além do que o espólio compartilha.</li>
             </ul>

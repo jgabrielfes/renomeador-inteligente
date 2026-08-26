@@ -35,8 +35,8 @@ const ROTULO: Record<"ADVOGADO" | "NAO_ADVOGADO", string> = {
 };
 
 const DESCRICAO: Record<"ADVOGADO" | "NAO_ADVOGADO", string> = {
-  ADVOGADO: "Tudo do caso + honorários, minutas de advogado e o Radar.",
-  NAO_ADVOGADO: "Tudo do caso + escritura e Diligências, sem o Radar.",
+  ADVOGADO: "Caso e minutas completos + honorários e o Radar.",
+  NAO_ADVOGADO: "Caso e minutas completos + Diligências; sem honorários e sem o Radar.",
 };
 
 export function PerfilSucessoristaSelect({

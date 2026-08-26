@@ -78,7 +78,7 @@ const ARTIGOS: Artigo[] = [
     titulo: 'Minutas, escritura e petições',
     resumo: 'Documentos do balcão e do foro, com seus modelos.',
     corpo: [
-      'A escritura calibrada por atos reais é dos DOIS perfis; o perfil Advogado(a) soma honorários, minuta ao Tabelionato e petição inicial. "Meus modelos de minuta" guarda os padrões do seu escritório e a redação por IA segue o modelo ativo — sempre como rascunho para a sua aprovação.',
+      'A aba de Minutas é a MESMA para os dois perfis: escritura calibrada por atos reais, requerimento ao Tabelionato e petição inicial judicial — o perfil Advogado(a) soma os honorários. "Meus modelos de minuta" guarda os padrões do seu escritório e a redação por IA segue o modelo ativo — sempre como rascunho para a sua aprovação.',
     ],
   },
   {

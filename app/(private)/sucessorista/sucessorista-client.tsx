@@ -130,7 +130,7 @@ import {
 } from '@/components/ui/dialog';
 import { HonorariosView } from './honorarios-view';
 import { MatriculaView } from './matricula-view';
-import { MinutasView, EscrituraView } from './minutas-view';
+import { MinutasView } from './minutas-view';
 import { CONDICOES_INICIAIS, type CondicoesHonorarios } from '@/lib/partilha/honorarios';
 import { carregarRascunho, limparRascunho } from '@/lib/partilha/rascunho';
 import type { SecaoRedigida } from '@/lib/partilha/honorarios-docx';
@@ -3878,13 +3878,16 @@ export default function SucessoristaClient({
             // do escritório). As TRÊS ferramentas de apoio (matrícula,
             // fontes, IR/GCAP) viraram o agrupador "Ferramentas
             // Sucessórias", SEM algarismo — os ids seguem válidos por URL.
+            // A aba de MINUTAS é a MESMA para os dois perfis (a escolha da
+            // peça — escritura, Tabelionato, petição — é interna); honorários
+            // segue sendo ato de advogado. O id 'escritura' continua válido
+            // por URL e cai na aba de Minutas com a escritura pré-escolhida.
             ...(perfil === 'ADVOGADO'
               ? ([
                   ['honorarios', 'VII', 'Honorários'],
                   ['minutas', 'VIII', 'Minutas'],
-                  ['escritura', 'IX', 'Escritura'],
                 ] as const)
-              : ([['escritura', 'VII', 'Escritura']] as const)),
+              : ([['minutas', 'VII', 'Minutas']] as const)),
             ['ferramentas', '', 'Ferramentas Sucessórias'],
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -3893,6 +3896,7 @@ export default function SucessoristaClient({
             className="aba"
             aria-current={
               abaProc === id ||
+              (id === 'minutas' && abaProc === 'escritura') ||
               (id === 'ferramentas' &&
                 (abaProc === 'matricula' || abaProc === 'fontes' || abaProc === 'fiscal'))
             }
@@ -4060,7 +4064,7 @@ export default function SucessoristaClient({
                     : [
                         { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
                         { rotulo: 'Projetar custos', aba: 'custos' },
-                        { rotulo: 'Gerar escritura', aba: 'escritura' },
+                        { rotulo: 'Gerar minuta', aba: 'minutas' },
                       ]
                 }
               />
@@ -4705,24 +4709,16 @@ export default function SucessoristaClient({
           />
         )}
 
-        {abaProc === 'minutas' && perfil === 'ADVOGADO' && (
+        {(abaProc === 'minutas' || abaProc === 'escritura') && (
           <MinutasView
             onGerarPeticao={gerarPeticao}
             onGerarPeticaoJudicial={gerarPeticaoJudicial}
-            pendencias={pendenciasMinuta}
-            antecipador={relatorioAntecipador}
-            nomeCaso={falecido.nome}
-            onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
-          />
-        )}
-
-        {abaProc === 'escritura' && (
-          <EscrituraView
             onGerarEscritura={gerarEscritura}
             pendencias={pendenciasMinuta}
             antecipador={relatorioAntecipador}
             nomeCaso={falecido.nome}
             onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
+            tipoInicial={abaProc === 'escritura' ? 'escritura' : undefined}
           />
         )}
 

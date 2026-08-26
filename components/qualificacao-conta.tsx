@@ -104,9 +104,10 @@ export function QualificacaoConta({
               <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
               <DialogDescription>
                 Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA
-                ao seu login — os DOIS perfis trabalham o caso, a escritura e as
-                Diligências; honorários, minutas de advogado e o Radar Sucessório são
-                exclusivos de Advogado(a). Para trocar depois, fale com a administração.
+                ao seu login — os DOIS perfis trabalham o caso, TODAS as minutas
+                (escritura, Tabelionato, petição) e as Diligências; honorários e o Radar
+                Sucessório são exclusivos de Advogado(a). Para trocar depois, fale com a
+                administração.
               </DialogDescription>
             </DialogHeader>
             <div className="escolha" style={{ marginTop: 8, gap: 10 }}>
