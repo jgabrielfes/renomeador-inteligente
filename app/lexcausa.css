@@ -28,7 +28,9 @@
   --lc-noite-tinta: #e9e7e0;
   --lc-noite-acento: #c9a35f;    /* 6,2:1 sobre a noite */
 
-  /* --- fontes: serifa institucional nos títulos, Geist na UI --- */
+  /* --- fontes: a serifa ficou SÓ no lockup da marca ("LexCausa"); os
+     títulos de página usam a MESMA Geist do texto, diferenciados por peso
+     (pedido do escritório — a serifa nos h1/h2 desagradou). --- */
   --lc-display: var(--font-fraunces), Georgia, 'Times New Roman', serif;
   --lc-texto: var(--font-geist-sans), 'Segoe UI', system-ui, sans-serif;
 
@@ -153,17 +155,19 @@
   margin-bottom: var(--e-2);
 }
 .lexcausa h1 {
-  font-family: var(--lc-display);
+  font-family: var(--lc-texto);
   font-size: var(--t-2xl);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: var(--lh-titulo);
   margin: 0 0 var(--e-3);
   text-wrap: balance;
 }
 .lexcausa h2 {
-  font-family: var(--lc-display);
+  font-family: var(--lc-texto);
   font-size: var(--t-xl);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: var(--lh-titulo);
   margin: 0 0 var(--e-3);
 }
