@@ -46,7 +46,7 @@ export function LandingLexCausa() {
             inventário do primeiro atendimento ao registro; o{' '}
             <strong>Radar Sucessório</strong> aproxima famílias que precisam de
             um inventário de advogados(as) verificados(as); e as{' '}
-            <strong>Diligências entre advogados</strong> resolvem o ato em outra
+            <strong>Diligências</strong> resolvem o ato em outra
             comarca com correspondentes verificados. Um único login dá acesso ao
             que a sua conta pode usar.
           </p>

@@ -1,6 +1,6 @@
 /**
  * TAREFAS DO CASO — a fila operacional do inventário (remodelagem LexCausa,
- * visão do escrevente/equipe): o advogado (ou qualquer perfil) lança
+ * visão da equipe): o advogado (ou qualquer perfil) lança
  * tarefas com responsável e prazo, e quem executa marca feito. Vive no
  * SNAPSHOT do caso (caso.json, campo `tarefas` — retrocompatível): viaja
  * com a pasta/nuvem do processo e sincroniza pela nuvem da equipe, sem

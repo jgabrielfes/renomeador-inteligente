@@ -78,7 +78,7 @@ const ARTIGOS: Artigo[] = [
     titulo: 'Minutas, escritura e petições',
     resumo: 'Documentos do balcão e do foro, com seus modelos.',
     corpo: [
-      'O perfil Advogado(a) gera honorários, minuta ao Tabelionato e petição inicial; o perfil Escrevente gera a escritura calibrada por atos reais. "Meus modelos de minuta" guarda os padrões do seu escritório e a redação por IA segue o modelo ativo — sempre como rascunho para a sua aprovação.',
+      'A escritura calibrada por atos reais é dos DOIS perfis; o perfil Advogado(a) soma honorários, minuta ao Tabelionato e petição inicial. "Meus modelos de minuta" guarda os padrões do seu escritório e a redação por IA segue o modelo ativo — sempre como rascunho para a sua aprovação.',
     ],
   },
   {
@@ -105,7 +105,7 @@ const ARTIGOS: Artigo[] = [
   {
     id: 'diligencias',
     area: 'Diligências',
-    titulo: 'Diligências entre advogados',
+    titulo: 'Diligências',
     resumo: 'Correspondentes por comarca, termo de referência e pasta isolada.',
     corpo: [
       'Peça um ato a distância (audiência, cópia, protocolo) escolhendo a comarca: correspondentes verificados ofertam, o termo de referência registra escopo/prazo/valor em texto livre e a pasta isolada leva só os arquivos que você selecionar. O relatório entregue volta direto ao caso.',

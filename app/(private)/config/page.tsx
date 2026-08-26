@@ -104,8 +104,8 @@ export default async function ConfigPage() {
               <p style={{ margin: 0 }}>{usuario?.email}</p>
               <p className="lc-fund" style={{ margin: 0 }}>
                 Perfil no Sucessorista:{' '}
-                {usuario?.perfilSucessorista === 'ESCREVENTE'
-                  ? 'Escrevente Notarial'
+                {usuario?.perfilSucessorista === 'NAO_ADVOGADO'
+                  ? 'Não advogado(a)'
                   : usuario?.perfilSucessorista === 'ADVOGADO'
                   ? 'Advogado(a)'
                   : 'ainda não escolhido (o primeiro acesso pergunta)'}

@@ -45,7 +45,7 @@ export default async function RadarPage() {
   const session = await auth();
   // QUALIFICAÇÃO DE PRIMEIRO ACESSO: quem chega ao Radar sem perfil escolhido
   // passa pelo MESMO dialog do Sucessorista (perfil → identificação → quiz).
-  let perfilConta: 'ADVOGADO' | 'ESCREVENTE' | null = null;
+  let perfilConta: 'ADVOGADO' | 'NAO_ADVOGADO' | null = null;
   let nomeConta = '';
   try {
     const u = session?.user?.id

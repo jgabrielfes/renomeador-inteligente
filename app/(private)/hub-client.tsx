@@ -28,7 +28,7 @@ export function HubLexCausa({
   baseHub,
 }: {
   menu: ReactNode;
-  perfil: 'ADVOGADO' | 'ESCREVENTE' | null;
+  perfil: 'ADVOGADO' | 'NAO_ADVOGADO' | null;
   ehMaster: boolean;
   radarAtivo: boolean;
   /**
@@ -47,11 +47,12 @@ export function HubLexCausa({
 }) {
   const router = useProgressRouter();
 
-  // Radar e Diligências são ferramentas de advogado(a); escrevente vê só O
-  // Sucessorista. Perfil ainda não escolhido (primeiro acesso) vê tudo — a
-  // escolha acontece dentro do Sucessorista e vale dali em diante.
+  // O Sucessorista e as Diligências são dos DOIS perfis; só o Radar é
+  // restrito a advogado(a) verificado(a) — decisão do escritório. Perfil
+  // ainda não escolhido (primeiro acesso) vê tudo; a escolha acontece
+  // dentro do Sucessorista e vale dali em diante.
   const produtos = PRODUTOS_LEXCAUSA.filter(
-    (p) => p.id === 'sucessorista' || perfil !== 'ESCREVENTE' || ehMaster,
+    (p) => p.id !== 'radar' || perfil !== 'NAO_ADVOGADO' || ehMaster,
   );
 
   // Preferência "abrir direto" (editada em /config) lida em efeito DIFERIDO
@@ -80,7 +81,7 @@ export function HubLexCausa({
         menu={menu}
         ehMaster={ehMaster}
         radarAtivo={radarAtivo}
-        escrevente={perfil === 'ESCREVENTE'}
+        naoAdvogado={perfil === 'NAO_ADVOGADO'}
       />
 
       <main className="lc-miolo">

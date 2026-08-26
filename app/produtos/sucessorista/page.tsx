@@ -70,12 +70,13 @@ export default async function ProdutoSucessoristaPage() {
             família com deliberações — e a rede: Radar Sucessório e
             correspondentes por comarca.
           </p>
-          <h3>Escrevente Notarial</h3>
+          <h3>Não advogado(a)</h3>
           <p>
-            A escritura do jeito do balcão: minuta calibrada por atos reais,
-            base de emolumentos pelo Enunciado 7 do CNB/SP, conferência das
-            certidões do registro civil e antecipador de exigências registrais
-            (LRP, arts. 213 e 246).
+            A escritura do jeito do balcão — dos DOIS perfis: minuta calibrada
+            por atos reais, base de emolumentos pelo Enunciado 7 do CNB/SP,
+            conferência das certidões do registro civil e antecipador de
+            exigências registrais (LRP, arts. 213 e 246) — além das
+            Diligências por comarca.
           </p>
         </section>
 

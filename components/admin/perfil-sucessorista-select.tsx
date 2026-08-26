@@ -1,6 +1,6 @@
 "use client";
 
-// Perfil de uso do Sucessorista (Advogado × Escrevente) na tabela de usuários.
+// Perfil de uso do Sucessorista (Advogado × Não Advogado) na tabela de usuários.
 //
 // A conta escolhe UMA vez, no primeiro acesso, e trava — trocar depois é ato
 // de administração, e este é o único lugar onde acontece (o alternador que
@@ -27,16 +27,16 @@ import {
 } from "@/components/ui/dialog";
 
 /** null = a conta ainda não escolheu (o dialog do primeiro acesso vai pedir). */
-export type PerfilConta = "ADVOGADO" | "ESCREVENTE" | null;
+export type PerfilConta = "ADVOGADO" | "NAO_ADVOGADO" | null;
 
-const ROTULO: Record<"ADVOGADO" | "ESCREVENTE", string> = {
+const ROTULO: Record<"ADVOGADO" | "NAO_ADVOGADO", string> = {
   ADVOGADO: "Advogado(a)",
-  ESCREVENTE: "Escrevente Notarial",
+  NAO_ADVOGADO: "Não advogado(a)",
 };
 
-const DESCRICAO: Record<"ADVOGADO" | "ESCREVENTE", string> = {
-  ADVOGADO: "Abas de honorários e das minutas (Tabelionato e petição judicial).",
-  ESCREVENTE: "Aba da escritura de inventário e partilha.",
+const DESCRICAO: Record<"ADVOGADO" | "NAO_ADVOGADO", string> = {
+  ADVOGADO: "Tudo do caso + honorários, minutas de advogado e o Radar.",
+  NAO_ADVOGADO: "Tudo do caso + escritura e Diligências, sem o Radar.",
 };
 
 export function PerfilSucessoristaSelect({
@@ -51,7 +51,7 @@ export function PerfilSucessoristaSelect({
   const [open, setOpen] = React.useState(false);
   const [salvando, setSalvando] = React.useState<string | null>(null);
 
-  async function definir(novo: "ADVOGADO" | "ESCREVENTE" | "") {
+  async function definir(novo: "ADVOGADO" | "NAO_ADVOGADO" | "") {
     setSalvando(novo || "limpar");
     try {
       const r = await definirPerfilSucessorista(userId, novo);
@@ -90,7 +90,7 @@ export function PerfilSucessoristaSelect({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
-          {(["ADVOGADO", "ESCREVENTE"] as const).map((p) => (
+          {(["ADVOGADO", "NAO_ADVOGADO"] as const).map((p) => (
             <Button
               key={p}
               variant={perfil === p ? "default" : "outline"}

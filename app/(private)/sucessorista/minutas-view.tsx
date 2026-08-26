@@ -4,7 +4,7 @@
  * - VII "Minutas" (Advogado(a)): requerimento ao Tabelionato (via
  *   extrajudicial) e petição inicial do inventário judicial (redação por IA
  *   com fallback local) — ambos em DOCX editável com a folha inteira dentro.
- * - VI "Escritura" (Escrevente Notarial): minuta da escritura do modelo do
+ * - "Escritura" (os dois perfis): minuta da escritura do modelo do
  *   balcão, com a modalidade do ato escolhida aqui (presencial ·
  *   videoconferência e-Notariado · híbrida).
  */

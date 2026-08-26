@@ -52,9 +52,9 @@ export async function PaginaSucessorista({
       {/* Tour de primeiro acesso por PERFIL — 4 passos, dispensável; o
           conteúdo completo fica em /ajuda/sucessorista. */}
       <TourLexCausa
-        id={`sucessorista-${perfilConta === "ESCREVENTE" ? "escrevente" : "advogado"}`}
+        id={`sucessorista-${perfilConta === "NAO_ADVOGADO" ? "nao-advogado" : "advogado"}`}
         passos={
-          perfilConta === "ESCREVENTE"
+          perfilConta === "NAO_ADVOGADO"
             ? [
                 { titulo: "Bem-vindo(a) ao O Sucessorista", texto: "Seus casos vivem na SUA pasta ou na SUA nuvem — crie o primeiro em “Novo caso” e tudo se salva sozinho enquanto digita." },
                 { titulo: "O cofre lê os documentos", texto: "Solte a pasta do caso no cofre da Página Inicial: certidões, matrículas e venais viram campos preenchidos — sempre para a sua conferência." },
@@ -75,7 +75,7 @@ export async function PaginaSucessorista({
         comandos={comandosPadrao({
           ehMaster: isMaster(session),
           radarAtivo: radarAtivo(),
-          escrevente: perfilConta === "ESCREVENTE",
+          naoAdvogado: perfilConta === "NAO_ADVOGADO",
         })}
       />
       <SucessoristaClient
@@ -88,7 +88,7 @@ export async function PaginaSucessorista({
             menu={<AvatarSessao />}
             ehMaster={isMaster(session)}
             radarAtivo={radarAtivo()}
-            escrevente={perfilConta === "ESCREVENTE"}
+            naoAdvogado={perfilConta === "NAO_ADVOGADO"}
             sub="O Sucessorista · by LexCausa"
           />
         }

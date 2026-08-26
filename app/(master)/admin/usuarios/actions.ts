@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 export type AcaoResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Trocar o PERFIL de uso do Sucessorista de uma conta (Advogado × Escrevente).
+ * Trocar o PERFIL de uso do Sucessorista de uma conta (Advogado × Não Advogado).
  *
  * A conta escolhe UMA vez, no primeiro acesso, e trava. Antes o MASTER
  * contornava isso alternando na lombada da folha — o que mudava a sessão, não
@@ -35,7 +35,7 @@ export async function definirPerfilSucessorista(
   }
 
   const escolhido =
-    perfil === "ADVOGADO" || perfil === "ESCREVENTE" ? perfil : perfil === "" ? null : undefined;
+    perfil === "ADVOGADO" || perfil === "NAO_ADVOGADO" ? perfil : perfil === "" ? null : undefined;
   if (escolhido === undefined) {
     return { ok: false, error: "Perfil inválido." };
   }

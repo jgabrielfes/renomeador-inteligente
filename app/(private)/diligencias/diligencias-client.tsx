@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Diligências entre advogados — client. Três mesas de trabalho: o perfil de
+ * Diligências — client. Três mesas de trabalho: o perfil de
  * correspondente (selo obrigatório), as diligências ABERTAS (ordem por
  * data; nunca por preço/nota) e as minhas — como solicitante (ofertas,
  * termo, pasta, conclusão) e como correspondente (termo, relatório,
@@ -280,7 +280,7 @@ export function DiligenciasClient({
       <Toaster position="bottom-right" duration={4000} visibleToasts={1} />
       <main className="folha" style={{ margin: '0 auto', maxWidth: 860 }}>
         <span className="eyebrow">O Sucessorista</span>
-        <h1>Diligências entre advogados</h1>
+        <h1>Diligências</h1>
         <p className="subtitulo">
           Atos a distância — retirar certidão, audiência, cartório, escritura por
           procuração — com colegas que entendem do rito sucessório. {AVISO_LEGAL}

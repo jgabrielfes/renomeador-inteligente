@@ -12,7 +12,7 @@ import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { requirePlataforma } from '@/lib/app';
 
 export const metadata: Metadata = {
-  title: 'Diligências entre advogados — LexCausa',
+  title: 'Diligências — LexCausa',
   description:
     'Correspondentes por comarca para a prática sucessória: publique o ato, receba ofertas em ordem neutra, registre o termo de referência e receba o relatório direto no caso.',
 };
@@ -39,7 +39,7 @@ export default async function ProdutoDiligenciasPage() {
 
       <main className="lc-miolo produto-diligencias">
         <section className="lc-hero">
-          <span className="lc-eyebrow">Diligências entre advogados</span>
+          <span className="lc-eyebrow">Diligências</span>
           <h1>O ato em outra comarca, sem sair do caso</h1>
           <p className="lc-sub">
             Retirar certidão, acompanhar audiência, protocolar, resolver o ITCMD
@@ -124,7 +124,7 @@ export default async function ProdutoDiligenciasPage() {
 
       <footer className="lc-noite lc-rodape">
         <div className="lc-miolo">
-          <span>Diligências entre advogados · by LexCausa</span>
+          <span>Diligências · by LexCausa</span>
           <Link href="/">← Voltar à página inicial</Link>
         </div>
       </footer>

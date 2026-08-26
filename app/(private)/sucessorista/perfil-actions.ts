@@ -14,7 +14,7 @@ import { EH_SUCESSORISTA } from "@/lib/app";
 import { UFS } from "@/lib/familias/tipos";
 import { corrigirQuiz, type CorrecaoQuiz } from "@/lib/radar/quiz";
 
-const PERFIS = ["ADVOGADO", "ESCREVENTE"] as const;
+const PERFIS = ["ADVOGADO", "NAO_ADVOGADO"] as const;
 type PerfilConta = (typeof PERFIS)[number];
 
 export async function salvarPerfilConta(
@@ -59,8 +59,8 @@ export async function salvarPerfilConta(
  *
  * O advogado se IDENTIFICA (nome completo + inscrição na OAB, que entra na
  * MESMA fila de verificação manual do /admin/radar) e faz o quiz
- * deontológico; o escrevente informa nome completo e a serventia onde
- * trabalha. Tudo aqui é da CONTA — por isso estas actions NÃO exigem
+ * deontológico; o(a) não advogado(a) informa o nome completo. Tudo aqui é
+ * da CONTA — por isso estas actions NÃO exigem
  * `radarAtivo()`: a identificação vale com o Radar ligado ou desligado
  * (diferente das actions do /radar, que são do produto).
  *
@@ -108,9 +108,8 @@ export async function salvarIdentificacaoAdvogado(entrada: {
   }
 }
 
-export async function salvarIdentificacaoEscrevente(entrada: {
+export async function salvarIdentificacaoNaoAdvogado(entrada: {
   nomeCompleto: string;
-  serventia: string;
 }): Promise<{ ok: boolean; motivo?: string }> {
   if (!EH_SUCESSORISTA) return { ok: false, motivo: "plataforma" };
   const session = await auth();
@@ -118,12 +117,10 @@ export async function salvarIdentificacaoEscrevente(entrada: {
   if (!userId) return { ok: false, motivo: "sem-sessao" };
 
   const nome = String(entrada.nomeCompleto ?? "").trim().slice(0, 160);
-  const serventia = String(entrada.serventia ?? "").trim().slice(0, 200);
   if (nome.length < 5) return { ok: false, motivo: "nome" };
-  if (serventia.length < 3) return { ok: false, motivo: "serventia" };
 
   try {
-    await prisma.user.update({ where: { id: userId }, data: { name: nome, serventia } });
+    await prisma.user.update({ where: { id: userId }, data: { name: nome } });
     return { ok: true };
   } catch {
     return { ok: false, motivo: "banco" };

@@ -321,7 +321,7 @@ export default async function AdminSucessoristaPage({
                     {e.perfil
                       ? e.perfil === "ADVOGADO"
                         ? "Advogado(a)"
-                        : "Escrevente"
+                        : "Não advogado(a)"
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
