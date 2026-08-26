@@ -549,9 +549,28 @@ model User {
   notaEvents   NotaEvent[]
   sucessoristaEvents SucessoristaEvent[]
   casosNuvem   ContaCaso[]
+  passwordResets PasswordReset[]
 
   @@unique([email, app])
   @@map("users")
+}
+
+// REDEFINIÇÃO DE SENHA ("esqueci minha senha"): token de uso único enviado por
+// e-mail (env-gated pelo Resend, como o portal). Só o HASH SHA-256 do token
+// fica no banco — vazamento da tabela não entrega link válido. Expira em 1h;
+// o uso carimba usadoEm (token não se reaproveita). Cascade: conta apagada
+// leva os pedidos junto.
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_resets")
 }
 
 // Ferramentas da plataforma — dimensão comum das métricas de uso.

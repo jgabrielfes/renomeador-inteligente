@@ -42,6 +42,14 @@ export default async function LoginPage({
             />
           )}
           <p className="text-center text-sm text-muted-foreground">
+            <Link
+              href="/recuperar-senha"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Esqueci minha senha
+            </Link>
+          </p>
+          <p className="text-center text-sm text-muted-foreground">
             Não tem conta?{" "}
             <Link
               href="/cadastro"
