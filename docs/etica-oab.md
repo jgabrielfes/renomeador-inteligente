@@ -23,7 +23,7 @@ passa por ele antes do merge.
   e não destaca. → Ordem da lista do advogado é ÚNICA (data); ordem das
   respostas para a família é ALEATÓRIA E FIXA por token; teto de DUAS candidaturas
   por caso — o marcador "X/2 advogados" (a família não é leiloada); a
-  candidatura vale pelo plano de assinatura do(a) advogado(a) (gate no motor
+  candidatura consome 1 CRÉDITO da assinatura do aplicativo (gate no motor
   puro lib/radar/candidatura.ts — o plano em desenvolvimento entra ali).
 - **LGPD**: a plataforma é CONTROLADORA dos dados do intake; publicação exige
   **consentimento específico**, colhido no diálogo de dupla confirmação que
@@ -67,7 +67,10 @@ Antes de aprovar qualquer tela/e-mail que toque o Radar, conferir:
       iniciar contato; um(a) por vez; encerrar/denunciar sempre à mão.
 - [ ] **Texto legal fixo** presente na tela.
 - [ ] **Assinatura ≠ comissão**: nenhuma menção a cobrança por caso, êxito ou
-      percentual; assinatura mensal por UF, concedida manualmente.
+      percentual. O modelo é CRÉDITO DE USO da assinatura do aplicativo:
+      cada candidatura consome 1 crédito, tenha ou não retorno da família —
+      o preço remunera o uso da plataforma, nunca o êxito, e não há
+      restrição por UF (o mural inteiro é de todo(a) habilitado(a)).
 - [ ] **Honestidade**: estados vazios dizem a verdade ("ainda sem respostas");
       prazos e avisos (72h/30 dias/90 dias) explícitos.
 - [ ] **Lucratividade invisível**: nenhuma UI mostra ao(à) advogado(a) valor
@@ -75,7 +78,7 @@ Antes de aprovar qualquer tela/e-mail que toque o Radar, conferir:
 
 ## O que o admin vê (e o que não vê)
 
-`/admin/radar` opera **cadastros e contadores**: fila da OAB, assinaturas,
+`/admin/radar` opera **cadastros e contadores**: fila da OAB, créditos,
 funil por status/UF, varredura de 72h, denúncias e a **moderação do mural**
 (retirar publicação com motivo + e-mail à família). NUNCA o conteúdo das
 conversas, das respostas ou dos intakes — as exceções são o MOTIVO da
@@ -92,7 +95,7 @@ A rede de correspondentes e o segundo advogado no caso
   CED arts. 26–27): o combinado financeiro é ENTRE os advogados; a
   plataforma só registra o **termo de referência** (escopo, prazo e o valor
   em texto livre) — sem processamento de pagamento, sem comissão, sem split.
-  O acesso do correspondente às buscas vem da MESMA assinatura mensal do
+  O acesso do correspondente às buscas vem da MESMA assinatura do
   Radar; nunca de taxa por diligência fechada.
 - **Ordem NEUTRA de correspondentes**: comarca exata → mesma UF → data de
   cadastro (`ordenarCorrespondentes`, motor puro testado); ofertas exibidas

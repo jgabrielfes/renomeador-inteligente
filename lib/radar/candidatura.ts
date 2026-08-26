@@ -7,7 +7,7 @@
  *  - candidatar-se depende do PLANO DE ASSINATURA do(a) advogado(a) — o
  *    plano ainda está em desenvolvimento, então `planoPermite` chega de
  *    fora e HOJE é a habilitação existente (OAB aprovada + quiz +
- *    assinatura de UF; master). Quando o plano nascer, ele entra pelo
+ *    crédito disponível; master). O crédito da assinatura entra pelo
  *    MESMO parâmetro, sem tocar nas telas.
  *
  * A ordem dos casos continua única (data de publicação) e a escolha final

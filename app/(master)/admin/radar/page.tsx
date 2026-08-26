@@ -1,5 +1,5 @@
 // /admin/radar — operação do Radar de famílias (MASTER): fila de verificação
-// da OAB, assinaturas mensais por UF (manuais), funil por status/UF, varredura
+// da OAB, créditos do Radar (concessão manual), funil por status/UF, varredura
 // do aviso honesto de 72h e denúncias. Como todo /admin: requireMaster no topo
 // e SÓ contadores/estados — nunca o conteúdo das conversas.
 
@@ -44,7 +44,6 @@ export default async function AdminRadarPage() {
   try {
     const [
       perfis,
-      assinaturas,
       denuncias,
       publicados,
       emConversa,
@@ -57,7 +56,6 @@ export default async function AdminRadarPage() {
       semPedido,
     ] = await Promise.all([
         prisma.advogadoPerfil.findMany({ orderBy: { createdAt: "asc" }, take: 200 }),
-        prisma.radarAssinatura.findMany(),
         prisma.radarDenuncia.findMany({ orderBy: { createdAt: "asc" }, take: 100 }),
         prisma.familiaIntake.count({ where: { status: "publicado" } }),
         prisma.familiaIntake.count({ where: { status: "em_conversa" } }),
@@ -127,10 +125,6 @@ export default async function AdminRadarPage() {
       select: { id: true, name: true, email: true },
     });
     const usuarioPor = new Map(usuarios.map((u) => [u.id, u]));
-    const assinaturasPor = new Map<string, string[]>();
-    for (const a of assinaturas) {
-      assinaturasPor.set(a.userId, [...(assinaturasPor.get(a.userId) ?? []), a.uf]);
-    }
     dados = {
       ativo: radarAtivo(),
       perfis: perfis.map((p) => ({
@@ -142,7 +136,7 @@ export default async function AdminRadarPage() {
         motivoRecusa: p.motivoRecusa,
         quizOk: p.quizAprovadoEm !== null,
         aceitaPequenoValor: p.aceitaPequenoValor,
-        ufs: (assinaturasPor.get(p.userId) ?? []).sort(),
+        creditos: p.creditosRadar,
       })),
       publicacoes,
       denuncias: denuncias.map((d) => ({
@@ -183,7 +177,7 @@ export default async function AdminRadarPage() {
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Radar de famílias</h1>
         <p className="text-sm text-muted-foreground">
-          Verificação manual da OAB, assinaturas mensais por UF, aviso honesto de 72h e
+          Verificação manual da OAB, créditos do Radar, aviso honesto de 72h e
           denúncias. A plataforma não intermedeia honorários nem indica advogados — este
           painel opera cadastros e contadores, nunca as conversas.
         </p>

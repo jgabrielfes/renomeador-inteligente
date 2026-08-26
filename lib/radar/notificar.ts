@@ -97,7 +97,7 @@ export async function notificarDecisaoOab(opcoes: {
       titulo: 'Verificação concluída',
       paragrafos: [
         'Conferimos a sua inscrição na OAB e o seu perfil está aprovado no Radar Sucessório.',
-        'Faltando algum passo (questionário deontológico ou assinatura da UF), o próprio Radar mostra o que resta — só depois disso os casos anônimos da sua região aparecem.',
+        'Faltando algum passo (questionário deontológico), o próprio Radar mostra o que resta — aprovado(a), o mural inteiro de casos anônimos aparece, e cada candidatura consome 1 crédito da sua conta.',
       ],
     },
     recusado: {
@@ -134,23 +134,24 @@ export async function notificarDecisaoOab(opcoes: {
   });
 }
 
-/** Assinatura mensal de uma UF concedida à mão no /admin. */
-export async function notificarAssinaturaRadar(opcoes: {
-  email: string | null | undefined;
+/** Créditos do Radar concedidos à mão no /admin (a assinatura os origina). */
+export async function notificarCreditosRadar(opcoes: {
+  email: string | null;
   origin: string;
-  uf: string;
+  quantidade: number;
+  saldo: number;
 }): Promise<void> {
-  if (!emailHabilitado() || !valido(opcoes.email)) return;
+  if (!opcoes.email) return;
   await enviarEmailPortal({
     para: opcoes.email,
-    assunto: `Sua assinatura do Radar em ${opcoes.uf} está ativa`,
-    titulo: 'Assinatura ativa',
+    assunto: 'Seus créditos do Radar Sucessório foram atualizados',
+    titulo: 'Créditos adicionados',
     paragrafos: [
-      `A assinatura mensal do Radar Sucessório para ${opcoes.uf} foi ativada na sua conta.`,
-      'Com a OAB verificada e o questionário respondido, os casos publicados nessa UF já aparecem na sua lista — em ordem única por data, sem ranking e sem preço.',
+      `${opcoes.quantidade} crédito(s) do Radar Sucessório foram adicionados à sua conta — saldo atual: ${opcoes.saldo}.`,
+      'Cada candidatura a um caso consome 1 crédito, em qualquer UF. O crédito é preço de uso da plataforma — nunca comissão por caso: honorários seguem tratados diretamente entre você e a família.',
     ],
     urlPortal: `${opcoes.origin}/radar`,
-    rotuloBotao: 'Ver os casos',
-    rodape: RODAPE_ADVOGADO,
+    rotuloBotao: 'Abrir o Radar',
+    rodape: 'Aviso automático — não responda a este e-mail.',
   });
 }

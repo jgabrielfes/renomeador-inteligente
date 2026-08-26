@@ -2,19 +2,18 @@
 
 /**
  * /admin/radar — operação do Radar pela administração (MASTER):
- * fila de verificação da OAB (manual), assinaturas mensais por UF (manuais —
+ * fila de verificação da OAB (manual), créditos do Radar (concedidos à mão —
  * sem gateway, fora de escopo), varredura do aviso honesto de 72h e decisão
  * das denúncias (acatar = suspender o perfil).
  */
 
 import { headers } from 'next/headers';
 
-import { requireMaster } from '@/lib/auth';
+import { auth, requireMaster } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { EH_SUCESSORISTA } from '@/lib/app';
-import { UFS } from '@/lib/familias/tipos';
 import { enviarEmailPortal } from '@/lib/portal/email';
-import { notificarAssinaturaRadar, notificarDecisaoOab } from '@/lib/radar/notificar';
+import { notificarCreditosRadar, notificarDecisaoOab } from '@/lib/radar/notificar';
 import { varrerAviso72h } from '@/lib/radar/varredura';
 
 type Resultado = { ok: boolean; erro?: string };
@@ -68,37 +67,55 @@ export async function decidirPerfil(
   }
 }
 
-export async function concederAssinatura(userId: string, uf: string): Promise<Resultado> {
+/**
+ * Concede/ajusta CRÉDITOS do Radar (a assinatura do aplicativo é o que os
+ * origina; sem gateway de pagamento, a concessão é manual). Delta positivo =
+ * concessão; negativo = ajuste (o saldo nunca fica abaixo de zero). Tudo em
+ * transação com o ledger radar_creditos.
+ */
+export async function concederCreditosRadar(userId: string, delta: number): Promise<Resultado> {
   await requireMaster();
   if (!EH_SUCESSORISTA) return { ok: false, erro: 'Recurso de outro site.' };
-  const ufNorm = uf.trim().toUpperCase();
-  if (!(UFS as readonly string[]).includes(ufNorm)) return { ok: false, erro: 'UF inválida.' };
-  try {
-    await prisma.radarAssinatura.upsert({
-      where: { userId_uf: { userId, uf: ufNorm } },
-      update: {},
-      create: { userId, uf: ufNorm },
-    });
-    // A assinatura é concedida à mão — avisar é o que faz a pessoa voltar.
-    void notificarAssinaturaRadar({
-      email: await emailDoUsuario(userId),
-      origin: await origemAtual(),
-      uf: ufNorm,
-    });
-    return { ok: true };
-  } catch {
-    return { ok: false, erro: 'Não foi possível conceder a assinatura.' };
+  const sessao = await auth();
+  const n = Math.trunc(Number(delta));
+  if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1000) {
+    return { ok: false, erro: 'Quantidade inválida (±1 a ±1000).' };
   }
-}
-
-export async function revogarAssinatura(userId: string, uf: string): Promise<Resultado> {
-  await requireMaster();
-  if (!EH_SUCESSORISTA) return { ok: false, erro: 'Recurso de outro site.' };
   try {
-    await prisma.radarAssinatura.deleteMany({ where: { userId, uf: uf.trim().toUpperCase() } });
+    const saldoNovo = await prisma.$transaction(async (tx) => {
+      const perfil = await tx.advogadoPerfil.findUnique({
+        where: { userId },
+        select: { creditosRadar: true },
+      });
+      if (!perfil) return null;
+      const novo = Math.max(0, perfil.creditosRadar + n);
+      const aplicado = novo - perfil.creditosRadar;
+      if (aplicado !== 0) {
+        await tx.advogadoPerfil.update({ where: { userId }, data: { creditosRadar: novo } });
+        await tx.radarCredito.create({
+          data: {
+            userId,
+            delta: aplicado,
+            motivo: aplicado > 0 ? 'assinatura' : 'ajuste',
+            criadoPor: sessao?.user?.id ?? null,
+          },
+        });
+      }
+      return novo;
+    });
+    if (saldoNovo === null) return { ok: false, erro: 'Perfil não encontrado.' };
+    // Concessão é manual — avisar é o que faz a pessoa voltar ao mural.
+    if (n > 0) {
+      void notificarCreditosRadar({
+        email: await emailDoUsuario(userId),
+        origin: await origemAtual(),
+        quantidade: n,
+        saldo: saldoNovo,
+      });
+    }
     return { ok: true };
   } catch {
-    return { ok: false, erro: 'Não foi possível revogar.' };
+    return { ok: false, erro: 'Não foi possível atualizar os créditos.' };
   }
 }
 

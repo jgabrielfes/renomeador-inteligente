@@ -4,13 +4,16 @@
  * Radar de herdeiros — actions do LADO DO(A) ADVOGADO(A) (camada 3, etapa 5).
  *
  * Regras duras (ética OAB, Provimento 205/2021):
- *  - verificação da OAB é MANUAL (fila no /admin) e a assinatura é MENSAL,
- *    marcada à mão por UF — nunca comissão por caso;
+ *  - verificação da OAB é MANUAL (fila no /admin); o uso é por CRÉDITOS
+ *    concedidos com a assinatura do aplicativo (geridos à mão no /admin) —
+ *    cada candidatura consome 1, tenha ou não retorno da família. Crédito é
+ *    preço de USO: nunca comissão por caso ou por êxito, e SEM restrição por
+ *    UF — o mural inteiro é visível a todo(a) advogado(a) habilitado(a);
  *  - a lista não tem ranking: ordenação ÚNICA por data de publicação;
  *  - a resposta NÃO tem campo de honorários (tratados fora da plataforma);
  *  - o(a) advogado(a) vê o caso ANÔNIMO; o contato da família só é liberado
  *    quando ELA abre a conversa ("Quero conversar", um por vez).
- * MASTER navega sem verificação/assinatura (operação da plataforma), mas a
+ * MASTER navega sem verificação/créditos (operação da plataforma), mas a
  * conversa 1:1 é SÓ de quem a família escolheu — sem bypass.
  */
 
@@ -82,8 +85,9 @@ export interface EstadoAdvogado {
     areasAtuacao: string | null;
     experiencia: string | null;
   } | null;
-  ufsAssinadas: string[];
-  /** Pode ver e responder a lista (aprovado + quiz + alguma UF; master sempre). */
+  /** Saldo de créditos do Radar — cada candidatura consome 1. */
+  creditos: number;
+  /** Pode VER a lista (aprovado + quiz; master sempre). Candidatar-se exige crédito. */
   habilitado: boolean;
 }
 
@@ -91,21 +95,18 @@ export async function estadoRadarAdvogado(): Promise<EstadoAdvogado | null> {
   const ctx = await contexto();
   if (!ctx) return null;
   try {
-    const [perfil, assinaturas, conta] = await Promise.all([
+    const [perfil, conta] = await Promise.all([
       prisma.advogadoPerfil.findUnique({ where: { userId: ctx.userId } }),
-      prisma.radarAssinatura.findMany({ where: { userId: ctx.userId } }),
       prisma.user.findUnique({
         where: { id: ctx.userId },
         select: { name: true, fotoPerfil: true, enderecoEscritorio: true },
       }),
     ]);
-    const ufsAssinadas = assinaturas.map((a) => a.uf);
+    // Habilitado VÊ o mural inteiro (sem recorte de UF — decisão do
+    // escritório); o crédito só é exigido na candidatura.
     const habilitado =
       ctx.master ||
-      (perfil !== null &&
-        perfil.situacao === 'aprovado' &&
-        perfil.quizAprovadoEm !== null &&
-        ufsAssinadas.length > 0);
+      (perfil !== null && perfil.situacao === 'aprovado' && perfil.quizAprovadoEm !== null);
     return {
       master: ctx.master,
       ficha: {
@@ -125,7 +126,7 @@ export async function estadoRadarAdvogado(): Promise<EstadoAdvogado | null> {
             experiencia: perfil.experiencia,
           }
         : null,
-      ufsAssinadas,
+      creditos: perfil?.creditosRadar ?? 0,
       habilitado,
     };
   } catch {
@@ -266,7 +267,6 @@ export async function listarCasosRadar(): Promise<{ ok: true; casos: CasoRadar[]
         status: { in: ['publicado', 'em_conversa'] },
         publicadoEm: { not: null },
         expiraEm: { gt: agora },
-        ...(ctx.master ? {} : { uf: { in: estado.ufsAssinadas } }),
       },
       orderBy: { publicadoEm: 'desc' }, // ordenação ÚNICA, por data — sem ranking
       take: 100,
@@ -340,7 +340,6 @@ export async function casosNovosRadar(): Promise<number> {
         status: 'publicado',
         publicadoEm: { gt: perfil.radarVistoEm },
         expiraEm: { gt: new Date() },
-        ...(ctx.master ? {} : { uf: { in: estado.ufsAssinadas } }),
       },
     });
   } catch {
@@ -463,9 +462,9 @@ export async function responderCasoRadar(
     if (!intake || intake.status !== 'publicado' || intake.expiraEm < new Date()) {
       return { ok: false, erro: 'Este caso não está mais aberto a respostas.' };
     }
-    // Gate ÚNICO da candidatura (motor puro, testado): teto de 2 por caso e
-    // o plano de assinatura — hoje representado pela habilitação; quando o
-    // plano nascer, entra pelo MESMO parâmetro.
+    // Gate ÚNICO da candidatura (motor puro, testado): teto por caso e o
+    // CRÉDITO — cada candidatura consome 1 (master navega por ofício, sem
+    // consumir). Crédito é preço de uso, nunca comissão por êxito.
     const [quantas, jaRespondi] = await Promise.all([
       prisma.radarResposta.count({ where: { intakeId } }),
       prisma.radarResposta.findUnique({
@@ -473,22 +472,49 @@ export async function responderCasoRadar(
       }),
     ]);
     const gate = podeCandidatar({
-      planoPermite: estado.habilitado,
+      planoPermite: ctx.master || estado.creditos > 0,
       jaCandidato: jaRespondi !== null,
       candidaturas: quantas,
     });
     if (!gate.pode) {
       const mensagens = {
-        'sem-plano': 'O seu plano de assinatura ainda não permite candidatar-se.',
+        'sem-plano':
+          'Seus créditos do Radar acabaram — a assinatura do aplicativo concede novos créditos; fale com a administração.',
         'ja-candidato': 'Você já se candidatou a este caso.',
         'caso-completo': `Este caso já tem ${TETO_CANDIDATURAS_POR_CASO}/${TETO_CANDIDATURAS_POR_CASO} advogado(a)s — o teto que protege a família.`,
       } as const;
       return { ok: false, erro: mensagens[gate.motivo] };
     }
 
-    await prisma.radarResposta.create({
-      data: { intakeId, advogadoUserId: ctx.userId, apresentacao: ap, conducao: co },
-    });
+    if (ctx.master) {
+      await prisma.radarResposta.create({
+        data: { intakeId, advogadoUserId: ctx.userId, apresentacao: ap, conducao: co },
+      });
+    } else {
+      // Débito ATÔMICO: o decremento condicional (saldo >= 1) protege contra
+      // duas candidaturas simultâneas gastando o mesmo crédito; a resposta e
+      // o ledger só existem se o débito aconteceu.
+      const consumiu = await prisma.$transaction(async (tx) => {
+        const baixado = await tx.advogadoPerfil.updateMany({
+          where: { userId: ctx.userId, creditosRadar: { gte: 1 } },
+          data: { creditosRadar: { decrement: 1 } },
+        });
+        if (baixado.count === 0) return false;
+        await tx.radarResposta.create({
+          data: { intakeId, advogadoUserId: ctx.userId, apresentacao: ap, conducao: co },
+        });
+        await tx.radarCredito.create({
+          data: { userId: ctx.userId, delta: -1, motivo: 'candidatura', intakeId },
+        });
+        return true;
+      });
+      if (!consumiu) {
+        return {
+          ok: false,
+          erro: 'Seus créditos do Radar acabaram — a assinatura do aplicativo concede novos créditos; fale com a administração.',
+        };
+      }
+    }
 
     // Aviso à família (melhor-esforço): a resposta espera no link dela.
     if (intake.email) {

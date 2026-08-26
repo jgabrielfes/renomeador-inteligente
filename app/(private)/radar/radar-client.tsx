@@ -4,7 +4,8 @@
  * Radar de famílias — client do(a) advogado(a).
  *
  * Fluxo de habilitação: OAB (verificação MANUAL) → quiz deontológico (10 de
- * 10) → assinatura mensal por UF (marcada à mão pela administração). Depois,
+ * 10) → créditos concedidos com a assinatura do aplicativo (geridos pela
+ * administração; cada candidatura consome 1, sem restrição por UF). Depois,
  * a lista de casos anônimos em ordem única por data — sem ranking, sem
  * honorários na resposta, contato da família só quando ELA abrir a conversa.
  */
@@ -592,17 +593,26 @@ export function RadarClient({
           <Quiz aoAprovar={() => router.refresh()} />
         )}
 
-        {perfil && perfil.situacao === 'aprovado' && perfil.quizOk && estado &&
-          estado.ufsAssinadas.length === 0 && !estado.master && (
-          <div className="nota" style={{ marginTop: 8 }}>
-            <span className="eyebrow">Passo 3 de 3</span>
-            <h3>Assinatura por UF</h3>
-            <p>
-              O acesso aos casos é por <strong>assinatura mensal</strong>, por estado —
-              nunca comissão por caso (é o que mantém o Radar dentro da ética). A
-              liberação é feita pela administração: fale com a plataforma indicando a(s)
-              UF(s) de atuação.
-            </p>
+        {/* CRÉDITOS — o passo 3 virou saldo: a assinatura do aplicativo
+            concede créditos e cada candidatura consome 1, em QUALQUER UF.
+            Crédito é preço de uso, nunca comissão por caso. */}
+        {perfil && perfil.situacao === 'aprovado' && perfil.quizOk && estado && !estado.master && (
+          <div className={estado.creditos > 0 ? 'nota' : 'nota exigencia'} style={{ marginTop: 8 }}>
+            <span className="eyebrow">Créditos do Radar</span>
+            {estado.creditos > 0 ? (
+              <p>
+                Você tem <strong className="num">{estado.creditos}</strong> crédito(s) —
+                cada candidatura consome 1, em qualquer UF. O crédito é preço de USO
+                (consome tenha ou não retorno da família), nunca comissão por caso: é o
+                que mantém o Radar dentro da ética.
+              </p>
+            ) : (
+              <p>
+                <strong>Seus créditos acabaram.</strong> A assinatura do aplicativo
+                concede novos créditos — fale com a administração da plataforma. Você
+                continua vendo o mural inteiro; só a candidatura consome crédito.
+              </p>
+            )}
           </div>
         )}
 
@@ -618,10 +628,8 @@ export function RadarClient({
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16, flexWrap: 'wrap' }}>
               <h2 style={{ margin: 0 }}>Casos abertos</h2>
               <select value={filtroUf} onChange={(e) => setFiltroUf(e.target.value)} style={{ maxWidth: 160 }}>
-                <option value="">
-                  {estado.master ? 'Todas as UFs' : `Minhas UFs (${estado.ufsAssinadas.join(', ')})`}
-                </option>
-                {(estado.master ? UFS : estado.ufsAssinadas).map((u) => (
+                <option value="">Todas as UFs</option>
+                {UFS.map((u) => (
                   <option key={u}>{u}</option>
                 ))}
               </select>
@@ -655,8 +663,8 @@ export function RadarClient({
             <p className="fund" style={{ marginTop: 4 }}>
               Ordem única: mais recentes primeiro. Sem ranking, sem destaque pago. Cada
               caso aceita até {TETO_CANDIDATURAS_POR_CASO} candidaturas — o marcador
-              X/{TETO_CANDIDATURAS_POR_CASO} mostra as vagas; candidatar-se depende do
-              seu plano de assinatura (em implantação — hoje vale a assinatura por UF).
+              X/{TETO_CANDIDATURAS_POR_CASO} mostra as vagas; cada candidatura consome
+              1 crédito da sua conta, em qualquer UF.
             </p>
             {casos.some((c) => c.novo) && (
               <p style={{ marginTop: 4 }}>
@@ -701,8 +709,7 @@ export function RadarClient({
               Sóbrio e informativo (Provimento 205/2021): quem é você e como conduziria.
               Sem promessa de resultado e sem valores — honorários são tratados fora da
               plataforma, se a família escolher conversar. Cada caso aceita até{' '}
-              {TETO_CANDIDATURAS_POR_CASO} candidaturas, e a sua vale pelo seu plano de
-              assinatura.
+              {TETO_CANDIDATURAS_POR_CASO} candidaturas, e a sua consome 1 crédito.
             </DialogDescription>
           </DialogHeader>
           <label className="campo">

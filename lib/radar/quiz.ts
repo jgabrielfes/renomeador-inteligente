@@ -39,7 +39,7 @@ export const QUESTOES_RADAR: QuestaoQuiz[] = [
   },
   {
     id: 'mercantilizacao',
-    enunciado: 'A plataforma cobra do(a) advogado(a) uma assinatura mensal. Por que não uma comissão por caso fechado?',
+    enunciado: 'A plataforma cobra do(a) advogado(a) créditos de uso pela assinatura do aplicativo. Por que não uma comissão por caso fechado?',
     opcoes: [
       'Porque comissão por caso caracterizaria captação de clientela e mercantilização da advocacia, vedadas pelo Código de Ética.',
       'Porque a comissão seria difícil de calcular.',

@@ -29,17 +29,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Toaster } from '@/components/ui/sonner';
-import { UFS } from '@/lib/familias/tipos';
 
 import type { CasoAnonimo } from '@/lib/radar/anonimizar';
 
 import {
-  concederAssinatura,
+  concederCreditosRadar,
   decidirDenuncia,
   decidirPerfil,
   executarVarredura72h,
   retirarPublicacaoRadar,
-  revogarAssinatura,
 } from './actions';
 
 export interface DadosAdminRadar {
@@ -53,7 +51,7 @@ export interface DadosAdminRadar {
     motivoRecusa: string | null;
     quizOk: boolean;
     aceitaPequenoValor: boolean;
-    ufs: string[];
+    creditos: number;
   }[];
   denuncias: { id: string; advogado: string; motivo: string; status: string; em: string }[];
   /**
@@ -90,7 +88,7 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
   const [agindo, setAgindo] = useState(false);
   const [recusando, setRecusando] = useState<string | null>(null);
   const [motivo, setMotivo] = useState('');
-  const [ufNova, setUfNova] = useState<Record<string, string>>({});
+  const [creditosNovos, setCreditosNovos] = useState<Record<string, string>>({});
 
   const rodar = async (fn: () => Promise<{ ok: boolean; erro?: string }>, sucesso: string) => {
     setAgindo(true);
@@ -280,16 +278,22 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
         ))}
       </section>
 
-      {/* Perfis e assinaturas por UF. */}
+      {/* Perfis e CRÉDITOS do Radar — a assinatura do aplicativo os origina
+          (concessão manual; cada candidatura consome 1, em qualquer UF). */}
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Perfis e assinaturas</h2>
+        <h2 className="text-lg font-semibold">Perfis e créditos</h2>
+        <p className="text-sm text-muted-foreground">
+          O uso do Radar é por créditos da assinatura do aplicativo — sem restrição por
+          UF. Crédito é preço de uso (consome na candidatura, tenha ou não retorno da
+          família), nunca comissão por caso.
+        </p>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Advogado(a)</TableHead>
               <TableHead>OAB</TableHead>
               <TableHead>Situação</TableHead>
-              <TableHead>UFs assinadas</TableHead>
+              <TableHead>Créditos</TableHead>
               <TableHead>Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -306,42 +310,35 @@ export function AdminRadarClient({ dados }: { dados: DadosAdminRadar }) {
                   {!p.quizOk && <p className="text-xs text-muted-foreground">quiz pendente</p>}
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {p.ufs.map((uf) => (
-                      <Badge key={uf} variant="outline" className="gap-1">
-                        {uf}
-                        <button
-                          type="button"
-                          aria-label={`Revogar ${uf}`}
-                          onClick={() => void rodar(() => revogarAssinatura(p.userId, uf), `Assinatura ${uf} revogada.`)}
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    ))}
-                    <select
-                      value={ufNova[p.userId] ?? ''}
-                      onChange={(e) => setUfNova((prev) => ({ ...prev, [p.userId]: e.target.value }))}
-                      className="h-7 rounded-md border bg-transparent px-1 text-xs"
-                    >
-                      <option value="">+UF</option>
-                      {UFS.filter((u) => !p.ufs.includes(u)).map((u) => (
-                        <option key={u}>{u}</option>
-                      ))}
-                    </select>
-                    {ufNova[p.userId] && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={p.creditos > 0 ? 'outline' : 'destructive'} className="tabular-nums">
+                      {p.creditos}
+                    </Badge>
+                    <Input
+                      value={creditosNovos[p.userId] ?? ''}
+                      onChange={(e) =>
+                        setCreditosNovos((prev) => ({
+                          ...prev,
+                          [p.userId]: e.target.value.replace(/[^0-9-]/g, '').slice(0, 5),
+                        }))
+                      }
+                      placeholder="+10"
+                      aria-label="Créditos a adicionar (negativo ajusta para baixo)"
+                      className="h-7 w-16 text-xs"
+                    />
+                    {creditosNovos[p.userId] && Number(creditosNovos[p.userId]) !== 0 && (
                       <Button
                         size="sm"
                         variant="outline"
                         loading={agindo}
                         onClick={() =>
                           void rodar(
-                            () => concederAssinatura(p.userId, ufNova[p.userId]),
-                            `Assinatura ${ufNova[p.userId]} concedida.`,
-                          ).then(() => setUfNova((prev) => ({ ...prev, [p.userId]: '' })))
+                            () => concederCreditosRadar(p.userId, Number(creditosNovos[p.userId])),
+                            `Créditos atualizados (${creditosNovos[p.userId]}).`,
+                          ).then(() => setCreditosNovos((prev) => ({ ...prev, [p.userId]: '' })))
                         }
                       >
-                        Conceder
+                        Aplicar
                       </Button>
                     )}
                   </div>
