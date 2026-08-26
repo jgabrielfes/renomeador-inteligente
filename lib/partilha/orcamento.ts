@@ -133,6 +133,9 @@ const DISCLAIMER =
   'Cálculo de apoio com fundamento legal, pelas tabelas oficiais vigentes (2026) — os valores são estimativas de orçamento, sujeitas à conferência das tabelas na data dos atos. A revisão do advogado responsável é obrigatória.';
 const NOTA_APROXIMADO =
   '* valor aproximado ou contagem de atos a confirmar antes de fechar o orçamento com a família.';
+/** Rodapé institucional dos exportados (pedido do escritório). */
+const RODAPE_LEXCAUSA =
+  'LexCausa - Plataforma especializada em sucessões | Documento de apoio técnico-organizacional.';
 
 function subtitulo(d: DadosOrcamento): string {
   const partes = [
@@ -170,6 +173,8 @@ export async function montarOrcamentoDocx(d: DadosOrcamento): Promise<Blob> {
     ...(temAproximado ? [{ tipo: 'p' as const, texto: NOTA_APROXIMADO, discreto: true }] : []),
     ...d.avisos.map((a) => ({ tipo: 'p' as const, texto: a, discreto: true })),
     { tipo: 'p', texto: DISCLAIMER, discreto: true },
+    { tipo: 'p', texto: '' },
+    { tipo: 'p', texto: RODAPE_LEXCAUSA, discreto: true, italico: true, centrado: true },
   ];
   return montarDocxRico(blocos, {
     estilo: { fonte: 'Tahoma', tamanho: 21, cor: '1A2320', fundo: 'F6F4EE', tituloCentrado: true },
@@ -537,6 +542,8 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
         ['TOTAL', ...dossie.matriz.totais.map(compacto)],
         { tamanho: parts.length >= 5 ? 7.5 : 8.5 },
       );
+      // Respiro entre a linha de TOTAL e a nota — coladas, liam-se como uma.
+      y -= 8;
       paragrafo(
         'Valores em reais (R$). A coluna "(meação)" não é herança: essa parte já pertence ao(à) sobrevivente.',
         8.5,
@@ -608,6 +615,21 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
       y -= 11;
     }
     y -= 4;
+  }
+
+  // Rodapé institucional, em TODAS as páginas, dentro da margem inferior —
+  // fonte menor e em itálico (pedido do escritório).
+  const italico = await doc.embedFont(StandardFonts.HelveticaOblique);
+  const rodape = limparTexto(RODAPE_LEXCAUSA);
+  const larguraRodape = italico.widthOfTextAtSize(rodape, 7.5);
+  for (const p of doc.getPages()) {
+    p.drawText(rodape, {
+      x: (A4.w - larguraRodape) / 2,
+      y: 28,
+      size: 7.5,
+      font: italico,
+      color: cor(C.tintaMedia),
+    });
   }
 
   const bytes = await doc.save();
