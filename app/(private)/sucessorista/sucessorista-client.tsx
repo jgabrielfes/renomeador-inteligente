@@ -3521,6 +3521,8 @@ export default function SucessoristaClient({
           base,
           resultado: resultadoSu,
           provisao: provisoesSucessoes.find((p) => p.sucessao.id === su.id)?.provisao ?? null,
+          // Ficha do(a) autor(a) da sucessão (item I) → bloco "º FALECIMENTO".
+          qualificacao: familia.qualificacoes[su.id],
         };
       });
     const { montarEscrituraDocx } = await import('@/lib/partilha/escritura');
@@ -4167,6 +4169,7 @@ export default function SucessoristaClient({
             setColacoes={setColacoes}
             sociedades={resumoSociedades}
             sucessoes={fiscal.sucessoes ?? []}
+            autorPrincipal={{ nome: falecido.nome, dataObito: falecido.dataObito }}
             voltar={() => irPara('familia')}
             avancar={() => {
               irPara('partilha');

@@ -177,52 +177,6 @@ export function FamiliaView({
         </div>
       )}
 
-      {/* Sucessões cumuladas ABREM o módulo, mas o formulário fica atrás da
-          pergunta: só quem responde "Sim" vê o bloco de preenchimento. */}
-      <div className="cartao">
-        <h2 style={{ marginTop: 0 }}>Há mais de um falecimento neste inventário?</h2>
-        <p className="subtitulo" style={{ marginBottom: 8 }}>
-          Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…) na forma do
-          art. 672 do CPC — cada sucessão tem o próprio fato gerador, monte partível e
-          legítima.
-        </p>
-        <div className="escolha">
-          <Pilula ativo={sucessoesAbertas} onClick={() => setMaisDeUmObito(true)}>
-            Sim
-          </Pilula>
-          <Pilula
-            ativo={!sucessoesAbertas}
-            onClick={() => {
-              // Com sucessão já lançada o bloco não fecha — remova-as antes.
-              if (sucessoes.length === 0) setMaisDeUmObito(false);
-            }}
-          >
-            Não
-          </Pilula>
-        </div>
-
-        {sucessoesAbertas && (
-          <div style={{ marginTop: 12 }}>
-            <span className="eyebrow">Sucessões cumuladas (CPC, art. 672)</span>
-            <p className="subtitulo" style={{ margin: '4px 0 10px' }}>
-              Cada sucessão tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da
-              data do óbito respectiva, atos próprios de escritura e registro. Como os
-              óbitos costumam ser de anos diferentes, cada sucessão tem seu MONTE PARTÍVEL
-              e sua LEGÍTIMA. Escolha, em cada uma, se usa os MESMOS bens do 1º falecimento
-              (com o valor de avaliação próprio daquela data, lançado no acervo) ou se ela
-              tem BENS PARTICULARES. Com &quot;mesmos herdeiros&quot;, o item III mostra uma
-              partilha para CADA sucessão.
-            </p>
-            <EditorSucessoes
-              herdeiros={herdeiros}
-              sucessoes={sucessoes}
-              setSucessoes={setSucessoes}
-              basesSucessoes={basesSucessoes}
-            />
-          </div>
-        )}
-      </div>
-
       <div className="cartao">
       <span className="eyebrow">Autor(a) da herança</span>
       <div className="grade c2" style={{ marginTop: 10 }}>
@@ -419,6 +373,61 @@ export function FamiliaView({
         </p>
       </div>
 
+      {/* Sucessões cumuladas FECHAM a aba (pedido do escritório): a pergunta
+          só faz sentido depois de a família principal estar lançada — e o
+          formulário fica atrás dela: só quem responde "Sim" vê o bloco. */}
+      <div className="cartao">
+        <h2 style={{ marginTop: 0 }}>Há mais de um falecimento neste inventário?</h2>
+        <p className="subtitulo" style={{ marginBottom: 8 }}>
+          Inventário conjunto (cônjuge pré-morto, herdeiro falecido depois…) na forma do
+          art. 672 do CPC — cada sucessão tem o próprio fato gerador, monte partível e
+          legítima.
+        </p>
+        <div className="escolha">
+          <Pilula ativo={sucessoesAbertas} onClick={() => setMaisDeUmObito(true)}>
+            Sim
+          </Pilula>
+          <Pilula
+            ativo={!sucessoesAbertas}
+            onClick={() => {
+              // Com sucessão já lançada o bloco não fecha — remova-as antes.
+              if (sucessoes.length === 0) setMaisDeUmObito(false);
+            }}
+          >
+            Não
+          </Pilula>
+        </div>
+
+        {sucessoesAbertas && (
+          <div style={{ marginTop: 12 }}>
+            <span className="eyebrow">Sucessões cumuladas (CPC, art. 672)</span>
+            <p className="subtitulo" style={{ margin: '4px 0 10px' }}>
+              Cada sucessão tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da
+              data do óbito respectiva, atos próprios de escritura e registro. Como os
+              óbitos costumam ser de anos diferentes, cada sucessão tem seu MONTE PARTÍVEL
+              e sua LEGÍTIMA. Escolha, em cada uma, se usa os MESMOS bens do 1º falecimento
+              (com o valor de avaliação próprio daquela data, lançado no acervo — cada bem
+              abre um campo de valor POR SUCESSÃO, e a partilha passa a contar com uma
+              partilha por sucessão) ou se ela tem BENS PARTICULARES. Com &quot;mesmos
+              herdeiros&quot;, o item III mostra uma partilha para CADA sucessão.
+            </p>
+            <EditorSucessoes
+              herdeiros={herdeiros}
+              sucessoes={sucessoes}
+              setSucessoes={setSucessoes}
+              basesSucessoes={basesSucessoes}
+              qualificacoes={estado.qualificacoes}
+              onQualificacao={(id, q) => {
+                const qualificacoes = { ...estado.qualificacoes };
+                if (q === null) delete qualificacoes[id];
+                else qualificacoes[id] = q;
+                onChange({ ...estado, qualificacoes });
+              }}
+            />
+          </div>
+        )}
+      </div>
+
       <div className="rodape-acoes">
         <span />
         <Button onClick={avancar}>Avançar ao acervo</Button>
@@ -470,7 +479,12 @@ export function rotuloParentesco(h: Herdeiro): string {
 const esquemaHerdeiro = z
   .object({
     nome: z.string().trim().min(1, 'Informe o nome do herdeiro.'),
-    parentesco: z.enum(PARENTESCOS.map((p) => p.v) as [ParentescoId, ...ParentescoId[]]),
+    // 'CONJUGE' NÃO vira linha de herdeiro: a escolha liga o bloco próprio
+    // "Havia cônjuge ou companheiro(a)?" (meação e concorrência são do motor).
+    parentesco: z.enum([...PARENTESCOS.map((p) => p.v), 'CONJUGE'] as unknown as [
+      ParentescoId | 'CONJUGE',
+      ...(ParentescoId | 'CONJUGE')[],
+    ]),
     linha: z.enum(['', 'PATERNA', 'MATERNA']),
     vinculoIrmao: z.enum(['BILATERAL', 'UNILATERAL']),
     status: z.enum(['ATIVO', 'PRE_MORTO', 'RENUNCIANTE']),
@@ -515,6 +529,15 @@ function EditorHerdeiros({
   const parentescoEscolhido = useWatch({ control, name: 'parentesco' });
 
   const adicionar = (dados: NovoHerdeiro) => {
+    // Cônjuge/convivente não entra na lista de herdeiros: o direito dele(a)
+    // (meação + concorrência do art. 1.829/1.832, ou herança sozinho no
+    // inciso III) sai do bloco "Havia cônjuge ou companheiro(a)?" — a escolha
+    // aqui só liga o bloco e leva o nome; a qualificação completa abre lá.
+    if (dados.parentesco === 'CONJUGE') {
+      onChange({ ...estado, temSobrevivente: true, nomeSobrev: nomeProprio(dados.nome) });
+      reset();
+      return;
+    }
     const p = PARENTESCOS.find((x) => x.v === dados.parentesco) ?? PARENTESCOS[0];
     const novo: Herdeiro = {
       id: uid('h'),
@@ -591,11 +614,13 @@ function EditorHerdeiros({
                         {p.t}
                       </SelectItem>
                     ))}
+                    <SelectItem value="CONJUGE">Cônjuge/Convivente</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
           </Field>
+          {parentescoEscolhido !== 'CONJUGE' && (
           <Field>
             <FieldLabel>Situação</FieldLabel>
             <Controller
@@ -618,6 +643,7 @@ function EditorHerdeiros({
               )}
             />
           </Field>
+          )}
           {parentescoEscolhido === 'AVO' && (
             <Field data-invalid={Boolean(errors.linha)}>
               <FieldLabel>Linha (art. 1.836, §2º)</FieldLabel>
@@ -665,6 +691,7 @@ function EditorHerdeiros({
               />
             </Field>
           )}
+          {parentescoEscolhido !== 'CONJUGE' && (
           <Field>
             <FieldLabel>Condições</FieldLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
@@ -698,10 +725,19 @@ function EditorHerdeiros({
               />
             </div>
           </Field>
+          )}
         </div>
+        {parentescoEscolhido === 'CONJUGE' && (
+          <p className="fund" style={{ margin: '8px 0 0' }}>
+            Cônjuge/convivente não entra na lista de herdeiros: ao adicionar, o nome liga o
+            bloco &quot;Havia cônjuge ou companheiro(a)?&quot; acima — lá se escolhem o
+            vínculo e o regime, abre a qualificação completa, e o motor calcula meação e
+            concorrência (CC, arts. 1.829 e 1.832) sozinho.
+          </p>
+        )}
         <div style={{ marginTop: 12 }}>
           <Button type="submit" variant="outline">
-            Adicionar herdeiro
+            {parentescoEscolhido === 'CONJUGE' ? 'Adicionar cônjuge/convivente' : 'Adicionar herdeiro'}
           </Button>
         </div>
       </form>
@@ -861,12 +897,21 @@ function EditorSucessoes({
   sucessoes,
   setSucessoes,
   basesSucessoes = {},
+  qualificacoes,
+  onQualificacao,
 }: {
   herdeiros: Herdeiro[];
   sucessoes: SucessaoCumulada[];
   setSucessoes: (s: SucessaoCumulada[]) => void;
   basesSucessoes?: Record<string, number>;
+  /** Qualificação COMPLETA do(a) autor(a) de cada sucessão, guardada no MESMO
+   *  registro das demais partes (chave = id da sucessão) — alimenta o bloco
+   *  "º FALECIMENTO" da escritura de dois óbitos. */
+  qualificacoes: Record<string, Qualificacao>;
+  onQualificacao: (id: string, q: Qualificacao | null) => void;
 }) {
+  // Ficha aberta de UMA sucessão por vez (como o "editar" dos herdeiros).
+  const [fichaAberta, setFichaAberta] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -921,8 +966,10 @@ function EditorSucessoes({
       {sucessoes.map((su) => {
         const usaMesmosBens = su.mesmosBens ?? true;
         const monte = basesSucessoes[su.id];
+        const fichaDesta = fichaAberta === su.id;
         return (
-        <div key={su.id} className="linha-item">
+        <div key={su.id}>
+        <div className="linha-item">
           <span>
             <strong>{su.nome}</strong>
             <span className="fracao num">
@@ -964,12 +1011,42 @@ function EditorSucessoes({
               type="button"
               variant="ghost"
               size="sm"
+              aria-expanded={fichaDesta}
+              onClick={() => setFichaAberta(fichaDesta ? null : su.id)}
+            >
+              {fichaDesta ? 'fechar qualificação' : 'qualificação'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               className="text-destructive"
-              onClick={() => setSucessoes(sucessoes.filter((x) => x.id !== su.id))}
+              onClick={() => {
+                setSucessoes(sucessoes.filter((x) => x.id !== su.id));
+                // A ficha viaja com a sucessão: remover uma apaga a outra.
+                onQualificacao(su.id, null);
+                if (fichaDesta) setFichaAberta(null);
+              }}
             >
               remover
             </Button>
           </span>
+        </div>
+        {fichaDesta && (
+          <div className="ficha" style={{ marginTop: 8 }}>
+            <QualificacaoEditor
+              titulo={`Qualificação — ${su.nome || 'autor(a) da sucessão'}`}
+              valor={qualificacoes[su.id] ?? QUALIFICACAO_VAZIA}
+              comConjuge={false}
+              onChange={(q) => onQualificacao(su.id, q)}
+            />
+            <p className="fund" style={{ margin: '8px 0 0' }}>
+              A ficha qualifica o(a) autor(a) desta sucessão no bloco &quot;
+              {sucessoes.findIndex((x) => x.id === su.id) + 2}º FALECIMENTO&quot; da
+              escritura de dois (ou mais) óbitos — campo vazio vira lacuna para o balcão.
+            </p>
+          </div>
+        )}
         </div>
         );
       })}
