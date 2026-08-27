@@ -1875,23 +1875,12 @@ export default function SucessoristaClient({
   const basesSucessoes = useMemo(() => {
     const mapa: Record<string, number> = {};
     for (const su of fiscal.sucessoes ?? []) {
-      // Bens particulares: a base sai SÓ dos bens exclusivos desta sucessão.
-      const soBensProprios = su.mesmosBens === false;
-      let temColuna = false;
-      let soma = 0;
-      for (const b of bens) {
-        if (b.sucessaoExclusiva && b.sucessaoExclusiva !== su.id) continue;
-        if (soBensProprios && b.sucessaoExclusiva !== su.id) continue;
-        const av = b.sucessoes?.[su.id];
-        if (av?.valor || av?.fracaoPct || b.sucessaoExclusiva === su.id) temColuna = true;
-        const valor = Number(av?.valor ?? b.valor) || 0;
-        const frac =
-          av?.fracaoPct !== undefined && String(av.fracaoPct).trim() !== ''
-            ? (Number(String(av.fracaoPct).replace(',', '.')) || 0) / 100
-            : 1;
-        soma += valor * frac;
-      }
-      mapa[su.id] = temColuna ? Math.round(soma * 100) / 100 : Number(su.base) || 0;
+      const itens = bensDaSucessao(su, bens);
+      const temColuna = itens.some((i) => i.temColuna);
+      const soma = Math.round(itens.reduce((a, i) => a + i.valor, 0) * 100) / 100;
+      // A base manual (campo LEGADO) só vale no caso antigo que a digitou e
+      // não preencheu coluna nenhuma; o fluxo novo sai SEMPRE do acervo.
+      mapa[su.id] = !temColuna && Number(su.base) > 0 ? Number(su.base) : soma;
     }
     return mapa;
   }, [fiscal.sucessoes, bens]);
@@ -1941,11 +1930,18 @@ export default function SucessoristaClient({
         legitima: Number(resultado.heranca.total),
       }),
       qtdRenunciantes: herdeiros.filter((h) => h.status === 'RENUNCIANTE').length,
-      sucessoes: (fiscal.sucessoes ?? []).map((su) => ({
-        nome: su.nome,
-        base: basesSucessoes[su.id] ?? 0,
-        qtdImoveis: su.qtdImoveis,
-      })),
+      sucessoes: (fiscal.sucessoes ?? []).map((su) => {
+        // Imóveis DERIVADOS do acervo (bens IMÓVEL que integram a sucessão);
+        // a contagem manual (campo legado) só vale sem bem integrante.
+        const imoveisSu = bensDaSucessao(su, bens).filter(
+          (i) => i.bem.tipo === 'IMOVEL',
+        ).length;
+        return {
+          nome: su.nome,
+          base: basesSucessoes[su.id] ?? 0,
+          qtdImoveis: imoveisSu > 0 ? imoveisSu : su.qtdImoveis,
+        };
+      }),
       // Registro de imóveis: base pelo MAIOR entre atribuído, venal e
       // avaliação — sobre a fração TRANSMITIDA. Sai da base só o que FICA
       // com o(a) meeiro(a), ATÉ o limite da meação (50%): na partilha
@@ -3494,21 +3490,34 @@ export default function SucessoristaClient({
       .filter((su) => su.dataObito && (basesSucessoes[su.id] ?? 0) > 0)
       .map((su) => {
         const base = basesSucessoes[su.id] ?? 0;
+        // Os MESMOS herdeiros e bens da partilha da sucessão no item III:
+        // recorte dos principais + próprios, e os bens que transitam nela.
+        const herdeirosSu = herdeirosDaSucessao(su, herdeiros);
         let resultadoSu: Resultado | null = null;
-        if (su.mesmosHerdeiros && herdeiros.length > 0) {
+        if (herdeirosSu.length > 0) {
+          const itens = bensDaSucessao(su, bens).filter((i) => i.valor > 0);
+          const bensSu: Bem[] =
+            itens.length > 0
+              ? itens.map((i) => ({
+                  id: i.bem.id,
+                  descricao: i.bem.descricao,
+                  valor: i.valor.toFixed(2),
+                  natureza: 'PARTICULAR' as const,
+                }))
+              : [
+                  {
+                    id: `su-base-${su.id}`,
+                    descricao: `Base transmitida na sucessão de ${su.nome}`,
+                    valor: base.toFixed(2),
+                    natureza: 'PARTICULAR' as const,
+                  },
+                ];
           try {
             resultadoSu = partilhar({
               falecido: { dataObito: su.dataObito },
               sobrevivente: null,
-              herdeiros,
-              bens: [
-                {
-                  id: `su-base-${su.id}`,
-                  descricao: `Base transmitida na sucessão de ${su.nome}`,
-                  valor: base.toFixed(2),
-                  natureza: 'PARTICULAR',
-                },
-              ],
+              herdeiros: herdeirosSu,
+              bens: bensSu,
             });
           } catch {
             resultadoSu = null;
@@ -4535,7 +4544,20 @@ export default function SucessoristaClient({
             {/* Uma partilha POR SUCESSÃO cumulada (art. 672 do CPC): cada uma
                 com o próprio fato gerador e o próprio espelho — os herdeiros
                 são os mesmos quando a sucessão está marcada assim no item I. */}
-            <PartilhasSucessoes sucessoes={fiscal.sucessoes ?? []} herdeiros={herdeiros} bases={basesSucessoes} />
+            <PartilhasSucessoes
+              sucessoes={fiscal.sucessoes ?? []}
+              herdeiros={herdeiros}
+              bens={bens}
+              bases={basesSucessoes}
+              onPatch={(suId, patch) =>
+                setFiscal({
+                  ...fiscal,
+                  sucessoes: (fiscal.sucessoes ?? []).map((su) =>
+                    su.id === suId ? { ...su, ...patch } : su,
+                  ),
+                })
+              }
+            />
 
             <EconomiaView
               economias={economias}
@@ -4900,15 +4922,66 @@ export default function SucessoristaClient({
  * roda o MESMO motor de partilha sobre a base transmitida dela, com a data
  * do óbito própria — quinhões, frações e fundamentos legais independentes.
  */
+/* ------- sucessões cumuladas: bens, herdeiros e partilha próprios ------- */
+
+/**
+ * Bens que integram UMA sucessão cumulada, com o valor que TRANSITA nela:
+ * MAIOR entre o venal no óbito da sucessão e a avaliação dela (a mesma regra
+ * de base do ITCMD da principal), vezes a fração — com fallback nos valores
+ * do próprio bem quando a coluna da sucessão está vazia.
+ */
+function bensDaSucessao(
+  su: SucessaoCumulada,
+  bens: Bem[],
+): { bem: Bem; valor: number; temColuna: boolean }[] {
+  // Bens particulares: a sucessão só considera os bens EXCLUSIVOS dela.
+  const soBensProprios = su.mesmosBens === false;
+  const lista: { bem: Bem; valor: number; temColuna: boolean }[] = [];
+  for (const b of bens) {
+    if (b.sucessaoExclusiva && b.sucessaoExclusiva !== su.id) continue;
+    if (soBensProprios && b.sucessaoExclusiva !== su.id) continue;
+    const av = b.sucessoes?.[su.id];
+    const temColuna = Boolean(
+      av?.valor || av?.valorAvaliacao || av?.fracaoPct || b.sucessaoExclusiva === su.id,
+    );
+    const venal = Number(av?.valor ?? b.valor) || 0;
+    const avaliacao = Number(av?.valorAvaliacao ?? b.valorAvaliacao) || 0;
+    const frac =
+      av?.fracaoPct !== undefined && String(av.fracaoPct).trim() !== ''
+        ? (Number(String(av.fracaoPct).replace(',', '.')) || 0) / 100
+        : 1;
+    lista.push({
+      bem: b,
+      valor: Math.round(Math.max(venal, avaliacao) * frac * 100) / 100,
+      temColuna,
+    });
+  }
+  return lista;
+}
+
+/** Quem herda NESTA sucessão: o recorte dos herdeiros do inventário
+ *  principal (todos, ou só os `participantes`) + os herdeiros PRÓPRIOS. */
+function herdeirosDaSucessao(su: SucessaoCumulada, herdeiros: Herdeiro[]): Herdeiro[] {
+  const doPrincipal = su.mesmosHerdeiros
+    ? herdeiros.filter((h) => !su.participantes || su.participantes.includes(h.id))
+    : [];
+  return [...doPrincipal, ...(su.herdeirosProprios ?? [])];
+}
+
 function PartilhasSucessoes({
   sucessoes,
   herdeiros,
+  bens,
   bases,
+  onPatch,
 }: {
   sucessoes: SucessaoCumulada[];
   herdeiros: Herdeiro[];
+  bens: Bem[];
   /** Base de cada sucessão (calculada pelo acervo ou manual) — por id. */
   bases: Record<string, number>;
+  /** Persiste a matriz diferenciada da sucessão no snapshot (fiscal). */
+  onPatch: (suId: string, patch: Partial<SucessaoCumulada>) => void;
 }) {
   const elegiveis = sucessoes.filter((su) => su.dataObito && (bases[su.id] ?? 0) > 0);
   if (elegiveis.length === 0) return null;
@@ -4916,9 +4989,10 @@ function PartilhasSucessoes({
     <div style={{ marginTop: 32 }}>
       <h2>Partilhas das sucessões cumuladas</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
-        Inventário conjunto: cada sucessão tem partilha própria, calculada sobre a base
-        transmitida nela — {elegiveis.length + 1} partilha(s) no total, contando a do(a)
-        autor(a) da herança acima.
+        Inventário conjunto: cada sucessão tem partilha própria — igualitária ou
+        DIFERENCIADA, com tornas próprias — sobre os bens que transitam nela. São{' '}
+        {elegiveis.length + 1} partilhas no total, contando a do(a) autor(a) da herança
+        acima.
       </p>
       {elegiveis.map((su, i) => (
         <PartilhaDeSucessao
@@ -4926,7 +5000,9 @@ function PartilhasSucessoes({
           sucessao={su}
           indice={i + 2}
           herdeiros={herdeiros}
+          bens={bens}
           base={bases[su.id] ?? 0}
+          onPatch={(patch) => onPatch(su.id, patch)}
         />
       ))}
     </div>
@@ -4937,44 +5013,108 @@ function PartilhaDeSucessao({
   sucessao,
   indice,
   herdeiros,
+  bens,
   base,
+  onPatch,
 }: {
   sucessao: SucessaoCumulada;
   indice: number;
   herdeiros: Herdeiro[];
+  bens: Bem[];
   base: number;
+  onPatch: (patch: Partial<SucessaoCumulada>) => void;
 }) {
-  // Caso sintético: só a base transmitida, sem meação (o que o sobrevivente
-  // pré-morto deixou É a base) — o motor aplica as mesmas regras de vocação.
+  const herdeirosSu = useMemo(
+    () => herdeirosDaSucessao(sucessao, herdeiros),
+    [sucessao, herdeiros],
+  );
+
+  // CASO próprio do motor: sem meação (o que o(a) autor(a) desta sucessão
+  // deixou É a base) e com os bens/valores que transitam nela; caso legado
+  // sem bem integrante cai num bem sintético pela base manual.
+  const caso = useMemo<Caso | null>(() => {
+    if (herdeirosSu.length === 0) return null;
+    const itens = bensDaSucessao(sucessao, bens).filter((i) => i.valor > 0);
+    const bensSu: Bem[] =
+      itens.length > 0
+        ? itens.map((i) => ({
+            id: i.bem.id,
+            descricao: i.bem.descricao,
+            valor: i.valor.toFixed(2),
+            natureza: 'PARTICULAR' as const,
+          }))
+        : base > 0
+          ? [
+              {
+                id: `su-base-${sucessao.id}`,
+                descricao: `Base transmitida na sucessão de ${sucessao.nome}`,
+                valor: base.toFixed(2),
+                natureza: 'PARTICULAR' as const,
+              },
+            ]
+          : [];
+    if (bensSu.length === 0) return null;
+    return {
+      falecido: { dataObito: sucessao.dataObito },
+      sobrevivente: null,
+      herdeiros: herdeirosSu,
+      bens: bensSu,
+    };
+  }, [sucessao, herdeirosSu, bens, base]);
+
   const resultado = useMemo(() => {
-    if (!sucessao.mesmosHerdeiros || herdeiros.length === 0) return null;
+    if (!caso) return null;
     try {
-      return partilhar({
-        falecido: { dataObito: sucessao.dataObito },
-        sobrevivente: null,
-        herdeiros,
-        bens: [
-          {
-            id: `su-base-${sucessao.id}`,
-            descricao: `Base transmitida na sucessão de ${sucessao.nome}`,
-            valor: base.toFixed(2),
-            natureza: 'PARTICULAR',
-          },
-        ],
-      });
+      return partilhar(caso);
     } catch {
       return null;
     }
-  }, [sucessao, herdeiros, base]);
+  }, [caso]);
 
-  if (!sucessao.mesmosHerdeiros) {
+  const alocacoes = useMemo(() => sucessao.atribuicoesPct ?? {}, [sucessao.atribuicoesPct]);
+  // Igualitária × diferenciada COMO na principal: matriz preenchida = modo
+  // diferenciado já salvo no caso; o botão só abre/fecha a matriz.
+  const [diferenciada, setDiferenciada] = useState(
+    Object.keys(sucessao.atribuicoesPct ?? {}).length > 0,
+  );
+
+  const participantes = useMemo(
+    () =>
+      resultado && resultado.bloqueios.length === 0 ? participantesDoResultado(resultado) : [],
+    [resultado],
+  );
+
+  const apuracao = useMemo(() => {
+    if (!caso || !resultado || resultado.bloqueios.length > 0 || !diferenciada) return null;
+    if (!temAlocacao(alocacoes, caso.bens, participantes)) return null;
+    const ufespAtual = ufespDoAno(new Date().getFullYear()).valor;
+    const cenario = apurarCenario({
+      caso,
+      resultado,
+      alocacoes,
+      isencaoDoacaoAnual: 2500 * ufespAtual,
+    });
+    if (!cenario.atribuicao && cenario.bloqueios.length === 0) return null;
+    return cenario;
+  }, [caso, resultado, alocacoes, participantes, diferenciada]);
+
+  const setCelula = (bemId: string, participanteId: string, valor: string) => {
+    const linha = { ...(alocacoes[bemId] ?? {}) };
+    if (valor.trim()) linha[participanteId] = valor;
+    else delete linha[participanteId];
+    const proximas: Record<string, Record<string, string>> = { ...alocacoes, [bemId]: linha };
+    if (Object.keys(linha).length === 0) delete proximas[bemId];
+    onPatch({ atribuicoesPct: Object.keys(proximas).length > 0 ? proximas : undefined });
+  };
+
+  if (herdeirosSu.length === 0) {
     return (
       <div className="nota">
         <span className="eyebrow">{indice}ª sucessão — {sucessao.nome}</span>
         <p>
-          Esta sucessão não está marcada com &quot;mesmos herdeiros&quot;. Marque a opção no
-          item I (A família) para a partilha dela aparecer aqui — ou trate-a em um caso
-          próprio quando os herdeiros forem outros.
+          Esta sucessão está sem herdeiros: abra &quot;qualificação e herdeiros&quot; no
+          item I (A família) e escolha os do 1º falecimento — todos ou alguns — ou lance
+          herdeiros próprios dela.
         </p>
       </div>
     );
@@ -4985,13 +5125,14 @@ function PartilhaDeSucessao({
       <div className="nota exigencia">
         <span className="eyebrow">{indice}ª sucessão — {sucessao.nome}</span>
         <p>
-          Não foi possível calcular esta partilha
-          {herdeiros.length === 0 ? ' — lance os herdeiros no item I' : ''}.
+          Não foi possível calcular esta partilha.
           {resultado?.bloqueios.map((b) => ` ${b}`) ?? ''}
         </p>
       </div>
     );
   }
+
+  const bensDoCaso = caso?.bens ?? [];
 
   return (
     <div className="cartao">
@@ -4999,6 +5140,30 @@ function PartilhaDeSucessao({
         {indice}ª sucessão — {sucessao.nome} · óbito em{' '}
         {sucessao.dataObito.split('-').reverse().join('/')} · base {brl(base.toFixed(2))}
       </span>
+
+      <div className="escolha" style={{ margin: '8px 0 10px' }}>
+        <Button
+          size="sm"
+          variant={diferenciada ? 'outline' : 'default'}
+          aria-pressed={!diferenciada}
+          onClick={() => {
+            setDiferenciada(false);
+            // Voltar à igualitária LIMPA a matriz desta sucessão.
+            if (Object.keys(alocacoes).length > 0) onPatch({ atribuicoesPct: undefined });
+          }}
+        >
+          Igualitária
+        </Button>
+        <Button
+          size="sm"
+          variant={diferenciada ? 'default' : 'outline'}
+          aria-pressed={diferenciada}
+          onClick={() => setDiferenciada(true)}
+        >
+          Diferenciada
+        </Button>
+      </div>
+
       <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
         {resultado.quinhoes.map((q) => (
           <Fragment key={q.herdeiroId}>
@@ -5007,9 +5172,124 @@ function PartilhaDeSucessao({
           </Fragment>
         ))}
       </Espelho>
+
+      {diferenciada && (
+        <div style={{ marginTop: 12 }}>
+          <p className="fund" style={{ margin: '0 0 8px' }}>
+            Distribua cada bem desta sucessão em % (ou fração — &quot;1/3&quot;) por
+            herdeiro. Linha vazia segue a proporção do direito acima; o desvio vira TORNA
+            desta sucessão, apurada abaixo.
+          </p>
+          <ScrollArea className="matriz-scroll" orientation="vertical">
+            <Table className="matriz-partilha">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="col-bem">Bem</TableHead>
+                  {participantes.map((p) => (
+                    <TableHead key={p.id}>{p.nome}</TableHead>
+                  ))}
+                  <TableHead className="col-total">Σ %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bensDoCaso.map((b, i) => {
+                  const linha = alocacoes[b.id] ?? {};
+                  const total = participantes.reduce((a, p) => a + pctNum(linha[p.id]), 0);
+                  const fecha = total === 0 || Math.abs(total - 100) <= 0.05;
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="col-bem" title={b.descricao}>
+                        <span className="numero-bem num">{i + 1}.</span>{' '}
+                        {descricaoCurta(b.descricao)}
+                        <span className="fund num" style={{ display: 'block' }}>
+                          {brl(b.valor)}
+                        </span>
+                      </TableCell>
+                      {participantes.map((p) => (
+                        <TableCell key={p.id}>
+                          <span className="pct-campo">
+                            <Input
+                              className="pct num"
+                              inputMode="decimal"
+                              placeholder="—"
+                              aria-label={`Percentual ou fração do bem ${i + 1} para ${p.nome} na ${indice}ª sucessão`}
+                              value={linha[p.id] ?? ''}
+                              onChange={(e) =>
+                                setCelula(
+                                  b.id,
+                                  p.id,
+                                  e.target.value.replace(/[^\d.,/]/g, '').slice(0, 8),
+                                )
+                              }
+                            />
+                            {!ehFracao(linha[p.id]) && <span aria-hidden="true">%</span>}
+                          </span>
+                        </TableCell>
+                      ))}
+                      <TableCell className={`col-total num ${fecha ? '' : 'nao-fecha'}`}>
+                        {total === 0
+                          ? 'direito'
+                          : `${total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+
+          {apuracao && (
+            <div style={{ marginTop: 10 }}>
+              {apuracao.bloqueios.map((b) => (
+                <p key={b} className="mono-alerta" style={{ margin: '0 0 6px' }}>
+                  {b}
+                </p>
+              ))}
+              {apuracao.atribuicao && (
+                <>
+                  <Table className="espelho-tabela">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Participante</TableHead>
+                        <TableHead>Direito</TableHead>
+                        <TableHead>Recebe em bens</TableHead>
+                        <TableHead>Torna</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {apuracao.linhas.map((l) => (
+                        <TableRow key={l.id}>
+                          <TableCell>{l.nome}</TableCell>
+                          <TableCell className="num">{brl(l.direito.toFixed(2))}</TableCell>
+                          <TableCell className="num">{brl(l.recebeEmBens.toFixed(2))}</TableCell>
+                          <TableCell className="num">
+                            {l.acertoEmDinheiro > 0.004
+                              ? `recebe ${brl(l.acertoEmDinheiro.toFixed(2))}`
+                              : l.acertoEmDinheiro < -0.004
+                                ? `paga ${brl(Math.abs(l.acertoEmDinheiro).toFixed(2))}`
+                                : l.cedeGratuitamente > 0.004
+                                  ? `cede ${brl(l.cedeGratuitamente.toFixed(2))}`
+                                  : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <p className="fund" style={{ margin: '6px 0 0' }}>
+                    Total de tornas desta sucessão: {brl(apuracao.totalTorna)}.
+                    {apuracao.avisos.map((a) => ` ${a}`)}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="fund" style={{ marginTop: 8 }}>
         ITCMD, escritura e registros desta sucessão já somam no painel e no item V
-        (Custos), pelo fato gerador próprio dela.
+        (Custos), pelo fato gerador próprio dela — em declaração de ITCMD PRÓPRIA, à
+        parte da principal.
       </p>
     </div>
   );

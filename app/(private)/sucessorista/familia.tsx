@@ -29,7 +29,6 @@ import {
 import { useState } from 'react';
 
 import { mascararCpf } from '@/lib/cpf';
-import { CurrencyInput } from '@/components/currency-input';
 import { SeletorMunicipio, SeletorMunicipioTexto } from '@/components/seletor-municipio';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
@@ -878,11 +877,12 @@ function EditorHerdeiros({
 
 /* ---------- sucessões cumuladas (CPC, art. 672) ---------- */
 
+// SEM base transmitida nem contagem de imóveis (pedido do escritório): a
+// base e os imóveis da sucessão saem dos BENS lançados no acervo — aqui só
+// nasce a PESSOA (nome + fato gerador), e a ficha abre para qualificar.
 const esquemaSucessao = z.object({
   nome: z.string().trim().min(1, 'Informe o nome do(a) autor(a) desta sucessão.'),
   dataObito: z.string().min(1, 'Informe a data do óbito — é o fato gerador desta sucessão.'),
-  base: z.string().trim().min(1, 'Informe a base transmitida nesta sucessão.'),
-  qtdImoveis: z.string().regex(/^\d*$/, 'Use apenas números.'),
   mesmosHerdeiros: z.boolean(),
   mesmosBens: z.boolean(),
 });
@@ -923,36 +923,31 @@ function EditorSucessoes({
     defaultValues: {
       nome: '',
       dataObito: '',
-      base: '',
-      qtdImoveis: '',
       mesmosHerdeiros: true,
       mesmosBens: true,
     },
   });
 
   const lancar = (dados: NovaSucessao) => {
-    const decimal = Number(dados.base.replace(/\./g, '').replace(',', '.'));
-    setSucessoes([
-      ...sucessoes,
-      {
-        id: uid('su'),
-        nome: nomeProprio(dados.nome),
-        dataObito: dados.dataObito,
-        base: (Number.isFinite(decimal) ? decimal : 0).toFixed(2),
-        qtdImoveis: Number(dados.qtdImoveis) || 0,
-        mesmosHerdeiros: dados.mesmosHerdeiros,
-        mesmosBens: dados.mesmosBens,
-      },
-    ]);
+    const novo: SucessaoCumulada = {
+      id: uid('su'),
+      nome: nomeProprio(dados.nome),
+      dataObito: dados.dataObito,
+      // Legado zerado: a base/imóveis efetivos saem do acervo.
+      base: '0.00',
+      qtdImoveis: 0,
+      mesmosHerdeiros: dados.mesmosHerdeiros,
+      mesmosBens: dados.mesmosBens,
+    };
+    setSucessoes([...sucessoes, novo]);
+    // A ficha abre NA HORA: qualificar o(a) autor(a) desta sucessão como o
+    // primeiro, e decidir os herdeiros dela — pedido do escritório.
+    setFichaAberta(novo.id);
     reset();
   };
 
-  const alternarMesmosHerdeiros = (id: string) =>
-    setSucessoes(
-      sucessoes.map((su) =>
-        su.id === id ? { ...su, mesmosHerdeiros: !(su.mesmosHerdeiros ?? false) } : su,
-      ),
-    );
+  const patchSucessao = (id: string, patch: Partial<SucessaoCumulada>) =>
+    setSucessoes(sucessoes.map((su) => (su.id === id ? { ...su, ...patch } : su)));
 
   const alternarMesmosBens = (id: string) =>
     setSucessoes(
@@ -975,8 +970,13 @@ function EditorSucessoes({
             <span className="fracao num">
               {' '}
               · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · monte partível{' '}
-              {brlSucessao(monte !== undefined ? monte : Number(su.base))} · {su.qtdImoveis} imóvel(is)
+              {brlSucessao(monte !== undefined ? monte : Number(su.base))}
             </span>
+            {(monte ?? Number(su.base) ?? 0) === 0 && (
+              <span className="fund" style={{ marginLeft: 6 }}>
+                (sai dos bens do acervo — lance-os no item II)
+              </span>
+            )}
             <span className="fund" style={{ marginLeft: 6 }}>
               {usaMesmosBens
                 ? '· mesmos bens (avaliação por sucessão no acervo)'
@@ -984,7 +984,16 @@ function EditorSucessoes({
             </span>
             {su.mesmosHerdeiros && (
               <span className="fund" style={{ marginLeft: 6 }}>
-                ★ mesmos herdeiros — partilha própria no item III
+                ★ {su.participantes ? `${su.participantes.length} herdeiro(s) do 1º falecimento` : 'mesmos herdeiros'}
+                {(su.herdeirosProprios?.length ?? 0) > 0
+                  ? ` + ${su.herdeirosProprios!.length} próprio(s)`
+                  : ''}{' '}
+                — partilha própria no item III
+              </span>
+            )}
+            {su.mesmosHerdeiros === false && (su.herdeirosProprios?.length ?? 0) > 0 && (
+              <span className="fund" style={{ marginLeft: 6 }}>
+                ★ {su.herdeirosProprios!.length} herdeiro(s) próprio(s) — partilha própria no item III
               </span>
             )}
           </span>
@@ -1002,19 +1011,10 @@ function EditorSucessoes({
               type="button"
               variant="ghost"
               size="sm"
-              style={su.mesmosHerdeiros ? { color: 'var(--verde-registro)' } : undefined}
-              onClick={() => alternarMesmosHerdeiros(su.id)}
-            >
-              {su.mesmosHerdeiros ? 'mesmos herdeiros ✓' : 'usar os mesmos herdeiros'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
               aria-expanded={fichaDesta}
               onClick={() => setFichaAberta(fichaDesta ? null : su.id)}
             >
-              {fichaDesta ? 'fechar qualificação' : 'qualificação'}
+              {fichaDesta ? 'fechar ficha' : 'qualificação e herdeiros'}
             </Button>
             <Button
               type="button"
@@ -1045,6 +1045,13 @@ function EditorSucessoes({
               {sucessoes.findIndex((x) => x.id === su.id) + 2}º FALECIMENTO&quot; da
               escritura de dois (ou mais) óbitos — campo vazio vira lacuna para o balcão.
             </p>
+            <HerdeirosDaSucessao
+              sucessao={su}
+              herdeiros={herdeiros}
+              onPatch={(patch) => patchSucessao(su.id, patch)}
+              qualificacoes={qualificacoes}
+              onQualificacao={onQualificacao}
+            />
           </div>
         )}
         </div>
@@ -1067,34 +1074,10 @@ function EditorSucessoes({
             />
             <FieldError errors={[errors.dataObito]} />
           </Field>
-          <Field data-invalid={Boolean(errors.base)}>
-            <FieldLabel htmlFor="sucessao-base">Base transmitida (R$)</FieldLabel>
-            <Controller
-              control={control}
-              name="base"
-              render={({ field }) => (
-                <CurrencyInput
-                  id="sucessao-base"
-                  aria-invalid={Boolean(errors.base)}
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                />
-              )}
-            />
-            <FieldError errors={[errors.base]} />
-          </Field>
-          <Field data-invalid={Boolean(errors.qtdImoveis)}>
-            <FieldLabel htmlFor="sucessao-imoveis">Imóveis envolvidos (nº)</FieldLabel>
-            <Input
-              id="sucessao-imoveis"
-              inputMode="numeric"
-              aria-invalid={Boolean(errors.qtdImoveis)}
-              {...register('qtdImoveis')}
-            />
-            <FieldError errors={[errors.qtdImoveis]} />
-          </Field>
         </div>
+        {/* Base transmitida e contagem de imóveis SAÍRAM do formulário
+            (pedido do escritório): esses números são derivados dos bens do
+            acervo — comum às sucessões ou exclusivo desta — nunca digitados. */}
         <div style={{ marginTop: 10 }}>
           <Controller
             control={control}
@@ -1122,8 +1105,9 @@ function EditorSucessoes({
                   checked={field.value}
                   onCheckedChange={(v) => field.onChange(v === true)}
                 />
-                Usar os MESMOS herdeiros deste inventário nesta sucessão — o item III
-                (Partilha) ganha uma partilha própria para ela
+                Usar os herdeiros deste inventário nesta sucessão (todos, ou só alguns —
+                o recorte e os herdeiros PRÓPRIOS dela ficam na ficha, sem requalificar
+                ninguém) — o item III ganha uma partilha própria para ela
                 {herdeiros.length === 0 ? ' (lance os herdeiros abaixo)' : ''}
               </label>
             )}
@@ -1132,6 +1116,231 @@ function EditorSucessoes({
         <div style={{ marginTop: 12 }}>
           <Button type="submit" variant="outline">
             Adicionar sucessão
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ---------- herdeiros de UMA sucessão cumulada ---------- */
+
+const esquemaHerdeiroSucessao = z.object({
+  nome: z.string().trim().min(1, 'Informe o nome do herdeiro desta sucessão.'),
+  parentesco: z.enum(PARENTESCOS.map((p) => p.v) as [ParentescoId, ...ParentescoId[]]),
+  incapaz: z.boolean(),
+});
+
+type NovoHerdeiroSucessao = z.infer<typeof esquemaHerdeiroSucessao>;
+
+/**
+ * Quem herda NESTA sucessão: os herdeiros do inventário principal (todos, ou
+ * só alguns — sem requalificar ninguém) + herdeiros PRÓPRIOS dela (ex.: filho
+ * de outro leito do(a) 2º falecido(a)), com ficha completa por herdeiro.
+ * O parentesco dos próprios é relativo ao(à) autor(a) DESTA sucessão.
+ */
+function HerdeirosDaSucessao({
+  sucessao,
+  herdeiros,
+  onPatch,
+  qualificacoes,
+  onQualificacao,
+}: {
+  sucessao: SucessaoCumulada;
+  herdeiros: Herdeiro[];
+  onPatch: (patch: Partial<SucessaoCumulada>) => void;
+  qualificacoes: Record<string, Qualificacao>;
+  onQualificacao: (id: string, q: Qualificacao | null) => void;
+}) {
+  const [fichaPropria, setFichaPropria] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<NovoHerdeiroSucessao>({
+    resolver: zodResolver(esquemaHerdeiroSucessao),
+    defaultValues: { nome: '', parentesco: 'FILHO', incapaz: false },
+  });
+
+  const proprios = sucessao.herdeirosProprios ?? [];
+  const usaTodos = sucessao.mesmosHerdeiros !== false && sucessao.participantes === undefined;
+  const usaAlguns = sucessao.mesmosHerdeiros !== false && sucessao.participantes !== undefined;
+
+  const adicionarProprio = (dados: NovoHerdeiroSucessao) => {
+    const p = PARENTESCOS.find((x) => x.v === dados.parentesco) ?? PARENTESCOS[0];
+    const novo: Herdeiro = {
+      id: uid('hs'),
+      nome: nomeProprio(dados.nome),
+      classe: p.classe,
+      grau: p.grau,
+      status: 'ATIVO',
+      menorOuIncapaz: dados.incapaz,
+    };
+    onPatch({ herdeirosProprios: [...proprios, novo] });
+    reset();
+    setFichaPropria(novo.id);
+  };
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <span className="eyebrow">Herdeiros desta sucessão</span>
+      <p className="fund" style={{ margin: '4px 0 8px' }}>
+        Os herdeiros do 1º falecimento entram SEM requalificar — escolha todos ou só
+        alguns. Herdeiro que só existe nesta sucessão entra como PRÓPRIO dela, com ficha
+        completa (o parentesco é em relação a {sucessao.nome || 'este(a) autor(a)'}).
+      </p>
+      <div className="escolha">
+        <Pilula
+          ativo={usaTodos}
+          onClick={() => onPatch({ mesmosHerdeiros: true, participantes: undefined })}
+        >
+          Todos os do 1º falecimento
+        </Pilula>
+        <Pilula
+          ativo={usaAlguns}
+          onClick={() =>
+            onPatch({ mesmosHerdeiros: true, participantes: herdeiros.map((h) => h.id) })
+          }
+        >
+          Alguns deles
+        </Pilula>
+        <Pilula
+          ativo={sucessao.mesmosHerdeiros === false}
+          onClick={() => onPatch({ mesmosHerdeiros: false, participantes: undefined })}
+        >
+          Nenhum (só herdeiros próprios)
+        </Pilula>
+      </div>
+
+      {usaAlguns && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {herdeiros.length === 0 && (
+            <p className="fund" style={{ margin: 0 }}>
+              Lance os herdeiros do inventário principal abaixo para escolher aqui.
+            </p>
+          )}
+          {herdeiros.map((h) => {
+            const marcado = (sucessao.participantes ?? []).includes(h.id);
+            return (
+              <label key={h.id} className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                <Checkbox
+                  checked={marcado}
+                  onCheckedChange={(v) => {
+                    const atual = sucessao.participantes ?? [];
+                    onPatch({
+                      participantes:
+                        v === true ? [...atual, h.id] : atual.filter((x) => x !== h.id),
+                    });
+                  }}
+                />
+                {h.nome} <span className="fracao">({rotuloParentesco(h)} do 1º falecimento)</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {proprios.map((h) => (
+        <div key={h.id}>
+          <div className="linha-item">
+            <span>
+              <strong>{h.nome}</strong>
+              <span className="fracao"> · {rotuloParentesco(h)} desta sucessão</span>
+              {h.menorOuIncapaz && <span className="fracao"> · menor/incapaz</span>}
+            </span>
+            <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={fichaPropria === h.id}
+                onClick={() => setFichaPropria(fichaPropria === h.id ? null : h.id)}
+              >
+                {fichaPropria === h.id ? 'fechar qualificação' : 'qualificação'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => {
+                  onPatch({ herdeirosProprios: proprios.filter((x) => x.id !== h.id) });
+                  onQualificacao(h.id, null);
+                  if (fichaPropria === h.id) setFichaPropria(null);
+                }}
+              >
+                remover
+              </Button>
+            </span>
+          </div>
+          {fichaPropria === h.id && (
+            <div className="ficha" style={{ marginTop: 8 }}>
+              <QualificacaoEditor
+                titulo={`Qualificação — ${h.nome}`}
+                valor={qualificacoes[h.id] ?? QUALIFICACAO_VAZIA}
+                onChange={(q) => onQualificacao(h.id, q)}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+
+      <form noValidate onSubmit={handleSubmit(adicionarProprio)}>
+        <div className="grade c3" style={{ marginTop: 10 }}>
+          <Field data-invalid={Boolean(errors.nome)}>
+            <FieldLabel htmlFor={`hs-nome-${sucessao.id}`}>Herdeiro próprio desta sucessão</FieldLabel>
+            <Input
+              id={`hs-nome-${sucessao.id}`}
+              aria-invalid={Boolean(errors.nome)}
+              {...register('nome')}
+            />
+            <FieldError errors={[errors.nome]} />
+          </Field>
+          <Field>
+            <FieldLabel>Parentesco (com este(a) autor(a))</FieldLabel>
+            <Controller
+              control={control}
+              name="parentesco"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={(v) => v && field.onChange(String(v))}>
+                  <SelectTrigger aria-label="Parentesco com o(a) autor(a) desta sucessão">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARENTESCOS.map((p) => (
+                      <SelectItem key={p.v} value={p.v}>
+                        {p.t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>Condições</FieldLabel>
+            <div style={{ paddingTop: 4 }}>
+              <Controller
+                control={control}
+                name="incapaz"
+                render={({ field }) => (
+                  <label className="marcar" style={{ margin: 0, fontWeight: 400 }}>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(v) => field.onChange(v === true)}
+                    />
+                    Menor ou incapaz
+                  </label>
+                )}
+              />
+            </div>
+          </Field>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Button type="submit" variant="outline" size="sm">
+            Adicionar herdeiro próprio
           </Button>
         </div>
       </form>
