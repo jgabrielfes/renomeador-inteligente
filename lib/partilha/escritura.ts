@@ -65,6 +65,9 @@ export interface SucessaoEscritura {
   /** Partilha sintética da sucessão ("mesmos herdeiros") — null vira lacuna. */
   resultado: Resultado | null;
   provisao: ProvisaoItcmd | null;
+  /** Ficha completa do(a) autor(a) desta sucessão (item I — A família):
+   *  preenche o bloco "º FALECIMENTO"; campo vazio segue virando lacuna. */
+  qualificacao?: Qualificacao;
 }
 
 export interface DadosEscritura {
@@ -448,11 +451,15 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     `**${nomeFalecido}**, era ${qf?.nacionalidade?.trim() || 'brasileiro(a)'}, ${d.temSobrevivente ? (ehUniao ? 'convivente em união estável' : 'casado(a)') : estadoCivilDoFalecido(qf)}, ${qf?.profissao?.trim() || LACUNA}, RG. nº ${qf?.rg?.trim() || LACUNA} — inscrito(a) no CPF/MF sob nº ${d.falecido.cpf?.trim() || qf?.cpf?.trim() || LACUNA}, nascido(a) aos ${qf?.dataNascimento ? formatarData(qf.dataNascimento) : LACUNA}, filho(a) de ${qf?.filiacao?.trim() || LACUNA}, e residia na ${[qf?.endereco, qf?.complemento, qf?.bairro].filter((x) => x?.trim()).join(', ') || d.falecido.ultimoDomicilio?.trim() || LACUNA}${qf?.cidade?.trim() ? `, ${qf.cidade.trim()}${qf.uf?.trim() ? `/${qf.uf.trim()}` : ''}` : ''}${qf?.cep?.trim() ? ` (CEP. ${qf.cep.trim()})` : ''}. O falecimento ocorreu no dia ${d.falecido.dataObito ? `${dataPorExtenso(d.falecido.dataObito)} (**${formatarData(d.falecido.dataObito)}**)` : `${LACUNA} (___/___/_____)`}, ${d.falecido.localFalecimento?.trim() ? `no(a) ${d.falecido.localFalecimento.trim()}` : `no(a) ${LACUNA}, ${LACUNA}`}, conforme Certidão de Óbito ${d.falecido.certidaoObito?.trim() ? `extraída da ${d.falecido.certidaoObito.trim()}` : `extraída da matrícula nº ${LACUNA}, expedida pelo ORCPN ${LACUNA}º Subdistrito — ${LACUNA}, Município e Comarca de ${LACUNA}`}.`,
   );
 
-  /* demais falecimentos — qualificação póstuma em lacunas + óbito próprio */
+  /* demais falecimentos — qualificação póstuma da FICHA da sucessão (item I);
+   * campo vazio segue virando lacuna para o balcão */
   sucessoes.forEach((s, i) => {
     secao(`${ORDINAL[i + 1] ?? `${i + 2}º`} FALECIMENTO`);
+    const q = s.qualificacao;
+    const enderecoSu =
+      [q?.endereco, q?.complemento, q?.bairro].filter((x) => x?.trim()).join(', ') || LACUNA;
     p(
-      `**${s.nome.toUpperCase()}**, era ${LACUNA}, ${LACUNA}, RG. nº ${LACUNA} — inscrito(a) no CPF/MF sob nº ${LACUNA}, nascido(a) aos ${LACUNA}, filho(a) de ${LACUNA}, e residia na ${LACUNA}. O falecimento ocorreu no dia ${s.dataObito ? `${dataPorExtenso(s.dataObito)} (**${formatarData(s.dataObito)}**)` : `${LACUNA} (___/___/_____)`}, no(a) ${LACUNA}, conforme Certidão de Óbito extraída da matrícula nº ${LACUNA}, expedida pelo ORCPN ${LACUNA}.`,
+      `**${s.nome.toUpperCase()}**, era ${q?.nacionalidade?.trim() || LACUNA}, ${q?.estadoCivil?.trim() || LACUNA}, ${q?.profissao?.trim() || LACUNA}, RG. nº ${q?.rg?.trim() || LACUNA} — inscrito(a) no CPF/MF sob nº ${q?.cpf?.trim() || LACUNA}, nascido(a) aos ${q?.dataNascimento ? formatarData(q.dataNascimento) : LACUNA}, filho(a) de ${q?.filiacao?.trim() || LACUNA}, e residia na ${enderecoSu}${q?.cidade?.trim() ? `, ${q.cidade.trim()}${q.uf?.trim() ? `/${q.uf.trim()}` : ''}` : ''}${q?.cep?.trim() ? ` (CEP. ${q.cep.trim()})` : ''}. O falecimento ocorreu no dia ${s.dataObito ? `${dataPorExtenso(s.dataObito)} (**${formatarData(s.dataObito)}**)` : `${LACUNA} (___/___/_____)`}, no(a) ${LACUNA}, conforme Certidão de Óbito extraída da matrícula nº ${LACUNA}, expedida pelo ORCPN ${LACUNA}.`,
     );
   });
 

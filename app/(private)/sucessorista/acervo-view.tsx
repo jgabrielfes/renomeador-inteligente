@@ -180,6 +180,7 @@ export function AcervoView({
   setColacoes,
   sociedades = [],
   sucessoes = [],
+  autorPrincipal,
   voltar,
   avancar,
 }: {
@@ -195,6 +196,9 @@ export function AcervoView({
   sociedades?: ResumoSociedade[];
   /** Sucessões cumuladas do caso: abrem a avaliação POR SUCESSÃO em cada bem. */
   sucessoes?: SucessaoCumulada[];
+  /** Autor(a) principal do inventário — abre a linha da 1ª SUCESSÃO na faixa
+   *  de avaliação por sucessão (o campo é o MESMO venal do óbito do bem). */
+  autorPrincipal?: { nome: string; dataObito: string };
   voltar: () => void;
   avancar: () => void;
 }) {
@@ -486,6 +490,7 @@ export function AcervoView({
           bem={b}
           numero={i + 1}
           sucessoes={sucessoes}
+          autorPrincipal={autorPrincipal}
           ehPrimeiro={i === 0}
           ehUltimo={i === bens.length - 1}
           onMover={(delta) => {
@@ -771,6 +776,7 @@ function LinhaBem({
   bem,
   numero,
   sucessoes = [],
+  autorPrincipal,
   ehPrimeiro,
   ehUltimo,
   onMover,
@@ -780,6 +786,7 @@ function LinhaBem({
   bem: Bem;
   numero: number;
   sucessoes?: SucessaoCumulada[];
+  autorPrincipal?: { nome: string; dataObito: string };
   ehPrimeiro: boolean;
   ehUltimo: boolean;
   onMover: (delta: number) => void;
@@ -976,7 +983,12 @@ function LinhaBem({
         </span>
       </div>
       {sucessoes.length > 0 && (
-        <FaixaSucessoesDoBem bem={bem} sucessoes={sucessoes} onSalvar={onSalvar} />
+        <FaixaSucessoesDoBem
+          bem={bem}
+          sucessoes={sucessoes}
+          autorPrincipal={autorPrincipal}
+          onSalvar={onSalvar}
+        />
       )}
       </div>
     );
@@ -1111,12 +1123,20 @@ function LinhaBem({
 function FaixaSucessoesDoBem({
   bem,
   sucessoes,
+  autorPrincipal,
   onSalvar,
 }: {
   bem: Bem;
   sucessoes: SucessaoCumulada[];
+  autorPrincipal?: { nome: string; dataObito: string };
   onSalvar: (b: Bem) => void;
 }) {
+  // Linha da 1ª sucessão: o campo é o PRÓPRIO venal na data do óbito do bem
+  // (bem.valor) — mesma fonte do lançamento, mostrada aqui lado a lado com as
+  // avaliações das demais sucessões para o confronto fato gerador a fato
+  // gerador. Editar aqui e editar no bem é a MESMA coisa.
+  const excluidoPrincipal =
+    Boolean(bem.sucessaoExclusiva) && bem.sucessaoExclusiva !== 'PRINCIPAL';
   const patchSucessao = (suId: string, patch: Partial<AvaliacaoBemSucessao>) => {
     const atual = bem.sucessoes?.[suId] ?? {};
     onSalvar({
@@ -1152,6 +1172,32 @@ function FaixaSucessoesDoBem({
           </select>
         </label>
       </div>
+      {autorPrincipal && (
+        <div className={`linha-sucessao${excluidoPrincipal ? ' excluido' : ''}`}>
+          <span className="nome-sucessao">
+            {autorPrincipal.nome || '1ª sucessão'}
+            {autorPrincipal.dataObito ? (
+              <span className="fracao num"> · óbito {autorPrincipal.dataObito.slice(0, 4)}</span>
+            ) : null}
+            <span className="fracao"> · 1ª sucessão</span>
+          </span>
+          {excluidoPrincipal ? (
+            <span className="fracao">fora do rol desta sucessão</span>
+          ) : (
+            <label className="campo">
+              <span>
+                Valor no óbito de{' '}
+                {autorPrincipal.dataObito ? autorPrincipal.dataObito.slice(0, 4) : '—'} (R$) — o
+                venal do lançamento
+              </span>
+              <CurrencyInput
+                value={bem.valor ? paraMascara(bem.valor) : ''}
+                onChange={(v) => onSalvar({ ...bem, valor: v.trim() ? paraDecimal(v) : '' })}
+              />
+            </label>
+          )}
+        </div>
+      )}
       {sucessoes.map((su) => {
         // Bens particulares: a sucessão só considera os bens EXCLUSIVOS dela —
         // um bem compartilhado não abre coluna de avaliação para ela.
@@ -1210,7 +1256,10 @@ function FaixaSucessoesDoBem({
       <p className="fund" style={{ margin: '4px 0 0' }}>
         Vazio = vale o valor lançado do bem e 100% — preencha quando a avaliação do fato
         gerador ou a proporção do(a) de cujus for outra. A base de cada sucessão soma
-        (valor × fração) dos bens que a integram.
+        (valor × fração) dos bens que a integram. Atenção: cada sucessão tem monte
+        partível, legítima e PROPORÇÕES próprios — mudar um valor aqui muda a partilha
+        daquela sucessão no item III (com &quot;mesmos herdeiros&quot;, uma partilha POR
+        sucessão), o ITCMD do fato gerador respectivo e os custos.
       </p>
     </div>
   );
