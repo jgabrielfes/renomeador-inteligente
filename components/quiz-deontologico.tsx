@@ -30,6 +30,7 @@ export function QuizDeontologico({
   const [respostas, setRespostas] = useState<Record<string, number>>({});
   const [correcao, setCorrecao] = useState<CorrecaoQuiz | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const faltam = QUESTOES_RADAR.filter((q) => respostas[q.id] === undefined).length;
 
   const corrigir = async () => {
     setEnviando(true);
@@ -85,12 +86,21 @@ export function QuizDeontologico({
         </fieldset>
       ))}
       <div style={{ marginTop: 14 }}>
-        <Button loading={enviando} onClick={() => void corrigir()}>
-          Corrigir
+        {/* O botão CONCLUI o questionário (envia e corrige). Ele já se chamou
+            "Corrigir" e parecia edição de respostas — usuários procuravam um
+            "Concluir" que não existia. Convenção do módulo: botão desabilitado
+            leva a razão por escrito logo abaixo. */}
+        <Button loading={enviando} disabled={faltam > 0} onClick={() => void corrigir()}>
+          {correcao && !correcao.aprovado ? 'Enviar de novo' : 'Concluir questionário'}
         </Button>
+        {faltam > 0 && (
+          <p className="fund" style={{ marginTop: 8 }}>
+            Responda as 10 perguntas para concluir — {faltam === 1 ? 'falta 1' : `faltam ${faltam}`}.
+          </p>
+        )}
         {correcao && !correcao.aprovado && (
           <p className="mono-alerta" style={{ marginTop: 8 }}>
-            {correcao.acertos} de {correcao.total} — reveja as marcadas com ✗ e corrija de novo.
+            {correcao.acertos} de {correcao.total} — reveja as marcadas com ✗ e envie de novo.
           </p>
         )}
       </div>
