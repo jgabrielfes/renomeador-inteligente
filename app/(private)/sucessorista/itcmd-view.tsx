@@ -100,13 +100,39 @@ export interface SucessaoCumulada {
   nome: string;
   /** Data do óbito desta sucessão — fato gerador do ITCMD dela. */
   dataObito: string;
-  /** Base transmitida nesta sucessão (R$, decimal "12345.67"). */
+  /**
+   * LEGADO: base transmitida manual (R$, decimal "12345.67"). O lançamento
+   * novo não pede mais este campo — a base sai dos BENS que integram a
+   * sucessão no acervo (MAIOR entre venal do óbito e avaliação × fração).
+   * Vale só como fallback de caso antigo sem coluna preenchida.
+   */
   base: string;
-  /** Imóveis envolvidos nesta sucessão (atos de registro próprios). */
+  /**
+   * LEGADO: contagem manual de imóveis. O valor efetivo é DERIVADO dos bens
+   * IMÓVEL que integram a sucessão; este só vale no fallback da base manual.
+   */
   qtdImoveis: number;
-  /** true = partilha desta sucessão com os MESMOS herdeiros do inventário
-   *  principal — o item III mostra uma partilha própria para ela. */
+  /** true = partilha desta sucessão com os herdeiros do inventário
+   *  principal (todos, ou o recorte de `participantes`) — o item III mostra
+   *  uma partilha própria para ela. */
   mesmosHerdeiros?: boolean;
+  /**
+   * Recorte de "mesmos herdeiros": ids dos herdeiros do inventário principal
+   * que TAMBÉM herdam nesta sucessão. Ausente = todos.
+   */
+  participantes?: string[];
+  /**
+   * Herdeiros SÓ desta sucessão (ex.: filho de outro leito do(a) 2º
+   * falecido(a)) — parentesco relativo ao autor DESTA sucessão; a
+   * qualificação vive em EstadoFamilia.qualificacoes pelo id, como as demais.
+   */
+  herdeirosProprios?: Herdeiro[];
+  /**
+   * Matriz da partilha DIFERENCIADA desta sucessão (bemId → herdeiroId → %
+   * em texto, mesmo formato do atribuicoesPct principal). Vazia/ausente =
+   * partilha igualitária; preenchida, o item III apura tornas próprias.
+   */
+  atribuicoesPct?: Record<string, Record<string, string>>;
   /**
    * true (padrão) = os MESMOS bens do 1º falecimento transitam nesta
    * sucessão, cada um com o valor de avaliação PRÓPRIO desta data de óbito

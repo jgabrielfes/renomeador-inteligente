@@ -1184,17 +1184,28 @@ function FaixaSucessoesDoBem({
           {excluidoPrincipal ? (
             <span className="fracao">fora do rol desta sucessão</span>
           ) : (
-            <label className="campo">
-              <span>
-                Valor no óbito de{' '}
-                {autorPrincipal.dataObito ? autorPrincipal.dataObito.slice(0, 4) : '—'} (R$) — o
-                venal do lançamento
-              </span>
-              <CurrencyInput
-                value={bem.valor ? paraMascara(bem.valor) : ''}
-                onChange={(v) => onSalvar({ ...bem, valor: v.trim() ? paraDecimal(v) : '' })}
-              />
-            </label>
+            <>
+              <label className="campo">
+                <span>
+                  Venal no óbito de{' '}
+                  {autorPrincipal.dataObito ? autorPrincipal.dataObito.slice(0, 4) : '—'} (R$) — o
+                  do lançamento
+                </span>
+                <CurrencyInput
+                  value={bem.valor ? paraMascara(bem.valor) : ''}
+                  onChange={(v) => onSalvar({ ...bem, valor: v.trim() ? paraDecimal(v) : '' })}
+                />
+              </label>
+              <label className="campo">
+                <span>Avaliação (R$) — a do lançamento</span>
+                <CurrencyInput
+                  value={bem.valorAvaliacao ? paraMascara(bem.valorAvaliacao) : ''}
+                  onChange={(v) =>
+                    onSalvar({ ...bem, valorAvaliacao: v.trim() ? paraDecimal(v) : undefined })
+                  }
+                />
+              </label>
+            </>
           )}
         </div>
       )}
@@ -1224,13 +1235,24 @@ function FaixaSucessoesDoBem({
               <>
                 <label className="campo">
                   <span>
-                    Valor no óbito de {su.dataObito ? su.dataObito.slice(0, 4) : '—'} (R$)
+                    Venal no óbito de {su.dataObito ? su.dataObito.slice(0, 4) : '—'} (R$)
                   </span>
                   <CurrencyInput
                     value={av.valor ? paraMascara(av.valor) : ''}
                     onChange={(v) =>
                       patchSucessao(su.id, {
                         valor: v.trim() ? paraDecimal(v) : undefined,
+                      })
+                    }
+                  />
+                </label>
+                <label className="campo">
+                  <span>Avaliação nesta sucessão (R$)</span>
+                  <CurrencyInput
+                    value={av.valorAvaliacao ? paraMascara(av.valorAvaliacao) : ''}
+                    onChange={(v) =>
+                      patchSucessao(su.id, {
+                        valorAvaliacao: v.trim() ? paraDecimal(v) : undefined,
                       })
                     }
                   />
@@ -1254,12 +1276,12 @@ function FaixaSucessoesDoBem({
         );
       })}
       <p className="fund" style={{ margin: '4px 0 0' }}>
-        Vazio = vale o valor lançado do bem e 100% — preencha quando a avaliação do fato
-        gerador ou a proporção do(a) de cujus for outra. A base de cada sucessão soma
-        (valor × fração) dos bens que a integram. Atenção: cada sucessão tem monte
-        partível, legítima e PROPORÇÕES próprios — mudar um valor aqui muda a partilha
-        daquela sucessão no item III (com &quot;mesmos herdeiros&quot;, uma partilha POR
-        sucessão), o ITCMD do fato gerador respectivo e os custos.
+        Vazio = valem os valores lançados do bem e 100%. A base do ITCMD de cada sucessão
+        sai, bem a bem, pelo MAIOR entre o venal no óbito respectivo e a avaliação —
+        exatamente como na 1ª sucessão — vezes a fração que transita nela. São DUAS (ou
+        mais) declarações de ITCMD, cada uma pelo próprio fato gerador. Atenção: cada
+        sucessão tem monte partível, legítima e PROPORÇÕES próprios — mudar um valor aqui
+        muda a partilha daquela sucessão no item III, o imposto e os custos dela.
       </p>
     </div>
   );

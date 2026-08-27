@@ -105,8 +105,13 @@ export interface DetalhesVeiculo {
  * óbito respectivo) e uma fração própria transitando naquela sucessão.
  */
 export interface AvaliacaoBemSucessao {
-  /** Valor do bem na data do óbito DESTA sucessão (decimal "12345.67"). */
+  /** Valor VENAL do bem na data do óbito DESTA sucessão (decimal "12345.67"). */
   valor?: string;
+  /**
+   * Valor de AVALIAÇÃO do bem nesta sucessão (decimal). Como na principal, a
+   * base do ITCMD da sucessão sai pelo MAIOR entre venal do óbito e avaliação.
+   */
+  valorAvaliacao?: string;
   /** Fração do bem que transita nesta sucessão, em % (texto, ex.: "50"). */
   fracaoPct?: string;
 }
