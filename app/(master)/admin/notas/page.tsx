@@ -3,8 +3,6 @@
 // exigências e cada uma cai numa via de resolução. Sem texto da nota, nomes de
 // pessoa/arquivo ou prenotação — só tags do vocabulário do módulo e contagens.
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import {
   NotaEventDetails,
@@ -144,14 +142,7 @@ export default async function AdminNotasPage({
   const exigencias = agregado._sum.quantidade ?? 0;
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
-      <Link
-        href="/admin"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Voltar para a administração
-      </Link>
+    <main className="flex flex-col gap-6">
 
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">

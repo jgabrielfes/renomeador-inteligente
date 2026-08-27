@@ -2,43 +2,29 @@
 // Resumo do site com filtro de período via QUERY STRING
 // (?periodo=semana|mes|ano|tudo).
 //
-// DESENHO: um card por destino, e a métrica mora DENTRO dele. A versão
-// anterior repetia cada assunto duas vezes — um card com o número, sem link, e
-// outro logo abaixo com o mesmo nome, só com o link —, o que fazia a mesma
-// informação aparecer em dois lugares e obrigava a percorrer a tela inteira
-// para ligar um ao outro. Aqui cada assunto aparece UMA vez: rótulo, número,
-// a leitura do número e, no rodapé, o detalhe secundário. O card inteiro é o
-// link para a listagem correspondente.
+// DESENHO: duas seções em vez da grade de cartões. A versão em cards misturava
+// papel de métrica com papel de link (clicar no cartão inteiro era "confuso",
+// no reporte do escritório) e dava o mesmo peso ao que precisa de ação e ao
+// que é só leitura. Aqui:
+//   1. "Precisa de você" — SÓ o que aguarda ação (feedback, fila da OAB,
+//      denúncias, erros), como linhas com contagem; some quando não há nada.
+//   2. "Atividade" — os números do período em linhas compactas, cada uma com
+//      o link "Abrir" EXPLÍCITO para a listagem (levando o período junto).
+// A navegação entre seções é a barra do layout — o resumo deixou de ser o
+// único caminho para as listagens. Renomeações saiu do painel da LexCausa
+// (pedido do escritório); segue no site do Renomeador.
 //
-// Cada site tem o SEU painel: o /admin do Renomeador mostra as contas, os
-// lotes e os erros do Renomeador; o do Sucessorista, os dele (lib/app.ts).
-// Nada aqui cruza a fronteira entre os dois, embora o banco seja o mesmo.
+// Cada site tem o SEU painel: nada aqui cruza a fronteira entre plataformas,
+// embora o banco seja o mesmo (lib/app.ts).
 
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  FileCheck2,
-  MessageSquareText,
-  Radar,
-  Scale,
-  ScrollText,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 import { PeriodFilter } from "@/components/admin/period-filter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { filtroDeData, parsePeriodo } from "@/lib/admin";
-import { EH_NOTAS, EH_SUCESSORISTA, IDENTIDADE, appComConta, moduloDaPlataforma } from "@/lib/app";
+import { Badge } from "@/components/ui/badge";
+import { filtroDeData, parsePeriodo, type Periodo } from "@/lib/admin";
+import { EH_NOTAS, EH_SUCESSORISTA, appComConta, moduloDaPlataforma } from "@/lib/app";
 import { requireMaster } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
@@ -48,17 +34,20 @@ function plural(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-interface CardDoPainel {
+interface Pendencia {
   href: string;
-  icon: LucideIcon;
-  titulo: string;
+  rotulo: string;
+  /** O que fazer ao abrir — completa a leitura da linha. */
+  acao: string;
+  n: number;
+}
+
+interface LinhaAtividade {
+  href: string;
+  rotulo: string;
   valor: number;
-  /** Como ler o número — vai logo abaixo dele. */
-  leitura: string;
-  /** Detalhe secundário, no rodapé do card. */
-  detalhes: string[];
-  /** true = número em âmbar (algo pedindo atenção). */
-  alerta?: boolean;
+  /** Detalhe curto ao lado do rótulo (ex.: "12 minutas geradas"). */
+  detalhe?: string;
 }
 
 export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
@@ -69,7 +58,8 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   const createdAt = filtroDeData(periodo);
 
   // null = banco fora; a página avisa em vez de quebrar.
-  let cards: CardDoPainel[] | null = null;
+  let dados: { pendencias: Pendencia[]; atividade: LinhaAtividade[] } | null =
+    null;
   try {
     const [
       totalUsuarios,
@@ -86,8 +76,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       feedbackAbertos,
     ] = await Promise.all([
       // Total de contas do site (sem recorte de data): é o que a listagem
-      // mostra. O recorte do período entra como "novas no período", no rodapé
-      // — misturar os dois num número só era o que confundia antes.
+      // mostra; o recorte do período entra como "novas no período".
       prisma.user.count({ where: { app: appComConta() } }),
       prisma.user.count({ where: { createdAt, app: appComConta() } }),
       prisma.renameEvent.aggregate({
@@ -115,157 +104,118 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       prisma.advogadoPerfil.count({ where: { situacao: "pendente" } }),
       prisma.radarDenuncia.count({ where: { status: "pendente" } }),
       // Feedback do shell (bugs e sugestões) — estado atual, não período.
-      prisma.feedback.count({ where: { app: appComConta(), status: { not: "resolvido" } } }),
+      prisma.feedback.count({
+        where: { app: appComConta(), status: { not: "resolvido" } },
+      }),
     ]);
 
-    const arquivos = renomeacoes._sum.quantidade ?? 0;
-    const lotes = renomeacoes._count._all;
+    // O link leva o período junto quando a listagem de destino o entende —
+    // o recorte escolhido aqui não se perde no clique.
+    const com = (base: string, p: Periodo) => `${base}?periodo=${p}`;
 
-    cards = [
-      // A produção da ferramenta vem primeiro: é o que o dono do produto abre
-      // o painel para ver.
+    const pendencias: Pendencia[] = [
+      {
+        href: "/admin/feedback",
+        rotulo: "Feedback aguardando a equipe",
+        acao: "classifique bug × sugestão e a situação",
+        n: feedbackAbertos,
+      },
       ...(EH_SUCESSORISTA
         ? [
             {
-              href: "/admin/sucessorista",
-              icon: Scale,
-              titulo: "Casos de inventário",
-              valor: casos,
-              leitura: "casos trabalhados no período",
-              detalhes: [
-                plural(
-                  minutas,
-                  "minuta ou planilha gerada",
-                  "minutas ou planilhas geradas"
-                ),
-                "porte, rito e leitura do cofre",
-              ],
+              href: "/admin/radar",
+              rotulo: "Perfis aguardando verificação da OAB",
+              acao: "aprove ou recuse na fila do Radar",
+              n: radarPerfisPendentes,
             },
             {
               href: "/admin/radar",
-              icon: Radar,
-              titulo: "Radar de famílias",
-              valor: radarPublicados,
-              leitura: "casos publicados aguardando resposta",
-              detalhes: [
-                plural(
-                  radarPerfisPendentes,
-                  "perfil aguardando verificação da OAB",
-                  "perfis aguardando verificação da OAB"
-                ),
-                plural(
-                  radarDenunciasPendentes,
-                  "denúncia pendente",
-                  "denúncias pendentes"
-                ),
-              ],
-              alerta: radarPerfisPendentes + radarDenunciasPendentes > 0,
+              rotulo: "Denúncias do Radar pendentes",
+              acao: "acatar suspende o perfil denunciado",
+              n: radarDenunciasPendentes,
             },
           ]
         : []),
-      // No site do resolvedor a produção é a triagem de notas; o Renomeador
-      // não roda lá, então o card de renomeações sai do painel.
+      {
+        href: com("/admin/erros", periodo),
+        rotulo: "Erros no período",
+        acao: "veja origem, usuário e detalhe de cada um",
+        n: erros,
+      },
+    ].filter((p) => p.n > 0);
+
+    const atividade: LinhaAtividade[] = [
+      ...(EH_SUCESSORISTA
+        ? [
+            {
+              href: com("/admin/sucessorista", periodo),
+              rotulo: "Casos de inventário trabalhados",
+              valor: casos,
+              detalhe: plural(minutas, "minuta gerada", "minutas geradas"),
+            },
+            {
+              href: "/admin/radar",
+              rotulo: "Casos publicados no Radar",
+              valor: radarPublicados,
+              detalhe: "aguardando resposta de advogado(a)",
+            },
+          ]
+        : []),
       ...(EH_NOTAS
         ? [
             {
-              href: "/admin/notas",
-              icon: ScrollText,
-              titulo: "Notas devolutivas",
+              href: com("/admin/notas", periodo),
+              rotulo: "Exigências triadas",
               valor: notas._sum.quantidade ?? 0,
-              leitura: "exigências triadas no período",
-              detalhes: [
-                plural(
-                  notas._count._all,
-                  "nota devolutiva triada",
-                  "notas devolutivas triadas"
-                ),
-                "vias, precisão do classificador e minutas",
-              ],
+              detalhe: plural(
+                notas._count._all,
+                "nota devolutiva",
+                "notas devolutivas"
+              ),
             },
           ]
-        : [
+        : []),
+      // Renomeações: só no site do Renomeador — na LexCausa o recurso embutido
+      // não é acompanhado pelo painel (pedido do escritório).
+      ...(!EH_SUCESSORISTA && !EH_NOTAS
+        ? [
             {
-              href: "/admin/renomeacoes",
-              icon: FileCheck2,
-              titulo: "Renomeações",
-              valor: arquivos,
-              leitura: "arquivos analisados no período",
-              detalhes: [
-                plural(lotes, "lote enviado", "lotes enviados"),
-                EH_SUCESSORISTA
-                  ? "dentro do cofre dos casos"
-                  : "por conta logada ou deslogada",
-              ],
+              href: com("/admin/renomeacoes", periodo),
+              rotulo: "Arquivos analisados",
+              valor: renomeacoes._sum.quantidade ?? 0,
+              detalhe: plural(
+                renomeacoes._count._all,
+                "lote enviado",
+                "lotes enviados"
+              ),
             },
-          ]),
+          ]
+        : []),
       {
-        href: "/admin/usuarios",
-        icon: Users,
-        titulo: "Usuários",
+        href: com("/admin/usuarios", periodo),
+        rotulo: "Aberturas da ferramenta",
+        valor: acessos,
+        detalhe: "uma por sessão do navegador",
+      },
+      {
+        href: com("/admin/usuarios", periodo),
+        rotulo: "Contas cadastradas",
         valor: totalUsuarios,
-        leitura: "contas cadastradas neste site",
-        detalhes: [
+        detalhe:
           novosUsuarios > 0
-            ? `+${plural(novosUsuarios, "conta nova", "contas novas")} no período`
-            : "nenhuma conta nova no período",
-          `${plural(acessos, "abertura", "aberturas")} da ferramenta`,
-        ],
-      },
-      {
-        href: "/admin/erros",
-        icon: AlertTriangle,
-        titulo: "Erros",
-        valor: erros,
-        leitura: erros === 0 ? "nenhuma falha no período" : "falhas no período",
-        detalhes: [
-          erros === 0
-            ? "a IA e as rotas responderam sem incidente"
-            : "veja origem, usuário e detalhe de cada uma",
-          "IA, rotas internas e fallback local",
-        ],
-        alerta: erros > 0,
-      },
-      {
-        href: "/admin/feedback",
-        icon: MessageSquareText,
-        titulo: "Feedback",
-        valor: feedbackAbertos,
-        leitura:
-          feedbackAbertos === 0
-            ? "nada aguardando classificação"
-            : "bugs e sugestões aguardando a equipe",
-        detalhes: [
-          "reportados pelo dialog do shell",
-          "classifique a situação em cada um",
-        ],
-        alerta: feedbackAbertos > 0,
+            ? `+${plural(novosUsuarios, "nova no período", "novas no período")}`
+            : "nenhuma nova no período",
       },
     ];
+
+    dados = { pendencias, atividade };
   } catch {
     // Banco indisponível/não configurado.
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Voltar para a ferramenta
-      </Link>
-
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
-        <p className="text-sm text-muted-foreground">
-          {IDENTIDADE.nome}. Escolha o período e clique num cartão para ver a
-          listagem completa.
-        </p>
-      </header>
-
-      <PeriodFilter basePath="/admin" atual={periodo} />
-
-      {cards === null ? (
+    <main className="flex flex-col gap-6">
+      {dados === null ? (
         <Alert>
           <AlertTitle>Banco de dados indisponível</AlertTitle>
           <AlertDescription>
@@ -273,53 +223,87 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
           </AlertDescription>
         </Alert>
       ) : (
-        // 4 cartões (Sucessorista) ficam melhor em 2×2 do que espremidos numa
-        // linha só; 3 (Renomeador) cabem lado a lado.
-        <div
-          className={cn(
-            "grid gap-4",
-            cards.length === 4 ? "sm:grid-cols-2" : "sm:grid-cols-3"
-          )}
-        >
-          {cards.map((c) => (
-            <Link key={c.href} href={c.href} className="group">
-              <Card className="h-full transition-colors group-hover:border-primary/50 group-hover:bg-accent/30">
-                <CardHeader>
-                  <CardDescription className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 font-medium text-foreground">
-                      <c.icon className="size-4 text-muted-foreground" />
-                      {c.titulo}
+        <>
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Precisa de você
+            </h2>
+            {dados.pendencias.length === 0 ? (
+              <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                Nada aguardando ação sua.
+              </p>
+            ) : (
+              <div className="divide-y rounded-lg border">
+                {dados.pendencias.map((p) => (
+                  <Link
+                    key={p.rotulo}
+                    href={p.href}
+                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40"
+                  >
+                    <Badge
+                      variant="destructive"
+                      className="min-w-8 justify-center tabular-nums"
+                    >
+                      {p.n}
+                    </Badge>
+                    <span className="flex-1">
+                      <span className="block text-sm font-medium">
+                        {p.rotulo}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {p.acao}
+                      </span>
                     </span>
-                    {/* A seta só aparece no hover: sinaliza que o cartão leva
-                        a algum lugar, sem competir com o número. */}
-                    <ArrowRight className="size-4 shrink-0 -translate-x-1 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                  </CardDescription>
-                  <CardTitle
+                    <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Atividade
+              </h2>
+              <PeriodFilter basePath="/admin" atual={periodo} />
+            </div>
+            <div className="divide-y rounded-lg border">
+              {dados.atividade.map((l) => (
+                <div
+                  key={l.rotulo}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <span
                     className={cn(
-                      "text-4xl tabular-nums",
-                      c.alerta && "text-amber-600",
-                      // Zero não é notícia: fica esmaecido para os números que
-                      // importam saltarem à vista na varredura do painel.
-                      c.valor === 0 && !c.alerta && "text-muted-foreground"
+                      "min-w-14 text-right text-xl font-semibold tabular-nums",
+                      // Zero não é notícia: esmaecido para os números que
+                      // importam saltarem à vista.
+                      l.valor === 0 && "text-muted-foreground"
                     )}
                   >
-                    {c.valor}
-                  </CardTitle>
-                  <CardDescription>{c.leitura}</CardDescription>
-                </CardHeader>
-                {/* mt-auto + altura reservada para duas linhas: sem isso, os
-                    cartões com menos detalhes deixariam o traço do rodapé numa
-                    altura diferente dos vizinhos — desalinhamento sutil que é
-                    exatamente o que faz um painel parecer bagunçado. */}
-                <CardFooter className="mt-auto min-h-17 flex-col items-start gap-0.5 text-xs text-muted-foreground">
-                  {c.detalhes.map((d) => (
-                    <span key={d}>{d}</span>
-                  ))}
-                </CardFooter>
-              </Card>
-            </Link>
-          ))}
-        </div>
+                    {l.valor}
+                  </span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-medium">{l.rotulo}</span>
+                    {l.detalhe && (
+                      <span className="block text-xs text-muted-foreground">
+                        {l.detalhe}
+                      </span>
+                    )}
+                  </span>
+                  <Link
+                    href={l.href}
+                    className="inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Abrir
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
       )}
     </main>
   );

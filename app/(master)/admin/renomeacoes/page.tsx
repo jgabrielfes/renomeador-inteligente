@@ -1,8 +1,6 @@
 // /admin/renomeacoes — lotes de arquivos renomeados (somente MASTER).
 // A plataforma funciona deslogada, então o evento pode não ter usuário.
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { PeriodFilter } from "@/components/admin/period-filter";
 import { QueryPagination } from "@/components/admin/query-pagination";
@@ -83,14 +81,7 @@ export default async function RenomeacoesPage({
   ]);
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
-      <Link
-        href="/admin"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Voltar para a administração
-      </Link>
+    <main className="flex flex-col gap-6">
 
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Renomeações</h1>
