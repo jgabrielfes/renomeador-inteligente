@@ -12,6 +12,9 @@ import { estimarCustos } from './estimativas';
 import { estimarItcmdUf, ITCMD_POR_UF } from './itcmd-uf';
 import { montarChecklistDocumentos } from './documentos';
 import { intakeParaCaso } from './intake-para-caso';
+import { compararCenarios } from './estimativas';
+import { calcularComplexidade } from './complexidade';
+import { estimarQuinhoes } from './quinhoes';
 import { sanitizarRespostas } from './sanitizar';
 
 let ok = 0, fail = 0;
@@ -230,6 +233,79 @@ console.log('\nPara famílias — triagem, estimativas e checklist\n');
     { casoId: 'c', gerarId: (p) => `${p}-${++seq}` },
   );
   teste('regime desconhecido → bens PARTICULARES + nota', caso.bens.every((b) => b.natureza === 'PARTICULAR') && caso.notas.includes('Regime de bens NÃO informado'));
+}
+
+/* ---------- índice de complexidade ---------- */
+
+{
+  const c = calcularComplexidade(base({ bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: '50-200' } }));
+  eq('sem complicadores → SIMPLES', c.nivel, 'SIMPLES');
+  teste('SIMPLES ainda explica (fator amigável)', c.fatores.length === 1);
+}
+{
+  const c = calcularComplexidade(base({ menorOuIncapaz: 'sim', dividas: 'sim' }));
+  eq('menor (+2) e dívidas (+1) → MEDIO', c.nivel, 'MEDIO');
+  eq('pontos do MEDIO', c.pontos, 3);
+}
+{
+  const c = calcularComplexidade(
+    base({
+      menorOuIncapaz: 'sim',
+      testamento: 'sim',
+      consenso: 'nao',
+      herdeiroExterior: 'sim',
+      bens: { ...RESPOSTAS_INICIAIS.bens, empresa: true, empresaValor: '200-500', imoveis: '1000-2000', imoveisUfs: ['RJ'] },
+    }),
+  );
+  eq('caso carregado → COMPLEXO', c.nivel, 'COMPLEXO');
+  teste('fatores citam o imóvel em outro estado', c.fatores.some((f) => f.includes('outro estado')));
+}
+
+/* ---------- quinhões estimados ---------- */
+
+{
+  const q = estimarQuinhoes(base({ testamento: 'sim' }));
+  teste('testamento → indeterminado, sem chute', q.indeterminado && q.partes.length === 0);
+}
+{
+  const q = estimarQuinhoes(base({ vinculo: 'casado', regime: 'nao-sei' }));
+  teste('regime desconhecido → indeterminado com o porquê', q.indeterminado && (q.motivo ?? '').includes('regime'));
+}
+{
+  const q = estimarQuinhoes(base({ vinculo: 'casado', regime: 'comunhao-universal', qtdHerdeiros: 2 }));
+  teste('universal: meação de 50% marcada como não-herança', q.partes.some((p) => p.meacao && p.pct === 50));
+  teste('universal: cada filho fica com 25%', q.partes.some((p) => !p.meacao && p.pct === 25));
+}
+{
+  const q = estimarQuinhoes(base({ vinculo: 'casado', regime: 'separacao', qtdHerdeiros: 3 }));
+  teste('separação: viúvo(a) concorre como um herdeiro (4 partes de 25%)', !q.indeterminado && q.partes.every((p) => p.pct === 25));
+}
+{
+  const q = estimarQuinhoes(base({ vinculo: 'nao', qtdHerdeiros: 4 }));
+  teste('sem cônjuge: divisão igualitária entre os filhos', q.partes.length === 1 && q.partes[0].pct === 25);
+}
+
+/* ---------- comparador agora × adiar ---------- */
+
+{
+  const c = compararCenarios(
+    base({ bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: '200-500' } }),
+    HOJE,
+  );
+  teste('SP → aplicável com 3 cenários', c.aplicavel && c.cenarios.length === 3);
+  teste(
+    'adiar nunca barateia (óbito além do prazo: encargos crescem)',
+    c.aplicavel &&
+      c.cenarios[0].itcmd.max <= c.cenarios[1].itcmd.max &&
+      c.cenarios[1].itcmd.max <= c.cenarios[2].itcmd.max,
+  );
+}
+{
+  const c = compararCenarios(
+    base({ ufFalecido: 'RJ', bens: { ...RESPOSTAS_INICIAIS.bens, financeiro: '200-500' } }),
+    HOJE,
+  );
+  teste('fora de SP sem bem paulista → não aplicável, com explicação honesta', !c.aplicavel && (c.motivoNaoAplicavel ?? '').length > 0);
 }
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);

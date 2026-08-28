@@ -20,8 +20,11 @@ import {
 } from '@/components/ui/dialog';
 import type { RespostasFamilia } from '@/lib/familias/tipos';
 import type { Triagem } from '@/lib/familias/triagem';
-import type { EstimativaCompleta } from '@/lib/familias/estimativas';
+import { compararCenarios, type EstimativaCompleta } from '@/lib/familias/estimativas';
 import type { ItemChecklist } from '@/lib/familias/documentos';
+import { calcularComplexidade, ROTULO_COMPLEXIDADE } from '@/lib/familias/complexidade';
+import { estimarQuinhoes } from '@/lib/familias/quinhoes';
+import { PERGUNTAS_AO_ADVOGADO } from '@/lib/familias/perguntas';
 
 export const ROTULO_VIA = {
   EXTRAJUDICIAL: 'Inventário em cartório (extrajudicial)',
@@ -386,6 +389,12 @@ export function ResultadoView({
    */
   chamadaRadar?: React.ReactNode;
 }) {
+  // Motores derivados DAS MESMAS respostas (puros e baratos — rodam no
+  // render). O "hoje" nasce uma vez por montagem, para o comparador.
+  const [hoje] = useState(() => new Date().toISOString().slice(0, 10));
+  const complexidade = calcularComplexidade(r);
+  const quinhoes = estimarQuinhoes(r);
+  const comparador = compararCenarios(r, hoje);
   return (
     <>
       <span className="eyebrow">Seu resultado — gratuito, sem cadastro</span>
@@ -409,6 +418,23 @@ export function ResultadoView({
           {o}
         </p>
       ))}
+
+      <h2>Como está a complexidade do caso</h2>
+      <div className="nota">
+        <p>
+          <strong>{ROTULO_COMPLEXIDADE[complexidade.nivel]}</strong>
+          {complexidade.nivel === 'SIMPLES'
+            ? ' — pelo que você respondeu, é um caso sem complicadores.'
+            : complexidade.nivel === 'MEDIO'
+              ? ' — alguns pontos pedem atenção, nada fora do comum.'
+              : ' — o caso reúne vários pontos que pedem organização e um bom acompanhamento.'}
+        </p>
+        {complexidade.fatores.map((f, i) => (
+          <p key={i} className="fund" style={{ marginTop: 6 }}>
+            {f}
+          </p>
+        ))}
+      </div>
 
       <h2>Estimativa do imposto (ITCMD)</h2>
       <ul className="custos-portal">
@@ -446,6 +472,47 @@ export function ResultadoView({
         </p>
       ))}
 
+      <h2>Como a herança costuma ser dividida</h2>
+      {quinhoes.indeterminado ? (
+        <div className="nota">
+          <p>{quinhoes.motivo}</p>
+        </div>
+      ) : (
+        <div className="nota">
+          {quinhoes.partes.map((p) => (
+            <div key={p.rotulo} style={{ marginTop: 8 }}>
+              <p style={{ margin: 0 }}>
+                {p.rotulo} — <strong className="num">{p.pct.toLocaleString('pt-BR')}%</strong>
+                {p.meacao ? ' (meação — não é herança, já era dele/dela)' : ''}
+              </p>
+              <div
+                aria-hidden="true"
+                style={{
+                  height: 8,
+                  marginTop: 4,
+                  borderRadius: 4,
+                  background: 'var(--fio, #ddd6c9)',
+                }}
+              >
+                <div
+                  style={{
+                    height: 8,
+                    width: `${Math.min(100, p.pct)}%`,
+                    borderRadius: 4,
+                    background: p.meacao ? 'var(--tinta-media, #4a544f)' : 'var(--bronze, #8a6d3b)',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {quinhoes.avisos.map((a, i) => (
+        <p key={i} className="fund" style={{ marginTop: 4 }}>
+          {a}
+        </p>
+      ))}
+
       <h2>{estimativa.custos.rotulo}</h2>
       <ul className="custos-portal">
         <li>
@@ -471,6 +538,32 @@ export function ResultadoView({
         )}
       </div>
 
+      <h2>Resolver agora × adiar</h2>
+      {comparador.aplicavel ? (
+        <ul className="custos-portal">
+          {comparador.cenarios.map((c) => (
+            <li key={c.rotulo}>
+              <span>
+                {c.rotulo}
+                <span className="fase-descricao">imposto projetado até {dataBr(c.data)}</span>
+              </span>
+              <span className="num">
+                {brl(c.itcmd.min)} a {brl(c.itcmd.max)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="nota">
+          <p>{comparador.motivoNaoAplicavel}</p>
+        </div>
+      )}
+      {comparador.avisos.map((a, i) => (
+        <p key={i} className="fund" style={{ marginTop: 4 }}>
+          {a}
+        </p>
+      ))}
+
       <h2>Documentos que a família já pode separar</h2>
       <ul className="custos-portal">
         {docs.map((d) => (
@@ -482,6 +575,19 @@ export function ResultadoView({
           </li>
         ))}
       </ul>
+
+      <h2>10 perguntas para fazer ao(à) advogado(a)</h2>
+      <ol className="fase-lista">
+        {PERGUNTAS_AO_ADVOGADO.map((p, i) => (
+          <li key={i} className="fase-item">
+            <span className="fase-ponto num">{i + 1}</span>
+            <span>
+              {p.pergunta}
+              <span className="fase-descricao">{p.porque}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
 
       <h2>Próximos passos</h2>
       <ol className="fase-lista">

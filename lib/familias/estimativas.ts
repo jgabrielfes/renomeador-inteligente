@@ -61,6 +61,11 @@ const somarDias = (data: string, dias: number): string => {
   return new Date(Date.UTC(a, m - 1, d) + dias * 86_400_000).toISOString().slice(0, 10);
 };
 
+const somarMeses = (data: string, meses: number): string => {
+  const [a, m, d] = data.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1 + meses, d)).toISOString().slice(0, 10);
+};
+
 /** Reparte o acervo por UF competente: imóveis nas UFs deles (em partes
  *  iguais entre as listadas), o resto no domicílio do falecido. */
 function basesPorUf(r: RespostasFamilia): Map<string, FaixaEstimada> {
@@ -204,4 +209,74 @@ export function estimarCustos(r: RespostasFamilia, hoje: string, via: ViaIndicad
   };
 
   return { acervo, itcmd, itcmdTotal, custos, prazo, avisos };
+}
+
+/* ---------- comparador "resolver agora × adiar" ---------- */
+
+export interface CenarioMomento {
+  rotulo: string;
+  /** Data de referência do cenário (hoje, +6 meses, +12 meses). */
+  data: string;
+  /** ITCMD projetado (imposto + atualização + multas + juros) até a data. */
+  itcmd: FaixaEstimada;
+}
+
+export interface ComparadorCenarios {
+  aplicavel: boolean;
+  motivoNaoAplicavel?: string;
+  cenarios: CenarioMomento[];
+  avisos: string[];
+}
+
+/**
+ * Quanto custa ADIAR: o ITCMD da parte paulista projetado hoje, daqui a 6 e
+ * daqui a 12 meses — o MESMO motor da provisão (Lei 10.705/2000: atualização
+ * pela UFESP até o vencimento; depois, multas dos arts. 19/21 e juros pela
+ * Selic estimada). Bens fora de SP ficam fora da conta, com aviso — projetar
+ * encargos de outra UF com a lei paulista seria mentir com números.
+ */
+export function compararCenarios(r: RespostasFamilia, hoje: string): ComparadorCenarios {
+  const avisos: string[] = [
+    'Enquanto o inventário não sai, contas podem ficar bloqueadas e imóveis e veículos não podem ser vendidos — adiar também tem esse custo, além do imposto.',
+  ];
+  if (!r.dataObito) {
+    return {
+      aplicavel: false,
+      motivoNaoAplicavel: 'Sem a data do falecimento não dá para projetar os encargos.',
+      cenarios: [],
+      avisos,
+    };
+  }
+  const bases = basesPorUf(r);
+  const baseSp = bases.get('SP');
+  const outras = [...bases.keys()].filter((uf) => uf !== 'SP');
+  if (!baseSp || baseSp.max <= 0) {
+    return {
+      aplicavel: false,
+      motivoNaoAplicavel:
+        'A projeção de multas e juros usa a lei paulista — para bens fora de São Paulo, um(a) advogado(a) local projeta pela lei do estado. A regra geral vale em todo lugar: quanto mais tarde, maior a conta.',
+      cenarios: [],
+      avisos,
+    };
+  }
+  if (outras.length > 0) {
+    avisos.push(
+      `A comparação cobre só a parte paulista — os bens em ${outras.join(', ')} têm encargos próprios por lá.`,
+    );
+  }
+  const rotulos = ['Se resolver agora', 'Se adiar 6 meses', 'Se adiar 12 meses'];
+  const cenarios = [0, 6, 12].map((meses, i) => {
+    const data = meses === 0 ? hoje : somarMeses(hoje, meses);
+    const min = provisionarItcmd({ dataObito: r.dataObito, dataReferencia: data, baseCalculo: baseSp.min });
+    const max = provisionarItcmd({ dataObito: r.dataObito, dataReferencia: data, baseCalculo: baseSp.max });
+    return {
+      rotulo: rotulos[i],
+      data,
+      itcmd: { min: Math.round(min.total), max: Math.round(max.total) },
+    };
+  });
+  avisos.push(
+    'Os juros do atraso usam a Selic estimada pela meta atual — o número oficial pode variar um pouco. Estimativa informativa, a confirmar com advogado(a).',
+  );
+  return { aplicavel: true, cenarios, avisos };
 }
