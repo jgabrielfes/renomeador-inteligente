@@ -15,6 +15,7 @@ import { PERGUNTAS_AO_ADVOGADO } from './perguntas';
 
 const C = {
   papel: [0.965, 0.957, 0.933] as const,
+  papelAlto: [0.992, 0.988, 0.976] as const,
   tinta: [0.102, 0.137, 0.125] as const,
   tintaMedia: [0.29, 0.329, 0.31] as const,
   bronze: [0.541, 0.427, 0.231] as const,
@@ -35,6 +36,19 @@ function limparTexto(s: string): string {
     .replace(/[^\x20-\x7E -ÿ–—]/g, ' ')
     .replace(/[ \t]+/g, ' ')
     .trim();
+}
+
+/**
+ * Setor circular como caminho SVG — a MESMA geometria da pizza dos PDFs do
+ * módulo (orçamento do caso): 0° no topo, sentido horário. O pdf-lib desenha
+ * caminho SVG com o y crescendo para BAIXO a partir da âncora, então o
+ * chamador passa o TOPO da caixa.
+ */
+function setorSvg(cx: number, cy: number, r: number, a0: number, a1: number): string {
+  const rad = (a: number) => ((a - 90) * Math.PI) / 180;
+  const p = (a: number) => `${(cx + r * Math.cos(rad(a))).toFixed(3)} ${(cy + r * Math.sin(rad(a))).toFixed(3)}`;
+  const grande = a1 - a0 > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${p(a0)} A ${r} ${r} 0 ${grande} 1 ${p(a1)} Z`;
 }
 
 const ROTULO_VIA = {
@@ -173,13 +187,109 @@ export async function montarResultadoPdf({
   if (quinhoes.indeterminado) {
     escrever(quinhoes.motivo ?? '', corpo, 10, C.tinta);
   } else {
-    for (const p of quinhoes.partes) {
-      escrever(
-        `${p.rotulo}: ${p.pct.toLocaleString('pt-BR')}%${p.meacao ? ' (meação - não é herança)' : ''}`,
-        corpoNegrito,
-        10,
-        C.tinta,
-      );
+    /* Pizza + tabela, na mesma veste do PDF de orçamento do caso. */
+    const partes = quinhoes.partes;
+    const n = Math.max(1, r.qtdHerdeiros);
+    const VERDE_REGISTRO = [0.18, 0.369, 0.306] as const;
+    // Cores com o mesmo significado da tela: meação em tinta-média, filhos em
+    // bronze; o(a) viúvo(a) que herda junto (separação) em verde-registro.
+    const corDaParte = (i: number) =>
+      partes[i].meacao ? C.tintaMedia : i === partes.length - 1 ? C.bronze : VERDE_REGISTRO;
+    // A última linha é sempre a dos filhos, com o % POR CABEÇA — na pizza ela
+    // vira uma fatia por filho(a), as bordas separando os quinhões iguais.
+    const fatias: { pct: number; cor: readonly [number, number, number] }[] = [];
+    partes.forEach((p, i) => {
+      const repete = i === partes.length - 1 ? n : 1;
+      for (let k = 0; k < repete; k++) fatias.push({ pct: p.pct, cor: corDaParte(i) });
+    });
+    const totalPct = fatias.reduce((s, f) => s + f.pct, 0) || 100;
+
+    const LADO = 130;
+    const alturaLegenda = partes.length * 14 + 6;
+    garantir(Math.max(LADO, alturaLegenda) + 12);
+    const topo = y;
+    const escala = LADO / 190; // mesma geometria da pizza de 190×190 da tela
+    let acumulado = 0;
+    for (const f of fatias) {
+      const fracao = f.pct / totalPct;
+      const a0 = acumulado * 360;
+      const a1 = Math.min((acumulado + fracao) * 360, 359.98);
+      acumulado += fracao;
+      page.drawSvgPath(setorSvg(95, 95, 88, a0, a1), {
+        x: MARGEM,
+        y: topo,
+        scale: escala,
+        color: cor(f.cor),
+        borderColor: cor(C.papelAlto),
+        borderWidth: 1.5,
+      });
+    }
+    // Legenda ao lado: quadradinho da cor + rótulo + %.
+    let ly = topo - 10;
+    const xLegenda = MARGEM + LADO + 16;
+    partes.forEach((p, i) => {
+      page.drawRectangle({
+        x: xLegenda,
+        y: ly - 6,
+        width: 8,
+        height: 8,
+        color: cor(corDaParte(i)),
+      });
+      const rotulo = `${p.rotulo} — ${p.pct.toLocaleString('pt-BR')}%`;
+      page.drawText(limparTexto(rotulo).slice(0, 80), {
+        x: xLegenda + 13,
+        y: ly - 5,
+        size: 8.5,
+        font: corpo,
+        color: cor(C.tinta),
+      });
+      ly -= 14;
+    });
+    y = Math.min(topo - LADO, ly) - 14;
+
+    // Tabela Parte · % do patrimônio · O que é.
+    const xPct = MARGEM + LARGURA * 0.6;
+    const xOque = MARGEM + LARGURA * 0.76;
+    garantir(18 + partes.length * 18);
+    page.drawText('Parte', { x: MARGEM, y: y - 9, size: 9, font: corpoNegrito, color: cor(C.bronze) });
+    page.drawText('% do patrimônio', { x: xPct, y: y - 9, size: 9, font: corpoNegrito, color: cor(C.bronze) });
+    page.drawText('O que é', { x: xOque, y: y - 9, size: 9, font: corpoNegrito, color: cor(C.bronze) });
+    y -= 13;
+    page.drawLine({
+      start: { x: MARGEM, y },
+      end: { x: MARGEM + LARGURA, y },
+      thickness: 0.8,
+      color: cor(C.fio),
+    });
+    y -= 4;
+    for (const p of partes) {
+      const linhasParte = quebrar(p.rotulo, corpo, 9, LARGURA * 0.56);
+      garantir(linhasParte.length * 12 + 8);
+      linhasParte.forEach((l, k) => {
+        page.drawText(l, { x: MARGEM, y: y - 9 - k * 12, size: 9, font: corpo, color: cor(C.tinta) });
+      });
+      page.drawText(`${p.pct.toLocaleString('pt-BR')}%`, {
+        x: xPct,
+        y: y - 9,
+        size: 9,
+        font: corpoNegrito,
+        color: cor(C.tinta),
+      });
+      page.drawText(limparTexto(p.meacao ? 'Meação (não é herança)' : 'Herança'), {
+        x: xOque,
+        y: y - 9,
+        size: 8.5,
+        font: corpo,
+        color: cor(C.tinta),
+      });
+      y -= linhasParte.length * 12 + 3;
+      page.drawLine({
+        start: { x: MARGEM, y },
+        end: { x: MARGEM + LARGURA, y },
+        thickness: 0.5,
+        color: cor(C.fio),
+      });
+      y -= 4;
     }
   }
   for (const a of quinhoes.avisos) escrever(a, corpo, 8.5, C.tintaMedia);
