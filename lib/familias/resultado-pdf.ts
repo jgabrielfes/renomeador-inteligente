@@ -7,8 +7,11 @@
 
 import type { RespostasFamilia } from './tipos';
 import type { Triagem } from './triagem';
-import type { EstimativaCompleta } from './estimativas';
+import { compararCenarios, type EstimativaCompleta } from './estimativas';
 import type { ItemChecklist } from './documentos';
+import { calcularComplexidade, ROTULO_COMPLEXIDADE } from './complexidade';
+import { estimarQuinhoes } from './quinhoes';
+import { PERGUNTAS_AO_ADVOGADO } from './perguntas';
 
 const C = {
   papel: [0.965, 0.957, 0.933] as const,
@@ -143,6 +146,15 @@ export async function montarResultadoPdf({
   for (const m of triagem.motivos) escrever(m, corpo, 10, C.tinta);
   for (const o of triagem.observacoes) escrever(o, corpo, 9, C.tintaMedia);
 
+  // Seções derivadas das MESMAS respostas (motores puros).
+  const complexidade = calcularComplexidade(r);
+  const quinhoes = estimarQuinhoes(r);
+  const comparador = compararCenarios(r, agora.slice(0, 10));
+
+  titulo('COMPLEXIDADE DO CASO');
+  escrever(ROTULO_COMPLEXIDADE[complexidade.nivel], corpoNegrito, 10.5, C.tinta);
+  for (const f of complexidade.fatores) escrever(`- ${f}`, corpo, 9, C.tintaMedia);
+
   titulo('ESTIMATIVA DO IMPOSTO (ITCMD)');
   for (const e of estimativa.itcmd) {
     escrever(`${e.uf}: ${brl(e.faixa.min)} a ${brl(e.faixa.max)}`, corpoNegrito, 10.5, C.tinta);
@@ -157,6 +169,21 @@ export async function montarResultadoPdf({
   }
   for (const a of estimativa.itcmd.flatMap((e) => e.avisos)) escrever(a, corpo, 8.5, C.tintaMedia);
 
+  titulo('COMO A HERANÇA COSTUMA SER DIVIDIDA');
+  if (quinhoes.indeterminado) {
+    escrever(quinhoes.motivo ?? '', corpo, 10, C.tinta);
+  } else {
+    for (const p of quinhoes.partes) {
+      escrever(
+        `${p.rotulo}: ${p.pct.toLocaleString('pt-BR')}%${p.meacao ? ' (meação - não é herança)' : ''}`,
+        corpoNegrito,
+        10,
+        C.tinta,
+      );
+    }
+  }
+  for (const a of quinhoes.avisos) escrever(a, corpo, 8.5, C.tintaMedia);
+
   titulo(limparTexto(estimativa.custos.rotulo).toUpperCase());
   escrever(
     `${brl(estimativa.custos.faixa.min)} a ${brl(estimativa.custos.faixa.max)}`,
@@ -169,10 +196,31 @@ export async function montarResultadoPdf({
   titulo('PRAZO');
   escrever(estimativa.prazo.texto, corpo, 10, C.tinta);
 
+  titulo('RESOLVER AGORA × ADIAR');
+  if (comparador.aplicavel) {
+    for (const c of comparador.cenarios) {
+      escrever(
+        `${c.rotulo}: ${brl(c.itcmd.min)} a ${brl(c.itcmd.max)} de imposto projetado`,
+        corpoNegrito,
+        10,
+        C.tinta,
+      );
+    }
+  } else if (comparador.motivoNaoAplicavel) {
+    escrever(comparador.motivoNaoAplicavel, corpo, 10, C.tinta);
+  }
+  for (const a of comparador.avisos) escrever(a, corpo, 8.5, C.tintaMedia);
+
   titulo('DOCUMENTOS PARA A FAMÍLIA SEPARAR');
   for (const d of docs) {
     escrever(`- ${d.titulo}: ${d.detalhe}`, corpo, 9.5, C.tinta);
   }
+
+  titulo('10 PERGUNTAS PARA FAZER AO(À) ADVOGADO(A)');
+  PERGUNTAS_AO_ADVOGADO.forEach((p, i) => {
+    escrever(`${i + 1}. ${p.pergunta}`, corpoNegrito, 9.5, C.tinta);
+    escrever(p.porque, corpo, 8.5, C.tintaMedia);
+  });
 
   y -= 10;
   page.drawLine({
