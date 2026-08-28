@@ -1799,6 +1799,43 @@
 .veste-familias .sucessorista .folha .acao { min-height: 48px; }
 .veste-familias .sucessorista .folha .nota { padding: var(--e-5); }
 
+/* Lacunas com MOLDURA visível: os campos do questionário são elementos
+   crus (fora do shadcn) e o preflight do Tailwind os deixa sem borda nem
+   fundo — a lacuna sumia no papel e o clique passava despercebido. Todo
+   input/select/textarea da veste ganha o retângulo: fundo alto, fio
+   forte, alvo de 48px; o foco bronze segue o padrão do módulo. */
+.veste-familias .sucessorista input:not([type='checkbox']):not([type='radio']),
+.veste-familias .sucessorista select,
+.veste-familias .sucessorista textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  background: var(--papel-alto);
+  border: 1.5px solid var(--fio-forte);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: var(--t-base);
+  font-weight: 400;
+  color: var(--tinta);
+}
+
+.veste-familias .sucessorista input::placeholder,
+.veste-familias .sucessorista textarea::placeholder {
+  color: var(--tinta-media);
+}
+
+.veste-familias .sucessorista input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--bronze);
+}
+
+.veste-familias .sucessorista select:focus-visible,
+.veste-familias .sucessorista textarea:focus-visible {
+  outline: 2px solid var(--bronze);
+  outline-offset: 1px;
+}
+
 /* Tarefas do caso — a fila operacional do dashboard (LexCausa fase 2). */
 .sucessorista .tarefas-caso { margin-bottom: var(--e-4); }
 .sucessorista .tarefas-lista {
