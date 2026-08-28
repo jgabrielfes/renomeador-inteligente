@@ -569,8 +569,17 @@ export function FamiliasClient({ radarAtivo = false }: { radarAtivo?: boolean })
                 type="number"
                 min={1}
                 max={30}
-                value={r.qtdHerdeiros}
-                onChange={(e) => patch({ qtdHerdeiros: Math.max(1, Number(e.target.value) || 1) })}
+                value={r.qtdHerdeiros === 0 ? '' : r.qtdHerdeiros}
+                onChange={(e) => {
+                  const texto = e.target.value;
+                  if (texto === '') {
+                    // Campo apagado: guarda 0 (a validação da tela pede >= 1 para avançar).
+                    patch({ qtdHerdeiros: 0 });
+                    return;
+                  }
+                  const n = Math.floor(Number(texto));
+                  if (Number.isFinite(n)) patch({ qtdHerdeiros: Math.min(30, Math.max(0, n)) });
+                }}
               />
             </label>
             <p style={{ marginTop: 12 }}>
