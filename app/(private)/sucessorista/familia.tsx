@@ -32,7 +32,6 @@ import { mascararCpf } from '@/lib/cpf';
 import { SeletorMunicipio, SeletorMunicipioTexto } from '@/components/seletor-municipio';
 import type { Herdeiro, Regime, Vinculo } from '@/lib/partilha/types';
 import {
-  composicaoFamiliar,
   formatarData,
   nomeProprio,
   QUALIFICACAO_VAZIA,
@@ -43,6 +42,13 @@ import {
   type Qualificacao,
 } from '@/lib/partilha/familia';
 import type { CertidaoCivilLida, DivergenciaConferencia } from '@/lib/partilha/conferencia';
+import {
+  fracaoDaCadeiaBonita,
+  ID_PRINCIPAL,
+  ROTULOS_VINCULO,
+  type FracaoDaCadeia,
+  type VinculoSucessao,
+} from '@/lib/partilha/cadeia';
 import type { SucessaoCumulada } from './itcmd-view';
 import { Doutrina } from './doutrina';
 
@@ -115,6 +121,7 @@ export function FamiliaView({
   sucessoes,
   setSucessoes,
   basesSucessoes = {},
+  fracoesSucessoes = {},
   divergencias = [],
 }: {
   estado: EstadoFamilia;
@@ -126,11 +133,12 @@ export function FamiliaView({
   setSucessoes: (s: SucessaoCumulada[]) => void;
   /** Monte partível apurado por sucessão (id → R$), para exibir na lista. */
   basesSucessoes?: Record<string, number>;
+  /** Frações sugeridas pela cadeia (lib/partilha/cadeia), por id de sucessão. */
+  fracoesSucessoes?: Record<string, FracaoDaCadeia>;
   /** Divergências do conferidor de qualificação cruzada (folha × certidões). */
   divergencias?: DivergenciaConferencia[];
 }) {
   const { falecido, temSobrevivente, vinculo, regime, nomeSobrev, herdeiros } = estado;
-  const composicao = composicaoFamiliar(falecido, temSobrevivente, vinculo, regime, herdeiros);
 
   // O bloco das sucessões cumuladas fica ESCONDIDO atrás da pergunta —
   // responder "Sim" abre o formulário; com sucessão já lançada, fica aberto
@@ -362,15 +370,8 @@ export function FamiliaView({
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
 
-      <h2>Composição familiar</h2>
-      <div className="nota">
-        <p>
-          {falecido.nome || 'O(a) autor(a) da herança'}
-          {falecido.dataObito ? `, falecido(a) em ${formatarDataCurta(falecido.dataObito)}` : ''}
-          {': '}
-          {composicao.resumo}.
-        </p>
-      </div>
+      {/* O resumo "Composição familiar" foi EXCLUÍDO (pedido do escritório):
+          o painel do caso já conta a mesma história em números. */}
 
       {/* Sucessões cumuladas FECHAM a aba (pedido do escritório): a pergunta
           só faz sentido depois de a família principal estar lançada — e o
@@ -401,20 +402,20 @@ export function FamiliaView({
           <div style={{ marginTop: 12 }}>
             <span className="eyebrow">Sucessões cumuladas (CPC, art. 672)</span>
             <p className="subtitulo" style={{ margin: '4px 0 10px' }}>
-              Cada sucessão tem o PRÓPRIO fato gerador — ITCMD pela UFESP e pelos prazos da
-              data do óbito respectiva, atos próprios de escritura e registro. Como os
-              óbitos costumam ser de anos diferentes, cada sucessão tem seu MONTE PARTÍVEL
-              e sua LEGÍTIMA. Escolha, em cada uma, se usa os MESMOS bens do 1º falecimento
-              (com o valor de avaliação próprio daquela data, lançado no acervo — cada bem
-              abre um campo de valor POR SUCESSÃO, e a partilha passa a contar com uma
-              partilha por sucessão) ou se ela tem BENS PARTICULARES. Com &quot;mesmos
-              herdeiros&quot;, o item III mostra uma partilha para CADA sucessão.
+              Cada sucessão tem o PRÓPRIO fato gerador — ITCMD, prazos, atos de escritura e
+              registro pela data do óbito respectiva. O que define o MONTE da sucessão
+              seguinte é o VÍNCULO do(a) novo(a) falecido(a) com a cadeia: cônjuge
+              meeiro(a) leva a meação de 50% dos bens comuns; herdeiro(a) leva a fração
+              que herdou (ex.: 1/7); ex-cônjuge em mancomunhão leva metade dela. A fração
+              sugerida preenche o acervo sozinha — e pode ser ajustada bem a bem.
             </p>
             <EditorSucessoes
               herdeiros={herdeiros}
               sucessoes={sucessoes}
               setSucessoes={setSucessoes}
               basesSucessoes={basesSucessoes}
+              fracoesSucessoes={fracoesSucessoes}
+              autorPrincipal={falecido.nome}
               qualificacoes={estado.qualificacoes}
               onQualificacao={(id, q) => {
                 const qualificacoes = { ...estado.qualificacoes };
@@ -433,11 +434,6 @@ export function FamiliaView({
       </div>
     </section>
   );
-}
-
-function formatarDataCurta(iso: string): string {
-  const [a, m, d] = iso.split('-');
-  return a && m && d ? `${d}/${m}/${a}` : iso;
 }
 
 /* ---------- herdeiros ---------- */
@@ -883,9 +879,25 @@ function EditorHerdeiros({
 const esquemaSucessao = z.object({
   nome: z.string().trim().min(1, 'Informe o nome do(a) autor(a) desta sucessão.'),
   dataObito: z.string().min(1, 'Informe a data do óbito — é o fato gerador desta sucessão.'),
+  vinculo: z.enum(['meeiro', 'herdeiro', 'mancomunheiro', 'nenhum'] as unknown as [
+    VinculoSucessao,
+    ...VinculoSucessao[],
+  ]),
   mesmosHerdeiros: z.boolean(),
   mesmosBens: z.boolean(),
 });
+
+/** Explicação curta de cada vínculo, mostrada sob as pílulas. */
+const DICAS_VINCULO: Record<VinculoSucessao, string> = {
+  meeiro:
+    'O padrão marido e mulher: transita a MEAÇÃO — 50% de cada bem comum do casal.',
+  herdeiro:
+    'Pai e filho: transita a fração que ele(a) HERDOU no falecimento anterior (ex.: 1/7 com sete herdeiros).',
+  mancomunheiro:
+    'Divórcio sem partilha dos bens: transita METADE do quinhão do falecimento anterior (1/7 vira 1/14).',
+  nenhum:
+    'Sem vínculo patrimonial com a cadeia — a sucessão vive só de bens particulares, lançados à parte no acervo.',
+};
 
 type NovaSucessao = z.infer<typeof esquemaSucessao>;
 
@@ -897,6 +909,8 @@ function EditorSucessoes({
   sucessoes,
   setSucessoes,
   basesSucessoes = {},
+  fracoesSucessoes = {},
+  autorPrincipal = '',
   qualificacoes,
   onQualificacao,
 }: {
@@ -904,6 +918,10 @@ function EditorSucessoes({
   sucessoes: SucessaoCumulada[];
   setSucessoes: (s: SucessaoCumulada[]) => void;
   basesSucessoes?: Record<string, number>;
+  /** Frações sugeridas pela cadeia (lib/partilha/cadeia), por id de sucessão. */
+  fracoesSucessoes?: Record<string, FracaoDaCadeia>;
+  /** Nome do(a) autor(a) do 1º falecimento — rotula a cadeia. */
+  autorPrincipal?: string;
   /** Qualificação COMPLETA do(a) autor(a) de cada sucessão, guardada no MESMO
    *  registro das demais partes (chave = id da sucessão) — alimenta o bloco
    *  "º FALECIMENTO" da escritura de dois óbitos. */
@@ -923,6 +941,7 @@ function EditorSucessoes({
     defaultValues: {
       nome: '',
       dataObito: '',
+      vinculo: 'meeiro',
       mesmosHerdeiros: true,
       mesmosBens: true,
     },
@@ -933,11 +952,17 @@ function EditorSucessoes({
       id: uid('su'),
       nome: nomeProprio(dados.nome),
       dataObito: dados.dataObito,
+      vinculo: dados.vinculo,
+      // O vínculo refere-se ao elo IMEDIATAMENTE anterior por padrão
+      // (ajustável na ficha quando a cadeia tem mais elos).
+      vinculoCom: sucessoes.length > 0 ? sucessoes[sucessoes.length - 1].id : ID_PRINCIPAL,
       // Legado zerado: a base/imóveis efetivos saem do acervo.
       base: '0.00',
       qtdImoveis: 0,
       mesmosHerdeiros: dados.mesmosHerdeiros,
-      mesmosBens: dados.mesmosBens,
+      // Sem vínculo patrimonial nada transita: a sucessão nasce de bens
+      // particulares — coerência que evita o monte zerado "misterioso".
+      mesmosBens: dados.vinculo === 'nenhum' ? false : dados.mesmosBens,
     };
     setSucessoes([...sucessoes, novo]);
     // A ficha abre NA HORA: qualificar o(a) autor(a) desta sucessão como o
@@ -958,10 +983,24 @@ function EditorSucessoes({
 
   return (
     <div className="cartao">
-      {sucessoes.map((su) => {
+      {sucessoes.map((su, indiceSu) => {
         const usaMesmosBens = su.mesmosBens ?? true;
         const monte = basesSucessoes[su.id];
         const fichaDesta = fichaAberta === su.id;
+        const fracao = fracoesSucessoes[su.id];
+        const vinculoSu: VinculoSucessao = su.vinculo ?? 'meeiro';
+        const nomeDoElo = (id: string | undefined) => {
+          const alvo =
+            id ?? (indiceSu === 0 ? ID_PRINCIPAL : sucessoes[indiceSu - 1]?.id);
+          if (alvo === ID_PRINCIPAL) return autorPrincipal || '1º falecimento';
+          return sucessoes.find((x) => x.id === alvo)?.nome || 'sucessão anterior';
+        };
+        const nHerdeirosSu =
+          (su.mesmosHerdeiros
+            ? su.participantes
+              ? su.participantes.length
+              : herdeiros.length
+            : 0) + (su.herdeirosProprios?.length ?? 0);
         return (
         <div key={su.id}>
         <div className="linha-item">
@@ -972,28 +1011,20 @@ function EditorSucessoes({
               · óbito em {su.dataObito ? formatarData(su.dataObito) : '—'} · monte partível{' '}
               {brlSucessao(monte !== undefined ? monte : Number(su.base))}
             </span>
-            {(monte ?? Number(su.base) ?? 0) === 0 && (
-              <span className="fund" style={{ marginLeft: 6 }}>
-                (sai dos bens do acervo — lance-os no item II)
-              </span>
-            )}
-            <span className="fund" style={{ marginLeft: 6 }}>
-              {usaMesmosBens
-                ? '· mesmos bens (avaliação por sucessão no acervo)'
-                : '· bens particulares (lançados à parte)'}
+            <span className="fund" style={{ display: 'block', marginTop: 2 }}>
+              {ROTULOS_VINCULO[vinculoSu].toLowerCase()} de {nomeDoElo(su.vinculoCom)}
+              {fracao && fracao.fracaoMonte > 0 && usaMesmosBens
+                ? ` — transita ${fracaoDaCadeiaBonita(fracao.fracaoMonte)} de cada bem comum`
+                : ''}
+              {!usaMesmosBens ? ' — bens particulares, lançados à parte no acervo' : ''}
+              {' · '}
+              {nHerdeirosSu > 0
+                ? `${nHerdeirosSu} herdeiro(s) nesta sucessão — partilha própria no item III`
+                : 'defina os herdeiros dela na ficha'}
             </span>
-            {su.mesmosHerdeiros && (
-              <span className="fund" style={{ marginLeft: 6 }}>
-                ★ {su.participantes ? `${su.participantes.length} herdeiro(s) do 1º falecimento` : 'mesmos herdeiros'}
-                {(su.herdeirosProprios?.length ?? 0) > 0
-                  ? ` + ${su.herdeirosProprios!.length} próprio(s)`
-                  : ''}{' '}
-                — partilha própria no item III
-              </span>
-            )}
-            {su.mesmosHerdeiros === false && (su.herdeirosProprios?.length ?? 0) > 0 && (
-              <span className="fund" style={{ marginLeft: 6 }}>
-                ★ {su.herdeirosProprios!.length} herdeiro(s) próprio(s) — partilha própria no item III
+            {(monte ?? Number(su.base) ?? 0) === 0 && (
+              <span className="fund" style={{ display: 'block' }}>
+                (o monte sai dos bens do acervo — lance-os no item II)
               </span>
             )}
           </span>
@@ -1034,6 +1065,53 @@ function EditorSucessoes({
         </div>
         {fichaDesta && (
           <div className="ficha" style={{ marginTop: 8 }}>
+            <div style={{ marginBottom: 10 }}>
+              <span className="eyebrow">Quem era {su.nome || 'o(a) autor(a)'} na cadeia?</span>
+              <div className="escolha" style={{ marginTop: 6 }}>
+                {(Object.keys(ROTULOS_VINCULO) as VinculoSucessao[]).map((v) => (
+                  <Pilula
+                    key={v}
+                    ativo={vinculoSu === v}
+                    onClick={() =>
+                      patchSucessao(su.id, {
+                        vinculo: v,
+                        // Coerência do lançamento: sem vínculo, nada transita.
+                        ...(v === 'nenhum' ? { mesmosBens: false } : {}),
+                      })
+                    }
+                  >
+                    {ROTULOS_VINCULO[v]}
+                  </Pilula>
+                ))}
+              </div>
+              <p className="fund" style={{ margin: '6px 0 0' }}>
+                {DICAS_VINCULO[vinculoSu]}
+                {fracao && fracao.fracaoMonte > 0 && usaMesmosBens
+                  ? ` Fração sugerida: ${fracaoDaCadeiaBonita(fracao.fracaoMonte)} de cada bem comum — ajustável bem a bem no acervo. Quem herdou em MAIS de uma sucessão anterior acumula frações: confira e some no acervo.`
+                  : ''}
+              </p>
+              {(indiceSu > 0 || sucessoes.length > 1) && vinculoSu !== 'nenhum' && (
+                <label className="campo" style={{ marginTop: 8, maxWidth: 360 }}>
+                  <span>Vínculo em relação a</span>
+                  <select
+                    className="seletor"
+                    value={su.vinculoCom ?? (indiceSu === 0 ? ID_PRINCIPAL : sucessoes[indiceSu - 1].id)}
+                    onChange={(e) => patchSucessao(su.id, { vinculoCom: e.target.value })}
+                  >
+                    <option value={ID_PRINCIPAL}>
+                      {autorPrincipal || '1º falecimento'} (1ª sucessão)
+                    </option>
+                    {sucessoes
+                      .filter((x, i) => i < indiceSu)
+                      .map((x, i) => (
+                        <option key={x.id} value={x.id}>
+                          {x.nome || 'Sucessão'} ({i + 2}ª sucessão)
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+            </div>
             <QualificacaoEditor
               titulo={`Qualificação — ${su.nome || 'autor(a) da sucessão'}`}
               valor={qualificacoes[su.id] ?? QUALIFICACAO_VAZIA}
@@ -1058,6 +1136,31 @@ function EditorSucessoes({
         );
       })}
 
+      {sucessoes.length > 0 && (
+        <div className="nota" style={{ marginTop: 10 }}>
+          <span className="eyebrow">A cadeia deste inventário</span>
+          <p style={{ margin: '4px 0 0' }}>
+            {[
+              `1ª sucessão — ${autorPrincipal || 'autor(a) da herança'} (${herdeiros.length} herdeiro(s))`,
+              ...sucessoes.map((su, i) => {
+                const f = fracoesSucessoes[su.id];
+                const detalhe =
+                  (su.mesmosBens ?? true) && f && f.fracaoMonte > 0
+                    ? `transita ${fracaoDaCadeiaBonita(f.fracaoMonte)}`
+                    : 'bens particulares';
+                return `${i + 2}ª — ${su.nome || '(sem nome)'} (${detalhe}${
+                  basesSucessoes[su.id] ? ` · monte ${brlSucessao(basesSucessoes[su.id])}` : ''
+                })`;
+              }),
+            ].join('  →  ')}
+          </p>
+          <p className="fund" style={{ margin: '4px 0 0' }}>
+            Cada elo gera a própria declaração de ITCMD, os próprios atos de escritura e
+            registro e a própria partilha no item III — tudo somado no orçamento do caso.
+          </p>
+        </div>
+      )}
+
       <form noValidate onSubmit={handleSubmit(lancar)}>
         <div className="grade c2" style={{ marginTop: sucessoes.length > 0 ? 12 : 0 }}>
           <Field data-invalid={Boolean(errors.nome)}>
@@ -1078,6 +1181,25 @@ function EditorSucessoes({
         {/* Base transmitida e contagem de imóveis SAÍRAM do formulário
             (pedido do escritório): esses números são derivados dos bens do
             acervo — comum às sucessões ou exclusivo desta — nunca digitados. */}
+        <div style={{ marginTop: 10 }}>
+          <span className="fund" style={{ display: 'block', marginBottom: 6 }}>
+            Quem era essa pessoa em relação ao falecimento anterior? (define a fração dos
+            bens que transita — ajustável depois)
+          </span>
+          <Controller
+            control={control}
+            name="vinculo"
+            render={({ field }) => (
+              <div className="escolha">
+                {(Object.keys(ROTULOS_VINCULO) as VinculoSucessao[]).map((v) => (
+                  <Pilula key={v} ativo={field.value === v} onClick={() => field.onChange(v)}>
+                    {ROTULOS_VINCULO[v]}
+                  </Pilula>
+                ))}
+              </div>
+            )}
+          />
+        </div>
         <div style={{ marginTop: 10 }}>
           <Controller
             control={control}

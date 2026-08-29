@@ -156,6 +156,7 @@ import {
   temAlocacao,
   type DespesaAdiantada,
 } from '@/lib/partilha/cenario';
+import { fracoesDaCadeia, type FracaoDaCadeia } from '@/lib/partilha/cadeia';
 import { montarCenarioCompartilhado } from '@/lib/portal/espolio';
 import { fatosDoEspolio, salvarCenario } from './painel-actions';
 import {
@@ -1872,10 +1873,31 @@ export default function SucessoristaClient({
    * bens que integram a sucessão. Sem coluna preenchida, vale a base manual
    * lançada no item I.
    */
+  /**
+   * Frações SUGERIDAS pela cadeia (lib/partilha/cadeia): o vínculo de cada
+   * sucessão com a anterior (meeiro/herdeiro/mancomunheiro) define quanto de
+   * cada bem comum transita nela — o padrão das escrituras reais do balcão.
+   * A coluna de fração do acervo sobrescreve; sem coluna, vale a sugerida.
+   */
+  const fracoesSucessoes = useMemo<Record<string, FracaoDaCadeia>>(
+    () =>
+      fracoesDaCadeia({
+        nHerdeirosPrincipal: herdeiros.length,
+        meacaoNaPrincipal: Boolean(resultado?.meacao),
+        sucessoes: (fiscal.sucessoes ?? []).map((su) => ({
+          id: su.id,
+          vinculo: su.vinculo,
+          vinculoCom: su.vinculoCom,
+          nHerdeiros: herdeirosDaSucessao(su, herdeiros).length,
+        })),
+      }),
+    [fiscal.sucessoes, herdeiros, resultado],
+  );
+
   const basesSucessoes = useMemo(() => {
     const mapa: Record<string, number> = {};
     for (const su of fiscal.sucessoes ?? []) {
-      const itens = bensDaSucessao(su, bens);
+      const itens = bensDaSucessao(su, bens, fracoesSucessoes[su.id]?.fracaoMonte);
       const temColuna = itens.some((i) => i.temColuna);
       const soma = Math.round(itens.reduce((a, i) => a + i.valor, 0) * 100) / 100;
       // A base manual (campo LEGADO) só vale no caso antigo que a digitou e
@@ -1883,7 +1905,7 @@ export default function SucessoristaClient({
       mapa[su.id] = !temColuna && Number(su.base) > 0 ? Number(su.base) : soma;
     }
     return mapa;
-  }, [fiscal.sucessoes, bens]);
+  }, [fiscal.sucessoes, bens, fracoesSucessoes]);
 
   /**
    * RITO EFETIVO do caso: a escolha do dashboard "O Caso" manda
@@ -1933,7 +1955,7 @@ export default function SucessoristaClient({
       sucessoes: (fiscal.sucessoes ?? []).map((su) => {
         // Imóveis DERIVADOS do acervo (bens IMÓVEL que integram a sucessão);
         // a contagem manual (campo legado) só vale sem bem integrante.
-        const imoveisSu = bensDaSucessao(su, bens).filter(
+        const imoveisSu = bensDaSucessao(su, bens, fracoesSucessoes[su.id]?.fracaoMonte).filter(
           (i) => i.bem.tipo === 'IMOVEL',
         ).length;
         return {
@@ -2002,7 +2024,7 @@ export default function SucessoristaClient({
       ufesp: provisao?.ufespReferencia ?? ufespDoAno(new Date().getFullYear()).valor,
       issPct: Math.min(5, Math.max(2, Number(fiscal.issPct ?? '5') || 5)),
     });
-  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fiscal.issPct, fiscal.rito, fiscal.custosManuais, matriz, anotacoesMatriz, participantes]);
+  }, [resultado, atribuicao, bens, herdeiros, familia.herdeirosDeclarados, temSobrevivente, vinculo, familia.uniaoEstavelFormalizada, provisao, fiscal.sucessoes, basesSucessoes, fracoesSucessoes, fiscal.issPct, fiscal.rito, fiscal.custosManuais, matriz, anotacoesMatriz, participantes]);
 
 
   /**
@@ -3495,7 +3517,9 @@ export default function SucessoristaClient({
         const herdeirosSu = herdeirosDaSucessao(su, herdeiros);
         let resultadoSu: Resultado | null = null;
         if (herdeirosSu.length > 0) {
-          const itens = bensDaSucessao(su, bens).filter((i) => i.valor > 0);
+          const itens = bensDaSucessao(su, bens, fracoesSucessoes[su.id]?.fracaoMonte).filter(
+            (i) => i.valor > 0,
+          );
           const bensSu: Bem[] =
             itens.length > 0
               ? itens.map((i) => ({
@@ -4163,6 +4187,7 @@ export default function SucessoristaClient({
             sucessoes={fiscal.sucessoes ?? []}
             setSucessoes={(s) => setFiscal({ ...fiscal, sucessoes: s })}
             basesSucessoes={basesSucessoes}
+            fracoesSucessoes={fracoesSucessoes}
             divergencias={divergenciasConferencia}
           />
         )}
@@ -4178,6 +4203,7 @@ export default function SucessoristaClient({
             setColacoes={setColacoes}
             sociedades={resumoSociedades}
             sucessoes={fiscal.sucessoes ?? []}
+            fracoesSucessoes={fracoesSucessoes}
             autorPrincipal={{ nome: falecido.nome, dataObito: falecido.dataObito }}
             voltar={() => irPara('familia')}
             avancar={() => {
@@ -4549,6 +4575,7 @@ export default function SucessoristaClient({
               herdeiros={herdeiros}
               bens={bens}
               bases={basesSucessoes}
+              fracoes={fracoesSucessoes}
               onPatch={(suId, patch) =>
                 setFiscal({
                   ...fiscal,
@@ -4933,6 +4960,10 @@ export default function SucessoristaClient({
 function bensDaSucessao(
   su: SucessaoCumulada,
   bens: Bem[],
+  /** Fração SUGERIDA pela cadeia (lib/partilha/cadeia) para os bens COMUNS
+   *  sem fração digitada — o vínculo meeiro/herdeiro/mancomunheiro define o
+   *  quanto do bem transita nesta sucessão. Ausente = 100% (legado). */
+  fracaoPadrao?: number,
 ): { bem: Bem; valor: number; temColuna: boolean }[] {
   // Bens particulares: a sucessão só considera os bens EXCLUSIVOS dela.
   const soBensProprios = su.mesmosBens === false;
@@ -4946,10 +4977,13 @@ function bensDaSucessao(
     );
     const venal = Number(av?.valor ?? b.valor) || 0;
     const avaliacao = Number(av?.valorAvaliacao ?? b.valorAvaliacao) || 0;
+    // Bem EXCLUSIVO desta sucessão transita inteiro; bem comum sem fração
+    // digitada usa a sugerida pela cadeia (quando houver).
+    const fracSemColuna = b.sucessaoExclusiva === su.id ? 1 : (fracaoPadrao ?? 1);
     const frac =
       av?.fracaoPct !== undefined && String(av.fracaoPct).trim() !== ''
         ? (Number(String(av.fracaoPct).replace(',', '.')) || 0) / 100
-        : 1;
+        : fracSemColuna;
     lista.push({
       bem: b,
       valor: Math.round(Math.max(venal, avaliacao) * frac * 100) / 100,
@@ -4973,6 +5007,7 @@ function PartilhasSucessoes({
   herdeiros,
   bens,
   bases,
+  fracoes,
   onPatch,
 }: {
   sucessoes: SucessaoCumulada[];
@@ -4980,6 +5015,8 @@ function PartilhasSucessoes({
   bens: Bem[];
   /** Base de cada sucessão (calculada pelo acervo ou manual) — por id. */
   bases: Record<string, number>;
+  /** Frações sugeridas pela cadeia (lib/partilha/cadeia) — por id. */
+  fracoes?: Record<string, FracaoDaCadeia>;
   /** Persiste a matriz diferenciada da sucessão no snapshot (fiscal). */
   onPatch: (suId: string, patch: Partial<SucessaoCumulada>) => void;
 }) {
@@ -5002,6 +5039,7 @@ function PartilhasSucessoes({
           herdeiros={herdeiros}
           bens={bens}
           base={bases[su.id] ?? 0}
+          fracaoPadrao={fracoes?.[su.id]?.fracaoMonte}
           onPatch={(patch) => onPatch(su.id, patch)}
         />
       ))}
@@ -5015,6 +5053,7 @@ function PartilhaDeSucessao({
   herdeiros,
   bens,
   base,
+  fracaoPadrao,
   onPatch,
 }: {
   sucessao: SucessaoCumulada;
@@ -5022,6 +5061,8 @@ function PartilhaDeSucessao({
   herdeiros: Herdeiro[];
   bens: Bem[];
   base: number;
+  /** Fração sugerida pela cadeia para os bens comuns sem fração digitada. */
+  fracaoPadrao?: number;
   onPatch: (patch: Partial<SucessaoCumulada>) => void;
 }) {
   const herdeirosSu = useMemo(
@@ -5034,7 +5075,7 @@ function PartilhaDeSucessao({
   // sem bem integrante cai num bem sintético pela base manual.
   const caso = useMemo<Caso | null>(() => {
     if (herdeirosSu.length === 0) return null;
-    const itens = bensDaSucessao(sucessao, bens).filter((i) => i.valor > 0);
+    const itens = bensDaSucessao(sucessao, bens, fracaoPadrao).filter((i) => i.valor > 0);
     const bensSu: Bem[] =
       itens.length > 0
         ? itens.map((i) => ({
@@ -5060,7 +5101,7 @@ function PartilhaDeSucessao({
       herdeiros: herdeirosSu,
       bens: bensSu,
     };
-  }, [sucessao, herdeirosSu, bens, base]);
+  }, [sucessao, herdeirosSu, bens, base, fracaoPadrao]);
 
   const resultado = useMemo(() => {
     if (!caso) return null;
