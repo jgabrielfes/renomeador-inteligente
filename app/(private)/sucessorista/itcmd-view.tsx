@@ -101,6 +101,17 @@ export interface SucessaoCumulada {
   /** Data do óbito desta sucessão — fato gerador do ITCMD dela. */
   dataObito: string;
   /**
+   * VÍNCULO do(a) autor(a) desta sucessão com a cadeia (lib/partilha/cadeia):
+   * meeiro (padrão marido e mulher) | herdeiro (pai e filho) | mancomunheiro
+   * (divórcio sem partilha) | nenhum (só bens particulares). Define a fração
+   * SUGERIDA de cada bem comum que transita nela — a coluna de fração do
+   * acervo sempre pode sobrescrever. Ausente = meeiro (compatibilidade).
+   */
+  vinculo?: import('@/lib/partilha/cadeia').VinculoSucessao;
+  /** A qual elo o vínculo se refere: 'PRINCIPAL' ou o id de outra sucessão.
+   *  Ausente = o elo imediatamente anterior na cadeia. */
+  vinculoCom?: string;
+  /**
    * LEGADO: base transmitida manual (R$, decimal "12345.67"). O lançamento
    * novo não pede mais este campo — a base sai dos BENS que integram a
    * sucessão no acervo (MAIOR entre venal do óbito e avaliação × fração).

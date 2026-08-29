@@ -26,6 +26,7 @@ import {
 
 import type { AvaliacaoBemSucessao, Bem, Herdeiro, TipoBem } from '@/lib/partilha/types';
 import type { Colacao } from '@/lib/partilha/colacao';
+import { fracaoDaCadeiaBonita, type FracaoDaCadeia } from '@/lib/partilha/cadeia';
 import { TIPOS_BEM_ITCMD, tipoBemItcmd } from '@/lib/partilha/tipos-itcmd';
 import type { SucessaoCumulada } from './itcmd-view';
 import type { AvaliacaoQuotas, SociedadeExtraida } from '@/lib/partilha/sociedade';
@@ -181,6 +182,7 @@ export function AcervoView({
   sociedades = [],
   sucessoes = [],
   autorPrincipal,
+  fracoesSucessoes = {},
   voltar,
   avancar,
 }: {
@@ -199,6 +201,8 @@ export function AcervoView({
   /** Autor(a) principal do inventário — abre a linha da 1ª SUCESSÃO na faixa
    *  de avaliação por sucessão (o campo é o MESMO venal do óbito do bem). */
   autorPrincipal?: { nome: string; dataObito: string };
+  /** Frações sugeridas pela cadeia (lib/partilha/cadeia), por id de sucessão. */
+  fracoesSucessoes?: Record<string, FracaoDaCadeia>;
   voltar: () => void;
   avancar: () => void;
 }) {
@@ -491,6 +495,7 @@ export function AcervoView({
           numero={i + 1}
           sucessoes={sucessoes}
           autorPrincipal={autorPrincipal}
+          fracoesSucessoes={fracoesSucessoes}
           ehPrimeiro={i === 0}
           ehUltimo={i === bens.length - 1}
           onMover={(delta) => {
@@ -777,6 +782,7 @@ function LinhaBem({
   numero,
   sucessoes = [],
   autorPrincipal,
+  fracoesSucessoes = {},
   ehPrimeiro,
   ehUltimo,
   onMover,
@@ -787,6 +793,7 @@ function LinhaBem({
   numero: number;
   sucessoes?: SucessaoCumulada[];
   autorPrincipal?: { nome: string; dataObito: string };
+  fracoesSucessoes?: Record<string, FracaoDaCadeia>;
   ehPrimeiro: boolean;
   ehUltimo: boolean;
   onMover: (delta: number) => void;
@@ -987,6 +994,7 @@ function LinhaBem({
           bem={bem}
           sucessoes={sucessoes}
           autorPrincipal={autorPrincipal}
+          fracoesSucessoes={fracoesSucessoes}
           onSalvar={onSalvar}
         />
       )}
@@ -1124,11 +1132,13 @@ function FaixaSucessoesDoBem({
   bem,
   sucessoes,
   autorPrincipal,
+  fracoesSucessoes = {},
   onSalvar,
 }: {
   bem: Bem;
   sucessoes: SucessaoCumulada[];
   autorPrincipal?: { nome: string; dataObito: string };
+  fracoesSucessoes?: Record<string, FracaoDaCadeia>;
   onSalvar: (b: Bem) => void;
 }) {
   // Linha da 1ª sucessão: o campo é o PRÓPRIO venal na data do óbito do bem
@@ -1258,10 +1268,26 @@ function FaixaSucessoesDoBem({
                   />
                 </label>
                 <label className="campo">
-                  <span>Fração nesta sucessão (%)</span>
+                  <span>
+                    Fração nesta sucessão (%)
+                    {(() => {
+                      const f = fracoesSucessoes[su.id];
+                      return f && f.fracaoMonte > 0 && bem.sucessaoExclusiva !== su.id
+                        ? ` — sugerida pela cadeia: ${fracaoDaCadeiaBonita(f.fracaoMonte)}`
+                        : '';
+                    })()}
+                  </span>
                   <Input
                     inputMode="decimal"
                     value={av.fracaoPct ?? ''}
+                    placeholder={(() => {
+                      const f = fracoesSucessoes[su.id];
+                      return f && f.fracaoMonte > 0 && bem.sucessaoExclusiva !== su.id
+                        ? (f.fracaoMonte * 100).toLocaleString('pt-BR', {
+                            maximumFractionDigits: 2,
+                          })
+                        : '';
+                    })()}
                     onChange={(e) =>
                       patchSucessao(su.id, {
                         fracaoPct:
@@ -1276,12 +1302,13 @@ function FaixaSucessoesDoBem({
         );
       })}
       <p className="fund" style={{ margin: '4px 0 0' }}>
-        Vazio = valem os valores lançados do bem e 100%. A base do ITCMD de cada sucessão
-        sai, bem a bem, pelo MAIOR entre o venal no óbito respectivo e a avaliação —
-        exatamente como na 1ª sucessão — vezes a fração que transita nela. São DUAS (ou
-        mais) declarações de ITCMD, cada uma pelo próprio fato gerador. Atenção: cada
-        sucessão tem monte partível, legítima e PROPORÇÕES próprios — mudar um valor aqui
-        muda a partilha daquela sucessão no item III, o imposto e os custos dela.
+        Valores vazios = valem os do lançamento do bem; fração vazia = vale a SUGERIDA
+        pela cadeia (o vínculo escolhido no item I — meação de 50%, fração herdada,
+        metade da mancomunhão). A base do ITCMD de cada sucessão sai, bem a bem, pelo
+        MAIOR entre o venal no óbito respectivo e a avaliação, vezes essa fração. São
+        DUAS (ou mais) declarações de ITCMD, cada uma pelo próprio fato gerador — mudar
+        um valor aqui muda a partilha daquela sucessão no item III, o imposto e os
+        custos dela.
       </p>
     </div>
   );
