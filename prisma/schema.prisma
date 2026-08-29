@@ -45,11 +45,11 @@ enum PapelEquipe {
 // conflito arbitrando; a equipe governa o vínculo de pessoas e o perfil.
 // Convite com `acessoCasos` abre também a NUVEM DA EQUIPE (EquipeCaso).
 model Equipe {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   nome      String
   app       Plataforma
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   membros  User[]
   convites EquipeConvite[]
@@ -121,11 +121,11 @@ model EquipeCaso {
 // no navegador do herdeiro (fronteira de dados), aqui nunca entra conteúdo
 // de documento.
 model PortalConvite {
-  token     String   @id
+  token     String          @id
   casoId    String
   dados     Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
   arquivos  PortalArquivo[]
 
   @@map("portal_convites")
@@ -210,7 +210,7 @@ model EspolioNota {
   token         String
   autor         String
   bemId         String
-  tipo          String    // 'comentario' | 'sugestao_valor'
+  tipo          String // 'comentario' | 'sugestao_valor'
   texto         String
   valorSugerido String?
   status        String    @default("pendente") // pendente|aceita|recusada
@@ -276,7 +276,7 @@ model EspolioAdesao {
   casoId     String
   token      String
   autor      String
-  resposta   String   // aceito|nao_aceito|conversar
+  resposta   String // aceito|nao_aceito|conversar
   comentario String?
   createdAt  DateTime @default(now())
 
@@ -347,34 +347,34 @@ model EspolioMural {
 // padrão do portal: token = credencial, sem login). Retenção: intake não
 // reclamado expira em 90 dias (expiraEm); retirado é APAGADO na hora.
 model FamiliaIntake {
-  id                String    @id @default(cuid())
-  respostas         Json
-  resultado         Json
-  nome              String?
-  email             String?
-  emailConfirmadoEm DateTime?
-  consentimentoEm   DateTime?
-  status            String    @default("resultado") // rascunho|resultado|publicado|em_conversa|contratado|retirado|expirado
-  uf                String
-  cidade            String
-  pequenoValor      Boolean   @default(false)
-  tokenGestao       String    @unique
-  expiraEm          DateTime
+  id                     String    @id @default(cuid())
+  respostas              Json
+  resultado              Json
+  nome                   String?
+  email                  String?
+  emailConfirmadoEm      DateTime?
+  consentimentoEm        DateTime?
+  status                 String    @default("resultado") // rascunho|resultado|publicado|em_conversa|contratado|retirado|expirado
+  uf                     String
+  cidade                 String
+  pequenoValor           Boolean   @default(false)
+  tokenGestao            String    @unique
+  expiraEm               DateTime
   // RADAR — publicação anonimizada (camada 3, etapa 4): a publicação SÓ
   // acontece com consentimento específico + e-mail confirmado pelo link
   // (confirmacaoToken, uso único). aviso72hEm marca o aviso honesto de
   // "ninguém respondeu ainda" (enviado uma vez pela varredura do admin).
-  confirmacaoToken  String?   @unique
-  publicadoEm       DateTime?
-  aviso72hEm        DateTime?
+  confirmacaoToken       String?   @unique
+  publicadoEm            DateTime?
+  aviso72hEm             DateTime?
   // Conversa 1:1 (etapa 5): a família escolhe UM(A) advogado(a) por vez —
   // "Quero conversar" grava quem; encerrar limpa e o caso volta ao Radar;
   // 30 dias sem confirmação de contratação reabrem sozinhos (na leitura).
   conversaAdvogadoUserId String?
   conversaAbertaEm       DateTime?
   contratadoEm           DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@index([status, uf, createdAt])
   @@map("familia_intakes")
@@ -421,7 +421,7 @@ model RadarCredito {
   userId    String
   /// Positivo = concessão/ajuste; negativo = consumo (candidatura = -1).
   delta     Int
-  motivo    String   // 'assinatura' | 'ajuste' | 'candidatura'
+  motivo    String // 'assinatura' | 'ajuste' | 'candidatura'
   /// Candidatura: o caso que consumiu o crédito.
   intakeId  String?
   /// Admin que concedeu/ajustou (null = consumo automático).
@@ -464,7 +464,7 @@ model RadarMensagem {
   id             String   @id @default(cuid())
   intakeId       String
   advogadoUserId String
-  autor          String   // advogado|familia
+  autor          String // advogado|familia
   texto          String
   createdAt      DateTime @default(now())
 
@@ -511,46 +511,46 @@ model PortalEvento {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
+  id                   String              @id @default(cuid())
+  name                 String
   // A conta é POR PLATAFORMA: o mesmo e-mail pode existir nos dois sites como
   // duas contas independentes (senha, papel e dados próprios). Quem se
   // cadastra num deles não entra no outro sem criar conta lá.
-  email        String
-  app          Plataforma
+  email                String
+  app                  Plataforma
   // Sem confirmação de e-mail por enquanto: null = "e-mail não confirmado"
   // (a UI marca). Quando a confirmação existir, recebe a data.
   // Login com Google já nasce confirmado (o Google atesta o e-mail).
-  emailVerified DateTime?
+  emailVerified        DateTime?
   // Null = conta criada via Google (entra só pelo OAuth, sem senha).
-  passwordHash String?
+  passwordHash         String?
   // PERFIL do usuário (/config): foto pequena (data URL JPEG redimensionada
   // NO NAVEGADOR — nunca arquivo bruto), bio/apresentação, endereço do
   // escritório e contatos de trabalho. Tudo opcional, editado pelo próprio.
-  fotoPerfil         String?
-  bio                String?
-  enderecoEscritorio String?
-  telefoneContato    String?
-  emailContato       String?
+  fotoPerfil           String?
+  bio                  String?
+  enderecoEscritorio   String?
+  telefoneContato      String?
+  emailContato         String?
   // Escrevente Notarial: a serventia onde trabalha (qualificação do
   // primeiro acesso — o advogado tem o AdvogadoPerfil, o escrevente tem isto).
-  serventia          String?
-  role         Role      @default(USER)
+  serventia            String?
+  role                 Role                @default(USER)
   // Null = ainda não escolheu (primeiro acesso ao Sucessorista pergunta).
-  perfilSucessorista PerfilSucessorista?
+  perfilSucessorista   PerfilSucessorista?
   // Equipe de trabalho (null = sem equipe). O papel decide quem GERE.
-  equipeId    String?
-  equipe      Equipe?      @relation(fields: [equipeId], references: [id], onDelete: SetNull)
-  papelEquipe PapelEquipe?
+  equipeId             String?
+  equipe               Equipe?             @relation(fields: [equipeId], references: [id], onDelete: SetNull)
+  papelEquipe          PapelEquipe?
   // true = entrou por convite de ACESSO TOTAL: enxerga a nuvem de casos da
   // equipe (o chefe sempre enxerga, independentemente desta flag).
-  acessoCasosEquipe Boolean @default(false)
+  acessoCasosEquipe    Boolean             @default(false)
   // GOOGLE DRIVE conectado (Sucessorista): refresh token do escopo
   // drive.file — a aplicação só enxerga a pasta que ELA criou no Drive do
   // usuário. Null = não conectado. Desconectar revoga no Google e limpa.
-  driveRefreshToken String?
-  driveEmail        String?
-  driveConectadoEm  DateTime?
+  driveRefreshToken    String?
+  driveEmail           String?
+  driveConectadoEm     DateTime?
   // ONEDRIVE conectado (Sucessorista): refresh token do escopo
   // Files.ReadWrite.AppFolder — a aplicação só enxerga a pasta de app
   // ("Apps/O Sucessorista") no OneDrive do usuário. O refresh token da
@@ -561,20 +561,20 @@ model User {
   // DROPBOX conectado (Sucessorista): refresh token de app com acesso "App
   // folder" — a aplicação só enxerga a pasta "Apps/O Sucessorista" no
   // Dropbox do usuário. O refresh token do Dropbox NÃO rotaciona.
-  dropboxRefreshToken String?
-  dropboxEmail        String?
-  dropboxConectadoEm  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  dropboxRefreshToken  String?
+  dropboxEmail         String?
+  dropboxConectadoEm   DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
-  renameEvents RenameEvent[]
-  errorEvents  ErrorEvent[]
-  lessons      RenamerLessons?
-  accesses     ModuleAccess[]
-  notaEvents   NotaEvent[]
+  renameEvents       RenameEvent[]
+  errorEvents        ErrorEvent[]
+  lessons            RenamerLessons?
+  accesses           ModuleAccess[]
+  notaEvents         NotaEvent[]
   sucessoristaEvents SucessoristaEvent[]
-  casosNuvem   ContaCaso[]
-  passwordResets PasswordReset[]
+  casosNuvem         ContaCaso[]
+  passwordResets     PasswordReset[]
 
   @@unique([email, app])
   @@map("users")
@@ -640,7 +640,7 @@ model RenamerLessons {
 // de documento — só origem, mensagem truncada, status e quem estava logado
 // (null = deslogado). Alimenta /admin/erros.
 model ErrorEvent {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   origem    String
   mensagem  String
   status    Int?
@@ -648,8 +648,8 @@ model ErrorEvent {
   // dos dois sites, quando a plataforma era uma só).
   app       Plataforma?
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime    @default(now())
 
   @@map("error_events")
 }
@@ -657,8 +657,8 @@ model ErrorEvent {
 // Como cada lote foi analisado no renomeador.
 enum MetodoAnalise {
   IA_ARQUIVO // documento enviado inteiro ao Gemini
-  IA_TEXTO   // OCR local + texto enviado ao Gemini
-  LOCAL      // 100% no navegador (modo local ou fallback)
+  IA_TEXTO // OCR local + texto enviado ao Gemini
+  LOCAL // 100% no navegador (modo local ou fallback)
 }
 
 // Telemetria do renomeador: um evento por método dentro de cada rodada de
@@ -697,26 +697,26 @@ model RenameEvent {
 // Privacidade: NADA do texto da nota, nomes de pessoa/arquivo, prenotação ou
 // serventia — só as TAGS do vocabulário fechado do módulo e contagens.
 model NotaEvent {
-  id         String   @id @default(cuid())
+  id           String   @id @default(cuid())
   // Exigências detectadas na nota.
-  quantidade Int
+  quantidade   Int
   // Fonte do texto: docx | pdf-nativo | pdf-escaneado | texto | imagem | outro
-  fonte      String
+  fonte        String
   // true = texto colado/corrigido à mão (a leitura automática da pasta falhou).
-  manual     Boolean  @default(false)
+  manual       Boolean  @default(false)
   // Arquivos indexados na pasta do caso (0 = trabalhou sem pasta).
-  arquivos   Int      @default(0)
+  arquivos     Int      @default(0)
   duracaoPasta Int?
-  duracaoMs  Int?
+  duracaoMs    Int?
   // Array<{ via, alvos: string[], temGatilho, pessoas: number,
   //          viaFinal?, status?, peca?, comIa?, camposIa?, faltando?,
   //          baixouMinuta?, baixouJuntada?, achadosNaPasta? }>
-  itens      Json?
+  itens        Json?
   // { minutas?: number; downloads?: number; resolvidos?: number }
-  desfecho   Json?
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt  DateTime @default(now())
+  desfecho     Json?
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
 
   @@map("notas_events")
 }
@@ -724,9 +724,9 @@ model NotaEvent {
 // Ações medidas no Sucessorista (uma linha por ação relevante do caso).
 enum AcaoSucessorista {
   LEITURA_COFRE // etapa 0: documentos lidos pela IA
-  CALCULO       // espelho da partilha calculado (o caso "fechou")
-  DOCUMENTO     // minuta/planilha/processo gerado
-  PORTAL        // convite ao herdeiro gerado
+  CALCULO // espelho da partilha calculado (o caso "fechou")
+  DOCUMENTO // minuta/planilha/processo gerado
+  PORTAL // convite ao herdeiro gerado
 }
 
 // Telemetria do Sucessorista. Privacidade: nenhum nome de parte, CPF, nome de
@@ -814,8 +814,8 @@ model CasoAdvogadoMensagem {
 // lib/rede/diligencias.ts) — nunca por preço ou nota.
 model CorrespondentePerfil {
   userId         String   @id
-  comarcas       Json     // number[] — códigos IBGE
-  tipos          Json     // TipoDiligencia[]
+  comarcas       Json // number[] — códigos IBGE
+  tipos          Json // TipoDiligencia[]
   prazoMedioDias Int      @default(5)
   raioKm         Int      @default(0)
   ativo          Boolean  @default(true)
@@ -830,21 +830,21 @@ model CorrespondentePerfil {
 // caso. termoJson registra o combinado ENTRE os advogados (escopo, prazo,
 // valor em texto livre) — a plataforma não processa pagamento.
 model Diligencia {
-  id                     String    @id @default(cuid())
-  solicitanteUserId      String
-  casoId                 String?
-  comarcaIbge            Int
-  municipio              String
-  uf                     String
-  tipo                   String
-  descricao              String
-  prazoEm                DateTime?
-  status                 String    @default("aberta") // lib/rede/diligencias.ts
-  correspondenteUserId   String?
-  termoJson              Json?
-  justificativaAtraso    String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  solicitanteUserId    String
+  casoId               String?
+  comarcaIbge          Int
+  municipio            String
+  uf                   String
+  tipo                 String
+  descricao            String
+  prazoEm              DateTime?
+  status               String    @default("aberta") // lib/rede/diligencias.ts
+  correspondenteUserId String?
+  termoJson            Json?
+  justificativaAtraso  String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([status, uf, comarcaIbge])
   @@index([solicitanteUserId])
@@ -858,7 +858,7 @@ model Diligencia {
 model DiligenciaArquivo {
   id           String   @id @default(cuid())
   diligenciaId String
-  origem       String   // pasta|relatorio
+  origem       String // pasta|relatorio
   nome         String
   mime         String
   tamanho      Int
@@ -884,12 +884,12 @@ model DiligenciaOferta {
 // Avaliação MÚTUA por critérios objetivos (prazo/relatório/comunicação,
 // 1–5) — agregada no perfil só para assinantes logados; nunca pública.
 model DiligenciaAvaliacao {
-  id             String   @id @default(cuid())
-  diligenciaId   String
+  id              String   @id @default(cuid())
+  diligenciaId    String
   avaliadorUserId String
-  avaliadoUserId String
-  criterios      Json
-  createdAt      DateTime @default(now())
+  avaliadoUserId  String
+  criterios       Json
+  createdAt       DateTime @default(now())
 
   @@unique([diligenciaId, avaliadorUserId])
   @@map("diligencia_avaliacoes")
@@ -901,21 +901,210 @@ model DiligenciaAvaliacao {
 // coluna app segue a fronteira dos três sites — /admin filtra por ela.
 // A severidade/status é classificada pela equipe em /admin/feedback.
 model Feedback {
-  id        String     @id @default(cuid())
-  app       Plataforma
-  userId    String?
-  userEmail String?
-  tipo      String // 'bug' | 'sugestao'
-  categoria String? // sugestão: funcionalidade | usabilidade | outro
-  titulo    String
-  descricao String
-  pagina    String?
-  status    String     @default("aberto") // aberto | em_analise | resolvido
+  id           String     @id @default(cuid())
+  app          Plataforma
+  userId       String?
+  userEmail    String?
+  tipo         String // 'bug' | 'sugestao'
+  categoria    String? // sugestão: funcionalidade | usabilidade | outro
+  titulo       String
+  descricao    String
+  pagina       String?
+  status       String     @default("aberto") // aberto | em_analise | resolvido
   // RESPOSTA da equipe ao relato — o usuário a lê em "Meus Envios".
   resposta     String?
   respondidoEm DateTime?
-  createdAt DateTime   @default(now())
+  createdAt    DateTime   @default(now())
 
   @@index([app, createdAt])
   @@map("feedbacks")
+}
+
+// ---------------------------------------------------------------------------
+// JURIMETRIA REGISTRAL (LexCausa) — Fase 1: semente pública (Camada A).
+//
+// Princípios gravados no desenho (docs/jurimetria-registral.md):
+// - Nenhum texto BRUTO persiste: o conteúdo coletado vive só no runner da
+//   Action; o banco guarda hash + URL de origem + texto ANONIMIZADO.
+// - Entendimento pertence ao REGISTRADOR (titular vigente na data), não ao
+//   cartório; sem titular cadastrado, a exigência entra pendente.
+// - Linguagem de HISTÓRICO, nunca de garantia — vale para rótulos e copy.
+// - Exigência com confiança < 0.8, sem cartório resolvido ou com titular
+//   pendente NÃO publica sem passar pela fila de revisão humana.
+// ---------------------------------------------------------------------------
+
+model Cartorio {
+  id       String   @id
+  nome     String   @unique // canônico: "2º Oficial de Registro de Imóveis de São Paulo/SP"
+  cidade   String
+  uf       String
+  /// Formas de citação encontradas nos documentos ("2º RI da Capital"…).
+  aliases  String[]
+  criadoEm DateTime @default(now())
+
+  titulares  Titular[]
+  exigencias Exigencia[]
+
+  @@index([uf, cidade])
+  @@map("jurimetria_cartorios")
+}
+
+model Titular {
+  id           String   @id @default(cuid())
+  cartorioId   String
+  cartorio     Cartorio @relation(fields: [cartorioId], references: [id], onDelete: Cascade)
+  /// Nome do(a) oficial registrador(a) — dado profissional público.
+  nome         String
+  /// Início da titularidade: resolve QUEM respondia pelo cartório na data do documento.
+  titularDesde DateTime
+  /// De onde veio a informação (diário, site do cartório, cadastro manual).
+  fonteInfo    String?
+  criadoEm     DateTime @default(now())
+
+  exigencias Exigencia[]
+
+  @@index([cartorioId, titularDesde])
+  @@map("jurimetria_titulares")
+}
+
+model TemaRegistral {
+  id        String  @id // slug estável ("itcmd-quitacao", "qualificacao-partes"…)
+  rotulo    String
+  descricao String?
+
+  exigencias Exigencia[]
+
+  @@map("jurimetria_temas")
+}
+
+enum FonteJurimetriaTipo {
+  DUVIDA_1VRP
+  DUVIDA_CGJ
+  IRIB_PUBLICACAO
+  CARTORIO_SITE
+  USUARIO_SUCESSORISTA
+  PARCEIRO_TABELIONATO
+  PARCEIRO_INCORPORADORA
+  RECIPROCIDADE
+}
+
+model FonteJurimetria {
+  id             String              @id
+  tipo           FonteJurimetriaTipo
+  nome           String
+  urlBase        String?
+  ativa          Boolean             @default(true)
+  /// Preenchido quando a fonte exige captcha/login ou responde 403/429 —
+  /// coleta PARA na hora e ninguém contorna (princípio do scraping respeitoso).
+  bloqueadaEm    DateTime?
+  motivoBloqueio String?
+  /// Seletores, filtros e paginação — NUNCA hardcoded no coletor.
+  config         Json                @default("{}")
+  ultimaColeta   DateTime?
+  criadoEm       DateTime            @default(now())
+
+  documentos DocumentoJurimetria[]
+
+  @@map("jurimetria_fontes")
+}
+
+model DocumentoJurimetria {
+  id               String          @id @default(cuid())
+  fonteId          String
+  fonte            FonteJurimetria @relation(fields: [fonteId], references: [id])
+  urlOrigem        String?
+  /// sha256 do conteúdo BRUTO — proveniência + dedupe de coleta. O bruto em
+  /// si nunca chega ao banco: vive apenas no runner efêmero da Action.
+  hashConteudo     String          @unique
+  mime             String
+  /// ÚNICO texto persistido — pós-anonimização, pré-LLM.
+  textoAnonimizado String?
+  /// Data da decisão/nota (não a da coleta).
+  dataDocumento    DateTime?
+  coletadoEm       DateTime        @default(now())
+  status           String          @default("coletado") // coletado|anonimizado|classificado|revisao|publicado|descartado|erro
+  versaoExtrator   String?
+  erro             String?
+
+  exigencias Exigencia[]
+
+  @@index([fonteId, status])
+  @@map("jurimetria_documentos")
+}
+
+model Exigencia {
+  id               String              @id @default(cuid())
+  documentoId      String
+  documento        DocumentoJurimetria @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  cartorioId       String?
+  cartorio         Cartorio?           @relation(fields: [cartorioId], references: [id])
+  titularId        String?
+  titular          Titular?            @relation(fields: [titularId], references: [id])
+  titularPendente  Boolean             @default(false)
+  temaId           String?
+  tema             TemaRegistral?      @relation(fields: [temaId], references: [id])
+  atoTipo          String? // inventario|partilha|doacao|divorcio|compra_venda|outro
+  /// A exigência em UMA frase impessoal, sem dado pessoal.
+  textoNormalizado String
+  fundamentacao    String[]
+  /// mantida|afastada|parcial só para dúvidas JULGADAS; o resto é sem_julgamento.
+  resultado        String?
+  /// Citação curta (já anonimizada) do trecho que sustenta a exigência.
+  trechoOrigem     String?
+  dataExigencia    DateTime
+  confianca        Decimal             @db.Decimal(3, 2)
+  /// Sem FK de propósito (autorreferência simples): id da exigência original.
+  duplicataDe      String?
+  revisadoPor      String?
+  revisadoEm       DateTime?
+  publicado        Boolean             @default(false)
+  criadoEm         DateTime            @default(now())
+
+  revisoes RevisaoJurimetria[]
+
+  @@index([cartorioId, temaId, dataExigencia(sort: Desc)])
+  @@index([publicado, criadoEm])
+  @@map("jurimetria_exigencias")
+}
+
+model RevisaoJurimetria {
+  id          String    @id @default(cuid())
+  exigenciaId String
+  exigencia   Exigencia @relation(fields: [exigenciaId], references: [id], onDelete: Cascade)
+  motivo      String // baixa_confianca|titular_pendente|possivel_dado_pessoal|cartorio_nao_identificado|auditoria
+  status      String    @default("pendente") // pendente|aprovada|corrigida|descartada
+  notas       String?
+  criadoEm    DateTime  @default(now())
+
+  @@index([status, criadoEm])
+  @@map("jurimetria_revisoes")
+}
+
+model JobJurimetria {
+  id           String   @id @default(cuid())
+  tipo         String // coletar_fonte|processar_documento
+  payload      Json     @default("{}")
+  status       String   @default("pendente") // pendente|rodando|feito|erro
+  tentativas   Int      @default(0)
+  erro         String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([status, criadoEm])
+  @@map("jurimetria_jobs")
+}
+
+model MetricaJurimetria {
+  id          String   @id @default(cuid())
+  dia         DateTime @db.Date
+  /// Id da fonte ou "geral" — sem FK para permitir o agregado do dia.
+  fonteId     String
+  documentos  Int      @default(0)
+  exigencias  Int      @default(0)
+  paraRevisao Int      @default(0)
+  descartados Int      @default(0)
+  erros       Int      @default(0)
+
+  @@unique([dia, fonteId])
+  @@map("jurimetria_metricas")
 }
