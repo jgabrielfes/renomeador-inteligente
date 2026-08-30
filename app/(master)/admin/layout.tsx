@@ -24,6 +24,7 @@ export default function AdminLayout({
       ? [
           { href: "/admin/sucessorista", rotulo: "Casos" },
           { href: "/admin/radar", rotulo: "Radar" },
+          { href: "/admin/jurimetria", rotulo: "Jurimetria" },
         ]
       : []),
     ...(EH_NOTAS ? [{ href: "/admin/notas", rotulo: "Notas" }] : []),

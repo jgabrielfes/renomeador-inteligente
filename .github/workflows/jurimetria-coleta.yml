@@ -1,0 +1,66 @@
+# Worker da JURIMETRIA REGISTRAL (Camada A — semente pública).
+#
+# O que faz: roda scripts/jurimetria/worker.ts — enfileira coletas das fontes
+# ativas, baixa documentos públicos (Datajud, CGJ, sites de cartório), extrai
+# as exigências (Gemini com fallback local) e alimenta a fila de revisão do
+# /admin/jurimetria. Scraping RESPEITOSO por construção: robots.txt, 1 req/2s
+# por host, parada automática em 403/429/captcha (fonte vira "bloqueada").
+#
+# Por que uma GitHub Action e não a Vercel: coleta e extração estouram o
+# timeout de função no plano Hobby; aqui o job roda por minutos, versionado
+# junto do código — o mesmo padrão da varredura do Radar. O conteúdo BRUTO
+# dos documentos vive SÓ neste runner efêmero: o banco recebe hash, origem e
+# o texto já ANONIMIZADO (LGPD por construção).
+#
+# ‼️ SEGREDOS NECESSÁRIOS (Settings → Secrets → Actions)
+#   · DIRECT_URL       — conexão direta do Supabase (o mesmo da migração).
+#   · GEMINI_API_KEY   — opcional; sem ela vale o extrator local e TODA
+#                        exigência cai na fila de revisão (confiança 0.5).
+#   · DATAJUD_API_KEY  — a chave PÚBLICA da API do CNJ (wiki do Datajud);
+#                        sem ela a fonte Datajud é pulada.
+
+name: Jurimetria — coleta da semente pública
+
+on:
+  schedule:
+    # 06:00 UTC = 03:00 em Brasília (madrugada — fora do horário das fontes).
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: jurimetria-coleta
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Instalar dependências
+        run: yarn install --frozen-lockfile
+
+      - name: Gerar o client do Prisma
+        run: npx prisma generate
+
+      - name: Rodar o worker
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+        run: npx tsx scripts/jurimetria/worker.ts | tee resumo.txt
+
+      - name: Resumo
+        if: always()
+        run: |
+          echo "### Jurimetria — coleta" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -40 resumo.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
