@@ -10,8 +10,11 @@
  * estrutura (cartório + tipo de ato + ids de tema) — nenhum conteúdo.
  */
 
+import { createHash } from 'node:crypto';
+
 import { auth } from '@/lib/auth';
 import { EH_SUCESSORISTA } from '@/lib/app';
+import { anonimizar } from '@/lib/jurimetria/anonimizar';
 import { prisma } from '@/lib/prisma';
 
 type Falha = { ok: false; erro: string };
@@ -122,6 +125,50 @@ export async function consultarJurimetria(entrada: {
       fonteNome: e.documento.fonte.nome,
     })),
   };
+}
+
+/**
+ * CONTRIBUIÇÃO da nota devolutiva (Camada B): o navegador manda o texto JÁ
+ * ANONIMIZADO (o entregável — decomposição + PDF — é local e independe
+ * disto). O servidor anonimiza DE NOVO (defesa em profundidade), deduplica
+ * por hash e enfileira para o worker diário: extração, dedupe por trigram e
+ * fila de revisão seguem o MESMO pipeline das fontes públicas — nada é
+ * publicado sem os critérios de confiança/revisão.
+ */
+export async function contribuirNota(entrada: {
+  texto: string;
+  cartorioId?: string | null;
+}): Promise<{ ok: true; recebida: boolean } | Falha> {
+  if (!(await sessaoValida())) return { ok: false, erro: 'Sessão expirada — entre de novo.' };
+  const bruto = String(entrada.texto ?? '').slice(0, 60_000);
+  if (bruto.trim().length < 120)
+    return { ok: false, erro: 'Texto curto demais para contribuir.' };
+
+  const { texto } = anonimizar(bruto);
+  const hash = createHash('sha256').update(texto).digest('hex');
+  const jaTem = await prisma.documentoJurimetria.findUnique({ where: { hashConteudo: hash } });
+  if (jaTem) return { ok: true, recebida: false };
+
+  const cartorioId =
+    typeof entrada.cartorioId === 'string' && /^[a-z0-9-]{2,40}$/.test(entrada.cartorioId)
+      ? entrada.cartorioId
+      : null;
+  const doc = await prisma.documentoJurimetria.create({
+    data: {
+      fonteId: 'fonte-usuarios',
+      urlOrigem: cartorioId ? `usuario:${cartorioId}` : null,
+      hashConteudo: hash,
+      mime: 'text/plain',
+      textoAnonimizado: texto,
+      dataDocumento: new Date(),
+      status: 'anonimizado',
+      versaoExtrator: 'contribuicao-usuario-v1',
+    },
+  });
+  await prisma.jobJurimetria.create({
+    data: { tipo: 'processar_documento', payload: { documentoId: doc.id } },
+  });
+  return { ok: true, recebida: true };
 }
 
 /** Catálogo para os filtros e para o resolvedor local de cartório. */

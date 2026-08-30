@@ -120,6 +120,10 @@ async function enfileirarColetas() {
   const agora = Date.now();
   for (const f of fontes) {
     const config = (f.config ?? {}) as Record<string, unknown>;
+    // Fonte sem coletor (ex.: contribuições de usuários — os documentos
+    // chegam pela server action, não por coleta) não entra na fila.
+    const chave = typeof config.coletor === 'string' ? config.coletor : f.tipo;
+    if (!COLETORES[chave]) continue;
     const intervaloDias = Number(config.intervaloDias ?? 1);
     if (f.ultimaColeta && agora - f.ultimaColeta.getTime() < intervaloDias * 86400000) continue;
     const pendente = await prisma.jobJurimetria.findFirst({
@@ -258,8 +262,17 @@ async function rodarProcessamento(documentoId: string) {
 
   const configFonte = (doc.fonte.config ?? {}) as Record<string, unknown>;
   const cartorioDaFonte = (configFonte.cartorioId as string | undefined) ?? null;
+  // Contribuição de usuário carrega o cartório detectado no navegador em
+  // urlOrigem ("usuario:<cartorioId>") — validado contra o catálogo.
+  const cartorioDaContribuicao =
+    doc.urlOrigem?.startsWith('usuario:') &&
+    cartorios.some((c) => c.id === doc.urlOrigem!.slice('usuario:'.length))
+      ? doc.urlOrigem.slice('usuario:'.length)
+      : null;
   const cartorioId =
-    cartorioDaFonte ?? resolverCartorio(extracao.cartorioMencionado, cartorios);
+    cartorioDaFonte ??
+    cartorioDaContribuicao ??
+    resolverCartorio(extracao.cartorioMencionado, cartorios);
   const dataExigencia = doc.dataDocumento ?? (extracao.dataDocumento ? new Date(extracao.dataDocumento) : new Date(doc.coletadoEm));
   const { titularId, titularPendente } = cartorioId
     ? resolverTitular(titularesRefs, cartorioId, dataExigencia)

@@ -18,6 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { extrairTextoOffice, ehArquivoOffice } from '@/lib/office-texto';
+import { anonimizar } from '@/lib/jurimetria/anonimizar';
+import { analisarNotaDevolutiva, type AnaliseNota } from '@/lib/jurimetria/nota-analise';
 import {
   detectarAtoTipo,
   detectarTemas,
@@ -25,8 +27,9 @@ import {
   TEMAS_LOCAIS,
 } from '@/lib/jurimetria/temas-local';
 import { resolverCartorio } from '@/lib/jurimetria/resolver';
+import { ROTULO_VIA } from '@/lib/notas-rotulos';
 
-import { consultarJurimetria, type HistoricoJurimetria } from './actions';
+import { consultarJurimetria, contribuirNota, type HistoricoJurimetria } from './actions';
 
 interface Cartorio {
   id: string;
@@ -116,18 +119,27 @@ export function JurimetriaClient({
     cartorioId: string | null;
     resultado: HistoricoJurimetria | null;
   } | null>(null);
+  const [lendoNota, setLendoNota] = useState(false);
+  const [nota, setNota] = useState<{
+    arquivo: string;
+    analise: AnaliseNota;
+    cartorioId: string | null;
+    resultado: HistoricoJurimetria | null;
+    contribuida: boolean | null;
+  } | null>(null);
+
+  const lerArquivo = useCallback(async (file: File): Promise<string> => {
+    if (ehArquivoOffice(file.name)) return extrairTextoOffice(file);
+    const { readDocument } = await import('@/lib/ocr');
+    return readDocument(file);
+  }, []);
 
   const analisar = useCallback(
     async (file: File) => {
       setLendo(true);
       try {
         // FRONTEIRA DE DADOS: leitura 100% local — o arquivo não sai daqui.
-        let texto = '';
-        if (ehArquivoOffice(file.name)) texto = await extrairTextoOffice(file);
-        else {
-          const { readDocument } = await import('@/lib/ocr');
-          texto = await readDocument(file);
-        }
+        const texto = await lerArquivo(file);
         if (texto.trim().length < 80) {
           toast.error('Não consegui ler texto suficiente deste arquivo.');
           return;
@@ -158,8 +170,61 @@ export function JurimetriaClient({
         setLendo(false);
       }
     },
-    [cartorios],
+    [cartorios, lerArquivo],
   );
+
+  const analisarNota = useCallback(
+    async (file: File) => {
+      setLendoNota(true);
+      try {
+        // FRONTEIRA DE DADOS: leitura e decomposição 100% locais.
+        const texto = await lerArquivo(file);
+        if (texto.trim().length < 120) {
+          toast.error('Não consegui ler texto suficiente desta nota.');
+          return;
+        }
+        const a = analisarNotaDevolutiva(texto);
+        if (a.itens.length === 0) {
+          toast.error('Não reconheci exigências numeradas neste arquivo — é uma nota devolutiva?');
+          return;
+        }
+        const cartorioId =
+          a.mencoesCartorio.map((m) => resolverCartorio(m, cartorios)).find((id) => id !== null) ??
+          null;
+        setNota({ arquivo: file.name, analise: a, cartorioId, resultado: null, contribuida: null });
+        comecar(async () => {
+          const r = await consultarJurimetria({ cartorioId, temas: a.temas });
+          if (r.ok) setNota((n) => (n ? { ...n, resultado: r } : n));
+          // Contribuição AUTOMÁTICA (aviso fixo na tela): o que sai daqui é
+          // o texto JÁ ANONIMIZADO no navegador — nunca a nota original.
+          const { texto: anonimo } = anonimizar(texto);
+          const c = await contribuirNota({ texto: anonimo, cartorioId });
+          setNota((n) => (n ? { ...n, contribuida: c.ok ? c.recebida : false } : n));
+        });
+      } catch {
+        toast.error('Falha ao ler o arquivo neste navegador.');
+      } finally {
+        setLendoNota(false);
+      }
+    },
+    [cartorios, lerArquivo],
+  );
+
+  const baixarPdfNota = useCallback(async () => {
+    if (!nota) return;
+    const { montarRelatorioNotaPdf } = await import('@/lib/jurimetria/nota-pdf');
+    const blob = await montarRelatorioNotaPdf(nota.analise, {
+      cartorioNome: cartorios.find((c) => c.id === nota.cartorioId)?.nome ?? null,
+      total: nota.resultado?.total ?? 0,
+      porTema: nota.resultado?.porTema ?? [],
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'analise-nota-devolutiva.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [nota, cartorios]);
 
   const nomeCartorio = (id: string | null) => cartorios.find((c) => c.id === id)?.nome ?? null;
   const rotuloTemaLocal = (id: string) =>
@@ -255,6 +320,109 @@ export function JurimetriaClient({
                 <ListaExigencias historico={analise.resultado} />
               </>
             )}
+            <Disclaimer />
+          </div>
+        )}
+      </section>
+
+      {/* ---------------- nota devolutiva: entregável + contribuição ---------------- */}
+      <section className="lc-secao">
+        <h2>Recebi uma nota devolutiva</h2>
+        <div
+          className="lc-cartao"
+          role="button"
+          tabIndex={0}
+          aria-label="Enviar nota devolutiva para análise local"
+          style={{ textAlign: 'center', borderStyle: 'dashed', cursor: 'pointer' }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) void analisarNota(f);
+          }}
+          onClick={() => document.getElementById('jurimetria-nota')?.click()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ')
+              document.getElementById('jurimetria-nota')?.click();
+          }}
+        >
+          {lendoNota ? (
+            <p style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <Spinner /> decompondo a nota no seu navegador…
+            </p>
+          ) : (
+            <>
+              <h3 style={{ marginTop: 0 }}>Solte aqui a nota devolutiva (PDF, DOCX ou foto)</h3>
+              <p style={{ margin: 0 }}>
+                Você recebe na hora a nota decomposta exigência a exigência, com a via de solução
+                sugerida, o histórico do cartório e o relatório em PDF. Em troca, o texto —{' '}
+                <strong>anonimizado no seu navegador antes de sair da sua máquina</strong> — alimenta
+                a base coletiva de jurimetria (nomes, CPFs e matrículas nunca sobem).
+              </p>
+            </>
+          )}
+          <input
+            id="jurimetria-nota"
+            type="file"
+            accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void analisarNota(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
+
+        {nota && (
+          <div className="lc-cartao" style={{ marginTop: 'var(--e-4)' }}>
+            <span className="lc-eyebrow">Nota decomposta — {nota.arquivo}</span>
+            <p style={{ margin: 'var(--e-2) 0' }}>
+              <strong>{nota.analise.itens.length} exigência(s)</strong>
+              {' · '}Cartório:{' '}
+              <strong>{nomeCartorio(nota.cartorioId) ?? 'não identificado no texto'}</strong>
+            </p>
+            <ol style={{ margin: 0, paddingLeft: '1.2em', display: 'grid', gap: 'var(--e-3)' }}>
+              {nota.analise.itens.map((item, i) => (
+                <li key={i}>
+                  <p style={{ margin: 0, fontWeight: 600 }}>{item.rotulo || item.texto.slice(0, 90)}</p>
+                  <p style={{ margin: 'var(--e-1) 0 0' }}>{item.texto}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: 'var(--e-1)' }}>
+                    <Badge>{ROTULO_VIA[item.via] ?? item.via}</Badge>
+                    {item.temas.map((t) => (
+                      <Badge key={t} variant="outline">{rotuloTemaLocal(t)}</Badge>
+                    ))}
+                  </div>
+                  {item.nota && (
+                    <p style={{ margin: 'var(--e-1) 0 0', fontSize: 'var(--t-sm)', opacity: 0.8 }}>
+                      {item.nota}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {nota.resultado && (
+              <p style={{ margin: 'var(--e-3) 0 0' }}>
+                Histórico publicado nos temas desta nota
+                {nota.cartorioId ? ' (neste cartório)' : ''}:{' '}
+                <strong>{nota.resultado.total} exigência(s)</strong>
+                {nota.resultado.porTema.length > 0 && (
+                  <> — {nota.resultado.porTema.slice(0, 3).map((t) => `${t.rotulo} (${t.n})`).join(', ')}</>
+                )}
+              </p>
+            )}
+            <div className="lc-acoes" style={{ marginTop: 'var(--e-3)' }}>
+              <Button type="button" onClick={() => void baixarPdfNota()}>
+                Baixar relatório (PDF)
+              </Button>
+            </div>
+            <p style={{ margin: 'var(--e-2) 0 0', fontSize: 'var(--t-xs)', opacity: 0.75 }}>
+              {nota.contribuida === null
+                ? 'Enviando a versão anonimizada para a base coletiva…'
+                : nota.contribuida
+                  ? 'Obrigado! A versão anonimizada desta nota entrou na fila da base coletiva (passa por extração e revisão antes de publicar).'
+                  : 'A versão anonimizada desta nota já constava da base — nada foi duplicado.'}
+            </p>
             <Disclaimer />
           </div>
         )}
