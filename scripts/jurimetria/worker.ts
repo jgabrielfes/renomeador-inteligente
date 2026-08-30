@@ -175,6 +175,9 @@ async function rodarColeta(fonteId: string) {
     }
     throw e;
   }
+  console.log(
+    `${f.id}: ${refs.length} referência(s) desde ${desde.toISOString().slice(0, 10)}`,
+  );
 
   for (const ref of refs.slice(0, MAX_DOCS_POR_FONTE)) {
     try {

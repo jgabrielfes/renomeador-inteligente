@@ -113,10 +113,19 @@ export function documentoDaLinha(l: LinhaCjpg): string {
 const teoresDaExecucao = new Map<string, ConteudoColetado>();
 
 export const coletorCjpg: Coletor = {
-  async listar(fonte, desde) {
+  async listar(fonte) {
     const base = fonte.urlBase ?? 'https://esaj.tjsp.jus.br';
-    const termo = String(fonte.config.pesquisaLivre ?? '"dúvida" registro de imóveis');
-    const dtInicio = desde.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    // Termo SEM acento (o motor do e-SAJ casou os dois jeitos na sonda; as
+    // próprias sentenças escrevem "duvida" sem acento com frequência).
+    const termo = String(fonte.config.pesquisaLivre ?? '"duvida" registro de imoveis');
+    // Janela FIXA em vez do incremental por ultimaColeta: só a página 1 é
+    // lida e o dedupe por hash impede reprocessar — assim a coleta não
+    // depende do relógio da fonte e dúvida é decisão rara (a mais nova pode
+    // ter meses).
+    const janelaDias = Number(fonte.config.janelaDias ?? 365);
+    const dtInicio = new Date(Date.now() - janelaDias * 86400000).toLocaleDateString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+    });
     const url =
       `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}` +
       `&dadosConsulta.dtInicio=${encodeURIComponent(dtInicio)}&dadosConsulta.ordenacao=DESC`;

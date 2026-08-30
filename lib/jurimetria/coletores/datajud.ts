@@ -26,7 +26,12 @@ interface HitDatajud {
 
 function endpointDe(fonte: ConfigFonte): string {
   const base = fonte.urlBase ?? 'https://api-publica.datajud.cnj.jus.br';
-  const caminho = String(fonte.config.endpoint ?? '/api_publicas_tjsp/_search');
+  // Alias oficial do CNJ: api_publica_<tribunal> (SINGULAR — "api_publicas"
+  // devolve 403 de índice não autorizado para a chave pública).
+  const caminho = String(fonte.config.endpoint ?? '/api_publica_tjsp/_search').replace(
+    'api_publicas_',
+    'api_publica_',
+  );
   return `${base}${caminho}`;
 }
 
