@@ -26,6 +26,14 @@ interface HitDatajud {
   };
 }
 
+/** dataAjuizamento vem compacta (yyyyMMddHHmmss) — converte para ISO. */
+function dataIsoDatajud(bruta?: string): string | undefined {
+  if (!bruta) return undefined;
+  const d = bruta.replace(/\D/g, '');
+  if (d.length < 8) return undefined;
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+}
+
 function endpointDe(fonte: ConfigFonte): string {
   const base = fonte.urlBase ?? 'https://api-publica.datajud.cnj.jus.br';
   // Alias oficial do CNJ: api_publica_<tribunal> (SINGULAR — "api_publicas"
@@ -108,7 +116,7 @@ export const coletorDatajud: Coletor = {
         if (jaConhecida?.(url)) continue;
         refs.push({
           url,
-          dataDocumento: h._source?.dataAjuizamento?.slice(0, 10),
+          dataDocumento: dataIsoDatajud(h._source?.dataAjuizamento),
           rotulo: `${h._source?.classe?.nome ?? 'Dúvida'} — ${h._source?.orgaoJulgador?.nome ?? ''}`,
         });
         if (refs.length >= maxNovos) break;
@@ -135,7 +143,7 @@ export const coletorDatajud: Coletor = {
     const texto = [
       `Processo de ${p.classe?.nome ?? 'Dúvida'} — ${p.orgaoJulgador?.nome ?? ''}`,
       `Número CNJ: ${p.numeroProcesso ?? numero}`,
-      `Ajuizamento: ${p.dataAjuizamento?.slice(0, 10) ?? '?'}`,
+      `Ajuizamento: ${dataIsoDatajud(p.dataAjuizamento) ?? '?'}`,
       '',
       'Movimentações:',
       movimentos || '(sem movimentações retornadas)',
