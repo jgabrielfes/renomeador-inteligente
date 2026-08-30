@@ -39,7 +39,7 @@ reciprocidade) têm o desenho aprovado, mas não têm código ainda.
 
 | Peça | Onde |
 | --- | --- |
-| Modelos (tabelas `jurimetria_*`) | `prisma/schema.prisma` + migração `jurimetria_semente_publica` (cria pg_trgm e SEMEIA 24 temas, 21 cartórios com aliases e as fontes) |
+| Modelos (tabelas `jurimetria_*`) | `prisma/schema.prisma` + migração `jurimetria_semente_publica` (cria pg_trgm e SEMEIA 24 temas, 21 cartórios com aliases e as fontes; a migração temas_registro_imobiliario soma 8 temas do registro imobiliário geral — alienação fiduciária, incorporação, retificações de registro/área, desmembramento, englobamento, adjudicação compulsória e usucapião extrajudiciais — e amplia as pesquisas do CJPG) |
 | Pipeline puro (com testes) | `lib/jurimetria/{anonimizar,extrair,resolver,encaminhar}.ts` + `pipeline.test.ts` (`npx tsx`) |
 | Extração local (fallback) | reaproveita o `triar()` de `lib/notas/resolvedor.ts` (calibrado em notas reais) com confiança 0.5 — tudo vai à revisão |
 | Extração por IA | `lib/jurimetria/gemini-exigencias.ts` (cadeia de modelos, JSON validado por Zod, retry único a temperatura 0) |

@@ -190,6 +190,7 @@ export function JurimetriaClient({
   cartorios,
   temas,
   totalPublicado,
+  semTemaN,
   cartorioAtivo,
   temaAtivo,
   historico,
@@ -197,6 +198,7 @@ export function JurimetriaClient({
   cartorios: Cartorio[];
   temas: Tema[];
   totalPublicado: number;
+  semTemaN: number;
   cartorioAtivo: string | null;
   temaAtivo: string | null;
   historico: HistoricoJurimetria | null;
@@ -431,6 +433,72 @@ export function JurimetriaClient({
               </li>
             );
           })}
+          {(semTemaN > 0 || temaAtivo === 'sem-tema') && (
+            <li className="lc-cartao" style={temaAtivo === 'sem-tema' ? undefined : { padding: 'var(--e-3) var(--e-4)' }}>
+              <Link
+                href={
+                  temaAtivo === 'sem-tema'
+                    ? hrefFiltro(cartorioAtivo, null)
+                    : hrefFiltro(cartorioAtivo, 'sem-tema')
+                }
+                aria-expanded={temaAtivo === 'sem-tema'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--e-3)',
+                  textDecoration: 'none',
+                  color: 'inherit',
+                }}
+              >
+                <span style={{ fontWeight: temaAtivo === 'sem-tema' ? 600 : 500 }}>
+                  <span aria-hidden style={{ marginRight: '8px' }}>
+                    {temaAtivo === 'sem-tema' ? '▾' : '▸'}
+                  </span>
+                  Ainda sem tema definido
+                </span>
+                <Badge variant={temaAtivo === 'sem-tema' ? 'default' : 'outline'}>{semTemaN}</Badge>
+              </Link>
+              {temaAtivo === 'sem-tema' && (
+                <div style={{ marginTop: 'var(--e-3)' }}>
+                  <p style={{ margin: '0 0 var(--e-2)', fontSize: 'var(--t-sm)', opacity: 0.8 }}>
+                    Exigências publicadas cuja classificação por tema ainda não foi possível — a
+                    coleta reclassifica continuamente e elas migram para os temas acima.
+                  </p>
+                  <p style={{ margin: '0 0 var(--e-2)' }}>
+                    Cruzar com o Registro de Imóveis:{' '}
+                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '6px' }}>
+                      <FiltroLink ativo={!cartorioAtivo} href={hrefFiltro(null, 'sem-tema')} rotulo="todos" />
+                      {cartorios.map((c) => (
+                        <FiltroLink
+                          key={c.id}
+                          ativo={cartorioAtivo === c.id}
+                          href={hrefFiltro(c.id, 'sem-tema')}
+                          rotulo={c.nome.replace(' de São Paulo/SP', '')}
+                        />
+                      ))}
+                    </span>
+                  </p>
+                  {historico ? (
+                    <>
+                      <ResumoCruzamento
+                        historico={historico}
+                        recorte={rotuloRecorte(cartorioAtivo, 'ainda sem tema')}
+                      />
+                      <ListaExigencias historico={historico} />
+                    </>
+                  ) : (
+                    <div className="lc-cartao">
+                      <p style={{ margin: 0 }}>
+                        Não consegui carregar o histórico agora — recarregue a página.
+                      </p>
+                    </div>
+                  )}
+                  <Disclaimer />
+                </div>
+              )}
+            </li>
+          )}
         </ul>
       </section>
 

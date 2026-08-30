@@ -41,14 +41,20 @@ export default async function JurimetriaPage({
   const cartorios = catalogo.ok ? catalogo.cartorios : [];
   const temas = catalogo.ok ? catalogo.temas : [];
 
-  // Filtros validados contra a LISTA FECHADA do catálogo (convenção /admin).
+  // Filtros validados contra a LISTA FECHADA do catálogo (convenção /admin);
+  // "sem-tema" é o pseudo-tema da linha "Ainda sem tema" da lista.
   const cartorioAtivo = cartorios.some((c) => c.id === cartorio) ? cartorio! : null;
-  const temaAtivo = temas.some((t) => t.id === tema) ? tema! : null;
+  const temaAtivo =
+    tema === 'sem-tema' ? 'sem-tema' : temas.some((t) => t.id === tema) ? tema! : null;
 
   // O histórico só é consultado com um tema ABERTO — a lista recolhida
   // vive das contagens do catálogo.
   const historico = temaAtivo
-    ? await consultarJurimetria({ cartorioId: cartorioAtivo, temas: [temaAtivo] })
+    ? await consultarJurimetria(
+        temaAtivo === 'sem-tema'
+          ? { cartorioId: cartorioAtivo, semTema: true }
+          : { cartorioId: cartorioAtivo, temas: [temaAtivo] },
+      )
     : null;
 
   return (
@@ -63,6 +69,7 @@ export default async function JurimetriaPage({
         cartorios={cartorios}
         temas={temas}
         totalPublicado={catalogo.ok ? catalogo.totalPublicado : 0}
+        semTemaN={catalogo.ok ? catalogo.semTema : 0}
         cartorioAtivo={cartorioAtivo}
         temaAtivo={temaAtivo}
         historico={historico && historico.ok ? historico : null}

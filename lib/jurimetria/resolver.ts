@@ -73,6 +73,65 @@ export function resolverCartorio(
   return null;
 }
 
+/** Proposta de cadastro AUTOMÁTICO de serventia a partir de uma menção. */
+export interface CartorioNovo {
+  id: string;
+  nome: string;
+  cidade: string;
+}
+
+/**
+ * O catálogo de cartórios CRESCE sozinho: quando a decisão nomeia uma
+ * serventia que não casa com nenhum cadastro, esta função extrai da menção
+ * o número (dígito ou por extenso) e o MUNICÍPIO e propõe o cadastro
+ * canônico — sem município a menção é vaga demais (fica null), e na
+ * Capital o número é obrigatório (são 18 RIs; "RI de São Paulo" sozinho é
+ * ambíguo). Puro e testável; quem grava é o worker (upsert idempotente).
+ */
+export function cartorioDaMencao(mencionado: string | null | undefined): CartorioNovo | null {
+  const bruta = (mencionado ?? '').replace(/\s+/g, ' ').trim();
+  if (!/registro\s+de\s+im[óo]veis/i.test(bruta)) return null;
+
+  const digito = /(?:^|\s)(\d{1,2})\s*[ºo°.]?\s+(?:oficial|of[íi]cio|registro|cart[óo]rio|ri\b)/i.exec(bruta)?.[1];
+  const extensoBruto = /\b(primeiro|segundo|terceiro|quarto|quinto|sexto|s[ée]timo|oitavo|nono|d[ée]cimo)\b/i
+    .exec(bruta)?.[1]
+    ?.normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+  const numero = digito ?? (extensoBruto ? ORDINAIS[extensoBruto] : undefined);
+
+  const m = /im[óo]veis(?:\s*,?\s*t[íi]tulos\s+e\s+documentos)?(?:\s+e\s+anexos?)?(?:\s+(?:da|de)\s+comarca)?\s+d[eao]s?\s+([A-Za-zÀ-ú][A-Za-zÀ-ú' ]{1,50})/i.exec(
+    bruta,
+  );
+  if (!m) return null;
+  let cidade = m[1].split(/[\/,;.()–—-]/)[0].replace(/\s+/g, ' ').trim();
+  cidade = cidade
+    .replace(/\s+(?:no|na|nos|nas|em|para|que|onde|neste|nesta|desta|deste|pelo|pela)\b.*$/i, '')
+    .replace(/\s+estado(?:\s+de\s+s[ãa]o\s+paulo)?$/i, '')
+    .replace(/\s+sp$/i, '')
+    .trim();
+  if (!cidade || cidade.split(' ').length > 5) return null;
+  if (/^capital$/i.test(cidade)) cidade = 'São Paulo';
+
+  const ehCapital = normalizarNomeCartorio(cidade) === 'sao paulo';
+  if (ehCapital && !numero) return null; // 18 RIs na Capital — sem número é ambíguo
+
+  const slug = cidade
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  if (slug.length < 2) return null;
+  const nn = numero ? numero.padStart(2, '0') : null;
+  // A Capital reaproveita o esquema de id da semente (ri-sp-01…18) — o
+  // upsert cai na linha existente em vez de duplicar.
+  const id = (ehCapital ? `ri-sp-${nn}` : nn ? `ri-${slug}-${nn}` : `ri-${slug}`).slice(0, 40);
+  const nome = `${numero ? `${numero}º ` : ''}Oficial de Registro de Imóveis de ${cidade}/SP`;
+  return { id, nome, cidade };
+}
+
 export function resolverTitular(
   titulares: TitularRef[],
   cartorioId: string,
