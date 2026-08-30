@@ -31,6 +31,7 @@ import { anonimizar } from '../../lib/jurimetria/anonimizar';
 import { extrairComGemini, geminiDisponivel } from '../../lib/jurimetria/gemini-exigencias';
 import { extrairExigenciasLocal } from '../../lib/jurimetria/extrair';
 import { resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
+import { detectarTemas } from '../../lib/jurimetria/temas-local';
 import { encaminhar, LIMIAR_DUPLICATA } from '../../lib/jurimetria/encaminhar';
 import { VERSAO_EXTRATOR, type ExtracaoDocumento } from '../../lib/jurimetria/tipos';
 import { coletorCjpg } from '../../lib/jurimetria/coletores/cjpg';
@@ -366,6 +367,32 @@ async function rodarProcessamento(documentoId: string) {
   resumo.processados++;
 }
 
+/* ---------------- reclassificação local (rede de segurança) ---------------- */
+
+/**
+ * Exigência publicada SEM tema é invisível na consulta tema-primeiro. Quando
+ * a extração não conseguiu classificar, o detector local (os mesmos regex do
+ * navegador) tenta pelo texto normalizado + trecho de origem — melhor um tema
+ * aproximado e visível do que registro publicado que ninguém encontra.
+ */
+async function reclassificarSemTema() {
+  const catalogo = new Set((await prisma.temaRegistral.findMany({ select: { id: true } })).map((t) => t.id));
+  const semTema = await prisma.exigencia.findMany({
+    where: { temaId: null, duplicataDe: null },
+    select: { id: true, textoNormalizado: true, trechoOrigem: true },
+    take: 500,
+  });
+  let atribuidas = 0;
+  for (const e of semTema) {
+    const id = detectarTemas(`${e.textoNormalizado}\n${e.trechoOrigem ?? ''}`).find((t) => catalogo.has(t));
+    if (!id) continue;
+    await prisma.exigencia.update({ where: { id: e.id }, data: { temaId: id } });
+    atribuidas++;
+  }
+  if (semTema.length > 0)
+    console.log(`reclassificação local: ${atribuidas} de ${semTema.length} exigência(s) sem tema ganharam tema`);
+}
+
 /* ---------------- laço principal ---------------- */
 
 async function principal() {
@@ -387,6 +414,8 @@ async function principal() {
       console.error(`job ${job.id} (${job.tipo}) falhou:`, msg);
     }
   }
+
+  await reclassificarSemTema();
 
   // Alertas do desenho: fila de revisão acumulada.
   const pendentes = await prisma.revisaoJurimetria.count({ where: { status: 'pendente' } });

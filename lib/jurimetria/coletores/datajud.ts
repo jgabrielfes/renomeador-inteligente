@@ -20,6 +20,7 @@ interface HitDatajud {
   _source?: {
     numeroProcesso?: string;
     classe?: { nome?: string };
+    assuntos?: { nome?: string }[];
     orgaoJulgador?: { nome?: string };
     dataAjuizamento?: string;
     movimentos?: { nome?: string; dataHora?: string; complementosTabelados?: { nome?: string }[] }[];
@@ -140,14 +141,26 @@ export const coletorDatajud: Coletor = {
         return `${m.dataHora?.slice(0, 10) ?? ''} — ${m.nome ?? ''}${compl.length ? ` (${compl.join('; ')})` : ''}`;
       })
       .join('\n');
+    // Os ASSUNTOS da tabela do CNJ são o melhor sinal de TEMA do processo
+    // ("Retificação de Área", "Alienação Fiduciária"…) e o desfecho vive nos
+    // movimentos ("Procedência"/"Improcedência") — os dois entram no texto
+    // com destaque para a extração ter de onde tirar tema e resultado.
+    const assuntos = (p.assuntos ?? []).map((a) => a.nome).filter(Boolean);
+    const desfecho = (p.movimentos ?? [])
+      .map((m) => m.nome ?? '')
+      .filter((n) => /proced[êe]ncia|procedente|improced/i.test(n));
     const texto = [
       `Processo de ${p.classe?.nome ?? 'Dúvida'} — ${p.orgaoJulgador?.nome ?? ''}`,
       `Número CNJ: ${p.numeroProcesso ?? numero}`,
       `Ajuizamento: ${dataIsoDatajud(p.dataAjuizamento) ?? '?'}`,
+      assuntos.length ? `Assuntos (tabela CNJ): ${assuntos.join('; ')}` : null,
+      desfecho.length ? `Julgamento registrado nos movimentos: ${desfecho.join('; ')}` : null,
       '',
       'Movimentações:',
       movimentos || '(sem movimentações retornadas)',
-    ].join('\n');
+    ]
+      .filter((l) => l !== null)
+      .join('\n');
     return {
       urlOrigem: ref.url,
       mime: 'text/plain',

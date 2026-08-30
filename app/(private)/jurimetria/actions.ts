@@ -64,6 +64,8 @@ export interface HistoricoJurimetria {
 export async function consultarJurimetria(entrada: {
   cartorioId?: string | null;
   temas?: string[];
+  /** true = SÓ as exigências ainda sem tema (a linha "Ainda sem tema" da lista). */
+  semTema?: boolean;
 }): Promise<HistoricoJurimetria | Falha> {
   if (!(await sessaoValida())) return { ok: false, erro: 'Sessão expirada — entre de novo.' };
 
@@ -82,7 +84,7 @@ export async function consultarJurimetria(entrada: {
     publicado: true,
     duplicataDe: null,
     ...(cartorioId ? { cartorioId } : {}),
-    ...(filtroTemas ? { temaId: { in: filtroTemas } } : {}),
+    ...(entrada.semTema ? { temaId: null } : filtroTemas ? { temaId: { in: filtroTemas } } : {}),
   };
 
   const [total, gruposTema, gruposCartorio, gruposResultado, linhas] = await Promise.all([
@@ -208,6 +210,8 @@ export async function catalogoJurimetria(): Promise<
       cartorios: { id: string; nome: string; aliases: string[] }[];
       temas: { id: string; rotulo: string; n: number }[];
       totalPublicado: number;
+      /** Publicadas ainda sem tema — a linha extra da lista da consulta. */
+      semTema: number;
     }
 > {
   if (!(await sessaoValida())) return { ok: false, erro: 'Sessão expirada — entre de novo.' };
@@ -229,5 +233,6 @@ export async function catalogoJurimetria(): Promise<
     cartorios,
     temas: temas.map((t) => ({ ...t, n: contagem.get(t.id) ?? 0 })),
     totalPublicado: grupos.reduce((s, g) => s + g._count._all, 0),
+    semTema: grupos.find((g) => g.temaId === null)?._count._all ?? 0,
   };
 }
