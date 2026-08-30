@@ -125,7 +125,14 @@ async function enfileirarColetas() {
     const chave = typeof config.coletor === 'string' ? config.coletor : f.tipo;
     if (!COLETORES[chave]) continue;
     const intervaloDias = Number(config.intervaloDias ?? 1);
-    if (f.ultimaColeta && agora - f.ultimaColeta.getTime() < intervaloDias * 86400000) continue;
+    // FORCAR_COLETA (disparo manual da Action) ignora o intervalo — quem
+    // clica quer coletar agora; o agendamento diário segue respeitando.
+    if (
+      !process.env.FORCAR_COLETA &&
+      f.ultimaColeta &&
+      agora - f.ultimaColeta.getTime() < intervaloDias * 86400000
+    )
+      continue;
     const pendente = await prisma.jobJurimetria.findFirst({
       where: { tipo: 'coletar_fonte', status: { in: ['pendente', 'rodando'] }, payload: { equals: { fonteId: f.id } } },
     });

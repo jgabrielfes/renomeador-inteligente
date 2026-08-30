@@ -107,6 +107,8 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+          # Disparo manual força a coleta (ignora o intervalo por fonte).
+          FORCAR_COLETA: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: npx tsx scripts/jurimetria/worker.ts | tee resumo.txt
 
       - name: Resumo
