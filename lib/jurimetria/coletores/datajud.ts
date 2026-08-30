@@ -25,7 +25,7 @@ interface HitDatajud {
 }
 
 function endpointDe(fonte: ConfigFonte): string {
-  const base = fonte.urlBase ?? 'https://api-publica.datajud.cnj.br';
+  const base = fonte.urlBase ?? 'https://api-publica.datajud.cnj.jus.br';
   const caminho = String(fonte.config.endpoint ?? '/api_publicas_tjsp/_search');
   return `${base}${caminho}`;
 }

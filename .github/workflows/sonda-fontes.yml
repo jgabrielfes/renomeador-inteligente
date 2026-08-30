@@ -28,6 +28,6 @@ jobs:
           grep -oiE 'captcha|recaptcha|hcaptcha|g-recaptcha|login|senha' pagina.html | sort | uniq -c | head -10 || echo "(nenhum)"
       - name: Datajud — TLS e resposta (curl -v)
         run: |
-          curl -v --max-time 30 -X POST "https://api-publica.datajud.cnj.br/api_publicas_tjsp/_search" \
+          curl -v --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publicas_tjsp/_search" \
             -H "content-type: application/json" -d '{"size":1,"query":{"match_all":{}}}' \
             -o /dev/null 2>&1 | grep -E "subject:|issuer:|SSL|HTTP/|error|verify" | head -20 || true
