@@ -33,6 +33,7 @@ import { extrairExigenciasLocal } from '../../lib/jurimetria/extrair';
 import { resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
 import { encaminhar, LIMIAR_DUPLICATA } from '../../lib/jurimetria/encaminhar';
 import { VERSAO_EXTRATOR, type ExtracaoDocumento } from '../../lib/jurimetria/tipos';
+import { coletorCjpg } from '../../lib/jurimetria/coletores/cjpg';
 import { coletorDatajud } from '../../lib/jurimetria/coletores/datajud';
 import { coletorCgj } from '../../lib/jurimetria/coletores/cgj';
 import { coletorIrib } from '../../lib/jurimetria/coletores/irib';
@@ -45,6 +46,7 @@ const prisma = new PrismaClient({
 
 const COLETORES: Record<string, Coletor> = {
   DUVIDA_1VRP: coletorDatajud,
+  cjpg: coletorCjpg,
   DUVIDA_CGJ: coletorCgj,
   IRIB_PUBLICACAO: coletorIrib,
   CARTORIO_SITE: coletorCartorioSite,
@@ -148,8 +150,6 @@ async function pegarJob(): Promise<{ id: string; tipo: string; payload: Record<s
 async function rodarColeta(fonteId: string) {
   const f = await prisma.fonteJurimetria.findUnique({ where: { id: fonteId } });
   if (!f || !f.ativa || f.bloqueadaEm) return;
-  const coletor = COLETORES[f.tipo];
-  if (!coletor) throw new Error(`Sem coletor para o tipo ${f.tipo}`);
   const fonte: ConfigFonte = {
     id: f.id,
     tipo: f.tipo,
@@ -157,6 +157,11 @@ async function rodarColeta(fonteId: string) {
     urlBase: f.urlBase,
     config: (f.config ?? {}) as Record<string, unknown>,
   };
+  // `config.coletor` escolhe o coletor quando duas fontes compartilham o
+  // tipo (Datajud e CJPG são ambas DUVIDA_1VRP).
+  const chave = typeof fonte.config.coletor === 'string' ? fonte.config.coletor : f.tipo;
+  const coletor = COLETORES[chave];
+  if (!coletor) throw new Error(`Sem coletor para ${chave}`);
   const desde = f.ultimaColeta ?? new Date(Date.now() - 180 * 86400000);
   const preservar = await nomesAPreservar();
 

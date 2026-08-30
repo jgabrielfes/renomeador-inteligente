@@ -53,8 +53,9 @@ reciprocidade) têm o desenho aprovado, mas não têm código ainda.
 
 | Fonte | Estratégia | Estado |
 | --- | --- | --- |
-| Datajud (CNJ) — dúvidas nas VRPs | API pública oficial, filtro por classe+órgão; devolve METADADOS/movimentações (inteiro teor não vem — ver TODO 1) | ativa; requer segredo `DATAJUD_API_KEY` |
-| CGJ-SP | página pública de decisões; `listaUrl`+`padraoLinks` em `fontes.config` | **inativa** até mapear URLs (TODO 2) |
+| Datajud (CNJ) — dúvidas nas VRPs | API pública oficial (`api-publica.datajud.cnj.jus.br` — com o `.jus`), filtro por classe+órgão; devolve METADADOS/movimentações (inteiro teor não vem — ver TODO 1) | ativa; requer segredo `DATAJUD_API_KEY` |
+| e-SAJ CJPG — sentenças de dúvida (`coletores/cjpg.ts`) | GET público SEM captcha/login; o INTEIRO TEOR da sentença vem embutido na própria listagem (`div display:none` por linha — sonda de 2026-08-30), então o coletor lê SÓ a página 1 em ordem decrescente de data (página 2 exige sessão) e triagem por conteúdo (`pareceDuvidaRegistral`) — busca estadual, pois no interior a dúvida corre em vara cível comum; `config.coletor="cjpg"` escolhe o coletor quando o tipo é compartilhado | ativa (fonte `fonte-cjpg-vrp`, migração `fonte_cjpg_vrp`) |
+| CGJ-SP | a consulta pública é o GECON (`esaj.tjsp.jus.br/gecon/publico/parecer/consulta`), mas é um app JavaScript — o HTML vem vazio; precisa mapear a API interna dele antes de ligar | **inativa** até mapear o GECON (TODO 2) |
 | IRIB | Kollemata é restrita a associados → o coletor se bloqueia DE PROPÓSITO até `config.publico=true` após validação dos termos | bloqueia na 1ª execução (comportamento correto) |
 | Sites dos RIs (18 Capital + Guarulhos + Itaquá) | coletor genérico HTML→texto, recoleta mensal; hash novo = documento novo (registra mudança de entendimento no tempo) | **inativas** até o admin cadastrar a URL de orientações de cada uma (tela Fontes) |
 

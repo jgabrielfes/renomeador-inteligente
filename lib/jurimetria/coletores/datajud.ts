@@ -53,7 +53,11 @@ async function buscar(fonte: ConfigFonte, corpo: unknown): Promise<HitDatajud[]>
     for (let c: unknown = e; c instanceof Error; c = c.cause) causas.push(c.message);
     throw new Error(`Datajud: ${causas.join(' ← ') || 'falha de rede'}`);
   }
-  if (!r.ok) throw new Error(`Datajud: HTTP ${r.status}`);
+  if (!r.ok) {
+    // O corpo do erro do Datajud explica o motivo (chave inválida, WAF…).
+    const corpo = (await r.text().catch(() => '')).slice(0, 300).replace(/\s+/g, ' ');
+    throw new Error(`Datajud: HTTP ${r.status}${corpo ? ` — ${corpo}` : ''}`);
+  }
   const dados = (await r.json()) as { hits?: { hits?: HitDatajud[] } };
   return dados.hits?.hits ?? [];
 }
