@@ -30,8 +30,8 @@ import { PrismaClient } from '../../lib/generated/prisma/client';
 import { anonimizar } from '../../lib/jurimetria/anonimizar';
 import { extrairComGemini, geminiDisponivel } from '../../lib/jurimetria/gemini-exigencias';
 import { extrairExigenciasLocal } from '../../lib/jurimetria/extrair';
-import { resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
-import { detectarTemas } from '../../lib/jurimetria/temas-local';
+import { cartorioDaMencao, resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
+import { detectarTemas, mencoesDeCartorio } from '../../lib/jurimetria/temas-local';
 import { encaminhar, LIMIAR_DUPLICATA } from '../../lib/jurimetria/encaminhar';
 import { VERSAO_EXTRATOR, type ExtracaoDocumento } from '../../lib/jurimetria/tipos';
 import { coletorCjpg } from '../../lib/jurimetria/coletores/cjpg';
@@ -288,10 +288,29 @@ async function rodarProcessamento(documentoId: string) {
     cartorios.some((c) => c.id === doc.urlOrigem!.slice('usuario:'.length))
       ? doc.urlOrigem.slice('usuario:'.length)
       : null;
-  const cartorioId =
+  let cartorioId =
     cartorioDaFonte ??
     cartorioDaContribuicao ??
     resolverCartorio(extracao.cartorioMencionado, cartorios);
+  // Serventia nomeada que não existe no catálogo é CADASTRADA na hora —
+  // toda decisão cai por cartório sem depender de semente manual.
+  if (!cartorioId) {
+    const novo = cartorioDaMencao(extracao.cartorioMencionado);
+    if (novo) {
+      await prisma.cartorio.upsert({
+        where: { id: novo.id },
+        update: {},
+        create: {
+          id: novo.id,
+          nome: novo.nome,
+          cidade: novo.cidade,
+          uf: 'SP',
+          aliases: [String(extracao.cartorioMencionado ?? '').trim()].filter(Boolean),
+        },
+      });
+      cartorioId = novo.id;
+    }
+  }
   const dataExigencia = doc.dataDocumento ?? (extracao.dataDocumento ? new Date(extracao.dataDocumento) : new Date(doc.coletadoEm));
   const { titularId, titularPendente } = cartorioId
     ? resolverTitular(titularesRefs, cartorioId, dataExigencia)
@@ -379,18 +398,68 @@ async function reclassificarSemTema() {
   const catalogo = new Set((await prisma.temaRegistral.findMany({ select: { id: true } })).map((t) => t.id));
   const semTema = await prisma.exigencia.findMany({
     where: { temaId: null, duplicataDe: null },
-    select: { id: true, textoNormalizado: true, trechoOrigem: true },
+    select: {
+      id: true,
+      textoNormalizado: true,
+      trechoOrigem: true,
+      // O documento inteiro entra na detecção — é onde vivem os assuntos
+      // da tabela CNJ dos processos do Datajud.
+      documento: { select: { textoAnonimizado: true } },
+    },
     take: 500,
   });
   let atribuidas = 0;
   for (const e of semTema) {
-    const id = detectarTemas(`${e.textoNormalizado}\n${e.trechoOrigem ?? ''}`).find((t) => catalogo.has(t));
+    const base = `${e.textoNormalizado}\n${e.trechoOrigem ?? ''}\n${e.documento.textoAnonimizado ?? ''}`;
+    // Garantia dura: NADA fica sem tema — sem casamento nos regex, o
+    // registro cai em "outros" (visível na lista) em vez do limbo.
+    const id =
+      detectarTemas(base).find((t) => catalogo.has(t)) ?? (catalogo.has('outros') ? 'outros' : null);
     if (!id) continue;
     await prisma.exigencia.update({ where: { id: e.id }, data: { temaId: id } });
     atribuidas++;
   }
   if (semTema.length > 0)
     console.log(`reclassificação local: ${atribuidas} de ${semTema.length} exigência(s) sem tema ganharam tema`);
+}
+
+/**
+ * Cartório retroativo: exigência sem cartório revisita as menções de
+ * serventia do PRÓPRIO documento — resolve contra o catálogo e, quando a
+ * menção nomeia serventia nova, cadastra (cartorioDaMencao) e atribui.
+ */
+async function reatribuirCartorios() {
+  const cartorios = await prisma.cartorio.findMany({ select: { id: true, nome: true, aliases: true } });
+  const sem = await prisma.exigencia.findMany({
+    where: { cartorioId: null, duplicataDe: null },
+    select: { id: true, documento: { select: { textoAnonimizado: true } } },
+    take: 300,
+  });
+  let atribuidos = 0;
+  for (const e of sem) {
+    let id: string | null = null;
+    for (const mencao of mencoesDeCartorio(e.documento.textoAnonimizado ?? '')) {
+      id = resolverCartorio(mencao, cartorios);
+      if (!id) {
+        const novo = cartorioDaMencao(mencao);
+        if (novo) {
+          await prisma.cartorio.upsert({
+            where: { id: novo.id },
+            update: {},
+            create: { id: novo.id, nome: novo.nome, cidade: novo.cidade, uf: 'SP', aliases: [mencao] },
+          });
+          cartorios.push({ id: novo.id, nome: novo.nome, aliases: [mencao] });
+          id = novo.id;
+        }
+      }
+      if (id) break;
+    }
+    if (!id) continue;
+    await prisma.exigencia.update({ where: { id: e.id }, data: { cartorioId: id } });
+    atribuidos++;
+  }
+  if (sem.length > 0)
+    console.log(`reatribuição de cartório: ${atribuidos} de ${sem.length} exigência(s) sem cartório ganharam serventia`);
 }
 
 /* ---------------- laço principal ---------------- */
@@ -415,6 +484,7 @@ async function principal() {
     }
   }
 
+  await reatribuirCartorios();
   await reclassificarSemTema();
 
   // Alertas do desenho: fila de revisão acumulada.

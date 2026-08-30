@@ -10,7 +10,7 @@ import { anonimizar } from './anonimizar';
 import { linhasDoCjpg, pareceDuvidaRegistral, documentoDaLinha } from './coletores/cjpg';
 import { detectarAtoTipo, detectarTemas, mencoesDeCartorio, TEMAS_LOCAIS } from './temas-local';
 import { extrairExigenciasLocal, esquemaExtracao, daRespostaLLM } from './extrair';
-import { normalizarNomeCartorio, resolverCartorio, resolverTitular } from './resolver';
+import { cartorioDaMencao, normalizarNomeCartorio, resolverCartorio, resolverTitular } from './resolver';
 import { similaridadeTexto, ehDuplicata, encaminhar } from './encaminhar';
 
 let ok = 0,
@@ -280,6 +280,25 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
     'cjpg: triagem segue recusando matéria não registral',
     !pareceDuvidaRegistral('Ação de cobrança de aluguel julgada procedente, com juros e correção monetária.'),
   );
+}
+
+/* ---------- cadastro automático de serventia (cartorioDaMencao) ---------- */
+{
+  const sorocaba = cartorioDaMencao('Oficial de Registro de Imóveis de Sorocaba');
+  afirmar('cadastro: RI de Sorocaba vira cadastro canônico', sorocaba?.id === 'ri-sorocaba' && sorocaba.cidade === 'Sorocaba', sorocaba);
+  afirmar('cadastro: nome padronizado com /SP', sorocaba?.nome === 'Oficial de Registro de Imóveis de Sorocaba/SP');
+
+  const rioPreto = cartorioDaMencao('1º Oficial de Registro de Imóveis da Comarca de São José do Rio Preto');
+  afirmar('cadastro: número + comarca composta', rioPreto?.id === 'ri-sao-jose-do-rio-preto-01' && rioPreto.cidade === 'São José do Rio Preto', rioPreto);
+
+  const santos = cartorioDaMencao('Segundo Oficial de Registro de Imóveis de Santos/SP');
+  afirmar('cadastro: ordinal por extenso e /SP aparado', santos?.id === 'ri-santos-02' && santos.nome.startsWith('2º '), santos);
+
+  const capital = cartorioDaMencao('3º Oficial de Registro de Imóveis de São Paulo');
+  afirmar('cadastro: Capital com número reaproveita o id da semente', capital?.id === 'ri-sp-03', capital);
+  afirmar('cadastro: Capital SEM número é ambígua (18 RIs) → null', cartorioDaMencao('Registro de Imóveis de São Paulo') === null);
+  afirmar('cadastro: menção sem município é vaga → null', cartorioDaMencao('registro de imóveis') === null);
+  afirmar('cadastro: texto não registral → null', cartorioDaMencao('cartório de notas de Campinas') === null);
 }
 
 console.log(`\n${ok} passaram, ${fail} falharam`);
