@@ -47,42 +47,41 @@ jobs:
       # TLS/DNS do Datajud. Nenhum dado é gravado; será removida na calibragem.
       - name: Sonda — e-SAJ e Datajud
         if: inputs.sonda
+        env:
+          DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
         run: |
           UA="LexCausaJurimetriaBot/1.0 (+https://osucessorista.vercel.app/portal/privacidade; contato tecnico)"
-          echo "===== robots.txt do e-SAJ ====="
-          curl -sS --max-time 30 https://esaj.tjsp.jus.br/robots.txt | head -40 || echo "(robots.txt indisponivel)"
-          echo "===== GECON (pareceres CGJ) ====="
-          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/gecon/publico/parecer/consulta" -H "User-Agent: $UA" \
-            -o gecon.html -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
-          grep -oiE '<form[^>]*>|<input[^>]*name="[^"]*"[^>]*>|<select[^>]*name="[^"]*"' gecon.html | head -40 || true
-          grep -oiE 'captcha|recaptcha|hcaptcha' gecon.html | sort | uniq -c | head -5 || echo "(sem captcha no GECON)"
-          echo "===== CJPG (julgados 1º grau — inteiro teor) ====="
-          curl -sS --max-time 60 -L -c cookies.txt "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22+registro+de+imoveis" \
-            -H "User-Agent: $UA" -o cjpg.html -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
-          grep -oE '[0-9]{7}-[0-9]{2}\.[0-9]{4}\.8\.26\.[0-9]{4}' cjpg.html | head -5 || true
-          grep -oiE 'Vara de Registros P[^<]{0,20}' cjpg.html | head -3 || true
-          grep -oiE 'href="[^"]*(mostrarCompleta|abrirDocumento)[^"]*"' cjpg.html | head -5 || true
-          grep -oiE 'captcha|recaptcha|hcaptcha' cjpg.html | sort | uniq -c | head -5 || echo "(sem captcha no CJPG)"
-          echo "===== CJPG: linha completa (com o texto da sentença) ====="
-          awk '/fundocinza/{n++} n==1{print} n==2{exit}' cjpg.html | sed -n '80,200p' || true
-          echo "===== CJPG: inteiro teor pelo obterArquivoDocumento ====="
+          CHAVE="$(printf '%s' "$DATAJUD_API_KEY" | tr -d '[:space:]')"
+          echo "===== CJPG A: URL exata do coletor (termo + dtInicio + DESC) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis&dadosConsulta.dtInicio=30%2F08%2F2025&dadosConsulta.ordenacao=DESC" \
+            -H "User-Agent: $UA" -o a.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' a.html || true)"
+          grep -oiE 'contendo|Não foi encontrado|nenhum r' a.html | sort | uniq -c | head -5 || true
           sleep 2
-          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/obterArquivoDocumento?cdProcesso=D9000LTF80000&cdForo=477&cdDocumento=93237390" \
-            -H "User-Agent: $UA" -o teor.bin -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
-          head -c 400 teor.bin | tr -d '\0' || true; echo
-          echo "===== CJPG: página 2 sem cookie (trocaDePagina) ====="
+          echo "===== CJPG B: só o termo (controle) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis" \
+            -H "User-Agent: $UA" -o b.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' b.html || true)"
+          echo "--- datas de disponibilização da página 1 (controle):"
+          grep -oE 'Disponibiliza[^<]*' -A 0 b.html | head -3 || true
+          grep -A 2 -i "Data de Disponibiliza" b.html | grep -oE '[0-9]{2}/[0-9]{2}/[0-9]{4}' | head -10 || true
           sleep 2
-          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/trocarDePagina.do?pagina=2&conversationId=" \
-            -H "User-Agent: $UA" -o pag2.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
-          grep -c "fundocinza1" pag2.html || echo "0 linhas de resultado"
-          echo "===== CPOPG (consulta processual — andamento) ====="
-          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cpopg/open.do" -H "User-Agent: $UA" \
-            -o cpopg.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
-          grep -oiE 'captcha|recaptcha|hcaptcha' cpopg.html | sort | uniq -c | head -5 || echo "(sem indicio de captcha no CPOPG)"
-          echo "===== Datajud (TLS/DNS) ====="
-          curl -v --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publicas_tjsp/_search" \
-            -H "content-type: application/json" -d '{"size":1,"query":{"match_all":{}}}' \
-            -o /dev/null 2>&1 | grep -E "subject:|issuer:|SSL|HTTP/|error|verify|Could not resolve" | head -15 || true
+          echo "===== CJPG C: termo + só ordenacao DESC (isola o dtInicio) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis&dadosConsulta.ordenacao=DESC" \
+            -H "User-Agent: $UA" -o c.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' c.html || true)"
+          echo "===== Datajud 1: match_all (a chave enxerga o índice?) ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":0,"query":{"match_all":{}}}' | head -c 400; echo
+          echo "===== Datajud 2: só classe Dúvida ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":1,"query":{"match_phrase":{"classe.nome":"Dúvida"}},"sort":[{"dataAjuizamento":"desc"}]}' | head -c 700; echo
+          echo "===== Datajud 3: classe + órgão VRP (sem data) ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":1,"query":{"bool":{"must":[{"match_phrase":{"classe.nome":"Dúvida"}},{"match_phrase":{"orgaoJulgador.nome":"Vara de Registros Públicos"}}]}}}' | head -c 700; echo
 
       - uses: actions/checkout@v4
         if: ${{ !inputs.sonda }}
