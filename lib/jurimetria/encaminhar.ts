@@ -5,9 +5,12 @@
  * usa no SQL) dentro do MESMO cartório+tema — acima do limiar, a exigência
  * nova aponta `duplicataDe` para a original e não conta duas vezes.
  *
- * Encaminhar: decide publicado × revisão pelos princípios não negociáveis —
- * nada publica com confiança < 0.8, sem cartório resolvido ou com titular
- * pendente; 5% do que publicaria vai TAMBÉM à fila (auditoria de calibração).
+ * Encaminhar: PUBLICAÇÃO AUTOMÁTICA (decisão do escritório, 2026-08-30 —
+ * "pode tirar a fila de revisão"): tudo publica direto, com os motivos de
+ * atenção (confiança baixa, titular pendente, cartório não identificado)
+ * apenas ANOTADOS para curadoria posterior no admin. A ÚNICA trava que
+ * segura publicação é possível dado pessoal remanescente (LGPD) — essa vai
+ * à revisão, nunca ao ar sozinha.
  */
 
 import type { MotivoRevisao } from './tipos';
@@ -56,22 +59,17 @@ export interface DecisaoEncaminhamento {
   motivos: MotivoRevisao[];
 }
 
-export function encaminhar(
-  e: {
-    confianca: number;
-    cartorioId: string | null;
-    titularPendente: boolean;
-    possivelDadoPessoal?: boolean;
-  },
-  /** Sorteio injetável (0..1) — a auditoria amostra 5% do publicável. */
-  sorteio: () => number = Math.random,
-): DecisaoEncaminhamento {
+export function encaminhar(e: {
+  confianca: number;
+  cartorioId: string | null;
+  titularPendente: boolean;
+  possivelDadoPessoal?: boolean;
+}): DecisaoEncaminhamento {
+  // LGPD é a única trava dura: possível dado pessoal nunca publica sozinho.
+  if (e.possivelDadoPessoal) return { destino: 'revisao', motivos: ['possivel_dado_pessoal'] };
   const motivos: MotivoRevisao[] = [];
   if (!e.cartorioId) motivos.push('cartorio_nao_identificado');
   if (e.confianca < LIMIAR_PUBLICACAO) motivos.push('baixa_confianca');
   if (e.titularPendente) motivos.push('titular_pendente');
-  if (e.possivelDadoPessoal) motivos.push('possivel_dado_pessoal');
-  if (motivos.length > 0) return { destino: 'revisao', motivos };
-  if (sorteio() < TAXA_AUDITORIA) return { destino: 'publicado', motivos: ['auditoria'] };
-  return { destino: 'publicado', motivos: [] };
+  return { destino: 'publicado', motivos };
 }

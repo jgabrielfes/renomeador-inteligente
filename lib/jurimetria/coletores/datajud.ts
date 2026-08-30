@@ -12,9 +12,11 @@
  * nada aqui é raspagem: é API oficial, com filtros e paginação.
  */
 
-import type { Coletor, ConfigFonte, ConteudoColetado } from './tipos';
+import type { Coletor, ConfigFonte, ConteudoColetado, ReferenciaColeta } from './tipos';
 
 interface HitDatajud {
+  /** Valores de ordenação do Elasticsearch — viram o search_after da página seguinte. */
+  sort?: unknown[];
   _source?: {
     numeroProcesso?: string;
     classe?: { nome?: string };
@@ -68,35 +70,52 @@ async function buscar(fonte: ConfigFonte, corpo: unknown): Promise<HitDatajud[]>
 }
 
 export const coletorDatajud: Coletor = {
-  async listar(fonte, desde) {
+  async listar(fonte, _desde, jaConhecida) {
     const classes = (fonte.config.classes as string[] | undefined) ?? ['Dúvida', 'Dúvida Inversa'];
     // No Datajud o órgão vem como "01 REGISTROS PUBLICOS DE CENTRAL" (sem a
     // palavra "Vara") — o match_phrase parcial pega 01/02 e congêneres.
     const orgaos = (fonte.config.orgaos as string[] | undefined) ?? ['REGISTROS PUBLICOS'];
-    const tamanho = Number(fonte.config.tamanhoPagina ?? 100);
-    // dataAjuizamento é armazenada como yyyyMMddHHmmss — o range segue o
-    // MESMO formato (ISO zera a busca).
-    const gte = `${desde.toISOString().slice(0, 10).replace(/-/g, '')}000000`;
-    const hits = await buscar(fonte, {
-      size: Math.min(tamanho, 100),
-      query: {
-        bool: {
-          must: [
-            { bool: { should: classes.map((c) => ({ match_phrase: { 'classe.nome': c } })), minimum_should_match: 1 } },
-            { bool: { should: orgaos.map((o) => ({ match_phrase: { 'orgaoJulgador.nome': o } })), minimum_should_match: 1 } },
-            { range: { dataAjuizamento: { gte } } },
-          ],
-        },
+    const tamanho = Math.min(Number(fonte.config.tamanhoPagina ?? 100), 100);
+    // BACKFILL do histórico inteiro (pedido do escritório): sem filtro de
+    // data, paginando por search_after do mais novo ao mais antigo e PULANDO
+    // o que já está no banco — cada rodada cava mais fundo até juntar
+    // `maxNovos` referências inéditas.
+    const maxNovos = Number(fonte.config.maxNovosPorColeta ?? 120);
+    const maxPaginas = Number(fonte.config.maxPaginas ?? 30);
+    const query = {
+      bool: {
+        must: [
+          { bool: { should: classes.map((c) => ({ match_phrase: { 'classe.nome': c } })), minimum_should_match: 1 } },
+          { bool: { should: orgaos.map((o) => ({ match_phrase: { 'orgaoJulgador.nome': o } })), minimum_should_match: 1 } },
+        ],
       },
-      sort: [{ dataAjuizamento: 'desc' }],
-    });
-    return hits
-      .filter((h) => h._source?.numeroProcesso)
-      .map((h) => ({
-        url: `datajud:${h._source!.numeroProcesso}`,
-        dataDocumento: h._source?.dataAjuizamento?.slice(0, 10),
-        rotulo: `${h._source?.classe?.nome ?? 'Dúvida'} — ${h._source?.orgaoJulgador?.nome ?? ''}`,
-      }));
+    };
+    const refs: ReferenciaColeta[] = [];
+    let searchAfter: unknown[] | undefined;
+    for (let pagina = 0; pagina < maxPaginas && refs.length < maxNovos; pagina++) {
+      const hits = await buscar(fonte, {
+        size: tamanho,
+        query,
+        sort: [{ dataAjuizamento: 'desc' }, { '@timestamp': 'desc' }],
+        ...(searchAfter ? { search_after: searchAfter } : {}),
+      });
+      if (hits.length === 0) break;
+      searchAfter = hits[hits.length - 1].sort;
+      for (const h of hits) {
+        const numero = h._source?.numeroProcesso;
+        if (!numero) continue;
+        const url = `datajud:${numero}`;
+        if (jaConhecida?.(url)) continue;
+        refs.push({
+          url,
+          dataDocumento: h._source?.dataAjuizamento?.slice(0, 10),
+          rotulo: `${h._source?.classe?.nome ?? 'Dúvida'} — ${h._source?.orgaoJulgador?.nome ?? ''}`,
+        });
+        if (refs.length >= maxNovos) break;
+      }
+      if (!searchAfter) break;
+    }
+    return refs;
   },
 
   async baixar(fonte, ref): Promise<ConteudoColetado> {

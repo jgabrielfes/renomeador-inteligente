@@ -115,34 +115,35 @@ const teoresDaExecucao = new Map<string, ConteudoColetado>();
 export const coletorCjpg: Coletor = {
   async listar(fonte) {
     const base = fonte.urlBase ?? 'https://esaj.tjsp.jus.br';
-    // Termo SEM acento (o motor do e-SAJ casou os dois jeitos na sonda; as
-    // próprias sentenças escrevem "duvida" sem acento com frequência).
-    const termo = String(fonte.config.pesquisaLivre ?? '"duvida" registro de imoveis');
-    // SÓ o termo na URL: a sonda provou que `dtInicio` por GET zera o
-    // resultado (o formulário exige o fluxo próprio) e que a ordenação
-    // padrão já é decrescente por disponibilização. A janela vira filtro
-    // LOCAL pela data de cada linha; o dedupe por hash impede reprocessar.
-    const janelaDias = Number(fonte.config.janelaDias ?? 730);
-    const corte = new Date(Date.now() - janelaDias * 86400000).toISOString().slice(0, 10);
-    const url = `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}`;
-    const r = await buscarRespeitoso(url);
-    const html = await r.text();
+    // VÁRIOS termos por coleta (sem acento — o jeito validado na sonda):
+    // cada busca traz a sua página 1, e o conjunto amplia a cobertura do
+    // histórico ANTIGO também (pedido do escritório — sem corte de data; o
+    // dedupe por hash impede repetir). `dtInicio` por GET zera o resultado
+    // (a sonda provou), então nenhuma data entra na URL.
+    const termos = (fonte.config.pesquisas as string[] | undefined) ?? [
+      String(fonte.config.pesquisaLivre ?? '"duvida" registro de imoveis'),
+    ];
     const refs: ReferenciaColeta[] = [];
-    for (const linha of linhasDoCjpg(html)) {
-      if (!pareceDuvidaRegistral(linha.texto)) continue;
-      if (linha.data && linha.data < corte) continue;
-      const ref = `cjpg:${linha.numeroCNJ}:${linha.idDocumento}`;
-      teoresDaExecucao.set(ref, {
-        urlOrigem: ref,
-        mime: 'text/plain',
-        texto: documentoDaLinha(linha),
-        dataDocumento: linha.data,
-      });
-      refs.push({
-        url: ref,
-        dataDocumento: linha.data,
-        rotulo: `${linha.classe ?? 'Sentença'} — ${linha.vara ?? ''} ${linha.comarca ?? ''}`.trim(),
-      });
+    for (const termo of termos.slice(0, 8)) {
+      const url = `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}`;
+      const r = await buscarRespeitoso(url);
+      const html = await r.text();
+      for (const linha of linhasDoCjpg(html)) {
+        if (!pareceDuvidaRegistral(linha.texto)) continue;
+        const ref = `cjpg:${linha.numeroCNJ}:${linha.idDocumento}`;
+        if (teoresDaExecucao.has(ref)) continue;
+        teoresDaExecucao.set(ref, {
+          urlOrigem: ref,
+          mime: 'text/plain',
+          texto: documentoDaLinha(linha),
+          dataDocumento: linha.data,
+        });
+        refs.push({
+          url: ref,
+          dataDocumento: linha.data,
+          rotulo: `${linha.classe ?? 'Sentença'} — ${linha.vara ?? ''} ${linha.comarca ?? ''}`.trim(),
+        });
+      }
     }
     return refs;
   },

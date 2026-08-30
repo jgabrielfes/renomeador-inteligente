@@ -172,17 +172,20 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
   );
 }
 
-/* ---------- encaminhar ---------- */
+/* ---------- encaminhar (publicação automática — decisão do escritório) ---------- */
 {
   const base = { confianca: 0.9, cartorioId: 'x', titularPendente: false };
-  afirmar('publica com tudo certo', encaminhar(base, () => 0.99).destino === 'publicado');
-  afirmar('auditoria amostra 5%', encaminhar(base, () => 0.01).motivos.includes('auditoria'));
-  afirmar('confiança baixa → revisão', encaminhar({ ...base, confianca: 0.7 }).destino === 'revisao');
-  afirmar('sem cartório → revisão', encaminhar({ ...base, cartorioId: null }).motivos.includes('cartorio_nao_identificado'));
-  afirmar('titular pendente → revisão', encaminhar({ ...base, titularPendente: true }).motivos.includes('titular_pendente'));
+  afirmar('publica com tudo certo', encaminhar(base).destino === 'publicado');
+  const baixa = encaminhar({ ...base, confianca: 0.7 });
+  afirmar('confiança baixa PUBLICA com o motivo anotado', baixa.destino === 'publicado' && baixa.motivos.includes('baixa_confianca'));
+  const semCartorio = encaminhar({ ...base, cartorioId: null });
+  afirmar('sem cartório PUBLICA com o motivo anotado', semCartorio.destino === 'publicado' && semCartorio.motivos.includes('cartorio_nao_identificado'));
+  const pendente = encaminhar({ ...base, titularPendente: true });
+  afirmar('titular pendente PUBLICA com o motivo anotado', pendente.destino === 'publicado' && pendente.motivos.includes('titular_pendente'));
+  const lgpd = encaminhar({ ...base, possivelDadoPessoal: true });
   afirmar(
-    'possível dado pessoal → revisão',
-    encaminhar({ ...base, possivelDadoPessoal: true }).motivos.includes('possivel_dado_pessoal'),
+    'possível dado pessoal é a ÚNICA trava (revisão)',
+    lgpd.destino === 'revisao' && lgpd.motivos.includes('possivel_dado_pessoal'),
   );
 }
 

@@ -52,8 +52,8 @@ const COLETORES: Record<string, Coletor> = {
   CARTORIO_SITE: coletorCartorioSite,
 };
 
-const MAX_JOBS_POR_EXECUCAO = 60;
-const MAX_DOCS_POR_FONTE = 25;
+const MAX_JOBS_POR_EXECUCAO = 400;
+const MAX_DOCS_POR_FONTE = 120;
 
 const sha256 = (dados: string | Uint8Array) => createHash('sha256').update(dados).digest('hex');
 
@@ -176,9 +176,20 @@ async function rodarColeta(fonteId: string) {
   const desde = f.ultimaColeta ?? new Date(Date.now() - 180 * 86400000);
   const preservar = await nomesAPreservar();
 
+  // Referências já no banco — o coletor que pagina (Datajud) usa para cavar
+  // além do que já veio (backfill do histórico antigo).
+  const conhecidas = new Set(
+    (
+      await prisma.documentoJurimetria.findMany({
+        where: { fonteId: f.id, urlOrigem: { not: null } },
+        select: { urlOrigem: true },
+      })
+    ).map((d) => d.urlOrigem as string),
+  );
+
   let refs;
   try {
-    refs = await coletor.listar(fonte, desde);
+    refs = await coletor.listar(fonte, desde, (url) => conhecidas.has(url));
   } catch (e) {
     if (e instanceof FonteBloqueadaError) {
       await bloquearFonte(f.id, e.message);
@@ -332,15 +343,15 @@ async function rodarProcessamento(documentoId: string) {
     resumo.exigencias++;
     await metrica(doc.fonteId, 'exigencias');
     if (duplicataDe) resumo.duplicatas++;
-    if (decisao.destino === 'revisao' || decisao.motivos.includes('auditoria')) {
-      algumaRevisao = algumaRevisao || decisao.destino === 'revisao';
+    // PUBLICAÇÃO AUTOMÁTICA: só possível dado pessoal ainda gera revisão
+    // (trava LGPD); os demais motivos ficam anotados na própria decisão.
+    if (decisao.destino === 'revisao') {
+      algumaRevisao = true;
       for (const motivo of decisao.motivos) {
         await prisma.revisaoJurimetria.create({ data: { exigenciaId: criada.id, motivo } });
       }
-      if (decisao.destino === 'revisao') {
-        resumo.paraRevisao++;
-        await metrica(doc.fonteId, 'paraRevisao');
-      }
+      resumo.paraRevisao++;
+      await metrica(doc.fonteId, 'paraRevisao');
     }
     if (decisao.destino === 'publicado' && !duplicataDe) resumo.publicadas++;
   }

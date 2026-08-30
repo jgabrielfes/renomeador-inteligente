@@ -30,7 +30,7 @@ export interface ExigenciaPublica {
   fundamentacao: string[];
   resultado: string | null;
   dataExigencia: string;
-  cartorioId: string;
+  cartorioId: string | null;
   cartorioNome: string;
   temaId: string | null;
   temaRotulo: string | null;
@@ -65,10 +65,12 @@ export async function consultarJurimetria(entrada: {
   ).filter((t) => (entrada.temas ?? []).includes(t.id));
   const filtroTemas = temasValidos.length > 0 ? temasValidos.map((t) => t.id) : null;
 
+  // Sem filtro de cartório o recorte traz TUDO que está publicado —
+  // inclusive exigências ainda sem cartório resolvido (aparecem rotuladas).
   const where = {
     publicado: true,
     duplicataDe: null,
-    ...(cartorioId ? { cartorioId } : { cartorioId: { not: null } }),
+    ...(cartorioId ? { cartorioId } : {}),
     ...(filtroTemas ? { temaId: { in: filtroTemas } } : {}),
   };
 
@@ -118,8 +120,8 @@ export async function consultarJurimetria(entrada: {
       fundamentacao: e.fundamentacao,
       resultado: e.resultado,
       dataExigencia: e.dataExigencia.toISOString().slice(0, 10),
-      cartorioId: e.cartorioId as string,
-      cartorioNome: e.cartorio?.nome ?? '',
+      cartorioId: e.cartorioId,
+      cartorioNome: e.cartorio?.nome ?? '(cartório não identificado)',
       temaId: e.temaId,
       temaRotulo: e.tema?.rotulo ?? null,
       fonteNome: e.documento.fonte.nome,
