@@ -25,7 +25,12 @@ on:
   schedule:
     # 06:00 UTC = 03:00 em Brasília (madrugada — fora do horário das fontes).
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      sonda:
+        description: "Só sondar fontes (e-SAJ/Datajud) sem rodar o worker"
+        type: boolean
+        default: false
 
 concurrency:
   group: jurimetria-coleta
@@ -36,20 +41,56 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Sonda TEMPORÁRIA de fontes (roda só com o input "sonda"): confere, de
+      # um ponto com internet aberta, o que o ambiente de desenvolvimento não
+      # alcança — robots.txt e estrutura do GECON/CJPG/CPOPG do e-SAJ e o
+      # TLS/DNS do Datajud. Nenhum dado é gravado; será removida na calibragem.
+      - name: Sonda — e-SAJ e Datajud
+        if: inputs.sonda
+        run: |
+          UA="LexCausaJurimetriaBot/1.0 (+https://osucessorista.vercel.app/portal/privacidade; contato tecnico)"
+          echo "===== robots.txt do e-SAJ ====="
+          curl -sS --max-time 30 https://esaj.tjsp.jus.br/robots.txt | head -40 || echo "(robots.txt indisponivel)"
+          echo "===== GECON (pareceres CGJ) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/gecon/publico/parecer/consulta" -H "User-Agent: $UA" \
+            -o gecon.html -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
+          grep -oiE '<form[^>]*>|<input[^>]*name="[^"]*"[^>]*>|<select[^>]*name="[^"]*"' gecon.html | head -40 || true
+          grep -oiE 'captcha|recaptcha|hcaptcha' gecon.html | sort | uniq -c | head -5 || echo "(sem captcha no GECON)"
+          echo "===== CJPG (julgados 1º grau — inteiro teor) ====="
+          curl -sS --max-time 60 -L -c cookies.txt "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22+registro+de+imoveis" \
+            -H "User-Agent: $UA" -o cjpg.html -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
+          grep -oE '[0-9]{7}-[0-9]{2}\.[0-9]{4}\.8\.26\.[0-9]{4}' cjpg.html | head -5 || true
+          grep -oiE 'Vara de Registros P[^<]{0,20}' cjpg.html | head -3 || true
+          grep -oiE 'href="[^"]*(mostrarCompleta|abrirDocumento)[^"]*"' cjpg.html | head -5 || true
+          grep -oiE 'captcha|recaptcha|hcaptcha' cjpg.html | sort | uniq -c | head -5 || echo "(sem captcha no CJPG)"
+          echo "===== CPOPG (consulta processual — andamento) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cpopg/open.do" -H "User-Agent: $UA" \
+            -o cpopg.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          grep -oiE 'captcha|recaptcha|hcaptcha' cpopg.html | sort | uniq -c | head -5 || echo "(sem indicio de captcha no CPOPG)"
+          echo "===== Datajud (TLS/DNS) ====="
+          curl -v --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publicas_tjsp/_search" \
+            -H "content-type: application/json" -d '{"size":1,"query":{"match_all":{}}}' \
+            -o /dev/null 2>&1 | grep -E "subject:|issuer:|SSL|HTTP/|error|verify|Could not resolve" | head -15 || true
+
       - uses: actions/checkout@v4
+        if: ${{ !inputs.sonda }}
 
       - uses: actions/setup-node@v4
+        if: ${{ !inputs.sonda }}
         with:
           node-version: 22
           cache: yarn
 
       - name: Instalar dependências
+        if: ${{ !inputs.sonda }}
         run: yarn install --frozen-lockfile
 
       - name: Gerar o client do Prisma
+        if: ${{ !inputs.sonda }}
         run: npx prisma generate
 
       - name: Rodar o worker
+        if: ${{ !inputs.sonda }}
         env:
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -58,7 +99,7 @@ jobs:
         run: npx tsx scripts/jurimetria/worker.ts | tee resumo.txt
 
       - name: Resumo
-        if: always()
+        if: ${{ always() && !inputs.sonda }}
         run: |
           echo "### Jurimetria — coleta" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
