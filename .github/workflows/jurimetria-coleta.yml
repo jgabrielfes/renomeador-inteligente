@@ -63,12 +63,18 @@ jobs:
           grep -oiE 'Vara de Registros P[^<]{0,20}' cjpg.html | head -3 || true
           grep -oiE 'href="[^"]*(mostrarCompleta|abrirDocumento)[^"]*"' cjpg.html | head -5 || true
           grep -oiE 'captcha|recaptcha|hcaptcha' cjpg.html | sort | uniq -c | head -5 || echo "(sem captcha no CJPG)"
-          echo "===== CJPG: estrutura de uma linha de resultado ====="
-          grep -n "fundocinza\|mensagemSemFormatacao\|inteiro\|Visualizar\|trocaDePagina\|paginaConsulta" cjpg.html | head -20 || true
-          awk '/fundocinza/{n++} n==1{print} n==2{exit}' cjpg.html | head -80 || true
-          echo "===== CJPG: filtro por vara (formulário de consulta) ====="
-          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/" -H "User-Agent: $UA" -o cjpgform.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
-          grep -oiE '<(input|select)[^>]*name="[^"]*"[^>]*>' cjpgform.html | head -30 || true
+          echo "===== CJPG: linha completa (com o texto da sentença) ====="
+          awk '/fundocinza/{n++} n==1{print} n==2{exit}' cjpg.html | sed -n '80,200p' || true
+          echo "===== CJPG: inteiro teor pelo obterArquivoDocumento ====="
+          sleep 2
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/obterArquivoDocumento?cdProcesso=D9000LTF80000&cdForo=477&cdDocumento=93237390" \
+            -H "User-Agent: $UA" -o teor.bin -w "HTTP %{http_code} · %{content_type} · %{size_download} bytes\n" || true
+          head -c 400 teor.bin | tr -d '\0' || true; echo
+          echo "===== CJPG: página 2 sem cookie (trocaDePagina) ====="
+          sleep 2
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/trocarDePagina.do?pagina=2&conversationId=" \
+            -H "User-Agent: $UA" -o pag2.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          grep -c "fundocinza1" pag2.html || echo "0 linhas de resultado"
           echo "===== CPOPG (consulta processual — andamento) ====="
           curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cpopg/open.do" -H "User-Agent: $UA" \
             -o cpopg.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
