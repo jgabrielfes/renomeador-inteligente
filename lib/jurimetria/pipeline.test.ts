@@ -246,5 +246,41 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
   afirmar('temas-local: texto sem serventia = sem menção', mencoesDeCartorio('contrato de compra e venda simples').length === 0);
 }
 
+/* ---------- temas do registro imobiliário geral (foco do escritório) ---------- */
+{
+  const contrato = [
+    'Instrumento particular com força de escritura pública de alienação fiduciária',
+    'em garantia (Lei nº 9.514/97), com consolidação da propriedade em favor do',
+    'credor fiduciário. Empreendimento com memorial de incorporação registrado e',
+    'patrimônio de afetação constituído.',
+  ].join('\n');
+  const tsContrato = detectarTemas(contrato);
+  afirmar('temas-local: detecta alienação fiduciária', tsContrato.includes('alienacao-fiduciaria'), tsContrato);
+  afirmar('temas-local: detecta incorporação imobiliária', tsContrato.includes('incorporacao-imobiliaria'));
+
+  const requerimento = [
+    'Requerimento de retificação de área da matrícula, com levantamento topográfico',
+    'e planta assinada, seguido de desmembramento do imóvel e unificação de matrículas',
+    'remanescentes (englobamento). Pedido de adjudicação compulsória extrajudicial e',
+    'ata notarial para usucapião extrajudicial do art. 216-A da LRP.',
+  ].join('\n');
+  const tsReq = detectarTemas(requerimento);
+  for (const id of ['retificacao-area', 'desmembramento', 'englobamento', 'adjudicacao-compulsoria', 'usucapiao-extrajudicial'])
+    afirmar(`temas-local: detecta ${id}`, tsReq.includes(id), tsReq);
+
+  afirmar(
+    'cjpg: triagem aceita usucapião extrajudicial sem a palavra dúvida',
+    pareceDuvidaRegistral('Pedido de usucapião extrajudicial rejeitado pelo oficial de registro de imóveis; prenotação cancelada.'),
+  );
+  afirmar(
+    'cjpg: triagem aceita pedido de providências registral',
+    pareceDuvidaRegistral('Pedido de providências em face do Oficial de Registro de Imóveis quanto à averbação da construção na matrícula.'),
+  );
+  afirmar(
+    'cjpg: triagem segue recusando matéria não registral',
+    !pareceDuvidaRegistral('Ação de cobrança de aluguel julgada procedente, com juros e correção monetária.'),
+  );
+}
+
 console.log(`\n${ok} passaram, ${fail} falharam`);
 if (fail > 0) process.exit(1);

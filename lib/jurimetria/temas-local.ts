@@ -6,8 +6,9 @@
  * para o servidor vai só a estrutura detectada (cartório + tipo de ato +
  * ids de tema). Por isso este módulo é puro, sem Prisma e sem 'use server'.
  *
- * Os ids espelham os 24 temas semeados em `jurimetria_temas` (migração
- * jurimetria_semente_publica) — tema novo entra lá E aqui.
+ * Os ids espelham os temas semeados em `jurimetria_temas` (migrações
+ * jurimetria_semente_publica + temas_registro_imobiliario) — tema novo
+ * entra lá E aqui.
  */
 
 import type { AtoTipo } from './tipos';
@@ -42,6 +43,15 @@ export const TEMAS_LOCAIS: TemaLocal[] = [
   { id: 'imovel-rural', rotulo: 'Imóvel rural', re: /im[óo]vel\s+rural|\bccir\b|\bitr\b|\bincra\b|georreferenc/i },
   { id: 'onus-gravames', rotulo: 'Ônus e gravames', re: /hipoteca|aliena[çc][ãa]o\s+fiduci[áa]ria|penhora|indisponibilidade|[ôo]nus|gravame/i },
   { id: 'formalidades-titulo', rotulo: 'Formalidades do título', re: /firma\s+reconhecida|via\s+original|traslado|formal\s+de\s+partilha|instrumento\s+p[úu]blico/i },
+  // Registro imobiliário geral (foco pedido pelo escritório, 2026-08-30):
+  { id: 'alienacao-fiduciaria', rotulo: 'Alienação fiduciária em garantia', re: /aliena[çc][ãa]o\s+fiduci[áa]ri|propriedade\s+fiduci[áa]ri|credor\s+fiduci[áa]ri|devedor\s+fiduciante|consolida[çc][ãa]o\s+da\s+propriedade|lei\s*(n[ºo°.]*\s*)?9\.?514/i },
+  { id: 'incorporacao-imobiliaria', rotulo: 'Incorporação imobiliária', re: /incorpora[çc][ãa]o\s+imobili[áa]ri|memorial\s+de\s+incorpora[çc][ãa]o|patrim[ôo]nio\s+de\s+afeta[çc][ãa]o|institui[çc][ãa]o\s+de\s+condom[ií]nio|lei\s*(n[ºo°.]*\s*)?4\.?591/i },
+  { id: 'retificacao-registro', rotulo: 'Retificação de registro', re: /retifica[çc][ãa]o\s+(do?\s+registro|administrativa|de\s+matr[ií]cula)|procedimento\s+retificat[óo]ri|art\.?\s*213\s+da\s+(lei|lrp)/i },
+  { id: 'retificacao-area', rotulo: 'Retificação de área', re: /retifica[çc][ãa]o\s+de\s+[áa]rea|diverg[êe]ncia\s+de\s+[áa]rea|apura[çc][ãa]o\s+de\s+[áa]rea|levantamento\s+topogr[áa]fico/i },
+  { id: 'desmembramento', rotulo: 'Desmembramento / desdobro', re: /desmembramento|desdobro|parcelamento\s+do\s+solo|lei\s*(n[ºo°.]*\s*)?6\.?766/i },
+  { id: 'englobamento', rotulo: 'Englobamento / unificação de matrículas', re: /englobamento|unifica[çc][ãa]o\s+de\s+(matr[ií]culas|im[óo]veis|[áa]reas)|fus[ãa]o\s+de\s+matr[ií]culas/i },
+  { id: 'adjudicacao-compulsoria', rotulo: 'Adjudicação compulsória extrajudicial', re: /adjudica[çc][ãa]o\s+compuls[óo]ri/i },
+  { id: 'usucapiao-extrajudicial', rotulo: 'Usucapião extrajudicial', re: /usucapi[ãa]o|art\.?\s*216-?A/i },
 ];
 
 /** Ids dos temas presentes no texto (ordem fixa do catálogo, sem duplicar). */

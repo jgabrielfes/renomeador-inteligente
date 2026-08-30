@@ -50,10 +50,17 @@ function dataIso(html: string): string | undefined {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : undefined;
 }
 
-/** Sanidade: a sentença fala mesmo de dúvida registral? */
+/**
+ * Sanidade: a sentença fala mesmo de matéria registral? Aceita a dúvida
+ * clássica E os procedimentos extrajudiciais da LRP que chegam a juízo sem
+ * a palavra "dúvida" (usucapião do art. 216-A, adjudicação compulsória,
+ * retificação do art. 213, pedido de providências) — foco do escritório.
+ */
 export function pareceDuvidaRegistral(texto: string): boolean {
+  const procedimento =
+    /d[uú]vida|pedido\s+de\s+provid[êe]ncias|usucapi[ãa]o\s+extrajudicial|adjudica[çc][ãa]o\s+compuls[óo]ri|retifica[çc][ãa]o\s+(administrativa|de\s+[áa]rea|do?\s+registro)|art\.?\s*216-?A/i;
   return (
-    /d[uú]vida/i.test(texto) &&
+    procedimento.test(texto) &&
     /registr|matr[ií]cula|averba|oficial|tabeli|qualifica[çc][ãa]o|prenota/i.test(texto)
   );
 }
@@ -124,7 +131,7 @@ export const coletorCjpg: Coletor = {
       String(fonte.config.pesquisaLivre ?? '"duvida" registro de imoveis'),
     ];
     const refs: ReferenciaColeta[] = [];
-    for (const termo of termos.slice(0, 8)) {
+    for (const termo of termos.slice(0, 16)) {
       const url = `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}`;
       const r = await buscarRespeitoso(url);
       const html = await r.text();
