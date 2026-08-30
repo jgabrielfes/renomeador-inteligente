@@ -1,0 +1,33 @@
+# Sonda TEMPORÁRIA de fontes da jurimetria (só à mão; será removida).
+# Confere, de um ponto com internet aberta, o que o container de
+# desenvolvimento não alcança: robots.txt e estrutura da consulta GECON
+# (CGJ-SP) e o handshake TLS do Datajud. Nenhum dado é gravado.
+name: Jurimetria — sonda de fontes (temporária)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sondar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: robots.txt do e-SAJ
+        run: |
+          curl -sS --max-time 30 https://esaj.tjsp.jus.br/robots.txt | head -40 || echo "(robots.txt indisponível)"
+      - name: Página da consulta GECON (formulário)
+        run: |
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/gecon/publico/parecer/consulta" \
+            -H "User-Agent: LexCausaJurimetriaBot/1.0 (+https://osucessorista.vercel.app/portal/privacidade; contato tecnico)" \
+            -o pagina.html -w "HTTP %{http_code} · content-type %{content_type} · %{size_download} bytes\n"
+          echo "--- <form>, inputs e selects encontrados:"
+          grep -oiE '<form[^>]*>|<input[^>]*>|<select[^>]*name="[^"]*"|<button[^>]*>' pagina.html | head -60 || true
+          echo "--- links de resultado/PDF citados:"
+          grep -oiE 'href="[^"]*(parecer|pdf|documento)[^"]*"' pagina.html | head -20 || true
+          echo "--- indícios de captcha/login:"
+          grep -oiE 'captcha|recaptcha|hcaptcha|g-recaptcha|login|senha' pagina.html | sort | uniq -c | head -10 || echo "(nenhum)"
+      - name: Datajud — TLS e resposta (curl -v)
+        run: |
+          curl -v --max-time 30 -X POST "https://api-publica.datajud.cnj.br/api_publicas_tjsp/_search" \
+            -H "content-type: application/json" -d '{"size":1,"query":{"match_all":{}}}' \
+            -o /dev/null 2>&1 | grep -E "subject:|issuer:|SSL|HTTP/|error|verify" | head -20 || true
