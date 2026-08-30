@@ -33,7 +33,16 @@ export interface ConteudoColetado {
 }
 
 export interface Coletor {
-  listar(fonte: ConfigFonte, desde: Date): Promise<ReferenciaColeta[]>;
+  /**
+   * `jaConhecida` (opcional) diz se uma referência já está no banco — o
+   * coletor que pagina fundo (Datajud) usa para CAVAR além do que já veio,
+   * viabilizando o backfill do histórico antigo sem repetir downloads.
+   */
+  listar(
+    fonte: ConfigFonte,
+    desde: Date,
+    jaConhecida?: (url: string) => boolean,
+  ): Promise<ReferenciaColeta[]>;
   baixar(fonte: ConfigFonte, ref: ReferenciaColeta): Promise<ConteudoColetado>;
 }
 

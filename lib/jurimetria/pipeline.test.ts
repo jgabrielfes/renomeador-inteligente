@@ -7,6 +7,8 @@
  */
 
 import { anonimizar } from './anonimizar';
+import { linhasDoCjpg, pareceDuvidaRegistral, documentoDaLinha } from './coletores/cjpg';
+import { detectarAtoTipo, detectarTemas, mencoesDeCartorio, TEMAS_LOCAIS } from './temas-local';
 import { extrairExigenciasLocal, esquemaExtracao, daRespostaLLM } from './extrair';
 import { normalizarNomeCartorio, resolverCartorio, resolverTitular } from './resolver';
 import { similaridadeTexto, ehDuplicata, encaminhar } from './encaminhar';
@@ -170,18 +172,78 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
   );
 }
 
-/* ---------- encaminhar ---------- */
+/* ---------- encaminhar (publicação automática — decisão do escritório) ---------- */
 {
   const base = { confianca: 0.9, cartorioId: 'x', titularPendente: false };
-  afirmar('publica com tudo certo', encaminhar(base, () => 0.99).destino === 'publicado');
-  afirmar('auditoria amostra 5%', encaminhar(base, () => 0.01).motivos.includes('auditoria'));
-  afirmar('confiança baixa → revisão', encaminhar({ ...base, confianca: 0.7 }).destino === 'revisao');
-  afirmar('sem cartório → revisão', encaminhar({ ...base, cartorioId: null }).motivos.includes('cartorio_nao_identificado'));
-  afirmar('titular pendente → revisão', encaminhar({ ...base, titularPendente: true }).motivos.includes('titular_pendente'));
+  afirmar('publica com tudo certo', encaminhar(base).destino === 'publicado');
+  const baixa = encaminhar({ ...base, confianca: 0.7 });
+  afirmar('confiança baixa PUBLICA com o motivo anotado', baixa.destino === 'publicado' && baixa.motivos.includes('baixa_confianca'));
+  const semCartorio = encaminhar({ ...base, cartorioId: null });
+  afirmar('sem cartório PUBLICA com o motivo anotado', semCartorio.destino === 'publicado' && semCartorio.motivos.includes('cartorio_nao_identificado'));
+  const pendente = encaminhar({ ...base, titularPendente: true });
+  afirmar('titular pendente PUBLICA com o motivo anotado', pendente.destino === 'publicado' && pendente.motivos.includes('titular_pendente'));
+  const lgpd = encaminhar({ ...base, possivelDadoPessoal: true });
   afirmar(
-    'possível dado pessoal → revisão',
-    encaminhar({ ...base, possivelDadoPessoal: true }).motivos.includes('possivel_dado_pessoal'),
+    'possível dado pessoal é a ÚNICA trava (revisão)',
+    lgpd.destino === 'revisao' && lgpd.motivos.includes('possivel_dado_pessoal'),
   );
+}
+
+/* ---------- CJPG: parser da listagem (fixture na anatomia real do e-SAJ) ---------- */
+{
+  const linhaCjpg = (numero: string, id: string, vara: string, teor: string) => `
+			<tr class="fundocinza1">
+				<td width="40" align="left" valign="top" class="fonte"><strong>1&nbsp;-</strong></td>
+				<td valign="top"><table cellspacing="0" cellpadding="0" width="100%">
+					<tr class="fonte"><td colspan="2" align="left">
+						<a style="vertical-align: top" title="Visualizar Inteiro Teor" name="${id}" >
+							<span class="fonteNegrito"> ${numero} </span></a>
+					</td></tr>
+					<tr class="fonte"><td align="left"><strong> Classe: </strong> Dúvida</td></tr>
+					<tr class="fonte"><td align="left"><strong> Magistrado: </strong> Julgador Sintético</td></tr>
+					<tr class="fonte"><td align="left"><strong> Comarca: </strong> Guarulhos</td></tr>
+					<tr class="fonte"><td align="left"><strong> Vara: </strong> ${vara}</td></tr>
+					<tr class="fonte"><td align="left"><strong> Data de Disponibilização: </strong> 18/12/2025</td></tr>
+					<tr><td><div align="justify"><span>resumo…</span><img class="mostrarOcultarConteudo" src="x"/></div>
+					<div align="justify" style="display: none;"><span>${teor}</span><img class="mostrarOcultarConteudo" src="y"/></div></td></tr>
+				</table></td></tr>`;
+  const teorDuvida =
+    'SENTENÇA Vistos. Trata-se de <em>dúvida</em> suscitada pelo Oficial de Registro de Imóveis ' +
+    'quanto à exigência de certidão para a matrícula. '.repeat(3) +
+    'JULGO PROCEDENTE a dúvida, mantendo a exigência. PRI';
+  const teorCivel =
+    'SENTENÇA Vistos. Ação de cobrança de aluguel entre as partes, sem relação nenhuma com o tema. '.repeat(4);
+  const html =
+    linhaCjpg('1011074-24.2024.8.26.0477', 'D9000LTF80000-477--93237390', '6ª Vara Cível', teorDuvida) +
+    linhaCjpg('1000001-11.2025.8.26.0100', 'A1B2C3-100--111', '10ª Vara Cível', teorCivel);
+  const linhas = linhasDoCjpg(html);
+  afirmar('cjpg: duas linhas parseadas', linhas.length === 2, linhas.length);
+  afirmar('cjpg: número CNJ e id do documento', linhas[0]?.numeroCNJ === '1011074-24.2024.8.26.0477' && linhas[0]?.idDocumento === 'D9000LTF80000-477--93237390');
+  afirmar('cjpg: campos da linha', linhas[0]?.vara === '6ª Vara Cível' && linhas[0]?.comarca === 'Guarulhos' && linhas[0]?.data === '2025-12-18');
+  afirmar('cjpg: teor sem HTML e completo', /JULGO PROCEDENTE/.test(linhas[0]?.texto ?? '') && !/<em>/.test(linhas[0]?.texto ?? ''));
+  afirmar('cjpg: triagem aceita a dúvida registral', pareceDuvidaRegistral(linhas[0]!.texto));
+  afirmar('cjpg: triagem recusa a cobrança de aluguel', !pareceDuvidaRegistral(linhas[1]!.texto));
+  const doc = documentoDaLinha(linhas[0]!);
+  afirmar('cjpg: documento leva cabeçalho + teor', /Número CNJ: 1011074/.test(doc) && /Comarca: Guarulhos/.test(doc) && /JULGO PROCEDENTE/.test(doc));
+}
+
+/* ---------- temas-local: detecção no navegador (modo "arrastar o título") ---------- */
+{
+  const minuta = [
+    'ESCRITURA PÚBLICA DE INVENTÁRIO E PARTILHA. Falecido em… certidão de óbito anexa.',
+    'Meação da viúva meeira sobre os bens comuns; regime da comunhão parcial de bens,',
+    'conforme certidão de casamento. Imóvel da matrícula do 5º Oficial de Registro de',
+    'Imóveis de São Paulo, com valor venal de referência apurado. Herdeiro menor',
+    'representado, com intervenção do Ministério Público. ITCMD recolhido por guia.',
+  ].join('\n');
+  const ts = detectarTemas(minuta);
+  afirmar('temas-local: detecta os temas presentes', ['certidao-obito', 'meacao-conjuge', 'certidao-casamento-regime', 'valor-venal-avaliacao', 'menor-incapaz-mp', 'itcmd-recolhimento'].every((t) => ts.includes(t)), ts);
+  afirmar('temas-local: não inventa imóvel rural', !ts.includes('imovel-rural'));
+  afirmar('temas-local: ato = inventário', detectarAtoTipo(minuta) === 'inventario');
+  afirmar('temas-local: ids batem com o catálogo semeado (nenhum fora)', TEMAS_LOCAIS.every((t) => /^[a-z0-9-]+$/.test(t.id)));
+  const mencoes = mencoesDeCartorio(minuta);
+  afirmar('temas-local: acha a menção ao 5º RI', mencoes.some((m) => /5.*registro de im[óo]veis/i.test(m)), mencoes);
+  afirmar('temas-local: texto sem serventia = sem menção', mencoesDeCartorio('contrato de compra e venda simples').length === 0);
 }
 
 console.log(`\n${ok} passaram, ${fail} falharam`);

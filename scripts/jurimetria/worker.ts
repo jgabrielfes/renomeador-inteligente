@@ -33,6 +33,7 @@ import { extrairExigenciasLocal } from '../../lib/jurimetria/extrair';
 import { resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
 import { encaminhar, LIMIAR_DUPLICATA } from '../../lib/jurimetria/encaminhar';
 import { VERSAO_EXTRATOR, type ExtracaoDocumento } from '../../lib/jurimetria/tipos';
+import { coletorCjpg } from '../../lib/jurimetria/coletores/cjpg';
 import { coletorDatajud } from '../../lib/jurimetria/coletores/datajud';
 import { coletorCgj } from '../../lib/jurimetria/coletores/cgj';
 import { coletorIrib } from '../../lib/jurimetria/coletores/irib';
@@ -45,13 +46,14 @@ const prisma = new PrismaClient({
 
 const COLETORES: Record<string, Coletor> = {
   DUVIDA_1VRP: coletorDatajud,
+  cjpg: coletorCjpg,
   DUVIDA_CGJ: coletorCgj,
   IRIB_PUBLICACAO: coletorIrib,
   CARTORIO_SITE: coletorCartorioSite,
 };
 
-const MAX_JOBS_POR_EXECUCAO = 60;
-const MAX_DOCS_POR_FONTE = 25;
+const MAX_JOBS_POR_EXECUCAO = 400;
+const MAX_DOCS_POR_FONTE = 120;
 
 const sha256 = (dados: string | Uint8Array) => createHash('sha256').update(dados).digest('hex');
 
@@ -118,8 +120,19 @@ async function enfileirarColetas() {
   const agora = Date.now();
   for (const f of fontes) {
     const config = (f.config ?? {}) as Record<string, unknown>;
+    // Fonte sem coletor (ex.: contribuições de usuários — os documentos
+    // chegam pela server action, não por coleta) não entra na fila.
+    const chave = typeof config.coletor === 'string' ? config.coletor : f.tipo;
+    if (!COLETORES[chave]) continue;
     const intervaloDias = Number(config.intervaloDias ?? 1);
-    if (f.ultimaColeta && agora - f.ultimaColeta.getTime() < intervaloDias * 86400000) continue;
+    // FORCAR_COLETA (disparo manual da Action) ignora o intervalo — quem
+    // clica quer coletar agora; o agendamento diário segue respeitando.
+    if (
+      !process.env.FORCAR_COLETA &&
+      f.ultimaColeta &&
+      agora - f.ultimaColeta.getTime() < intervaloDias * 86400000
+    )
+      continue;
     const pendente = await prisma.jobJurimetria.findFirst({
       where: { tipo: 'coletar_fonte', status: { in: ['pendente', 'rodando'] }, payload: { equals: { fonteId: f.id } } },
     });
@@ -148,8 +161,6 @@ async function pegarJob(): Promise<{ id: string; tipo: string; payload: Record<s
 async function rodarColeta(fonteId: string) {
   const f = await prisma.fonteJurimetria.findUnique({ where: { id: fonteId } });
   if (!f || !f.ativa || f.bloqueadaEm) return;
-  const coletor = COLETORES[f.tipo];
-  if (!coletor) throw new Error(`Sem coletor para o tipo ${f.tipo}`);
   const fonte: ConfigFonte = {
     id: f.id,
     tipo: f.tipo,
@@ -157,12 +168,28 @@ async function rodarColeta(fonteId: string) {
     urlBase: f.urlBase,
     config: (f.config ?? {}) as Record<string, unknown>,
   };
+  // `config.coletor` escolhe o coletor quando duas fontes compartilham o
+  // tipo (Datajud e CJPG são ambas DUVIDA_1VRP).
+  const chave = typeof fonte.config.coletor === 'string' ? fonte.config.coletor : f.tipo;
+  const coletor = COLETORES[chave];
+  if (!coletor) throw new Error(`Sem coletor para ${chave}`);
   const desde = f.ultimaColeta ?? new Date(Date.now() - 180 * 86400000);
   const preservar = await nomesAPreservar();
 
+  // Referências já no banco — o coletor que pagina (Datajud) usa para cavar
+  // além do que já veio (backfill do histórico antigo).
+  const conhecidas = new Set(
+    (
+      await prisma.documentoJurimetria.findMany({
+        where: { fonteId: f.id, urlOrigem: { not: null } },
+        select: { urlOrigem: true },
+      })
+    ).map((d) => d.urlOrigem as string),
+  );
+
   let refs;
   try {
-    refs = await coletor.listar(fonte, desde);
+    refs = await coletor.listar(fonte, desde, (url) => conhecidas.has(url));
   } catch (e) {
     if (e instanceof FonteBloqueadaError) {
       await bloquearFonte(f.id, e.message);
@@ -170,6 +197,9 @@ async function rodarColeta(fonteId: string) {
     }
     throw e;
   }
+  console.log(
+    `${f.id}: ${refs.length} referência(s) desde ${desde.toISOString().slice(0, 10)}`,
+  );
 
   for (const ref of refs.slice(0, MAX_DOCS_POR_FONTE)) {
     try {
@@ -250,8 +280,17 @@ async function rodarProcessamento(documentoId: string) {
 
   const configFonte = (doc.fonte.config ?? {}) as Record<string, unknown>;
   const cartorioDaFonte = (configFonte.cartorioId as string | undefined) ?? null;
+  // Contribuição de usuário carrega o cartório detectado no navegador em
+  // urlOrigem ("usuario:<cartorioId>") — validado contra o catálogo.
+  const cartorioDaContribuicao =
+    doc.urlOrigem?.startsWith('usuario:') &&
+    cartorios.some((c) => c.id === doc.urlOrigem!.slice('usuario:'.length))
+      ? doc.urlOrigem.slice('usuario:'.length)
+      : null;
   const cartorioId =
-    cartorioDaFonte ?? resolverCartorio(extracao.cartorioMencionado, cartorios);
+    cartorioDaFonte ??
+    cartorioDaContribuicao ??
+    resolverCartorio(extracao.cartorioMencionado, cartorios);
   const dataExigencia = doc.dataDocumento ?? (extracao.dataDocumento ? new Date(extracao.dataDocumento) : new Date(doc.coletadoEm));
   const { titularId, titularPendente } = cartorioId
     ? resolverTitular(titularesRefs, cartorioId, dataExigencia)
@@ -304,15 +343,15 @@ async function rodarProcessamento(documentoId: string) {
     resumo.exigencias++;
     await metrica(doc.fonteId, 'exigencias');
     if (duplicataDe) resumo.duplicatas++;
-    if (decisao.destino === 'revisao' || decisao.motivos.includes('auditoria')) {
-      algumaRevisao = algumaRevisao || decisao.destino === 'revisao';
+    // PUBLICAÇÃO AUTOMÁTICA: só possível dado pessoal ainda gera revisão
+    // (trava LGPD); os demais motivos ficam anotados na própria decisão.
+    if (decisao.destino === 'revisao') {
+      algumaRevisao = true;
       for (const motivo of decisao.motivos) {
         await prisma.revisaoJurimetria.create({ data: { exigenciaId: criada.id, motivo } });
       }
-      if (decisao.destino === 'revisao') {
-        resumo.paraRevisao++;
-        await metrica(doc.fonteId, 'paraRevisao');
-      }
+      resumo.paraRevisao++;
+      await metrica(doc.fonteId, 'paraRevisao');
     }
     if (decisao.destino === 'publicado' && !duplicataDe) resumo.publicadas++;
   }

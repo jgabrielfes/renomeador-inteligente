@@ -25,7 +25,12 @@ on:
   schedule:
     # 06:00 UTC = 03:00 em Brasília (madrugada — fora do horário das fontes).
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      sonda:
+        description: "Só sondar fontes (e-SAJ/Datajud) sem rodar o worker"
+        type: boolean
+        default: false
 
 concurrency:
   group: jurimetria-coleta
@@ -36,29 +41,78 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Sonda TEMPORÁRIA de fontes (roda só com o input "sonda"): confere, de
+      # um ponto com internet aberta, o que o ambiente de desenvolvimento não
+      # alcança — robots.txt e estrutura do GECON/CJPG/CPOPG do e-SAJ e o
+      # TLS/DNS do Datajud. Nenhum dado é gravado; será removida na calibragem.
+      - name: Sonda — e-SAJ e Datajud
+        if: inputs.sonda
+        env:
+          DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+        run: |
+          UA="LexCausaJurimetriaBot/1.0 (+https://osucessorista.vercel.app/portal/privacidade; contato tecnico)"
+          CHAVE="$(printf '%s' "$DATAJUD_API_KEY" | tr -d '[:space:]')"
+          echo "===== CJPG A: URL exata do coletor (termo + dtInicio + DESC) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis&dadosConsulta.dtInicio=30%2F08%2F2025&dadosConsulta.ordenacao=DESC" \
+            -H "User-Agent: $UA" -o a.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' a.html || true)"
+          grep -oiE 'contendo|Não foi encontrado|nenhum r' a.html | sort | uniq -c | head -5 || true
+          sleep 2
+          echo "===== CJPG B: só o termo (controle) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis" \
+            -H "User-Agent: $UA" -o b.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' b.html || true)"
+          echo "--- datas de disponibilização da página 1 (controle):"
+          grep -oE 'Disponibiliza[^<]*' -A 0 b.html | head -3 || true
+          grep -A 2 -i "Data de Disponibiliza" b.html | grep -oE '[0-9]{2}/[0-9]{2}/[0-9]{4}' | head -10 || true
+          sleep 2
+          echo "===== CJPG C: termo + só ordenacao DESC (isola o dtInicio) ====="
+          curl -sS --max-time 60 -L "https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=%22duvida%22%20registro%20de%20imoveis&dadosConsulta.ordenacao=DESC" \
+            -H "User-Agent: $UA" -o c.html -w "HTTP %{http_code} · %{size_download} bytes\n" || true
+          echo "linhas: $(grep -c 'fundocinza1' c.html || true)"
+          echo "===== Datajud 1: match_all (a chave enxerga o índice?) ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":0,"query":{"match_all":{}}}' | head -c 400; echo
+          echo "===== Datajud 2: só classe Dúvida ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":1,"query":{"match_phrase":{"classe.nome":"Dúvida"}},"sort":[{"dataAjuizamento":"desc"}]}' | head -c 700; echo
+          echo "===== Datajud 3: classe + órgão VRP (sem data) ====="
+          curl -sS --max-time 30 -X POST "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search" \
+            -H "content-type: application/json" -H "authorization: APIKey $CHAVE" \
+            -d '{"size":1,"query":{"bool":{"must":[{"match_phrase":{"classe.nome":"Dúvida"}},{"match_phrase":{"orgaoJulgador.nome":"Vara de Registros Públicos"}}]}}}' | head -c 700; echo
+
       - uses: actions/checkout@v4
+        if: ${{ !inputs.sonda }}
 
       - uses: actions/setup-node@v4
+        if: ${{ !inputs.sonda }}
         with:
           node-version: 22
           cache: yarn
 
       - name: Instalar dependências
+        if: ${{ !inputs.sonda }}
         run: yarn install --frozen-lockfile
 
       - name: Gerar o client do Prisma
+        if: ${{ !inputs.sonda }}
         run: npx prisma generate
 
       - name: Rodar o worker
+        if: ${{ !inputs.sonda }}
         env:
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+          # Disparo manual força a coleta (ignora o intervalo por fonte).
+          FORCAR_COLETA: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: npx tsx scripts/jurimetria/worker.ts | tee resumo.txt
 
       - name: Resumo
-        if: always()
+        if: ${{ always() && !inputs.sonda }}
         run: |
           echo "### Jurimetria — coleta" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
