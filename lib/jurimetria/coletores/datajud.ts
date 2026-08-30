@@ -31,7 +31,12 @@ function endpointDe(fonte: ConfigFonte): string {
 }
 
 async function buscar(fonte: ConfigFonte, corpo: unknown): Promise<HitDatajud[]> {
-  const chave = process.env.DATAJUD_API_KEY;
+  // A chave copiada do wiki do CNJ costuma vir com quebra de linha no meio
+  // (e às vezes com o prefixo "APIKey" junto) — higienizada aqui, o segredo
+  // colado de qualquer jeito funciona.
+  const chave = (process.env.DATAJUD_API_KEY ?? '')
+    .replace(/^\s*APIKey\s+/i, '')
+    .replace(/\s+/g, '');
   if (!chave) throw new Error('DATAJUD_API_KEY ausente — cadastre o segredo do worker.');
   const r = await fetch(endpointDe(fonte), {
     method: 'POST',
