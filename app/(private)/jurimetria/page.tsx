@@ -1,7 +1,10 @@
 // Jurimetria Registral — a CONSULTA (produto LexCausa, só no site do
-// Sucessorista). Dois modos na mesma tela: arrastar o título (leitura no
-// navegador; ao servidor vai só cartório+ato+temas) e navegar por
-// cartório × tema (filtros na query string, como manda a convenção).
+// Sucessorista). A tela é TEMA-PRIMEIRO: o usuário chega com um problema,
+// abre o tema na lista (A–Z, itens recolhidos; filtros na query string,
+// como manda a convenção) e cruza com o Registro de Imóveis que quiser —
+// o resumo traz os percentuais das dúvidas julgadas. Abaixo ficam o
+// arraste de documentos (leitura no navegador; ao servidor vai só
+// cartório+ato+temas) e o depósito de notas devolutivas.
 // Tudo que aparece é HISTÓRICO publicado e revisado — nunca previsão.
 
 import type { Metadata } from 'next';
@@ -42,10 +45,11 @@ export default async function JurimetriaPage({
   const cartorioAtivo = cartorios.some((c) => c.id === cartorio) ? cartorio! : null;
   const temaAtivo = temas.some((t) => t.id === tema) ? tema! : null;
 
-  const historico = await consultarJurimetria({
-    cartorioId: cartorioAtivo,
-    temas: temaAtivo ? [temaAtivo] : [],
-  });
+  // O histórico só é consultado com um tema ABERTO — a lista recolhida
+  // vive das contagens do catálogo.
+  const historico = temaAtivo
+    ? await consultarJurimetria({ cartorioId: cartorioAtivo, temas: [temaAtivo] })
+    : null;
 
   return (
     <div className="lexcausa" style={{ minHeight: '100vh' }}>
@@ -58,9 +62,10 @@ export default async function JurimetriaPage({
       <JurimetriaClient
         cartorios={cartorios}
         temas={temas}
+        totalPublicado={catalogo.ok ? catalogo.totalPublicado : 0}
         cartorioAtivo={cartorioAtivo}
         temaAtivo={temaAtivo}
-        historico={historico.ok ? historico : null}
+        historico={historico && historico.ok ? historico : null}
       />
     </div>
   );

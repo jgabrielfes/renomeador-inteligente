@@ -42,6 +42,17 @@ export interface HistoricoJurimetria {
   total: number;
   porTema: { temaId: string | null; rotulo: string; n: number }[];
   porCartorio: { cartorioId: string; nome: string; n: number }[];
+  /**
+   * Placar das dúvidas JULGADAS no recorte: exigência afastada = dúvida
+   * improcedente = êxito do apresentante; mantida = procedente. O resto
+   * (notas devolutivas, orientações) fica em semJulgamento.
+   */
+  porResultado: {
+    mantidas: number;
+    afastadas: number;
+    parciais: number;
+    semJulgamento: number;
+  };
   exigencias: ExigenciaPublica[];
 }
 
@@ -74,10 +85,11 @@ export async function consultarJurimetria(entrada: {
     ...(filtroTemas ? { temaId: { in: filtroTemas } } : {}),
   };
 
-  const [total, gruposTema, gruposCartorio, linhas] = await Promise.all([
+  const [total, gruposTema, gruposCartorio, gruposResultado, linhas] = await Promise.all([
     prisma.exigencia.count({ where }),
     prisma.exigencia.groupBy({ by: ['temaId'], where, _count: { _all: true } }),
     prisma.exigencia.groupBy({ by: ['cartorioId'], where, _count: { _all: true } }),
+    prisma.exigencia.groupBy({ by: ['resultado'], where, _count: { _all: true } }),
     prisma.exigencia.findMany({
       where,
       orderBy: { dataExigencia: 'desc' },
@@ -97,6 +109,11 @@ export async function consultarJurimetria(entrada: {
   const rotuloTema = new Map(temas.map((t) => [t.id, t.rotulo]));
   const nomeCartorio = new Map(cartorios.map((c) => [c.id, c.nome]));
 
+  const nResultado = (r: string) =>
+    gruposResultado.find((g) => g.resultado === r)?._count._all ?? 0;
+  const julgadas =
+    nResultado('mantida') + nResultado('afastada') + nResultado('parcial');
+
   return {
     ok: true,
     total,
@@ -115,6 +132,12 @@ export async function consultarJurimetria(entrada: {
         n: g._count._all,
       }))
       .sort((a, b) => b.n - a.n),
+    porResultado: {
+      mantidas: nResultado('mantida'),
+      afastadas: nResultado('afastada'),
+      parciais: nResultado('parcial'),
+      semJulgamento: total - julgadas,
+    },
     exigencias: linhas.map((e) => ({
       texto: e.textoNormalizado,
       fundamentacao: e.fundamentacao,
@@ -173,22 +196,38 @@ export async function contribuirNota(entrada: {
   return { ok: true, recebida: true };
 }
 
-/** Catálogo para os filtros e para o resolvedor local de cartório. */
+/**
+ * Catálogo para os filtros e para o resolvedor local de cartório. Os temas
+ * saem em ORDEM ALFABÉTICA e cada um leva a contagem do que está publicado
+ * nele — é o que alimenta a lista recolhida da tela de consulta.
+ */
 export async function catalogoJurimetria(): Promise<
   | Falha
   | {
       ok: true;
       cartorios: { id: string; nome: string; aliases: string[] }[];
-      temas: { id: string; rotulo: string }[];
+      temas: { id: string; rotulo: string; n: number }[];
+      totalPublicado: number;
     }
 > {
   if (!(await sessaoValida())) return { ok: false, erro: 'Sessão expirada — entre de novo.' };
-  const [cartorios, temas] = await Promise.all([
+  const [cartorios, temas, grupos] = await Promise.all([
     prisma.cartorio.findMany({
       orderBy: { nome: 'asc' },
       select: { id: true, nome: true, aliases: true },
     }),
     prisma.temaRegistral.findMany({ orderBy: { rotulo: 'asc' }, select: { id: true, rotulo: true } }),
+    prisma.exigencia.groupBy({
+      by: ['temaId'],
+      where: { publicado: true, duplicataDe: null },
+      _count: { _all: true },
+    }),
   ]);
-  return { ok: true, cartorios, temas };
+  const contagem = new Map(grupos.map((g) => [g.temaId, g._count._all]));
+  return {
+    ok: true,
+    cartorios,
+    temas: temas.map((t) => ({ ...t, n: contagem.get(t.id) ?? 0 })),
+    totalPublicado: grupos.reduce((s, g) => s + g._count._all, 0),
+  };
 }
