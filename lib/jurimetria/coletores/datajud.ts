@@ -38,12 +38,21 @@ async function buscar(fonte: ConfigFonte, corpo: unknown): Promise<HitDatajud[]>
     .replace(/^\s*APIKey\s+/i, '')
     .replace(/\s+/g, '');
   if (!chave) throw new Error('DATAJUD_API_KEY ausente — cadastre o segredo do worker.');
-  const r = await fetch(endpointDe(fonte), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `APIKey ${chave}` },
-    body: JSON.stringify(corpo),
-    signal: AbortSignal.timeout(60000),
-  });
+  let r: Response;
+  try {
+    r = await fetch(endpointDe(fonte), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `APIKey ${chave}` },
+      body: JSON.stringify(corpo),
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch (e) {
+    // O fetch do Node esconde a causa real (DNS/TLS/conexão) em `cause` —
+    // desembrulhada aqui para o log da Action dizer o que de fato houve.
+    const causas: string[] = [];
+    for (let c: unknown = e; c instanceof Error; c = c.cause) causas.push(c.message);
+    throw new Error(`Datajud: ${causas.join(' ← ') || 'falha de rede'}`);
+  }
   if (!r.ok) throw new Error(`Datajud: HTTP ${r.status}`);
   const dados = (await r.json()) as { hits?: { hits?: HitDatajud[] } };
   return dados.hits?.hits ?? [];
