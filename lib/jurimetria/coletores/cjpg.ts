@@ -118,22 +118,19 @@ export const coletorCjpg: Coletor = {
     // Termo SEM acento (o motor do e-SAJ casou os dois jeitos na sonda; as
     // próprias sentenças escrevem "duvida" sem acento com frequência).
     const termo = String(fonte.config.pesquisaLivre ?? '"duvida" registro de imoveis');
-    // Janela FIXA em vez do incremental por ultimaColeta: só a página 1 é
-    // lida e o dedupe por hash impede reprocessar — assim a coleta não
-    // depende do relógio da fonte e dúvida é decisão rara (a mais nova pode
-    // ter meses).
-    const janelaDias = Number(fonte.config.janelaDias ?? 365);
-    const dtInicio = new Date(Date.now() - janelaDias * 86400000).toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-    });
-    const url =
-      `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}` +
-      `&dadosConsulta.dtInicio=${encodeURIComponent(dtInicio)}&dadosConsulta.ordenacao=DESC`;
+    // SÓ o termo na URL: a sonda provou que `dtInicio` por GET zera o
+    // resultado (o formulário exige o fluxo próprio) e que a ordenação
+    // padrão já é decrescente por disponibilização. A janela vira filtro
+    // LOCAL pela data de cada linha; o dedupe por hash impede reprocessar.
+    const janelaDias = Number(fonte.config.janelaDias ?? 730);
+    const corte = new Date(Date.now() - janelaDias * 86400000).toISOString().slice(0, 10);
+    const url = `${base}/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(termo)}`;
     const r = await buscarRespeitoso(url);
     const html = await r.text();
     const refs: ReferenciaColeta[] = [];
     for (const linha of linhasDoCjpg(html)) {
       if (!pareceDuvidaRegistral(linha.texto)) continue;
+      if (linha.data && linha.data < corte) continue;
       const ref = `cjpg:${linha.numeroCNJ}:${linha.idDocumento}`;
       teoresDaExecucao.set(ref, {
         urlOrigem: ref,

@@ -70,16 +70,21 @@ async function buscar(fonte: ConfigFonte, corpo: unknown): Promise<HitDatajud[]>
 export const coletorDatajud: Coletor = {
   async listar(fonte, desde) {
     const classes = (fonte.config.classes as string[] | undefined) ?? ['Dúvida', 'Dúvida Inversa'];
-    const orgaos = (fonte.config.orgaos as string[] | undefined) ?? ['Vara de Registros Públicos'];
+    // No Datajud o órgão vem como "01 REGISTROS PUBLICOS DE CENTRAL" (sem a
+    // palavra "Vara") — o match_phrase parcial pega 01/02 e congêneres.
+    const orgaos = (fonte.config.orgaos as string[] | undefined) ?? ['REGISTROS PUBLICOS'];
     const tamanho = Number(fonte.config.tamanhoPagina ?? 100);
+    // dataAjuizamento é armazenada como yyyyMMddHHmmss — o range segue o
+    // MESMO formato (ISO zera a busca).
+    const gte = `${desde.toISOString().slice(0, 10).replace(/-/g, '')}000000`;
     const hits = await buscar(fonte, {
       size: Math.min(tamanho, 100),
       query: {
         bool: {
           must: [
-            { bool: { should: classes.map((c) => ({ match_phrase: { 'classe.nome': c } })) } },
-            { bool: { should: orgaos.map((o) => ({ match_phrase: { 'orgaoJulgador.nome': o } })) } },
-            { range: { dataAjuizamento: { gte: desde.toISOString().slice(0, 10) } } },
+            { bool: { should: classes.map((c) => ({ match_phrase: { 'classe.nome': c } })), minimum_should_match: 1 } },
+            { bool: { should: orgaos.map((o) => ({ match_phrase: { 'orgaoJulgador.nome': o } })), minimum_should_match: 1 } },
+            { range: { dataAjuizamento: { gte } } },
           ],
         },
       },

@@ -29,7 +29,10 @@ export function comandosPadrao(opcoes: {
   if ((!opcoes.naoAdvogado || opcoes.ehMaster) && opcoes.radarAtivo) {
     lista.push({ id: 'radar', rotulo: 'Radar Sucessório', dica: 'prospecção', href: '/radar' });
   }
-  lista.push({ id: 'diligencias', rotulo: 'Diligências', dica: 'rede', href: '/diligencias' });
+  lista.push(
+    { id: 'diligencias', rotulo: 'Diligências', dica: 'rede', href: '/diligencias' },
+    { id: 'jurimetria', rotulo: 'Jurimetria Registral', dica: 'histórico dos cartórios', href: '/jurimetria' },
+  );
   if (opcoes.ehMaster) {
     lista.push({ id: 'admin', rotulo: 'Administração', dica: 'master', href: '/admin' });
   }
@@ -42,6 +45,7 @@ export function comandosPadrao(opcoes: {
     { id: 'prod-s', rotulo: 'Página do produto: O Sucessorista', dica: 'institucional', href: '/produtos/sucessorista' },
     { id: 'prod-r', rotulo: 'Página do produto: Radar Sucessório', dica: 'institucional', href: '/produtos/radar' },
     { id: 'prod-d', rotulo: 'Página do produto: Diligências', dica: 'institucional', href: '/produtos/diligencias' },
+    { id: 'prod-j', rotulo: 'Página do produto: Jurimetria Registral', dica: 'institucional', href: '/produtos/jurimetria' },
   );
   return lista;
 }

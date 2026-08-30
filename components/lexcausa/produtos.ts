@@ -6,10 +6,14 @@
  */
 
 export interface ProdutoLexCausa {
-  id: 'sucessorista' | 'radar' | 'diligencias';
+  id: 'sucessorista' | 'radar' | 'diligencias' | 'jurimetria';
   nome: string;
   /** Classe de escopo do acento visual (app/lexcausa.css). */
-  classe: 'produto-sucessorista' | 'produto-radar' | 'produto-diligencias';
+  classe:
+    | 'produto-sucessorista'
+    | 'produto-radar'
+    | 'produto-diligencias'
+    | 'produto-jurimetria';
   /** Uma linha — o card do hub e da landing. */
   tagline: string;
   /** Parágrafo da landing/página do produto. */
@@ -54,6 +58,17 @@ export const PRODUTOS_LEXCAUSA: ProdutoLexCausa[] = [
     perfis: ['Advogado(a)', 'Não advogado(a)'],
     href: '/diligencias',
     landing: '/produtos/diligencias',
+  },
+  {
+    id: 'jurimetria',
+    nome: 'Jurimetria Registral',
+    classe: 'produto-jurimetria',
+    tagline: 'O histórico de exigências dos cartórios, antes do protocolo.',
+    descricao:
+      'Arraste o título ou a minuta ANTES de protocolar e veja o que os Registros de Imóveis registraram de exigência em atos parecidos — por cartório e por tema, com a decisão pública de origem. Ou navegue sem documento: escolha o cartório ou o tema e leia o histórico. O documento é lido no seu navegador e nunca sobe; e o que a tela mostra é histórico observado, nunca previsão ou garantia.',
+    perfis: ['Advogado(a)', 'Não advogado(a)'],
+    href: '/jurimetria',
+    landing: '/produtos/jurimetria',
   },
 ];
 

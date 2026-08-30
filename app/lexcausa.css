@@ -97,6 +97,7 @@
 .lexcausa .produto-sucessorista { --lc-acento: #6f5527; --ring: #6f5527; }
 .lexcausa .produto-radar { --lc-acento: #20565c; --ring: #20565c; }
 .lexcausa .produto-diligencias { --lc-acento: #3e4a63; --ring: #3e4a63; }
+.lexcausa .produto-jurimetria { --lc-acento: #58452e; --ring: #58452e; }
 /* Ferramentas fora do site sucessório — os cartões da vitrine em
    lexcausa.com.br. Contraste conferido contra o papel (--lc-fundo). */
 .lexcausa .produto-renomeador { --lc-acento: #8a4a32; --ring: #8a4a32; }

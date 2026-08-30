@@ -8,6 +8,7 @@
 
 import { anonimizar } from './anonimizar';
 import { linhasDoCjpg, pareceDuvidaRegistral, documentoDaLinha } from './coletores/cjpg';
+import { detectarAtoTipo, detectarTemas, mencoesDeCartorio, TEMAS_LOCAIS } from './temas-local';
 import { extrairExigenciasLocal, esquemaExtracao, daRespostaLLM } from './extrair';
 import { normalizarNomeCartorio, resolverCartorio, resolverTitular } from './resolver';
 import { similaridadeTexto, ehDuplicata, encaminhar } from './encaminhar';
@@ -221,6 +222,25 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
   afirmar('cjpg: triagem recusa a cobrança de aluguel', !pareceDuvidaRegistral(linhas[1]!.texto));
   const doc = documentoDaLinha(linhas[0]!);
   afirmar('cjpg: documento leva cabeçalho + teor', /Número CNJ: 1011074/.test(doc) && /Comarca: Guarulhos/.test(doc) && /JULGO PROCEDENTE/.test(doc));
+}
+
+/* ---------- temas-local: detecção no navegador (modo "arrastar o título") ---------- */
+{
+  const minuta = [
+    'ESCRITURA PÚBLICA DE INVENTÁRIO E PARTILHA. Falecido em… certidão de óbito anexa.',
+    'Meação da viúva meeira sobre os bens comuns; regime da comunhão parcial de bens,',
+    'conforme certidão de casamento. Imóvel da matrícula do 5º Oficial de Registro de',
+    'Imóveis de São Paulo, com valor venal de referência apurado. Herdeiro menor',
+    'representado, com intervenção do Ministério Público. ITCMD recolhido por guia.',
+  ].join('\n');
+  const ts = detectarTemas(minuta);
+  afirmar('temas-local: detecta os temas presentes', ['certidao-obito', 'meacao-conjuge', 'certidao-casamento-regime', 'valor-venal-avaliacao', 'menor-incapaz-mp', 'itcmd-recolhimento'].every((t) => ts.includes(t)), ts);
+  afirmar('temas-local: não inventa imóvel rural', !ts.includes('imovel-rural'));
+  afirmar('temas-local: ato = inventário', detectarAtoTipo(minuta) === 'inventario');
+  afirmar('temas-local: ids batem com o catálogo semeado (nenhum fora)', TEMAS_LOCAIS.every((t) => /^[a-z0-9-]+$/.test(t.id)));
+  const mencoes = mencoesDeCartorio(minuta);
+  afirmar('temas-local: acha a menção ao 5º RI', mencoes.some((m) => /5.*registro de im[óo]veis/i.test(m)), mencoes);
+  afirmar('temas-local: texto sem serventia = sem menção', mencoesDeCartorio('contrato de compra e venda simples').length === 0);
 }
 
 console.log(`\n${ok} passaram, ${fail} falharam`);
