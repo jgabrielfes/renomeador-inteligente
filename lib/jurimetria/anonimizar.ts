@@ -6,7 +6,10 @@
  * de imóvel, protocolo/prenotação, data de nascimento anunciada e endereço.
  * Passe 2 (heurística de nomes): sequências capitalizadas de 2+ palavras que
  * não sejam instituição nem constem da allowlist de PRESERVADOS (oficiais
- * registradores, juízes — dado profissional público, essencial ao modelo).
+ * registradores, juízes — dado profissional público, essencial ao modelo);
+ * o passe 2b cobre nomes em CAIXA ALTA, como as sentenças escrevem as
+ * partes. Nome de pessoa vira INICIAIS ("L.S.S." — decisão do escritório,
+ * 2026-08-30): acompanhável sem identificar.
  *
  * A saída NUNCA devolve o dado original — só o tipo de cada ocorrência.
  * Testes: npx tsx lib/jurimetria/pipeline.test.ts
@@ -131,8 +134,46 @@ const PASSES_REGEX: { tipo: OcorrenciaAnonimizada['tipo']; re: RegExp; token: st
 const soAscii = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+/**
+ * Palavras que as sentenças escrevem em CAIXA ALTA sem serem nome de pessoa —
+ * separam as corridas do passe 2b (comparação sempre via soAscii).
+ */
+const GRITOS_JURIDICOS = new Set([
+  'sentenca', 'vistos', 'julgo', 'procedente', 'improcedente', 'parcialmente',
+  'dispositivo', 'relatorio', 'fundamentacao', 'conclusao', 'decisao',
+  'publique', 'registre', 'intime', 'intimem', 'cumpra', 'transitada',
+  'transito', 'julgado', 'julgada', 'deferido', 'indeferido', 'defiro',
+  'indefiro', 'mantida', 'afastada', 'exigencia', 'exigencias', 'apresentar',
+  'poder', 'judiciario', 'sao', 'paulo', 'brasil', 'central', 'publicos',
+  'duvida', 'processo', 'digital', 'classe', 'assunto', 'assuntos',
+  'requerente', 'requerido', 'requerida', 'autor', 'autora', 'reu', 're',
+  'interessado', 'interessada', 'interessados', 'suscitante', 'suscitado',
+  'suscitada', 'espolio', 'ltda', 'eireli', 'epp', 'sa', 's', 'me',
+  'nota', 'devolucao', 'devolutiva', 'titulo', 'escritura', 'publica',
+  'publico', 'inventario', 'partilha', 'arrolamento', 'formal', 'traslado',
+  'certidao', 'certidoes', 'edital', 'oficio', 'prenotado', 'prenotada',
+  'custas', 'emolumentos', 'doacao', 'compra', 'venda', 'cessao', 'direitos',
+  'hereditarios', 'uniao', 'estavel', 'casamento', 'divorcio', 'obito',
+  'herdeiro', 'herdeiros', 'meacao', 'conjuge', 'inventariante',
+  'adjudicacao', 'compulsoria', 'usucapiao', 'extrajudicial', 'retificacao',
+  'area', 'imovel', 'matricula', 'transcricao', 'averbacao', 'prenotacao',
+  'alienacao', 'fiduciaria', 'incorporacao', 'imobiliaria', 'desmembramento',
+  'englobamento', 'unificacao', 'condominio', 'loteamento',
+  'cpf', 'cnpj', 'rg', 'oab', 'cnj', 'cjpg', 'tjsp', 'vrp', 'itcmd',
+]);
+
 /** Conectivos aceitos DENTRO de um nome próprio ("Maria de Souza"). */
 const CONECTIVOS = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+/**
+ * Nome de pessoa vira INICIAIS (pedido do escritório): "Lucineia da Silva
+ * Santos" → "L.S.S." — legível para acompanhar a decisão, sem identificar.
+ */
+const iniciaisDe = (palavras: string[]): string =>
+  palavras
+    .filter((w) => !CONECTIVOS.has(w.toLowerCase()))
+    .map((w) => `${w[0]!.toUpperCase()}.`)
+    .join('');
 
 export function anonimizar(
   original: string,
@@ -177,7 +218,53 @@ export function anonimizar(
     if (TITULOS_PRESERVADOS.test(antes)) return trecho;
     ocorrencias.push(de('NOME'));
     const cauda = trecho.slice(candidato.length);
-    return `[NOME]${cauda}`;
+    return `${iniciaisDe(palavras)}${cauda}`;
+  });
+
+  // Passe 2b — nomes em CAIXA ALTA ("LUCINÉIA DE CÁSSIA GARCIA FILGUEIRAS"),
+  // como as sentenças escrevem as partes. A sequência pode vir colada a
+  // gritos jurídicos ("SENTENÇA FULANO DE TAL") — os gritos separam corridas
+  // e cada corrida com 2+ palavras substantivas vira [NOME].
+  const reNomeCaps =
+    /\b([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]{2,}(?:\s+(?:[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]{2,}|DE|DA|DO|DAS|DOS|E)){1,7})\b/g;
+  texto = texto.replace(reNomeCaps, (trecho: string, _g: string, indice: number) => {
+    const antes = texto.slice(Math.max(0, indice - 30), indice);
+    if (TITULOS_PRESERVADOS.test(antes)) return trecho; // "Dr. APARECIDO…" — juiz
+    const ehConectivo = (w: string) => CONECTIVOS.has(w.toLowerCase());
+    const ehGrito = (w: string) => {
+      const n = soAscii(w);
+      return MARCAS_INSTITUICAO.includes(n) || GRITOS_JURIDICOS.has(n);
+    };
+    const saida: string[] = [];
+    let corrida: string[] = [];
+    const despejar = () => {
+      const cauda: string[] = [];
+      while (corrida.length > 0 && ehConectivo(corrida[corrida.length - 1]))
+        cauda.unshift(corrida.pop()!);
+      const substantivas = corrida.filter((w) => !ehConectivo(w));
+      const norm = soAscii(corrida.join(' '));
+      if (
+        substantivas.length >= 2 &&
+        !preservarNorm.some((n) => n.includes(norm) || norm.includes(n))
+      ) {
+        ocorrencias.push(de('NOME'));
+        saida.push(iniciaisDe(corrida));
+      } else {
+        saida.push(...corrida);
+      }
+      saida.push(...cauda);
+      corrida = [];
+    };
+    for (const w of trecho.split(/\s+/)) {
+      if (ehGrito(w)) {
+        despejar();
+        saida.push(w);
+      } else {
+        corrida.push(w);
+      }
+    }
+    despejar();
+    return saida.join(' ');
   });
 
   return { texto, ocorrencias };
