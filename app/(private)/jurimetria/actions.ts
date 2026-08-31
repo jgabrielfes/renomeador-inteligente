@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { auth } from '@/lib/auth';
 import { EH_SUCESSORISTA } from '@/lib/app';
 import { anonimizar } from '@/lib/jurimetria/anonimizar';
+import { ehTextoCru, ementaDoDocumento, origemDoProcesso } from '@/lib/jurimetria/origem';
 import { prisma } from '@/lib/prisma';
 
 type Falha = { ok: false; erro: string };
@@ -27,6 +28,13 @@ async function sessaoValida(): Promise<boolean> {
 
 export interface ExigenciaPublica {
   texto: string;
+  /** Resumo determinístico do documento de origem (classe/vara/comarca). */
+  ementa: string | null;
+  numeroProcesso: string | null;
+  /** Consulta de julgados do e-SAJ filtrada pelo número — abre a sentença. */
+  linkSentenca: string | null;
+  /** Consulta processual pública do e-SAJ (CPOPG). */
+  linkProcesso: string | null;
   fundamentacao: string[];
   resultado: string | null;
   dataExigencia: string;
@@ -53,6 +61,11 @@ export interface HistoricoJurimetria {
     parciais: number;
     semJulgamento: number;
   };
+  /**
+   * "Antes de protocolar": as exigências RECORRENTES do recorte, agrupadas
+   * por semelhança e ordenadas por frequência — o checklist de adequação.
+   */
+  dicas: { texto: string; n: number }[];
   exigencias: ExigenciaPublica[];
 }
 
@@ -99,10 +112,40 @@ export async function consultarJurimetria(entrada: {
       include: {
         cartorio: { select: { nome: true } },
         tema: { select: { rotulo: true } },
-        documento: { select: { fonte: { select: { nome: true } } } },
+        documento: {
+          select: { urlOrigem: true, textoAnonimizado: true, fonte: { select: { nome: true } } },
+        },
       },
     }),
   ]);
+
+  // "Antes de protocolar": agrupa as exigências do recorte por semelhança
+  // (chave = primeiras palavras significativas, sem acento) e devolve as
+  // mais recorrentes — o checklist de adequação prévia.
+  const paraDicas = await prisma.exigencia.findMany({
+    where,
+    select: { textoNormalizado: true },
+    orderBy: { dataExigencia: 'desc' },
+    take: 300,
+  });
+  const grupos = new Map<string, { texto: string; n: number }>();
+  for (const { textoNormalizado } of paraDicas) {
+    if (ehTextoCru(textoNormalizado)) continue;
+    const chave = textoNormalizado
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((p) => p.length > 2)
+      .slice(0, 6)
+      .join(' ');
+    if (chave.length < 10) continue;
+    const g = grupos.get(chave);
+    if (g) g.n++;
+    else grupos.set(chave, { texto: textoNormalizado, n: 1 });
+  }
+  const dicas = [...grupos.values()].sort((a, b) => b.n - a.n).slice(0, 8);
 
   const [temas, cartorios] = await Promise.all([
     prisma.temaRegistral.findMany({ select: { id: true, rotulo: true } }),
@@ -140,17 +183,27 @@ export async function consultarJurimetria(entrada: {
       parciais: nResultado('parcial'),
       semJulgamento: total - julgadas,
     },
-    exigencias: linhas.map((e) => ({
-      texto: e.textoNormalizado,
-      fundamentacao: e.fundamentacao,
-      resultado: e.resultado,
-      dataExigencia: e.dataExigencia.toISOString().slice(0, 10),
-      cartorioId: e.cartorioId,
-      cartorioNome: e.cartorio?.nome ?? '(cartório não identificado)',
-      temaId: e.temaId,
-      temaRotulo: e.tema?.rotulo ?? null,
-      fonteNome: e.documento.fonte.nome,
-    })),
+    dicas,
+    exigencias: linhas.map((e) => {
+      const origem = origemDoProcesso(e.documento.urlOrigem);
+      const ementa = ementaDoDocumento(e.documento.textoAnonimizado ?? '');
+      return {
+        // Texto cru (fallback antigo) nunca chega à tela — vale a ementa.
+        texto: ehTextoCru(e.textoNormalizado) ? (ementa ?? e.textoNormalizado) : e.textoNormalizado,
+        ementa,
+        numeroProcesso: origem.numeroCNJ,
+        linkSentenca: origem.linkSentenca,
+        linkProcesso: origem.linkProcesso,
+        fundamentacao: e.fundamentacao,
+        resultado: e.resultado,
+        dataExigencia: e.dataExigencia.toISOString().slice(0, 10),
+        cartorioId: e.cartorioId,
+        cartorioNome: e.cartorio?.nome ?? '(cartório não identificado)',
+        temaId: e.temaId,
+        temaRotulo: e.tema?.rotulo ?? null,
+        fonteNome: e.documento.fonte.nome,
+      };
+    }),
   };
 }
 

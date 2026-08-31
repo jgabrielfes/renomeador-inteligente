@@ -11,6 +11,7 @@ import { linhasDoCjpg, pareceDuvidaRegistral, documentoDaLinha } from './coletor
 import { detectarAtoTipo, detectarTemas, mencoesDeCartorio, TEMAS_LOCAIS } from './temas-local';
 import { extrairExigenciasLocal, esquemaExtracao, daRespostaLLM } from './extrair';
 import { cartorioDaMencao, normalizarNomeCartorio, resolverCartorio, resolverTitular } from './resolver';
+import { ehTextoCru, ementaDoDocumento, formatarNumeroCNJ, origemDoProcesso } from './origem';
 import { similaridadeTexto, ehDuplicata, encaminhar } from './encaminhar';
 
 let ok = 0,
@@ -69,6 +70,58 @@ console.log('\nJurimetria — pipeline (anonimizar, extrair, resolver, dedupe, e
 {
   const r = anonimizar('Decidiu a Juíza Ana Julgadora Modelo pela manutenção da exigência.');
   afirmar('título "Juíza" antes do nome preserva', r.texto.includes('Ana Julgadora Modelo'), r.texto);
+}
+
+/* ---------- anonimizar: nomes em CAIXA ALTA viram iniciais ---------- */
+{
+  const sentenca =
+    'SENTENÇA Vistos. LUCINÉIA DE CÁSSIA GARCIA FILGUEIRAS propôs ação de adjudicação compulsória em face de JOSÉ ROBERTO DOS SANTOS. Juiz de Direito: Dr. APARECIDO CESAR MACHADO. JULGO PROCEDENTE o pedido.';
+  const r = anonimizar(sentenca);
+  afirmar('caps: nome da autora sai', !r.texto.includes('LUCINÉIA'), r.texto);
+  afirmar('caps: vira iniciais L.C.G.F.', r.texto.includes('L.C.G.F.'), r.texto);
+  afirmar('caps: nome do réu vira J.R.S.', r.texto.includes('J.R.S.') && !r.texto.includes('ROBERTO'));
+  afirmar('caps: juiz com Dr. antes é preservado', r.texto.includes('APARECIDO CESAR MACHADO'));
+  afirmar('caps: gritos jurídicos ficam', r.texto.includes('SENTENÇA') && r.texto.includes('JULGO PROCEDENTE'));
+  afirmar(
+    'caps: título de documento não vira nome',
+    anonimizar('ESCRITURA PÚBLICA DE INVENTÁRIO E PARTILHA lavrada nesta data.').texto.includes('ESCRITURA PÚBLICA DE INVENTÁRIO E PARTILHA'),
+  );
+  const misto = anonimizar('A requerente Maria da Silva Santos juntou documentos.');
+  afirmar('iniciais também no passe capitalizado', misto.texto.includes('M.S.S.') && !misto.texto.includes('Maria'), misto.texto);
+}
+
+/* ---------- origem: número CNJ, links do e-SAJ e ementa ---------- */
+{
+  const cjpg = origemDoProcesso('cjpg:1007991-18.2019.8.26.0269:ABC-1--2');
+  afirmar('origem cjpg: número preservado', cjpg.numeroCNJ === '1007991-18.2019.8.26.0269');
+  afirmar('origem cjpg: link da sentença no CJPG', cjpg.linkSentenca?.includes('cjpg/pesquisar.do') === true);
+  afirmar('origem cjpg: link do processo no CPOPG', cjpg.linkProcesso?.includes('cpopg/search.do') === true);
+  const dj = origemDoProcesso('datajud:10130679820268260100');
+  afirmar('origem datajud: número formatado', dj.numeroCNJ === '1013067-98.2026.8.26.0100', dj.numeroCNJ);
+  afirmar('origem: url desconhecida = vazio', origemDoProcesso('usuario:ri-sp-01').numeroCNJ === null);
+  afirmar('formatarNumeroCNJ: curto demais = null', formatarNumeroCNJ('123') === null);
+
+  const docCjpg = 'Sentença — CJPG/TJSP (inteiro teor público)\nNúmero CNJ: 1\nClasse: Procedimento Comum Cível\nVara: 2ª Vara Cível\nComarca: Itapetininga\n\nVistos.';
+  afirmar('ementa cjpg: classe + vara + comarca', ementaDoDocumento(docCjpg) === 'Sentença em Procedimento Comum Cível — 2ª Vara Cível, Comarca de Itapetininga', ementaDoDocumento(docCjpg));
+  const docDj = 'Processo de Dúvida — 01 REGISTROS PUBLICOS DE CENTRAL\nNúmero CNJ: 1\nAssuntos (tabela CNJ): Registro de Imóveis\n\nMovimentações:';
+  afirmar('ementa datajud: VRP legível + assuntos', ementaDoDocumento(docDj) === 'Dúvida — 1ª Vara de Registros Públicos da Capital · Assuntos: Registro de Imóveis', ementaDoDocumento(docDj));
+  afirmar('texto cru detectado', ehTextoCru('Sentença — CJPG/TJSP (inteiro teor público) Número CNJ: 1'));
+  afirmar('frase impessoal não é crua', !ehTextoCru('Apresentar certidão de casamento atualizada.'));
+}
+
+/* ---------- cadastro de serventia com VALIDADOR de município ---------- */
+{
+  const base = new Map([
+    ['americana', 'Americana'],
+    ['sorocaba', 'Sorocaba'],
+    ['tatui', 'Tatuí'],
+  ]);
+  const valida = (c: string) =>
+    base.get(c.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()) ?? null;
+  const aparado = cartorioDaMencao('Oficial de Registro de Imóveis de Americana suscitou a pressente', valida);
+  afirmar('validador: cauda engolida é aparada até o município', aparado?.cidade === 'Americana' && aparado.id === 'ri-americana', aparado);
+  afirmar('validador: cidade inexistente derruba o cadastro', cartorioDaMencao('Registro de Imóveis de Tamabu', valida) === null);
+  afirmar('validador: grafia canônica da base vence', cartorioDaMencao('Registro de Imóveis de Tatui suscita', valida)?.cidade === 'Tatuí');
 }
 
 /* ---------- anonimizar: texto sem dado pessoal fica intacto ---------- */

@@ -88,7 +88,16 @@ export interface CartorioNovo {
  * Capital o número é obrigatório (são 18 RIs; "RI de São Paulo" sozinho é
  * ambíguo). Puro e testável; quem grava é o worker (upsert idempotente).
  */
-export function cartorioDaMencao(mencionado: string | null | undefined): CartorioNovo | null {
+export function cartorioDaMencao(
+  mencionado: string | null | undefined,
+  /**
+   * Valida a cidade contra uma base real de municípios (devolve o nome
+   * canônico ou null). Com o validador, caudas engolidas pela captura
+   * ("Americana suscitou a pressente") são aparadas palavra a palavra até
+   * casar um município — e cidade inexistente derruba o cadastro.
+   */
+  validarCidade?: (cidade: string) => string | null,
+): CartorioNovo | null {
   const bruta = (mencionado ?? '').replace(/\s+/g, ' ').trim();
   if (!/registro\s+de\s+im[óo]veis/i.test(bruta)) return null;
 
@@ -112,6 +121,15 @@ export function cartorioDaMencao(mencionado: string | null | undefined): Cartori
     .trim();
   if (!cidade || cidade.split(' ').length > 5) return null;
   if (/^capital$/i.test(cidade)) cidade = 'São Paulo';
+
+  if (validarCidade) {
+    const palavras = cidade.split(' ');
+    let canonica: string | null = null;
+    for (let n = palavras.length; n >= 1 && !canonica; n--)
+      canonica = validarCidade(palavras.slice(0, n).join(' '));
+    if (!canonica) return null;
+    cidade = canonica;
+  }
 
   const ehCapital = normalizarNomeCartorio(cidade) === 'sao paulo';
   if (ehCapital && !numero) return null; // 18 RIs na Capital — sem número é ambíguo

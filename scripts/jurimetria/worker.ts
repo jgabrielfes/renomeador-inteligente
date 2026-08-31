@@ -32,6 +32,10 @@ import { extrairComGemini, geminiDisponivel } from '../../lib/jurimetria/gemini-
 import { extrairExigenciasLocal } from '../../lib/jurimetria/extrair';
 import { cartorioDaMencao, resolverCartorio, resolverTitular } from '../../lib/jurimetria/resolver';
 import { detectarTemas, mencoesDeCartorio } from '../../lib/jurimetria/temas-local';
+import { ementaDoDocumento, formatarNumeroCNJ } from '../../lib/jurimetria/origem';
+import { linhasDoCjpg, documentoDaLinha } from '../../lib/jurimetria/coletores/cjpg';
+import { buscarRespeitoso } from '../../lib/jurimetria/coletores/http';
+import { municipiosDaUf } from '../../lib/rede/municipios';
 import { encaminhar, LIMIAR_DUPLICATA } from '../../lib/jurimetria/encaminhar';
 import { VERSAO_EXTRATOR, type ExtracaoDocumento } from '../../lib/jurimetria/tipos';
 import { coletorCjpg } from '../../lib/jurimetria/coletores/cjpg';
@@ -57,6 +61,15 @@ const MAX_JOBS_POR_EXECUCAO = 400;
 const MAX_DOCS_POR_FONTE = 120;
 
 const sha256 = (dados: string | Uint8Array) => createHash('sha256').update(dados).digest('hex');
+
+// Cadastro automático de serventia só com MUNICÍPIO REAL: a cidade extraída
+// da menção é validada contra a base dos 5.587 (lib/rede/municipios) — a 1ª
+// leva sem validação cadastrou lixo ("Americana suscitou a pressente").
+const chaveCidade = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const MUNICIPIOS_SP = new Map(municipiosDaUf('SP').map((m) => [chaveCidade(m.nome), m.nome]));
+const cidadePaulistaValida = (cidade: string): string | null =>
+  MUNICIPIOS_SP.get(chaveCidade(cidade)) ?? null;
 
 const resumo = {
   coletados: 0,
@@ -295,7 +308,7 @@ async function rodarProcessamento(documentoId: string) {
   // Serventia nomeada que não existe no catálogo é CADASTRADA na hora —
   // toda decisão cai por cartório sem depender de semente manual.
   if (!cartorioId) {
-    const novo = cartorioDaMencao(extracao.cartorioMencionado);
+    const novo = cartorioDaMencao(extracao.cartorioMencionado, cidadePaulistaValida);
     if (novo) {
       await prisma.cartorio.upsert({
         where: { id: novo.id },
@@ -386,6 +399,149 @@ async function rodarProcessamento(documentoId: string) {
   resumo.processados++;
 }
 
+/* ---------------- varredura do "outros": a sentença pelo CJPG ---------------- */
+
+const MAX_ENRIQUECER_POR_EXECUCAO = 25;
+
+/**
+ * Os metadados do Datajud não dizem o tema central nem QUAL serventia
+ * suscitou — mas a SENTENÇA diz. Esta passada busca no CJPG, pelo número
+ * CNJ, o inteiro teor dos processos cujas exigências ficaram pobres (sem
+ * cartório, sem tema ou no balde "outros"); achando a sentença, o documento
+ * é substituído pelo teor anonimizado e reprocessado — tema real, serventia
+ * nomeada e resultado (procedência/improcedência) entram sozinhos.
+ * Processo ainda sem sentença é marcado e não é tentado de novo.
+ */
+async function enriquecerDatajudPeloCjpg() {
+  const docs = await prisma.documentoJurimetria.findMany({
+    where: {
+      fonteId: 'fonte-datajud-vrp',
+      NOT: { versaoExtrator: { contains: '+cjpg' } },
+      exigencias: {
+        some: { OR: [{ cartorioId: null }, { temaId: null }, { temaId: 'outros' }] },
+      },
+    },
+    select: { id: true, urlOrigem: true },
+    take: MAX_ENRIQUECER_POR_EXECUCAO,
+  });
+  if (docs.length === 0) return;
+  const preservar = await nomesAPreservar();
+  let enriquecidos = 0;
+  for (const doc of docs) {
+    try {
+      const numero = formatarNumeroCNJ(doc.urlOrigem?.replace(/^datajud:/, '') ?? '');
+      if (!numero) continue;
+      const r = await buscarRespeitoso(
+        `https://esaj.tjsp.jus.br/cjpg/pesquisar.do?dadosConsulta.pesquisaLivre=${encodeURIComponent(`"${numero}"`)}`,
+      );
+      const linha = linhasDoCjpg(await r.text()).find((l) => l.numeroCNJ === numero);
+      const marcar = (versao: string) =>
+        prisma.documentoJurimetria.update({
+          where: { id: doc.id },
+          data: { versaoExtrator: versao },
+        });
+      if (!linha) {
+        await marcar(`${VERSAO_EXTRATOR}+cjpg-sem-sentenca`);
+        continue;
+      }
+      const { texto } = anonimizar(documentoDaLinha(linha), preservar);
+      const hash = sha256(texto);
+      const jaTem = await prisma.documentoJurimetria.findFirst({
+        where: { hashConteudo: hash, NOT: { id: doc.id } },
+        select: { id: true },
+      });
+      if (jaTem) {
+        // A sentença já entrou pela busca normal do CJPG — não duplica.
+        await marcar(`${VERSAO_EXTRATOR}+cjpg-sem-sentenca`);
+        continue;
+      }
+      await prisma.exigencia.deleteMany({ where: { documentoId: doc.id } });
+      await prisma.documentoJurimetria.update({
+        where: { id: doc.id },
+        data: {
+          textoAnonimizado: texto,
+          hashConteudo: hash,
+          status: 'anonimizado',
+          versaoExtrator: `${VERSAO_EXTRATOR}+cjpg`,
+        },
+      });
+      await rodarProcessamento(doc.id);
+      enriquecidos++;
+    } catch (e) {
+      console.error(`enriquecer ${doc.urlOrigem}:`, e instanceof Error ? e.message : e);
+    }
+  }
+  console.log(`varredura CJPG: ${enriquecidos} de ${docs.length} processo(s) ganharam a sentença (tema/serventia/resultado)`);
+}
+
+/* ---------------- limpeza de texto cru + reanonimização ---------------- */
+
+/**
+ * Exigência publicada com o CABEÇALHO CRU do documento (fallback de
+ * extração) troca o texto pela ementa determinística — nunca mostrar
+ * despejo de metadados ao usuário.
+ */
+async function limparTextosCrus() {
+  const crus = await prisma.exigencia.findMany({
+    where: {
+      OR: [
+        { textoNormalizado: { contains: 'Número CNJ:' } },
+        { textoNormalizado: { startsWith: 'Sentença — CJPG' } },
+        { textoNormalizado: { startsWith: 'Processo de ' } },
+      ],
+    },
+    select: { id: true, documento: { select: { textoAnonimizado: true } } },
+    take: 400,
+  });
+  for (const e of crus) {
+    const ementa =
+      ementaDoDocumento(e.documento.textoAnonimizado ?? '') ??
+      'Registro do processo — abrir a decisão na fonte para o teor completo.';
+    await prisma.exigencia.update({ where: { id: e.id }, data: { textoNormalizado: ementa } });
+  }
+  if (crus.length > 0) console.log(`limpeza de texto cru: ${crus.length} exigência(s) trocadas pela ementa`);
+}
+
+/**
+ * Reanonimização retroativa: o anonimizador evolui (nomes em CAIXA ALTA →
+ * iniciais) e o que já está gravado passa pela versão nova — idempotente,
+ * regrava só o que mudar.
+ */
+async function reanonimizar() {
+  const preservar = await nomesAPreservar();
+  const docs = await prisma.documentoJurimetria.findMany({
+    where: { textoAnonimizado: { not: null } },
+    select: { id: true, textoAnonimizado: true },
+    take: 400,
+    orderBy: { coletadoEm: 'desc' },
+  });
+  let regravados = 0;
+  for (const d of docs) {
+    const { texto } = anonimizar(d.textoAnonimizado!, preservar);
+    if (texto !== d.textoAnonimizado) {
+      await prisma.documentoJurimetria.update({ where: { id: d.id }, data: { textoAnonimizado: texto } });
+      regravados++;
+    }
+  }
+  const exigencias = await prisma.exigencia.findMany({
+    select: { id: true, textoNormalizado: true, trechoOrigem: true },
+    take: 600,
+    orderBy: { criadoEm: 'desc' },
+  });
+  for (const e of exigencias) {
+    const texto = anonimizar(e.textoNormalizado, preservar).texto;
+    const trecho = e.trechoOrigem ? anonimizar(e.trechoOrigem, preservar).texto : e.trechoOrigem;
+    if (texto !== e.textoNormalizado || trecho !== e.trechoOrigem) {
+      await prisma.exigencia.update({
+        where: { id: e.id },
+        data: { textoNormalizado: texto, trechoOrigem: trecho },
+      });
+      regravados++;
+    }
+  }
+  if (regravados > 0) console.log(`reanonimização: ${regravados} registro(s) regravados pela versão nova`);
+}
+
 /* ---------------- reclassificação local (rede de segurança) ---------------- */
 
 /**
@@ -441,7 +597,7 @@ async function reatribuirCartorios() {
     for (const mencao of mencoesDeCartorio(e.documento.textoAnonimizado ?? '')) {
       id = resolverCartorio(mencao, cartorios);
       if (!id) {
-        const novo = cartorioDaMencao(mencao);
+        const novo = cartorioDaMencao(mencao, cidadePaulistaValida);
         if (novo) {
           await prisma.cartorio.upsert({
             where: { id: novo.id },
@@ -484,8 +640,11 @@ async function principal() {
     }
   }
 
+  await enriquecerDatajudPeloCjpg();
   await reatribuirCartorios();
   await reclassificarSemTema();
+  await limparTextosCrus();
+  await reanonimizar();
 
   // Alertas do desenho: fila de revisão acumulada.
   const pendentes = await prisma.revisaoJurimetria.count({ where: { status: 'pendente' } });

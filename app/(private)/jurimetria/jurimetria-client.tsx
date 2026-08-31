@@ -16,11 +16,12 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition, type CSSProperties } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { extrairTextoOffice, ehArquivoOffice } from '@/lib/office-texto';
 import { anonimizar } from '@/lib/jurimetria/anonimizar';
@@ -149,6 +150,94 @@ function ResumoCruzamento({
   );
 }
 
+/**
+ * "Antes de protocolar": o checklist do recorte tema × cartório — as
+ * exigências recorrentes do histórico, para adequar o título ANTES da
+ * entrada. É o mapa pedido pelo escritório: escolheu alienação fiduciária
+ * no cartório X, vê o que ele costuma exigir.
+ */
+function AntesDeProtocolar({ historico }: { historico: HistoricoJurimetria }) {
+  if (historico.dicas.length === 0) return null;
+  return (
+    <div className="lc-cartao" style={{ marginBottom: 'var(--e-3)' }}>
+      <span className="lc-eyebrow">Antes de protocolar — o que este recorte costuma exigir</span>
+      <ol style={{ margin: 'var(--e-2) 0 0', paddingLeft: '1.2em', display: 'grid', gap: 'var(--e-2)' }}>
+        {historico.dicas.map((d, i) => (
+          <li key={i}>
+            {d.texto} {d.n > 1 && <Badge variant="outline">{d.n}×</Badge>}
+          </li>
+        ))}
+      </ol>
+      <p className="lc-fund" style={{ marginTop: 'var(--e-3)' }}>
+        Checklist derivado do histórico publicado deste recorte — ajuda a adequar o título antes
+        de dar entrada, mas confirme sempre com a própria serventia.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Seletor de serventia RECOLHIDO: a lista de cartórios cresce sozinha com a
+ * coleta e virava um muro de chips — agora é um disclosure com lista
+ * alfabética rolável; o filtro em si segue na query string.
+ */
+function SeletorServentia({
+  cartorios,
+  cartorioAtivo,
+  temaId,
+}: {
+  cartorios: Cartorio[];
+  cartorioAtivo: string | null;
+  temaId: string;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const ativo = cartorios.find((c) => c.id === cartorioAtivo) ?? null;
+  const linha = (marcado: boolean): CSSProperties => ({
+    display: 'block',
+    padding: '6px 10px',
+    borderRadius: 8,
+    textDecoration: 'none',
+    color: 'inherit',
+    fontSize: 'var(--t-sm)',
+    fontWeight: marcado ? 600 : 400,
+    background: marcado ? 'var(--muted)' : undefined,
+  });
+  return (
+    <div style={{ margin: '0 0 var(--e-2)' }}>
+      <p style={{ margin: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+        Registro de Imóveis:
+        {ativo ? <Badge>{ativo.nome}</Badge> : <Badge variant="outline">todos</Badge>}
+        {ativo && (
+          <Button variant="outline" size="sm" nativeButton={false} render={<Link href={hrefFiltro(null, temaId)} />}>
+            limpar ✕
+          </Button>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={() => setAberto((a) => !a)}>
+          {aberto ? '▾ recolher a lista' : `▸ escolher a serventia (${cartorios.length})`}
+        </Button>
+      </p>
+      {aberto && (
+        <ScrollArea className="mt-2 max-h-64">
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '2px' }}>
+            <li>
+              <Link href={hrefFiltro(null, temaId)} style={linha(!cartorioAtivo)}>
+                todos os cartórios
+              </Link>
+            </li>
+            {cartorios.map((c) => (
+              <li key={c.id}>
+                <Link href={hrefFiltro(c.id, temaId)} style={linha(cartorioAtivo === c.id)}>
+                  {c.nome}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
+      )}
+    </div>
+  );
+}
+
 function ListaExigencias({ historico }: { historico: HistoricoJurimetria }) {
   if (historico.exigencias.length === 0)
     return (
@@ -172,13 +261,45 @@ function ListaExigencias({ historico }: { historico: HistoricoJurimetria }) {
             )}
           </div>
           <p style={{ margin: 0 }}>{e.texto}</p>
+          {e.ementa && e.ementa !== e.texto && (
+            <p style={{ margin: 'var(--e-1) 0 0', fontSize: 'var(--t-sm)', opacity: 0.8 }}>
+              {e.ementa}
+            </p>
+          )}
           {e.fundamentacao.length > 0 && (
             <p style={{ margin: 'var(--e-2) 0 0', fontSize: 'var(--t-sm)', opacity: 0.8 }}>
               Fundamentação citada: {e.fundamentacao.join(' · ')}
             </p>
           )}
-          <p style={{ margin: 'var(--e-1) 0 0', fontSize: 'var(--t-xs)', opacity: 0.7 }}>
+          <p style={{ margin: 'var(--e-1) 0 0', fontSize: 'var(--t-xs)', opacity: 0.8 }}>
             Fonte: {e.fonteNome}
+            {e.numeroProcesso && <> · processo {e.numeroProcesso}</>}
+            {e.linkSentenca && (
+              <>
+                {' · '}
+                <a
+                  href={e.linkSentenca}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'underline', color: 'inherit' }}
+                >
+                  abrir a sentença (e-SAJ)
+                </a>
+              </>
+            )}
+            {e.linkProcesso && (
+              <>
+                {' · '}
+                <a
+                  href={e.linkProcesso}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'underline', color: 'inherit' }}
+                >
+                  abrir o processo (e-SAJ)
+                </a>
+              </>
+            )}
           </p>
         </li>
       ))}
@@ -395,30 +516,14 @@ export function JurimetriaClient({
               <li key={t.id} className="lc-cartao">
                 {cabecalho}
                 <div style={{ marginTop: 'var(--e-3)' }}>
-                  <p style={{ margin: '0 0 var(--e-2)' }}>
-                    Cruzar com o Registro de Imóveis:{' '}
-                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '6px' }}>
-                      <FiltroLink
-                        ativo={!cartorioAtivo}
-                        href={hrefFiltro(null, t.id)}
-                        rotulo="todos"
-                      />
-                      {cartorios.map((c) => (
-                        <FiltroLink
-                          key={c.id}
-                          ativo={cartorioAtivo === c.id}
-                          href={hrefFiltro(c.id, t.id)}
-                          rotulo={c.nome.replace(' de São Paulo/SP', '')}
-                        />
-                      ))}
-                    </span>
-                  </p>
+                  <SeletorServentia cartorios={cartorios} cartorioAtivo={cartorioAtivo} temaId={t.id} />
                   {historico ? (
                     <>
                       <ResumoCruzamento
                         historico={historico}
                         recorte={rotuloRecorte(cartorioAtivo, t.rotulo)}
                       />
+                      <AntesDeProtocolar historico={historico} />
                       <ListaExigencias historico={historico} />
                     </>
                   ) : (
@@ -465,20 +570,7 @@ export function JurimetriaClient({
                     Exigências publicadas cuja classificação por tema ainda não foi possível — a
                     coleta reclassifica continuamente e elas migram para os temas acima.
                   </p>
-                  <p style={{ margin: '0 0 var(--e-2)' }}>
-                    Cruzar com o Registro de Imóveis:{' '}
-                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '6px' }}>
-                      <FiltroLink ativo={!cartorioAtivo} href={hrefFiltro(null, 'sem-tema')} rotulo="todos" />
-                      {cartorios.map((c) => (
-                        <FiltroLink
-                          key={c.id}
-                          ativo={cartorioAtivo === c.id}
-                          href={hrefFiltro(c.id, 'sem-tema')}
-                          rotulo={c.nome.replace(' de São Paulo/SP', '')}
-                        />
-                      ))}
-                    </span>
-                  </p>
+                  <SeletorServentia cartorios={cartorios} cartorioAtivo={cartorioAtivo} temaId="sem-tema" />
                   {historico ? (
                     <>
                       <ResumoCruzamento
@@ -580,6 +672,7 @@ export function JurimetriaClient({
                   historico={analise.resultado}
                   recorte={`temas do documento × ${nomeCartorio(analise.cartorioId) ?? 'todos os cartórios'}`}
                 />
+                <AntesDeProtocolar historico={analise.resultado} />
                 <ListaExigencias historico={analise.resultado} />
               </>
             )}
@@ -702,15 +795,3 @@ function hrefFiltro(cartorio: string | null, tema: string | null): string {
   return s ? `/jurimetria?${s}` : '/jurimetria';
 }
 
-function FiltroLink({ ativo, href, rotulo }: { ativo: boolean; href: string; rotulo: string }) {
-  return (
-    <Button
-      variant={ativo ? 'default' : 'outline'}
-      size="sm"
-      nativeButton={false}
-      render={<Link href={href} />}
-    >
-      {rotulo}
-    </Button>
-  );
-}
