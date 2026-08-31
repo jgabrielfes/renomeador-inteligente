@@ -143,7 +143,6 @@ import type {
 import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
-import { Espelho, FundEspelho, LinhaEspelho } from './espelho-tabela';
 import {
   apurarCenario,
   direitosDoResultado,
@@ -5205,14 +5204,141 @@ function PartilhaDeSucessao({
         </Button>
       </div>
 
-      <Espelho colunas={['Herdeiro', 'Fração', 'Quinhão']}>
-        {resultado.quinhoes.map((q) => (
-          <Fragment key={q.herdeiroId}>
-            <LinhaEspelho nome={q.nome} meio={q.fracaoHeranca} meioNum valor={brl(q.valor)} />
-            <FundEspelho>{q.fundamento}</FundEspelho>
-          </Fragment>
+      {/* MESMO padrão da partilha principal (pedido do escritório): massa,
+          meação com fundamento, pizza viva, relação de bens e o espelho
+          semântico com % da massa e fundamento por lançamento. */}
+      <div className="grade c2" style={{ margin: '14px 0 6px' }}>
+        <div>
+          <span className="eyebrow">Massa partilhável</span>
+          <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
+            {brl(resultado.acervo.massaPartilhavel)}
+          </p>
+        </div>
+        {resultado.meacao && (
+          <div>
+            <span className="eyebrow">Meação — {resultado.meacao.beneficiario}</span>
+            <p className="num" style={{ fontFamily: 'var(--display)', fontSize: 'var(--t-xl)' }}>
+              {brl(resultado.meacao.valor)}
+            </p>
+            <p className="fund">
+              {resultado.meacao.fracao} — não é herança: essa metade de cada bem já é do(a)
+              meeiro(a), e as frações dos herdeiros abaixo incidem sobre a outra metade.{' '}
+              {resultado.meacao.fundamento}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <span className="eyebrow">Divisão do acervo — meação e quinhões</span>
+      <GraficoQuinhoes
+        fatias={[
+          ...(resultado.meacao
+            ? [
+                {
+                  nome: `${resultado.meacao.beneficiario} — meação`,
+                  valor: Number(resultado.meacao.valor),
+                  sub: 'não é herança',
+                },
+              ]
+            : []),
+          ...resultado.quinhoes.map((q) => ({
+            nome: q.nome,
+            valor: Number(q.valor),
+            sub: `${q.fracaoHeranca} da herança`,
+          })),
+        ]}
+        total={Number(resultado.acervo.massaPartilhavel)}
+      />
+
+      <span className="eyebrow">Relação de bens partilhados</span>
+      <div className="check" style={{ margin: '6px 0 18px' }}>
+        {bensDoCaso.map((b, i) => (
+          <div className="check-item" key={b.id}>
+            <span className="prio num">{i + 1}.</span>
+            <p style={{ fontSize: 'var(--t-sm)' }}>
+              {b.descricao}
+              <span className="fracao num"> · {brl(b.valor)}</span>
+            </p>
+            <span />
+          </div>
         ))}
-      </Espelho>
+      </div>
+
+      <Table className="espelho-tabela">
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col">Herdeiro</TableHead>
+            <TableHead scope="col">Fração da herança</TableHead>
+            <TableHead scope="col" className="text-right">
+              % da massa
+            </TableHead>
+            <TableHead scope="col" className="text-right">
+              Quinhão
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {resultado.meacao && (
+            <>
+              <TableRow>
+                <TableCell className="espelho-nome">
+                  {resultado.meacao.beneficiario} · meação — não é herança
+                </TableCell>
+                <TableCell className="num">{resultado.meacao.fracao}</TableCell>
+                <TableCell className="num text-right">
+                  {pctFmtEspelho(resultado.meacao.valor, resultado.acervo.massaPartilhavel)}
+                </TableCell>
+                <TableCell className="num text-right">{brl(resultado.meacao.valor)}</TableCell>
+              </TableRow>
+              <TableRow className="espelho-fundamento">
+                <TableCell colSpan={4}>{resultado.meacao.fundamento}</TableCell>
+              </TableRow>
+            </>
+          )}
+          {resultado.quinhoes.map((q) => {
+            const porBem = [
+              q.fracaoBemComum ? `${q.fracaoBemComum} de cada bem comum` : '',
+              q.fracaoBemParticular ? `${q.fracaoBemParticular} de cada bem particular` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            return (
+              <Fragment key={q.herdeiroId}>
+                <TableRow>
+                  <TableCell className="espelho-nome">
+                    {q.nome}
+                    {q.reservaUmQuartoAplicada ? ' · reserva de ¼ aplicada' : ''}
+                  </TableCell>
+                  <TableCell className="num">{q.fracaoHeranca}</TableCell>
+                  <TableCell className="num text-right">
+                    {pctFmtEspelho(q.valor, resultado.acervo.massaPartilhavel)}
+                  </TableCell>
+                  <TableCell className="num text-right">{brl(q.valor)}</TableCell>
+                </TableRow>
+                <TableRow className="espelho-fundamento">
+                  <TableCell colSpan={4}>
+                    {porBem && (
+                      <span className="num" style={{ fontWeight: 600 }}>
+                        Fração ideal por bem: {porBem} ·{' '}
+                      </span>
+                    )}
+                    {q.fundamento}
+                    {q.precedente ? <span className="prec"> · {q.precedente}</span> : null}
+                  </TableCell>
+                </TableRow>
+              </Fragment>
+            );
+          })}
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell>Total (massa partilhável)</TableCell>
+            <TableCell />
+            <TableCell className="num text-right">100%</TableCell>
+            <TableCell className="num text-right">{brl(resultado.acervo.massaPartilhavel)}</TableCell>
+          </TableRow>
+        </TableFooter>
+      </Table>
 
       {diferenciada && (
         <div style={{ marginTop: 12 }}>
