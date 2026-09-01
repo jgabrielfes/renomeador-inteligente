@@ -41,7 +41,6 @@ import { mapearEconomias } from '@/lib/partilha/economia';
 import { baseDeEmolumentosDaEscritura, projetarCustos } from '@/lib/partilha/custas';
 import { totalCustosManuais, ufsForaDeSp } from '@/lib/partilha/custos-manuais';
 import { QualificacaoConta } from '@/components/qualificacao-conta';
-import { pendenciasDaMinuta } from '@/lib/partilha/pendencias';
 import { aplicarColacoes, type Colacao } from '@/lib/partilha/colacao';
 import { conferirQualificacoes, type PessoaConferencia } from '@/lib/partilha/conferencia';
 import { anteciparQualificacaoRegistral, ehImovelDeRegistro } from '@/lib/partilha/antecipador';
@@ -1762,22 +1761,6 @@ export default function SucessoristaClient({
     }
     setPasso(2);
   };
-
-  /** Pendências da minuta: o que ainda vira lacuna na escritura/petição. */
-  const pendenciasMinuta = useMemo(
-    () =>
-      pendenciasDaMinuta({
-        falecido,
-        qualificacaoFalecido: familia.qualificacoes['__falecido__'],
-        temSobrevivente,
-        nomeSobrev,
-        qualificacaoSobrevivente: familia.qualificacoes['__sobrevivente__'],
-        herdeiros,
-        qualificacoes: familia.qualificacoes,
-        bens,
-      }),
-    [falecido, familia.qualificacoes, temSobrevivente, nomeSobrev, herdeiros, bens],
-  );
 
   /** Herdeiros com quinhão e CPF — alimenta a Declaração Final (módulo fiscal). */
   const herdeirosQuinhao = useMemo(() => {
@@ -4849,7 +4832,6 @@ export default function SucessoristaClient({
             onGerarPeticao={gerarPeticao}
             onGerarPeticaoJudicial={gerarPeticaoJudicial}
             onGerarEscritura={gerarEscritura}
-            pendencias={pendenciasMinuta}
             antecipador={relatorioAntecipador}
             nomeCaso={falecido.nome}
             onAntecipadorPdf={() => registrarDoc('ANTECIPADOR_REGISTRAL_PDF')}
