@@ -39,6 +39,12 @@ import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
 import { montarDocxRico, type BlocoDocx, type Paragrafo } from './docx';
 import { dataPorExtenso, brl, LACUNA, ROTULO_REGIME } from './peticao';
+import { valorPorExtenso } from './extenso';
+
+/** "R$ 1.234,56 (mil, duzentos e trinta e quatro reais…)" — valor + extenso
+ *  no lugar da lacuna dos parênteses; sem valor, mantém a lacuna. */
+const ext = (v: string | number | null | undefined): string =>
+  v === null || v === undefined || v === '' ? LACUNA : valorPorExtenso(v);
 
 export type ModalidadeEscritura = 'PRESENCIAL' | 'VIDEOCONFERENCIA' | 'HIBRIDA';
 
@@ -52,6 +58,15 @@ export interface PagamentoDiferenciado {
   nome: string;
   itens: { numero: number; descricao: string; pct: number }[];
   valorRecebido: string;
+  /** Direito (legítima/meação) do participante, em reais — abre o pagamento
+   *  ("para satisfação de sua legítima no valor de …"). */
+  direito?: string;
+  /** Torna RECEBIDA (delta positivo), em reais — descrita dentro do
+   *  pagamento ("e da quantia de … a título de torna…"); 0/ausente = sem. */
+  torna?: string;
+  /** true quando o participante é o(a) cônjuge/companheiro(a) meeiro(a) —
+   *  muda "legítima" para "meação" na abertura. */
+  meeiro?: boolean;
 }
 
 /** Sucessão CUMULADA que entra na MESMA escritura (dois ou mais óbitos). */
@@ -112,6 +127,21 @@ export interface DadosEscritura {
    * espólios e ITCMD por óbito, como no modelo cumulado do balcão.
    */
   sucessoes?: SucessaoEscritura[];
+  /**
+   * Advogado(a) que assiste as partes — qualifica os campos do bloco
+   * comparecente e da cláusula DO(A) ADVOGADO(A). Vem do perfil da conta
+   * (nome + OAB, e o que o perfil tiver de endereço/contato); campo ausente
+   * segue virando lacuna, como antes.
+   */
+  advogado?: {
+    nome?: string;
+    oab?: string;
+    oabUf?: string;
+    cpf?: string;
+    endereco?: string;
+    email?: string;
+    telefone?: string;
+  } | null;
 }
 
 /* ---------- helpers ---------- */
@@ -130,6 +160,14 @@ const romano = (n: number) => ROMANO[n] ?? String(n + 1);
 /** "A, B e C" — enumeração com o "e" final, como nos atos. */
 const listaE = (nomes: string[]): string =>
   nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}` : nomes[0] ?? LACUNA;
+
+type DadosAdvogado = NonNullable<DadosEscritura['advogado']>;
+/** Nome do(a) advogado(a) em CAIXA (ou lacuna). */
+const advNome = (a: DadosAdvogado | null | undefined): string =>
+  a?.nome?.trim() ? a.nome.trim().toUpperCase() : LACUNA;
+/** "OAB/SP sob nº 264.940" — com a UF e o número do perfil, senão lacunas. */
+const advOab = (a: DadosAdvogado | null | undefined): string =>
+  `OAB/${a?.oabUf?.trim() || LACUNA} sob nº ${a?.oab?.trim() || LACUNA}`;
 
 /**
  * Memória de cálculo do ITCMD pela UFESP (óbito antigo), como nos modelos:
@@ -262,24 +300,30 @@ function blocoBem(b: Bem, i: number, sucessoes: SucessaoEscritura[] = []): strin
   // negrito — o extenso entre parênteses fica normal.
   const avaliacao =
     colunas.length > 0
-      ? `**DA AVALIAÇÃO:** As partes atribuem para efeitos fiscais e de partilha: **a)** para o primeiro falecimento, o valor de **${brl(b.valor)}** (${LACUNA}); ${colunas.map((c, j) => `**${String.fromCharCode(98 + j)})** ${c}`).join('; ')};`
-      : `**DA AVALIAÇÃO:** As partes atribuem para efeitos fiscais e de partilha o valor de **${brl(b.valor)}** (${LACUNA});`;
+      ? `**DA AVALIAÇÃO:** As partes atribuem para efeitos fiscais e de partilha: **a)** para o primeiro falecimento, o valor de **${brl(b.valor)}** (${ext(b.valor)}); ${colunas.map((c, j) => `**${String.fromCharCode(98 + j)})** ${c}`).join('; ')};`
+      : `**DA AVALIAÇÃO:** As partes atribuem para efeitos fiscais e de partilha o valor de **${brl(b.valor)}** (${ext(b.valor)});`;
   switch (b.tipo) {
     case 'IMOVEL': {
       const im = b.imovel ?? {};
       // Abre com a DESCRIÇÃO DA MATRÍCULA (averbações da especialidade
       // objetiva incluídas) — como no modelo: "1) DESCRIÇÃO IMÓVEL. FORMA…".
       const descricao = im.descricaoMatricula?.trim() || `${b.descricao.toUpperCase()} — descrição conforme a matrícula: ${LACUNA}`;
-      return `**${i + 1})** ${descricao}. **FORMA DE AQUISIÇÃO:** Havido pelo(a) "de cujus" por força do ${im.aquisicao?.trim() || `R.${LACUNA}`} da __matrícula nº ${im.matricula?.trim() || LACUNA} do ${im.registroImoveis?.trim() || `${LACUNA}º Registro Imobiliário de ${LACUNA}`}__. **CADASTRO E VALOR VENAL:** inscrito na Municipalidade de ${im.municipio?.trim() || LACUNA}, sob a inscrição cadastral / o contribuinte nº **${im.inscricaoCadastral?.trim() || LACUNA}**, tendo recebido no exercício do falecimento (${im.exercicioObito?.trim() || LACUNA}) o valor venal de ${im.valorVenalObito ? brl(im.valorVenalObito) : `R$ ${LACUNA}`} (${LACUNA}) e no corrente exercício (${im.exercicioAtual?.trim() || LACUNA}) o valor venal de ${im.valorVenalAtual ? brl(im.valorVenalAtual) : `R$ ${LACUNA}`} (${LACUNA}). ${avaliacao}`;
+      return `**${i + 1})** ${descricao}. **FORMA DE AQUISIÇÃO:** Havido pelo(a) "de cujus" por força do ${im.aquisicao?.trim() || `R.${LACUNA}`} da __matrícula nº ${im.matricula?.trim() || LACUNA} do ${im.registroImoveis?.trim() || `${LACUNA}º Registro Imobiliário de ${LACUNA}`}__. **CADASTRO E VALOR VENAL:** inscrito na Municipalidade de ${im.municipio?.trim() || LACUNA}, sob a inscrição cadastral / o contribuinte nº **${im.inscricaoCadastral?.trim() || LACUNA}**, tendo recebido no exercício do falecimento (${im.exercicioObito?.trim() || LACUNA}) o valor venal de ${im.valorVenalObito ? brl(im.valorVenalObito) : `R$ ${LACUNA}`} (${ext(im.valorVenalObito)}) e no corrente exercício (${im.exercicioAtual?.trim() || LACUNA}) o valor venal de ${im.valorVenalAtual ? brl(im.valorVenalAtual) : `R$ ${LACUNA}`} (${ext(im.valorVenalAtual)}). ${avaliacao}`;
     }
     case 'VEICULO': {
       const v = b.veiculo ?? {};
       return `**${i + 1}) UM AUTOMÓVEL** da Marca/Modelo: ${v.marcaModelo?.trim() || LACUNA} — Ano Fáb.: ${v.anoFabricacao?.trim() || LACUNA} — Ano Mod.: ${v.anoModelo?.trim() || LACUNA} — RENAVAM: ${v.renavam?.trim() || LACUNA} — Placa: ${v.placa?.trim() || LACUNA} — CHASSI: ${v.chassi?.trim() || LACUNA}. ${avaliacao}`;
     }
-    case 'FINANCEIRO':
-      return `**${i + 1}) CRÉDITO** no Banco ${LACUNA}, decorrente do saldo bancário em conta ${LACUNA} nº ${LACUNA}, agência nº ${LACUNA}, no valor de **${brl(b.valor)}** (${LACUNA}) na data do óbito;`;
+    case 'FINANCEIRO': {
+      // Descrição pelos dados EXTRAÍDOS do extrato (instituição, conta,
+      // agência) — antes eram todas lacunas.
+      const f = b.financeiro ?? {};
+      return `**${i + 1}) CRÉDITO** ${f.instituicao?.trim() ? `no ${f.instituicao.trim()}` : `no Banco ${LACUNA}`}, decorrente do saldo em conta nº ${f.conta?.trim() || LACUNA}, agência nº ${f.agencia?.trim() || LACUNA}, no valor de **${brl(b.valor)}** (${ext(b.valor)}) na data do óbito;`;
+    }
     case 'QUOTAS':
-      return `**${i + 1}) PARTICIPAÇÃO SOCIETÁRIA** com ${LACUNA} quotas da empresa ${LACUNA}, inscrita no CNPJ/MF sob nº ${LACUNA}, com sede na ${LACUNA}. ${avaliacao}`;
+      // A descrição do acervo já traz "N quotas da empresa X" (extraída do
+      // contrato social); usa-a em vez de deixar tudo em lacuna.
+      return `**${i + 1}) PARTICIPAÇÃO SOCIETÁRIA** — ${b.descricao.trim() || LACUNA}${/cnpj/i.test(b.descricao) ? '' : `, inscrita no CNPJ/MF sob nº ${LACUNA}`}. ${avaliacao}`;
     default:
       return `**${i + 1})** ${b.descricao.toUpperCase()}. ${avaliacao}`;
   }
@@ -360,7 +404,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     linhasResumo.push({ celulas: [`**${ehUniao ? 'Companheiro(a)' : 'Cônjuge'} Supérstite:**`, `${(d.nomeSobrev.trim() || LACUNA).toUpperCase()}.`] });
   linhasResumo.push(
     { celulas: ['**Herdeiros(as):**', `${vivos.map((h) => h.nome).join('; ') || LACUNA}.`] },
-    { celulas: ['**Advogado(a):**', `Dr(a). ${LACUNA}.`] },
+    { celulas: ['**Advogado(a):**', `Dr(a). ${advNome(d.advogado)}${d.advogado?.oab?.trim() ? ` — ${advOab(d.advogado)}` : ''}.`] },
     { celulas: ['**Monte Mor:**', r ? `${brl(r.acervo.massaPartilhavel)}.` : `R$ ${LACUNA}.`] },
   );
   if (r?.meacao) linhasResumo.push({ celulas: ['**Meação:**', `${brl(r.meacao.valor)}.`] });
@@ -404,7 +448,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     );
   });
   p(
-    `**ADVOGADO(A):** Dr(a). __**${LACUNA}**__, brasileiro(a), ${LACUNA}, inscrito(a) na OAB/${LACUNA} sob nº ${LACUNA} — inscrito(a) no CPF/MF sob nº ${LACUNA}, nascido(a) aos ${LACUNA}, filho(a) de ${LACUNA}, e-mail: ${LACUNA}, com escritório na ${LACUNA}; nomeado(a) pelos presentes, para o fim específico de assisti-los neste ato jurídico, bem como para eventuais retificações e ratificações que se fizerem necessárias.`,
+    `**ADVOGADO(A):** Dr(a). __**${advNome(d.advogado)}**__, brasileiro(a), ${LACUNA}, inscrito(a) na ${advOab(d.advogado)} — inscrito(a) no CPF/MF sob nº ${d.advogado?.cpf?.trim() || LACUNA}, nascido(a) aos ${LACUNA}, filho(a) de ${LACUNA}${d.advogado?.email?.trim() ? `, e-mail: ${d.advogado.email.trim()}` : `, e-mail: ${LACUNA}`}${d.advogado?.telefone?.trim() ? `, telefone: ${d.advogado.telefone.trim()}` : ''}, com escritório ${d.advogado?.endereco?.trim() ? `na ${d.advogado.endereco.trim()}` : `na ${LACUNA}`}; nomeado(a) pelos presentes, para o fim específico de assisti-los neste ato jurídico, bem como para eventuais retificações e ratificações que se fizerem necessárias.`,
     { tamanho: 21 },
   );
 
@@ -557,14 +601,14 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
   } else {
     secao('DO MONTE MOR');
     p(
-      `O monte mor ${d.sobrepartilha ? 'da sobrepartilha ' : ''}é constituído pelos bens descritos no item "DO PATRIMÔNIO" e importa em ${r ? `**${brl(r.acervo.massaPartilhavel)}**` : `R$ ${LACUNA}`} (${LACUNA}).`,
+      `O monte mor ${d.sobrepartilha ? 'da sobrepartilha ' : ''}é constituído pelos bens descritos no item "DO PATRIMÔNIO" e importa em ${r ? `**${brl(r.acervo.massaPartilhavel)}**` : `R$ ${LACUNA}`} (${r ? ext(r.acervo.massaPartilhavel) : LACUNA}).`,
     );
     if (r?.meacao) {
       secao('DA MEAÇÃO');
-      p(`A meação do(a) ${rotuloSupersMin} importa em **${brl(r.meacao.valor)}** (${LACUNA}).`);
+      p(`A meação do(a) ${rotuloSupersMin} importa em **${brl(r.meacao.valor)}** (${ext(r.meacao.valor)}).`);
     }
     secao('DA LEGÍTIMA');
-    p(`A(s) legítima(s) do(s) herdeiro(s) importa(m) em ${r ? `**${brl(r.heranca.total)}**` : `R$ ${LACUNA}`} (${LACUNA}).`);
+    p(`A(s) legítima(s) do(s) herdeiro(s) importa(m) em ${r ? `**${brl(r.heranca.total)}**` : `R$ ${LACUNA}`} (${r ? ext(r.heranca.total) : LACUNA}).`);
   }
 
   /* ---------- ATO DISPOSITIVO (o coração): partilha ou adjudicação ---------- */
@@ -596,7 +640,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     // Formatação do modelo: herdeiro sublinhado, ADJUDICA/ADJUDICADO e o
     // valor em negrito — o corpo do dispositivo é texto normal.
     p(
-      `Pela presente escritura e na melhor forma de direito, ressalvados eventuais erros, omissões e direitos de terceiros, por força de sua legítima, o(a) herdeiro(a) __${unico.nome.toUpperCase()}__, já identificado(a) e qualificado(a), **ADJUDICA**, como de fato **ADJUDICADO** tem, todo o acervo ${d.sobrepartilha ? 'ora sobrepartilhado' : 'inventariado'}, no valor de **${brl(unico.valor)}** (${LACUNA}), pelo valor individual de atribuição dos bens, a saber:`,
+      `Pela presente escritura e na melhor forma de direito, ressalvados eventuais erros, omissões e direitos de terceiros, por força de sua legítima, o(a) herdeiro(a) __${unico.nome.toUpperCase()}__, já identificado(a) e qualificado(a), **ADJUDICA**, como de fato **ADJUDICADO** tem, todo o acervo ${d.sobrepartilha ? 'ora sobrepartilhado' : 'inventariado'}, no valor de **${brl(unico.valor)}** (${ext(unico.valor)}), pelo valor individual de atribuição dos bens, a saber:`,
     );
     tabela([CABECA_PARTILHA, ...linhasDoQuinhao(unico)]);
   } else {
@@ -606,11 +650,46 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     );
 
     if (d.diferenciada) {
+      // Consolidação (pedido do escritório): pagamentos IDÊNTICOS — os mesmos
+      // itens/percentuais e o mesmo valor recebido — viram UM pagamento com
+      // todos os nomes ("é feito aos herdeiros N1, N2 e N3 … cada um haverá"),
+      // como nos modelos do balcão. A chave inclui direito/torna para não
+      // fundir quem recebe o mesmo em bens mas tem torna diferente.
+      const chaveDoPg = (pg: PagamentoDiferenciado) =>
+        JSON.stringify([
+          pg.itens.map((it) => [it.numero, it.pct]),
+          pg.valorRecebido,
+          pg.direito ?? '',
+          pg.torna ?? '',
+          pg.meeiro ?? false,
+        ]);
+      const grupos: PagamentoDiferenciado[][] = [];
       for (const pg of d.diferenciada.pagamentos) {
-        // Formatação do modelo: "PRIMEIRO PAGAMENTO:" em negrito, o nome do
-        // beneficiário sublinhado e o valor em negrito — corpo normal.
+        const g = grupos.find((gr) => chaveDoPg(gr[0]) === chaveDoPg(pg));
+        if (g) g.push(pg);
+        else grupos.push([pg]);
+      }
+      for (const grupo of grupos) {
+        const pg = grupo[0];
+        const varios = grupo.length > 1;
+        const nomes = grupo.map((x) => `__${x.nome.toUpperCase()}__`);
+        const listaNomes =
+          nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}` : nomes[0];
+        // Abertura: satisfação da legítima/meação + torna (item 5), como no
+        // modelo — "para satisfação de sua legítima no valor de X e da quantia
+        // de Y a título de torna…, totalizando Z, haverá:".
+        const rotuloDireito = pg.meeiro ? 'meação' : varios ? 'legítimas' : 'legítima';
+        const temTorna = pg.torna && Number(pg.torna) > 0.004;
+        const temDireito = pg.direito && Number(pg.direito) > 0;
+        const abreValor = temDireito
+          ? `para satisfação de ${varios ? 'suas' : 'sua'} ${rotuloDireito} no valor ${varios ? 'total ' : ''}de **${brl(pg.direito!)}** (${ext(pg.direito)})${
+              temTorna
+                ? ` e da quantia de **${brl(pg.torna!)}** (${ext(pg.torna)}), a título de torna que será adiante integralizada, totalizando **${brl(pg.valorRecebido)}** (${ext(pg.valorRecebido)})`
+                : ''
+            }, ${varios ? '__**cada um**__, ' : ''}haverá`
+          : `que ${varios ? '__**cada um**__, ' : ''}haverá, no valor total de **${brl(pg.valorRecebido)}** (${ext(pg.valorRecebido)})`;
         p(
-          `**${ordinal(pagamento)} PAGAMENTO:** é feito a __${pg.nome.toUpperCase()}__, que haverá, no valor total de **${brl(pg.valorRecebido)}** (${LACUNA}):`,
+          `**${ordinal(pagamento)} PAGAMENTO:** é feito a${varios ? 'os herdeiros' : ''} ${listaNomes}, ${abreValor}:`,
         );
         tabela([
           CABECA_PARTILHA,
@@ -639,7 +718,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
         secao('DA CESSÃO DA TORNA');
         for (const t of gratuitas) {
           p(
-            `__${t.de.toUpperCase()}__, neste ato, CEDE, como de fato CEDIDO tem, a título gratuito, a quantia de **${brl(t.valor)}** (${LACUNA}) a __${t.para.toUpperCase()}__, quantia essa integralizada no pagamento de sua legítima, a título de torna. Ainda, pelo(a) ora cedente, foi dito e declarado, sob as penas da lei, o seguinte: **i)** dá a mais ampla, geral e irrevogável quitação, para nunca mais reclamar, em tempo e sob pretexto algum; **ii)** que esta liberalidade sai de sua parte disponível, ficando o(a) beneficiário(a) dispensado(a) de levá-la à colação; **iii)** que a liberalidade é feita inteiramente livre de cláusulas e condições resolutivas; e, **iv)** que é a ${LACUNA} liberalidade feita por ele(a) ao(à) beneficiário(a) no decurso deste ano civil. A cessão gratuita sujeita-se ao ITCMD de doação (Lei nº 10.705/2000), observada, quando cabível, a isenção do art. 6º, II, "a".`,
+            `__${t.de.toUpperCase()}__, neste ato, CEDE, como de fato CEDIDO tem, a título gratuito, a quantia de **${brl(t.valor)}** (${ext(t.valor)}) a __${t.para.toUpperCase()}__, quantia essa integralizada no pagamento de sua legítima, a título de torna. Ainda, pelo(a) ora cedente, foi dito e declarado, sob as penas da lei, o seguinte: **i)** dá a mais ampla, geral e irrevogável quitação, para nunca mais reclamar, em tempo e sob pretexto algum; **ii)** que esta liberalidade sai de sua parte disponível, ficando o(a) beneficiário(a) dispensado(a) de levá-la à colação; **iii)** que a liberalidade é feita inteiramente livre de cláusulas e condições resolutivas; e, **iv)** que é a ${LACUNA} liberalidade feita por ele(a) ao(à) beneficiário(a) no decurso deste ano civil. A cessão gratuita sujeita-se ao ITCMD de doação (Lei nº 10.705/2000), observada, quando cabível, a isenção do art. 6º, II, "a".`,
           );
         }
       }
@@ -647,7 +726,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
       /* 1º pagamento: a meação (bens meados, 1/2 de cada) */
       if (r.meacao) {
         p(
-          `**${ordinal(pagamento)} PAGAMENTO:** é feito ao(à) ${rotuloSupersMin}, __${(d.nomeSobrev.trim() || LACUNA).toUpperCase()}__, que, para satisfação de sua meação no valor de **${brl(r.meacao.valor)}** (${LACUNA}), haverá a METADE IDEAL, ou seja, 50% (cinquenta por cento), de cada um dos bens adiante relacionados:`,
+          `**${ordinal(pagamento)} PAGAMENTO:** é feito ao(à) ${rotuloSupersMin}, __${(d.nomeSobrev.trim() || LACUNA).toUpperCase()}__, que, para satisfação de sua meação no valor de **${brl(r.meacao.valor)}** (${ext(r.meacao.valor)}), haverá a METADE IDEAL, ou seja, 50% (cinquenta por cento), de cada um dos bens adiante relacionados:`,
         );
         const bensMeados = d.bens.filter(
           (b) => d.regime === 'COMUNHAO_UNIVERSAL' || b.natureza === 'COMUM',
@@ -689,7 +768,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
         const listaNomes =
           nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}` : nomes[0];
         p(
-          `**${ordinal(pagamento)} PAGAMENTO:** é feito aos herdeiros ${listaNomes}, que, para satisfação de suas legítimas no valor total de **${brl(total.toFixed(2))}** (${LACUNA}), __**cada um**__, haverá:`,
+          `**${ordinal(pagamento)} PAGAMENTO:** é feito aos herdeiros ${listaNomes}, que, para satisfação de suas legítimas no valor total de **${brl(total.toFixed(2))}** (${ext(total.toFixed(2))}), __**cada um**__, haverá:`,
         );
         tabela([CABECA_PARTILHA, ...linhasDoQuinhao(quinhoesHerdeiros[0])]);
         pagamento += 1;
@@ -726,7 +805,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     if (iguaisSu) {
       const totalSu = qsu.reduce((a, q) => a + Number(q.valor), 0);
       p(
-        `**PAGAMENTO ÚNICO:** é feito aos herdeiros ${listaE(qsu.map((q) => `__${q.nome.toUpperCase()}__`))}, que, para satisfação de suas legítimas no valor total de **${brl(totalSu.toFixed(2))}** (${LACUNA}), __**cada um**__, haverá a fração de ${qsu[0].fracaoHeranca} da base transmitida, no valor de **${brl(qsu[0].valor)}**.`,
+        `**PAGAMENTO ÚNICO:** é feito aos herdeiros ${listaE(qsu.map((q) => `__${q.nome.toUpperCase()}__`))}, que, para satisfação de suas legítimas no valor total de **${brl(totalSu.toFixed(2))}** (${ext(totalSu.toFixed(2))}), __**cada um**__, haverá a fração de ${qsu[0].fracaoHeranca} da base transmitida, no valor de **${brl(qsu[0].valor)}** (${ext(qsu[0].valor)}).`,
       );
     } else {
       qsu.forEach((q, j) => {
@@ -748,7 +827,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
   /* declaração do advogado — fórmula do balcão + advertência do art. 23 */
   secao('DO(A) ADVOGADO(A)');
   p(
-    `Pelo(a) Dr(a). __**${LACUNA}**__, na qualidade de advogado(a) das partes, me foi dito que assessorou e aconselhou seus constituintes, bem como conferiu a correção ${cumuladas ? 'das partilhas' : adjudicacao ? 'da adjudicação' : d.sobrepartilha ? 'da sobrepartilha' : 'da partilha'} e seus valores de acordo com a vontade deles, na forma da lei — que, inclusive, estabelece que a transferência dos bens e direitos aos herdeiros ou legatários pode ser efetuada pelo valor constante na última Declaração de Bens e Direitos apresentada pelo(a) "de cujus" ou pelo valor de mercado, nos termos do art. 23 da Lei nº 9.532/1997 e do art. 10 da Instrução Normativa nº 81/2001 da Secretaria da Receita Federal. Deste modo, advertiu seus constituintes de que: (a) a opção por qualquer dos critérios de avaliação deve ser informada na Declaração Final de Espólio, sendo vedada a sua retificação; e (b) há possibilidade de eles virem a ser notificados pelo Fisco para pagamento de eventual imposto sobre ganho de capital, de que trata a Lei nº 8.981/1995, alterada pela Lei nº 13.259/2016.`,
+    `Pelo(a) Dr(a). __**${advNome(d.advogado)}**__, na qualidade de advogado(a) das partes, me foi dito que assessorou e aconselhou seus constituintes, bem como conferiu a correção ${cumuladas ? 'das partilhas' : adjudicacao ? 'da adjudicação' : d.sobrepartilha ? 'da sobrepartilha' : 'da partilha'} e seus valores de acordo com a vontade deles, na forma da lei — que, inclusive, estabelece que a transferência dos bens e direitos aos herdeiros ou legatários pode ser efetuada pelo valor constante na última Declaração de Bens e Direitos apresentada pelo(a) "de cujus" ou pelo valor de mercado, nos termos do art. 23 da Lei nº 9.532/1997 e do art. 10 da Instrução Normativa nº 81/2001 da Secretaria da Receita Federal. Deste modo, advertiu seus constituintes de que: (a) a opção por qualquer dos critérios de avaliação deve ser informada na Declaração Final de Espólio, sendo vedada a sua retificação; e (b) há possibilidade de eles virem a ser notificados pelo Fisco para pagamento de eventual imposto sobre ganho de capital, de que trata a Lei nº 8.981/1995, alterada pela Lei nº 13.259/2016.`,
   );
 
   /* declarações ulteriores — (c) união estável só com supérstite; item das
@@ -768,7 +847,7 @@ export async function montarEscrituraDocx(d: DadosEscritura): Promise<Blob> {
     );
   // Formatação do modelo: "Espólio de NOME" e as letras a) b) c) em negrito.
   p(
-    `${partesRol.charAt(0).toUpperCase()}${partesRol.slice(1)} ${cumuladas ? `dos **Espólios de ${listaE(nomesFalecidos)}**` : `do **Espólio de ${nomeFalecido}**`}, sempre assistidos de seu(sua) advogado(a), Dr(a). **${LACUNA}**, declaram expressamente, sob as penas da lei, o seguinte: ${ulteriores
+    `${partesRol.charAt(0).toUpperCase()}${partesRol.slice(1)} ${cumuladas ? `dos **Espólios de ${listaE(nomesFalecidos)}**` : `do **Espólio de ${nomeFalecido}**`}, sempre assistidos de seu(sua) advogado(a), Dr(a). **${advNome(d.advogado)}**, declaram expressamente, sob as penas da lei, o seguinte: ${ulteriores
       .map((t, i) => `**${String.fromCharCode(97 + i)})** ${t}`)
       .join('; ')}.`,
   );

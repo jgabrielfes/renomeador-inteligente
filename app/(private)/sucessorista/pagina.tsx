@@ -28,10 +28,11 @@ export async function PaginaSucessorista({
   casoInicialId?: string | null;
   etapaInicial?: string | null;
 }) {
-  // As três cargas por conta rodam em PARALELO (velocidade): lições do
+  // As quatro cargas por conta rodam em PARALELO (velocidade): lições do
   // renomeador, perfil de uso (null = primeiro acesso pergunta; falha de
-  // banco degrada para null) e equipe — nenhuma depende da outra.
-  const [licoes, perfilConta, equipe] = await Promise.all([
+  // banco degrada para null), equipe e a qualificação do(a) advogado(a) para
+  // as minutas — nenhuma depende da outra.
+  const [licoes, perfilConta, equipe, advogado] = await Promise.all([
     carregarLicoes(),
     session?.user?.id
       ? prisma.user
@@ -43,6 +44,39 @@ export async function PaginaSucessorista({
           .catch(() => null)
       : Promise.resolve(null),
     import("./equipe-actions").then((m) => m.minhaEquipe()),
+    // Preenche o(a) advogado(a) nas minutas: nome + contato do perfil da
+    // conta e OAB (quando há AdvogadoPerfil). Falha de banco degrada para
+    // null — a minuta cai na lacuna, nunca quebra.
+    session?.user?.id
+      ? Promise.all([
+          prisma.user
+            .findUnique({
+              where: { id: session.user.id },
+              select: {
+                name: true,
+                enderecoEscritorio: true,
+                emailContato: true,
+                telefoneContato: true,
+              },
+            })
+            .catch(() => null),
+          prisma.advogadoPerfil
+            .findUnique({
+              where: { userId: session.user.id },
+              select: { oab: true, oabUf: true },
+            })
+            .catch(() => null),
+        ])
+          .then(([u, perfil]) => ({
+            nome: u?.name ?? session.user?.name ?? undefined,
+            oab: perfil?.oab ?? undefined,
+            oabUf: perfil?.oabUf ?? undefined,
+            endereco: u?.enderecoEscritorio ?? undefined,
+            email: u?.emailContato ?? undefined,
+            telefone: u?.telefoneContato ?? undefined,
+          }))
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const { default: SucessoristaClient } = await import("./sucessorista-client");
@@ -97,6 +131,7 @@ export async function PaginaSucessorista({
         equipe={equipe}
         contaId={session?.user?.id ?? null}
         nomeConta={session?.user?.name ?? null}
+        advogado={advogado}
         radarAtivo={radarAtivo()}
         casoInicialId={casoInicialId}
         etapaInicial={etapaInicial}

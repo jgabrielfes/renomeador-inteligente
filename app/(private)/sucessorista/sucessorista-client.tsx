@@ -343,6 +343,7 @@ export default function SucessoristaClient({
   casoInicialId = null,
   etapaInicial = null,
   radarAtivo = false,
+  advogado = null,
 }: {
   /** Regras + correções do renomeador da conta — o cofre embute a ferramenta
    *  completa e ela abre com as lições do escritório já carregadas. */
@@ -372,6 +373,16 @@ export default function SucessoristaClient({
   /** Radar de famílias ligado neste deploy (env) — mostra o atalho /radar
    *  no painel Meus casos para o perfil Advogado(a). */
   radarAtivo?: boolean;
+  /** Qualificação do(a) advogado(a) da conta (nome + OAB + contato do
+   *  perfil) — preenche o(a) advogado(a) nas minutas; null = sem OAB. */
+  advogado?: {
+    nome?: string;
+    oab?: string;
+    oabUf?: string;
+    endereco?: string;
+    email?: string;
+    telefone?: string;
+  } | null;
 }) {
   // A etapa e o CASO vivem na URL (/caso/<id>/<etapa>; ?etapa= segue como
   // compatibilidade): sobrevivem ao F5 e o recorte é compartilhável. A troca
@@ -3544,7 +3555,15 @@ export default function SucessoristaClient({
           const itens = bens
             .map((b, i) => ({ numero: i + 1, descricao: descricaoCurta(b.descricao), pct: pctNum((matriz[b.id] ?? {})[pt.id]) }))
             .filter((it) => it.pct > 0);
-          return { nome: pt.nome, itens, valorRecebido: pos?.valorAtribuido ?? '0.00' };
+          const delta = pos ? Number(pos.delta) : 0;
+          return {
+            nome: pt.nome,
+            itens,
+            valorRecebido: pos?.valorAtribuido ?? '0.00',
+            direito: pos?.valorDeDireito,
+            torna: delta > 0.004 ? delta.toFixed(2) : undefined,
+            meeiro: pt.id === '__sobrevivente__',
+          };
         })
         .filter((pg) => pg.itens.length > 0);
       diferenciada = {
@@ -3629,6 +3648,7 @@ export default function SucessoristaClient({
       diferenciada,
       clausulasExtras,
       sucessoes: sucessoesEscritura.length > 0 ? sucessoesEscritura : undefined,
+      advogado,
     });
     baixarBlob(blob, `Minuta de escritura - Inventario${falecido.nome ? ` de ${falecido.nome}` : ''}.docx`);
     registrarDoc('ESCRITURA', {
@@ -3668,6 +3688,7 @@ export default function SucessoristaClient({
       provisao: args.provisao,
       diferenciada: null,
       sobrepartilha: true,
+      advogado,
     });
     baixarBlob(blob, `Minuta de sobrepartilha${falecido.nome ? ` - ${falecido.nome}` : ''}.docx`);
     registrarDoc('ESCRITURA_SOBREPARTILHA', { modalidade: args.modalidade });
