@@ -10,6 +10,7 @@
  */
 
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from './types';
+import { descricaoBemMinuta } from './descricao-bem';
 import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
 import { montarDocx, vestirIdentidade, ESTILO_SUCESSORISTA, type Paragrafo } from './docx';
@@ -92,7 +93,7 @@ function redacaoLocal(d: DadosPeticaoJudicial): SecaoRedigida[] {
     d.bens.length > 0
       ? d.bens.map(
           (b, i) =>
-            `${i + 1}. ${b.descricao} — ${ROTULO_TIPO[b.tipo ?? 'OUTRO']}, de natureza ${b.natureza === 'COMUM' ? 'comum' : 'particular'}, avaliado em ${brl(b.valor)} na data do óbito.`,
+            `${i + 1}. ${descricaoBemMinuta(b)} — ${ROTULO_TIPO[b.tipo ?? 'OUTRO']}, de natureza ${b.natureza === 'COMUM' ? 'comum' : 'particular'}, avaliado em ${brl(b.valor)} na data do óbito.`,
         )
       : [`Bens a inventariar: ${LACUNA} (lançar os bens na folha antes de gerar a minuta).`];
   const dividas = Number(d.dividas || 0);

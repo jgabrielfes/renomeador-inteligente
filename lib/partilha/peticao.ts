@@ -11,6 +11,7 @@
  */
 
 import type { Bem, Herdeiro, Regime, Resultado, Vinculo } from './types';
+import { descricaoBemMinuta } from './descricao-bem';
 import { formatarData, type DadosFalecido, type Qualificacao } from './familia';
 import type { ProvisaoItcmd } from './itcmd';
 import { montarDocx, vestirIdentidade, ESTILO_SUCESSORISTA, type Paragrafo } from './docx';
@@ -179,7 +180,7 @@ function montarParagrafos(d: DadosPeticao): Paragrafo[] {
   } else {
     d.bens.forEach((b, i) => {
       p.push({
-        texto: `${i + 1}. ${b.descricao} — ${ROTULO_TIPO[b.tipo ?? 'OUTRO']}, de natureza ${
+        texto: `${i + 1}. ${descricaoBemMinuta(b)} — ${ROTULO_TIPO[b.tipo ?? 'OUTRO']}, de natureza ${
           b.natureza === 'COMUM' ? 'comum' : 'particular'
         }, avaliado em ${brl(b.valor)} na data do óbito.`,
       });
