@@ -185,7 +185,17 @@ export function apurarAtribuicao(
 
   const totalCedido = cedentes.reduce((a, c) => a.add(c.v), ZERO);
   const totalRecebido = cessionarios.reduce((a, c) => a.add(c.v), ZERO);
-  if (!totalCedido.eq(totalRecebido)) {
+  // O cedido e o recebido são iguais no exato — a soma dos deltas é zero por
+  // construção (todo bem é integralmente atribuído). Mas o DIREITO vem dos
+  // quinhões JÁ arredondados ao centavo pelo motor, e o ATRIBUÍDO é fração
+  // exata do valor do bem: os dois lados podem divergir por alguns centavos
+  // de arredondamento (um resíduo < 1 centavo por participante). Isso é ruído
+  // numérico, não erro de partilha — só bloqueia acima dessa tolerância (um
+  // desequilíbrio REAL é de reais, não de centavos). Sem isto, um único
+  // centavo de dízima zerava a torna e sumia com o ato de custas + ITCMD.
+  const desequilibrio = totalCedido.sub(totalRecebido);
+  const tolerancia = Rat.make(BigInt(ids.size) + 1n, 100n); // (nº de partes + 1) centavos
+  if (desequilibrio.gt(tolerancia) || ZERO.sub(desequilibrio).gt(tolerancia)) {
     bloqueios.push(
       `INVARIANTE VIOLADA: cedido ${centsToStr(totalCedido.floorCents())} ≠ ` +
         `recebido ${centsToStr(totalRecebido.floorCents())}.`,
@@ -199,9 +209,13 @@ export function apurarAtribuicao(
       const titulo = entrada.titulosPorCedente?.[ced.id] ?? 'GRATUITO';
       const gratuito = titulo === 'GRATUITO';
 
+      // Rateio do que o cedente perde na proporção do que cada cessionário
+      // RECEBE (div por totalRecebido — frações somam exatamente 1, mesmo com
+      // o resíduo de centavo entre cedido e recebido); alocarCentavos fecha o
+      // total do cedente na conta em centavos.
       const partes = cessionarios.map((cess) => ({
         id: cess.id,
-        fr: ced.v.mul(cess.v).div(totalCedido).div(ced.v),
+        fr: cess.v.div(totalRecebido),
       }));
       const { alocacoes } = alocarCentavos(
         partes.map((p) => ({ id: p.id, fr: p.fr })),
