@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { CurrencyInput } from '@/components/currency-input';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -830,6 +831,11 @@ function LinhaBem({
   const [inscricao, setInscricao] = useState('');
   const [matricula, setMatricula] = useState('');
   const [registroRI, setRegistroRI] = useState('');
+  // Descrição INTEGRAL como consta na matrícula (com averbações) e a forma de
+  // aquisição pelo(a) falecido(a) — a leitura do cofre preenche; a minuta
+  // (escritura E petição) usa isto ANTES da descrição curta acima.
+  const [descMatricula, setDescMatricula] = useState('');
+  const [aquisicao, setAquisicao] = useState('');
   // % do imóvel sobre o venal da prefeitura (cadastro em ÁREA MAIOR). Os
   // campos de valor mostram SEMPRE o venal EFETIVO: a certidão integral fica
   // nas bases abaixo, o % recalcula os campos na hora e digitar num campo de
@@ -853,6 +859,8 @@ function LinhaBem({
     setInscricao(bem.imovel?.inscricaoCadastral ?? '');
     setMatricula(bem.imovel?.matricula ?? '');
     setRegistroRI(bem.imovel?.registroImoveis ?? '');
+    setDescMatricula(bem.imovel?.descricaoMatricula ?? '');
+    setAquisicao(bem.imovel?.aquisicao ?? '');
     setPctVenal(bem.imovel?.percentualVenal ?? '');
     setBaseObito(bem.imovel?.valorVenalObito ?? '');
     setBaseAtual(bem.imovel?.valorVenalAtual ?? '');
@@ -919,6 +927,8 @@ function LinhaBem({
             inscricaoCadastral: limpo(inscricao),
             matricula: limpo(matricula),
             registroImoveis: limpo(registroRI),
+            descricaoMatricula: limpo(descMatricula),
+            aquisicao: limpo(aquisicao),
             percentualVenal: limpo(pctVenal),
             // Certidão integral por trás do % — só com percentual preenchido
             // (sem %, o campo fica livre para a leitura da certidão ocupar).
@@ -1070,6 +1080,23 @@ function LinhaBem({
             <label className="campo">
               Registro de Imóveis (cartório)
               <Input value={registroRI} onChange={(e) => setRegistroRI(e.target.value)} />
+            </label>
+            <label className="campo" style={{ gridColumn: '1 / -1' }}>
+              Descrição conforme a matrícula (com averbações)
+              <Textarea
+                value={descMatricula}
+                rows={3}
+                placeholder="Descrição integral do imóvel como consta na matrícula — a leitura do cofre preenche; a minuta (escritura e petição) usa isto antes da descrição curta."
+                onChange={(e) => setDescMatricula(e.target.value)}
+              />
+            </label>
+            <label className="campo">
+              Forma de aquisição (registro/averbação, ex.: R.4)
+              <Input
+                value={aquisicao}
+                placeholder="ex.: R.4"
+                onChange={(e) => setAquisicao(e.target.value)}
+              />
             </label>
             <label className="campo" style={{ maxWidth: 180 }}>
               % do venal
