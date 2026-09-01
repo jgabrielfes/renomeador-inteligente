@@ -63,6 +63,10 @@ export interface DossieOrcamento {
   fatias: { nome: string; valor: number }[];
   /** Base do gráfico e dos percentuais. */
   massaPartilhavel: number;
+  /** Herança transmitida aos herdeiros (após a meação) — a "legítima". */
+  legitima: number;
+  /** Soma das tornas/cessões da partilha diferenciada (0 = sem torna). */
+  torna: number;
   /**
    * Quadro da partilha CONSOLIDADO em matriz: linhas = bens, colunas =
    * participantes (meação primeiro), célula = proporção + valor. A lista
@@ -428,6 +432,22 @@ export async function montarOrcamentoPdf(d: DadosOrcamento): Promise<Blob> {
 
   const dossie = d.completo;
   if (dossie) {
+    // 0. Resumo da partilha — os números-chave num quadro (pedido do escritório)
+    tituloSecao('Resumo da partilha');
+    tabela(
+      [
+        { titulo: 'Item', peso: 0.62 },
+        { titulo: 'Valor', peso: 0.38, direita: true },
+      ],
+      [
+        ['Monte partilhável', brl(dossie.massaPartilhavel)],
+        ['Meação', brl(dossie.meeiro?.valor ?? 0)],
+        ['Legítima (herança transmitida)', brl(dossie.legitima)],
+        ...(dossie.torna > 0 ? [['Torna / cessão', brl(dossie.torna)]] : []),
+      ],
+    );
+    y -= 6;
+
     // 1. As partes
     tituloSecao('As partes');
     paragrafo(`Autor(a) da herança: ${d.nomeCaso || '____________'}.`);
