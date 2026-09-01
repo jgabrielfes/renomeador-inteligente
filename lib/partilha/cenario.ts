@@ -183,6 +183,25 @@ export function alocacoesDoDireito(resultado: Resultado, bens: Bem[]): Alocacoes
   return alocacoes;
 }
 
+/**
+ * Completa a matriz LINHA A LINHA com a proporção do direito: bem sem
+ * nenhuma célula digitada recebe a linha do direito; bem com qualquer
+ * célula preenchida fica exatamente como está (o que o usuário digitou
+ * nunca é sobrescrito). Devolve null quando nada muda — caso salvo com
+ * parte da matriz preenchida ganha só as linhas que faltavam.
+ */
+export function completarComDireito(atual: Alocacoes, direito: Alocacoes): Alocacoes | null {
+  let mudou = false;
+  const nova: Alocacoes = { ...atual };
+  for (const [bemId, linha] of Object.entries(direito)) {
+    const existente = nova[bemId];
+    if (existente && Object.values(existente).some((v) => v && v.trim())) continue;
+    nova[bemId] = linha;
+    mudou = true;
+  }
+  return mudou ? nova : null;
+}
+
 /* ---------- despesas adiantadas (Espaço do Espólio) ---------- */
 
 export interface DespesaAdiantada {
