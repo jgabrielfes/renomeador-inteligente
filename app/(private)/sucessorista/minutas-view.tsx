@@ -17,44 +17,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ROTULO_MODALIDADE, type ModalidadeEscritura } from '@/lib/partilha/escritura';
-import { agruparPendencias, type Pendencia } from '@/lib/partilha/pendencias';
 import type { RelatorioAntecipador } from '@/lib/partilha/antecipador';
 import { baixarBlob } from '@/lib/partilha/xlsx';
 import { Pilula } from './familia';
 import { MeusModelosMinuta, registrarUsoModelo, type ModeloMinuta } from './modelos-minuta';
-
-/**
- * Checklist do que ainda vira LACUNA (______) na minuta — o profissional
- * completa antes ou gera mesmo assim, sabendo o que falta. Padrão adotado de
- * um gerador de minuta por template: pendências antes de gerar, agrupadas.
- */
-export function ChecklistPendencias({ pendencias }: { pendencias: Pendencia[] }) {
-  if (pendencias.length === 0) {
-    return (
-      <div className="nota registro">
-        <span className="eyebrow">Pronto para gerar</span>
-        <p>Nenhuma pendência: a folha tem tudo o que a minuta precisa — sem lacunas previstas.</p>
-      </div>
-    );
-  }
-  const grupos = agruparPendencias(pendencias);
-  return (
-    <div className="nota exigencia">
-      <span className="eyebrow">
-        {pendencias.length} campo(s) a completar — sairão como lacuna (______) para preencher à mão
-      </span>
-      <p style={{ marginBottom: 6 }}>
-        Você pode completar na folha antes de gerar, ou gerar mesmo assim e preencher as
-        lacunas no DOCX.
-      </p>
-      {grupos.map((g) => (
-        <p key={g.grupo} style={{ margin: '4px 0 0' }}>
-          <strong>{g.grupo}:</strong> {g.itens.join(', ')}.
-        </p>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Antecipador de qualificação registral: confronto do ato com as matrículas
@@ -177,7 +143,6 @@ export function MinutasView({
   onGerarPeticao,
   onGerarPeticaoJudicial,
   onGerarEscritura,
-  pendencias = [],
   antecipador = null,
   nomeCaso = '',
   onAntecipadorPdf,
@@ -193,8 +158,6 @@ export function MinutasView({
     /** Texto do MODELO DA SERVENTIA (null = modelo padrão do sistema). */
     modeloTexto: string | null,
   ) => Promise<void>;
-  /** Campos que ainda faltam para a minuta sair completa (checklist). */
-  pendencias?: Pendencia[];
   /** Antecipador de qualificação registral (confronto com as matrículas). */
   antecipador?: RelatorioAntecipador | null;
   nomeCaso?: string;
@@ -243,8 +206,6 @@ export function MinutasView({
           </Pilula>
         ))}
       </div>
-
-      <ChecklistPendencias pendencias={pendencias} />
 
       <AntecipadorSection relatorio={antecipador} nomeCaso={nomeCaso} onPdf={onAntecipadorPdf} />
 
