@@ -210,6 +210,7 @@ export function CustosView({
   custos,
   provisao,
   provisoesSucessoes,
+  impostoCessao = 0,
   issPct,
   setIssPct,
   adicionais,
@@ -231,6 +232,8 @@ export function CustosView({
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
   provisoesSucessoes: { sucessao: SucessaoCumulada; base: number; provisao: ProvisaoItcmd }[];
+  /** ITCMD inter vivos das cessões da partilha diferenciada (doação). */
+  impostoCessao?: number;
   /** Alíquota do ISS do município da serventia (%). */
   issPct: string;
   setIssPct: (v: string) => void;
@@ -313,6 +316,7 @@ export function CustosView({
           dataObito: sucessao.dataObito,
           total: pv.total,
         })),
+        impostoCessao: fonteManual ? 0 : impostoCessao,
         adicionais,
         geradoEm: new Date().toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' }),
       });
@@ -556,6 +560,21 @@ export function CustosView({
                 </FundEspelho>
               </Fragment>
             ))}
+            {impostoCessao > 0 && (
+              <>
+                <LinhaEspelho
+                  nome={<>ITCMD inter vivos — cessão de quinhão (doação)</>}
+                  meio="art. 4º da Lei 10.705/2000 — 4% por cabeça, apurado na Partilha"
+                  valor={brl(impostoCessao)}
+                  valorStyle={{ fontSize: 'var(--t-base)' }}
+                />
+                <FundEspelho>
+                  Soma do ITCMD de doação das cessões TRIBUTADAS (as isentas até 2.500 UFESPs
+                  por donatário/ano — art. 6º, II, &quot;a&quot; — não entram). Um ato de
+                  escritura por cessão consta acima, nas parcelas de notas.
+                </FundEspelho>
+              </>
+            )}
             {adicionais.map((a) => (
               <LinhaEspelho
                 key={a.id}
@@ -566,15 +585,15 @@ export function CustosView({
               />
             ))}
             <LinhaEspelho
-              nome={<>Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</>}
-              valor={brl(custos.total + impostoSucessoes + totalAdicionais)}
+              nome={<>Custos cartorários{temTaxaJudicial ? ' e judiciais' : ''}{impostoSucessoes > 0 ? ' + ITCMD das sucessões cumuladas' : ''}{impostoCessao > 0 ? ' + ITCMD da cessão' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''}</>}
+              valor={brl(custos.total + impostoSucessoes + impostoCessao + totalAdicionais)}
               valorStyle={{ fontSize: 'var(--t-lg)' }}
             />
             {provisao && (
               <LinhaEspelho
-                nome={<>CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})</>}
+                nome={<>CUSTO TOTAL PROJETADO (ITCMD + cartório{temTaxaJudicial ? ' + justiça' : ''}{impostoCessao > 0 ? ' + ITCMD da cessão' : ''}{totalAdicionais > 0 ? ' + adicionais' : ''})</>}
                 meio="provisão do item IV"
-                valor={brl(provisao.total + custos.total + impostoSucessoes + totalAdicionais)}
+                valor={brl(provisao.total + custos.total + impostoSucessoes + impostoCessao + totalAdicionais)}
                 valorStyle={{ fontSize: 'var(--t-lg)' }}
               />
             )}

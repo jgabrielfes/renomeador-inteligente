@@ -324,25 +324,24 @@ export function projetarCustos(e: EntradaCustos): ProjecaoCustos {
       });
     }
 
-    /* torna / cessão de direitos hereditários: UM ato só, com valor
-       declarado pela SOMA das diferenças POSITIVAS de quinhão (o total que
-       sai do quinhão de quem cede) — nunca um ato por beneficiário. */
-    const totalTorna = r2(e.transferencias.reduce((a, t) => a + Math.max(0, t.valor), 0));
-    if (totalTorna > 0) {
-      const gratuita = e.transferencias.some((t) => t.valor > 0 && t.tributo === 'ITCMD_DOACAO');
-      const onerosa = e.transferencias.some((t) => t.valor > 0 && t.tributo === 'ITBI');
+    /* torna / cessão de direitos hereditários: UM ato POR CESSÃO, cada um
+       com o valor declarado da própria cessão (decisão do escritório — antes
+       era um ato único pela soma das tornas). Cada transferência positiva é
+       uma cessão do cedente para um cessionário: 3 cessões de R$ X viram 3
+       atos de R$ X, não 1 ato de R$ 3X. O imposto inter vivos é apurado na
+       aba Partilha (ITCMD de doação por cabeça, com a isenção do art. 6º). */
+    const cessoes = e.transferencias.filter((t) => t.valor > 0);
+    for (const [i, t] of cessoes.entries()) {
+      const gratuita = t.tributo === 'ITCMD_DOACAO';
       parcelas.push({
-        id: 'escritura-torna',
-        rotulo:
-          gratuita && !onerosa
-            ? 'Ato da torna/cessão gratuita — UM ato pela soma das tornas'
-            : onerosa && !gratuita
-              ? 'Ato da torna onerosa — UM ato pela soma das tornas'
-              : 'Ato da torna/cessão — UM ato pela soma das tornas',
-        valor: emolumentoEscritura(totalTorna, iss),
+        id: `escritura-torna-${i}`,
+        rotulo: gratuita
+          ? `Ato da cessão gratuita — ${fmt(r2(t.valor))}`
+          : `Ato da cessão onerosa — ${fmt(r2(t.valor))}`,
+        valor: emolumentoEscritura(r2(t.valor), iss),
         quantidade: 1,
-        fundamento: 'Tabela de Notas 2026, item 1 — base = total cedido acima do quinhão',
-        detalhe: `Soma das diferenças POSITIVAS de quinhão: ${fmt(totalTorna)} — um único ato com valor declarado, qualquer que seja o número de beneficiários; o imposto inter vivos (${gratuita && !onerosa ? 'ITCMD de doação' : onerosa && !gratuita ? 'ITBI' : 'ITCMD de doação/ITBI'}) é apurado na aba Partilha.`,
+        fundamento: 'Tabela de Notas 2026, item 1 — um ato por cessão (base = valor cedido)',
+        detalhe: `Cessão de ${fmt(r2(t.valor))} — ato próprio; o imposto inter vivos (${gratuita ? 'ITCMD de doação' : 'ITBI'}) é apurado na aba Partilha.`,
         aproximado: true,
       });
     }

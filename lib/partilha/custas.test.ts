@@ -148,18 +148,33 @@ eq('5 certidões de registro civil', partilha.parcelas.find((p) => p.id === 'cer
 eq('total = soma das parcelas', partilha.total, Math.round(partilha.parcelas.reduce((a, p) => a + p.valor, 0) * 100) / 100);
 eq('aviso de conferência da tabela', partilha.avisos.some((a) => a.includes('anoregsp')), true);
 
-/* partilha diferenciada: UM ato de torna pela SOMA das diferenças positivas
-   e NENHUM ato de registro adicional (calibração do escritório) */
+/* partilha diferenciada: UM ato de escritura POR CESSÃO (cada um pelo valor
+   da própria cessão) e NENHUM ato de registro adicional (calibração do
+   escritório) */
 const diferenciada = projetarCustos({
   ...BASE,
   transferencias: [{ valor: 120_000, tributo: 'ITCMD_DOACAO' }],
 });
 const idsDif = diferenciada.parcelas.map((p) => p.id);
-eq('torna vira ato próprio pela base da torna', idsDif.includes('escritura-torna'), true);
+eq('torna vira ato próprio pela base da cessão', idsDif.includes('escritura-torna-0'), true);
 // 120 mil cai na faixa 115.260,01–153.680 → R$ 2.728,61
-eq('ato da torna pela faixa do valor da torna', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.valor, 2_728.61);
-eq('torna: fundamento base = total cedido', diferenciada.parcelas.find((p) => p.id === 'escritura-torna')!.fundamento.includes('total cedido'), true);
+eq('ato da cessão pela faixa do valor da cessão', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.valor, 2_728.61);
+eq('cessão: fundamento base = valor cedido', diferenciada.parcelas.find((p) => p.id === 'escritura-torna-0')!.fundamento.includes('um ato por cessão'), true);
 eq('SEM ato de registro adicional na diferenciada', idsDif.includes('registro-atos-extras'), false);
+
+/* três cessões → TRÊS atos, cada um pelo valor da sua cessão (não um ato pela
+   soma) — o caso do balcão que motivou a mudança */
+const tresCessoes = projetarCustos({
+  ...BASE,
+  transferencias: [
+    { valor: 1_779_298.73, tributo: 'ITCMD_DOACAO' },
+    { valor: 1_779_298.73, tributo: 'ITCMD_DOACAO' },
+    { valor: 1_779_298.74, tributo: 'ITCMD_DOACAO' },
+  ],
+});
+const atosCessao = tresCessoes.parcelas.filter((p) => p.id.startsWith('escritura-torna-'));
+eq('três cessões geram três atos', atosCessao.length, 3);
+eq('cada ato pelo valor da sua cessão (não pela soma)', atosCessao.every((p) => p.valor === emolumentoEscritura(1_779_298.73, 5) || p.valor === emolumentoEscritura(1_779_298.74, 5)), true);
 
 /* usufruto × nua-propriedade (sugestão de economia aceita): o registro do
    imóvel vira DOIS atos — 1/3 (usufruto, Nota 1.5) e 2/3 (nua). Exemplo da
@@ -177,8 +192,8 @@ eq('usufruto: fundamento cita a Nota 1.5', comUsufruto.parcelas.find((p) => p.id
 eq('aviso cita o usufruto acessório (1/4 sobre 1/3)', diferenciada.avisos.some((a) => a.includes('1/3')), true);
 
 // Caso real do escritório: viúva cede a meação, TRÊS herdeiros recebem
-// 16.744,33/34 cada — UM ato só pela soma (R$ 50.233,00, faixa
-// 38.420,01–76.840 → R$ 1.940,10), nunca três atos de R$ 1.209,95.
+// 16.744,33/34 cada — TRÊS atos, um por cessão (cada um na faixa do seu
+// valor: 16.744 → R$ 1.209,95), não um ato pela soma (decisão do escritório).
 const tornaTripla = projetarCustos({
   ...BASE,
   transferencias: [
@@ -188,9 +203,9 @@ const tornaTripla = projetarCustos({
   ],
 });
 const atosTorna = tornaTripla.parcelas.filter((p) => p.id.startsWith('escritura-torna'));
-eq('três beneficiários: UM ato só', atosTorna.length, 1);
-eq('torna tripla: faixa pela soma de 50.233,00', atosTorna[0].valor, 1_940.10);
-eq('torna tripla: detalhe traz a soma', atosTorna[0].detalhe!.includes('50.233,00'), true);
+eq('três beneficiários: TRÊS atos (um por cessão)', atosTorna.length, 3);
+eq('torna tripla: cada ato pela faixa do seu valor', atosTorna[0].valor, emolumentoEscritura(16_744.34, 5));
+eq('torna tripla: detalhe traz o valor da cessão', atosTorna[0].detalhe!.includes('16.744,34'), true);
 
 /* judicial: taxa por faixa no lugar da escritura; registro continua */
 const judicial = projetarCustos({ ...BASE, rito: 'JUDICIAL' });
