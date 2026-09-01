@@ -144,6 +144,7 @@ import { toast } from 'sonner';
 import { PainelCaso } from './painel-caso';
 import { Doutrina } from './doutrina';
 import {
+  alocacoesDoDireito,
   apurarCenario,
   direitosDoResultado,
   ehFracao,
@@ -1724,6 +1725,33 @@ export default function SucessoristaClient({
     [resultado],
   );
 
+  /** Matriz na proporção exata do DIREITO (a divisão igualitária, em frações
+   *  exatas) — só os bens do inventário principal, como o memo `caso`. */
+  const prefillDoDireito = (): Record<string, Record<string, string>> =>
+    !resultado || resultado.bloqueios.length > 0 || participantes.length === 0
+      ? {}
+      : alocacoesDoDireito(
+          resultado,
+          bens.filter(
+            (b) => !b.sobrepartilha && (!b.sucessaoExclusiva || b.sucessaoExclusiva === 'PRINCIPAL'),
+          ),
+        );
+
+  /** Abre o passo 2 com a matriz JÁ PREENCHIDA na proporção do direito — o
+   *  usuário altera só o bem que interessa (pedido do escritório). Só quando
+   *  não há nada salvo/digitado; o modo de digitação acompanha (fração), e o
+   *  alternador converte. */
+  const abrirPartilhaDiferenciada = () => {
+    if (Object.keys(matriz).length === 0) {
+      const prefill = prefillDoDireito();
+      if (Object.keys(prefill).length > 0) {
+        setMatriz(prefill);
+        setMatrizEmFracao(true);
+      }
+    }
+    setPasso(2);
+  };
+
   /** Pendências da minuta: o que ainda vira lacuna na escritura/petição. */
   const pendenciasMinuta = useMemo(
     () =>
@@ -2680,9 +2708,12 @@ export default function SucessoristaClient({
     });
   };
 
-  /** Sugestão aceita: partilha na proporção exata do direito — sem torna. */
+  /** Sugestão aceita: partilha na proporção exata do direito — sem torna.
+   *  O quadro volta PREENCHIDO com as frações do direito (não mais vazio). */
   const redesenharSemTorna = () => {
-    setMatriz({});
+    const prefill = prefillDoDireito();
+    setMatriz(prefill);
+    if (Object.keys(prefill).length > 0) setMatrizEmFracao(true);
     setAnotacoesMatriz({});
     setPasso(2);
     toast.success('Partilha redesenhada na proporção do direito', {
@@ -4230,7 +4261,7 @@ export default function SucessoristaClient({
                   size="sm"
                   variant={passo === i + 1 ? 'default' : 'outline'}
                   aria-current={passo === i + 1}
-                  onClick={() => setPasso(i + 1)}
+                  onClick={() => (i + 1 === 2 ? abrirPartilhaDiferenciada() : setPasso(i + 1))}
                 >
                   {i + 1}. {t}
                 </Button>
@@ -4243,7 +4274,7 @@ export default function SucessoristaClient({
                 bens={bens}
                 nomeCaso={falecido.nome}
                 voltar={() => irPara('acervo')}
-                avancar={() => setPasso(2)}
+                avancar={abrirPartilhaDiferenciada}
                 irParaItcmd={() => irPara('itcmd')}
                 onExportado={(quinhoes) =>
                   registrarDoc('XLSX_PARTILHA', { itens: quinhoes })
@@ -4257,8 +4288,9 @@ export default function SucessoristaClient({
                 <span className="eyebrow">Passo 2</span>
                 <h2>Partilha diferenciada</h2>
                 <p className="subtitulo">
-                  Monte a partilha como a família combinou: distribua o percentual de cada
-                  bem entre as partes — cada linha preenchida precisa fechar 100%; linha em
+                  Monte a partilha como a família combinou: o quadro abre com a divisão
+                  igualitária já preenchida (a proporção exata do direito de cada um) —
+                  altere só o bem que interessar. Cada linha precisa fechar 100%; linha em
                   branco segue a proporção do direito. Embaixo, o total que cada um recebe,
                   a diferença de quinhão (a provisão de torna) e o imposto de transmissão —
                   devido ou isento.
@@ -4350,7 +4382,11 @@ export default function SucessoristaClient({
                                         });
                                       }}
                                     />
-                                    {!ehFracao(linha[p.id]) && <span aria-hidden="true">%</span>}
+                                    {/* O sufixo acompanha a célula (fração não leva %)
+                                        e, vazia, o MODO escolhido — sem "1/3 %". */}
+                                    {(linha[p.id] ? !ehFracao(linha[p.id]) : !matrizEmFracao) && (
+                                      <span aria-hidden="true">%</span>
+                                    )}
                                   </span>
                                   {anotacoesMatriz[b.id]?.[p.id] && (
                                     <span className="pct-rotulo">{anotacoesMatriz[b.id][p.id]}</span>
@@ -5198,7 +5234,15 @@ function PartilhaDeSucessao({
           size="sm"
           variant={diferenciada ? 'default' : 'outline'}
           aria-pressed={diferenciada}
-          onClick={() => setDiferenciada(true)}
+          onClick={() => {
+            setDiferenciada(true);
+            // Abre JÁ preenchida com a proporção do direito (frações
+            // exatas) — o usuário altera só o bem que interessa.
+            if (caso && Object.keys(alocacoes).length === 0) {
+              const prefill = alocacoesDoDireito(resultado, caso.bens);
+              if (Object.keys(prefill).length > 0) onPatch({ atribuicoesPct: prefill });
+            }
+          }}
         >
           Diferenciada
         </Button>
@@ -5343,9 +5387,9 @@ function PartilhaDeSucessao({
       {diferenciada && (
         <div style={{ marginTop: 12 }}>
           <p className="fund" style={{ margin: '0 0 8px' }}>
-            Distribua cada bem desta sucessão em % (ou fração — &quot;1/3&quot;) por
-            herdeiro. Linha vazia segue a proporção do direito acima; o desvio vira TORNA
-            desta sucessão, apurada abaixo.
+            O quadro abre com a proporção do direito acima já preenchida — altere só o
+            bem que interessar, em % ou fração (&quot;1/3&quot;). Linha vazia segue a
+            proporção do direito; o desvio vira TORNA desta sucessão, apurada abaixo.
           </p>
           <ScrollArea className="matriz-scroll" orientation="vertical">
             <Table className="matriz-partilha">

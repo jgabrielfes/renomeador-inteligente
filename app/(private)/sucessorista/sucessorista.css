@@ -784,9 +784,12 @@
 }
 
 .sucessorista .matriz-partilha .col-total {
-  min-width: 80px;
+  min-width: 88px;
   text-align: right;
   font-weight: 600;
+  /* Respiro antes da barra de rolagem vertical do quadro — sem isso o
+     "direito"/Σ encosta na barra (feedback do escritório). */
+  padding-right: 26px;
 }
 
 .sucessorista .matriz-partilha .col-total.nao-fecha { color: var(--lacre); }
