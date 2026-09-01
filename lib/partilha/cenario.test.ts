@@ -157,6 +157,32 @@ eq('fracaoBonita sem casamento limpo', fracaoBonita(33.3), null);
   );
 }
 
+/* ---------- regressão: resíduo de 1 centavo NÃO bloqueia a torna ----------
+   Bug real do balcão: meeira + 3 filhos, um bem de valor com centavo ímpar,
+   matriz 25% para cada. O DIREITO vem dos quinhões arredondados ao centavo e
+   o ATRIBUÍDO é fração exata do bem — os dois divergem por 1 centavo. O
+   invariante exato barrava ("cedido 24999.99 ≠ recebido 25000.00") e zerava
+   a torna, sumindo com o ato de custas + ITCMD. A tolerância de centavos por
+   participante absorve o ruído sem deixar passar desequilíbrio REAL (reais). */
+{
+  const caso: Caso = {
+    falecido: { dataObito: '2026-03-14' },
+    sobrevivente: { vinculo: 'CASAMENTO', regime: 'COMUNHAO_UNIVERSAL', nome: 'Viúva' },
+    herdeiros: [filho('a'), filho('b'), filho('c')],
+    bens: [{ id: 'imovel', descricao: 'Imóvel', valor: '100000.01', natureza: 'COMUM' }],
+  };
+  const r = partilhar(caso);
+  const linha: Record<string, string> = {};
+  for (const p of participantesDoResultado(r)) linha[p.id] = '25';
+  const c = apurarCenario({ caso, resultado: r, alocacoes: { imovel: linha } });
+  eq('resíduo de centavo: sem bloqueio de invariante', c.bloqueios, []);
+  teste('resíduo de centavo: torna apurada (não zerada)', c.totalTorna !== '0.00', c.totalTorna);
+  teste(
+    'resíduo de centavo: gera transferência para o ato de custas/ITCMD',
+    (c.atribuicao?.transferencias.length ?? 0) > 0,
+  );
+}
+
 /* ---------- matriz vazia = proporção do direito, sem torna ---------- */
 
 {
