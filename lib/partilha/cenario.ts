@@ -123,6 +123,66 @@ export function temAlocacao(
   });
 }
 
+/** Fração do motor ("1/6", "2/3" ou inteira "1") → {n, d} exato; null se não parsear. */
+const fracaoDoMotor = (v: string | undefined): { n: number; d: number } | null => {
+  const m = (v ?? '').trim().match(/^(\d+)(?:\s*\/\s*(\d+))?$/);
+  if (!m) return null;
+  const d = m[2] ? Number(m[2]) : 1;
+  return d > 0 ? { n: Number(m[1]), d } : null;
+};
+
+/** Soma exata de frações, reduzida a cada passo (denominadores não explodem). */
+const somarFracoes = (a: { n: number; d: number }, b: { n: number; d: number }) => {
+  const n = a.n * b.d + b.n * a.d;
+  const d = a.d * b.d;
+  const g = mdc(n, d) || 1;
+  return { n: n / g, d: d / g };
+};
+
+/**
+ * Matriz PRÉ-PREENCHIDA com a proporção exata do DIREITO de cada um — a
+ * mesma divisão da partilha igualitária, célula a célula, em FRAÇÕES EXATAS
+ * (não fabrica torna de dízima). É o ponto de partida da partilha
+ * diferenciada: o quadro abre completo e o usuário altera só o bem que
+ * interessa. A meação por bem sai por diferença (1 − Σ dos quinhões daquela
+ * natureza), o que vale inclusive na comunhão universal, em que a meação
+ * alcança também os bens de natureza particular. Fração que fecha o bem
+ * inteiro vira "100" (percentual exato) em vez de "1/1".
+ */
+export function alocacoesDoDireito(resultado: Resultado, bens: Bem[]): Alocacoes {
+  const linhaDaNatureza = (comum: boolean): Record<string, string> => {
+    const mapa = new Map<string, { n: number; d: number }>();
+    for (const q of resultado.quinhoes) {
+      const f = fracaoDoMotor(comum ? q.fracaoBemComum : q.fracaoBemParticular);
+      if (!f || f.n === 0) continue;
+      const atual = mapa.get(q.herdeiroId);
+      mapa.set(q.herdeiroId, atual ? somarFracoes(atual, f) : f);
+    }
+    if (resultado.meacao) {
+      let soma = { n: 0, d: 1 };
+      for (const f of mapa.values()) soma = somarFracoes(soma, f);
+      if (soma.d - soma.n > 0) mapa.set('__sobrevivente__', { n: soma.d - soma.n, d: soma.d });
+    }
+    const linha: Record<string, string> = {};
+    for (const [id, f] of mapa) {
+      const g = mdc(f.n, f.d) || 1;
+      const n = f.n / g;
+      const d = f.d / g;
+      linha[id] = d === 1 ? String(n * 100) : `${n}/${d}`;
+    }
+    return linha;
+  };
+
+  const comuns = linhaDaNatureza(true);
+  const particulares = linhaDaNatureza(false);
+  const alocacoes: Alocacoes = {};
+  for (const bem of bens) {
+    const linha = bem.natureza === 'COMUM' ? comuns : particulares;
+    if (Object.keys(linha).length > 0) alocacoes[bem.id] = { ...linha };
+  }
+  return alocacoes;
+}
+
 /* ---------- despesas adiantadas (Espaço do Espólio) ---------- */
 
 export interface DespesaAdiantada {

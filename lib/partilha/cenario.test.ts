@@ -12,6 +12,7 @@
 import { partilhar } from './engine';
 import type { Caso, Herdeiro } from './types';
 import {
+  alocacoesDoDireito,
   apurarCenario,
   direitosDoResultado,
   fracaoBonita,
@@ -76,6 +77,62 @@ eq('fracaoBonita sem casamento limpo', fracaoBonita(33.3), null);
   eq('direito de cada um: 120k', direitos['ana'], 120000);
   teste('temAlocacao falso com matriz vazia', !temAlocacao({}, caso.bens, participantesDoResultado(r)));
   teste('temAlocacao verdadeiro com célula', temAlocacao({ casa: { ana: '100' } }, caso.bens, participantesDoResultado(r)));
+}
+
+/* ---------- matriz pré-preenchida com a proporção do direito ---------- */
+
+{
+  // 3 filhos sem cônjuge: cada bem abre 1/3 · 1/3 · 1/3.
+  const caso = casoBase();
+  const r = partilhar(caso);
+  const pre = alocacoesDoDireito(r, caso.bens);
+  eq('prefill 3 filhos: 1/3 em cada bem', pre, {
+    casa: { ana: '1/3', bruno: '1/3', carla: '1/3' },
+    carro: { ana: '1/3', bruno: '1/3', carla: '1/3' },
+  });
+  const c = apurarCenario({ caso, resultado: r, alocacoes: pre });
+  eq('prefill 3 filhos: sem bloqueios', c.bloqueios, []);
+  eq('prefill 3 filhos: torna zero (é a igualitária)', c.totalTorna, '0.00');
+}
+
+{
+  // Cônjuge meeiro (comunhão parcial) + 2 filhos, bem comum E particular:
+  // no comum entra a meação (1/2, por diferença) + 1/4 de cada filho; no
+  // particular há concorrência — 1/3 por cabeça, sem meação (o Σ já fecha 1).
+  const caso: Caso = {
+    falecido: { dataObito: '2026-03-14' },
+    sobrevivente: { vinculo: 'CASAMENTO', regime: 'COMUNHAO_PARCIAL', nome: 'Vera' },
+    herdeiros: [filho('ana'), filho('bruno')],
+    bens: [
+      { id: 'casa', descricao: 'Casa comum', valor: '400000.00', natureza: 'COMUM' },
+      { id: 'sitio', descricao: 'Sítio particular', valor: '300000.00', natureza: 'PARTICULAR' },
+    ],
+  };
+  const r = partilhar(caso);
+  const pre = alocacoesDoDireito(r, caso.bens);
+  const ordenada = (l: Record<string, string>) =>
+    Object.fromEntries(Object.entries(l).sort(([a], [b]) => (a < b ? -1 : 1)));
+  eq('prefill comum: meação 1/2 + 1/4 por filho', ordenada(pre['casa']), {
+    __sobrevivente__: '1/2',
+    ana: '1/4',
+    bruno: '1/4',
+  });
+  eq('prefill particular: 1/3 por cabeça, sem sobra de meação', ordenada(pre['sitio']), {
+    __sobrevivente__: '1/3',
+    ana: '1/3',
+    bruno: '1/3',
+  });
+  const c = apurarCenario({ caso, resultado: r, alocacoes: pre });
+  eq('prefill com meação: sem bloqueios', c.bloqueios, []);
+  eq('prefill com meação: torna zero (é a igualitária)', c.totalTorna, '0.00');
+}
+
+{
+  // Herdeiro único: fração inteira vira "100" (percentual exato), não "1/1".
+  const caso: Caso = { ...casoBase(), herdeiros: [filho('ana')] };
+  const r = partilhar(caso);
+  const pre = alocacoesDoDireito(r, caso.bens);
+  eq('prefill herdeiro único: célula "100"', pre['casa'], { ana: '100' });
 }
 
 /* ---------- matriz vazia = proporção do direito, sem torna ---------- */
