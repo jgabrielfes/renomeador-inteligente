@@ -4780,6 +4780,9 @@ export default function SucessoristaClient({
             setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
             impostoCessao={impostoCessao}
+            tornaTotal={
+              atribuicao && atribuicao.bloqueios.length === 0 ? Number(atribuicao.totalTorna) : 0
+            }
             adicionais={custosAdicionais}
             setAdicionais={setCustosAdicionais}
             manuais={fiscal.custosManuais ?? null}

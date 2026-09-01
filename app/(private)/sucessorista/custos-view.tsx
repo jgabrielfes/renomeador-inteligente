@@ -51,6 +51,7 @@ async function montarDossie(
   caso: Caso,
   resultado: Resultado,
   atribuicoes: Alocacoes = {},
+  tornaTotal = 0,
 ): Promise<DossieOrcamento> {
   const { matrizDoQuadro, montarQuadroPorBem } = await import('@/lib/partilha/quadro-bens');
   const massa = Number(resultado.acervo.massaPartilhavel) || 0;
@@ -83,6 +84,8 @@ async function montarDossie(
       ...resultado.quinhoes.map((q) => ({ nome: q.nome, valor: Number(q.valor) || 0 })),
     ],
     massaPartilhavel: massa,
+    legitima: Number(resultado.heranca.total) || 0,
+    torna: tornaTotal,
     matriz: matrizDoQuadro(quadro.linhas),
     avisosQuadro: quadro.avisos,
   };
@@ -140,6 +143,27 @@ function EditorDespesasAdicionais({
     reset({ descricao: '', valor: '' });
   };
 
+  /* Edição inline de um lançamento já feito (o "remover" ganhou o par
+     "editar", pedido do escritório): estado local com a descrição e o valor
+     MASCARADO; salvar valida e grava, cancelar descarta. */
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [editDesc, setEditDesc] = useState('');
+  const [editValor, setEditValor] = useState('');
+  const iniciarEdicao = (a: DespesaAdicional) => {
+    setEditandoId(a.id);
+    setEditDesc(a.descricao);
+    setEditValor(decimalParaMascara(a.valor));
+  };
+  const cancelarEdicao = () => setEditandoId(null);
+  const salvarEdicao = (id: string) => {
+    const dec = mascaraParaDecimal(editValor);
+    if (!editDesc.trim() || dec === '') return;
+    setAdicionais(
+      adicionais.map((x) => (x.id === id ? { ...x, descricao: editDesc.trim(), valor: dec } : x)),
+    );
+    setEditandoId(null);
+  };
+
   return (
     <div style={{ marginTop: 18 }}>
       <span className="eyebrow">Custos adicionais</span>
@@ -182,23 +206,53 @@ function EditorDespesasAdicionais({
           </Button>
         </div>
       </form>
-      {adicionais.map((a) => (
-        <div className="linha-item" key={a.id}>
-          <span>
-            {a.descricao}{' '}
-            <span className="fracao num">· {brl(Number(a.valor) || 0)}</span>
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive"
-            onClick={() => setAdicionais(adicionais.filter((x) => x.id !== a.id))}
-          >
-            remover
-          </Button>
-        </div>
-      ))}
+      {adicionais.map((a) =>
+        editandoId === a.id ? (
+          <div className="linha-item" key={a.id} style={{ gap: 8, flexWrap: 'wrap' }}>
+            <div className="grade c2" style={{ flex: '1 1 420px', minWidth: 260 }}>
+              <Input
+                aria-label="Descrição da despesa"
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+              />
+              <CurrencyInput
+                aria-label="Valor da despesa (R$)"
+                value={editValor}
+                onChange={setEditValor}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Button type="button" variant="outline" size="sm" onClick={() => salvarEdicao(a.id)}>
+                salvar
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={cancelarEdicao}>
+                cancelar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="linha-item" key={a.id}>
+            <span>
+              {a.descricao}{' '}
+              <span className="fracao num">· {brl(Number(a.valor) || 0)}</span>
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => iniciarEdicao(a)}>
+                editar
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => setAdicionais(adicionais.filter((x) => x.id !== a.id))}
+              >
+                remover
+              </Button>
+            </div>
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -211,6 +265,7 @@ export function CustosView({
   provisao,
   provisoesSucessoes,
   impostoCessao = 0,
+  tornaTotal = 0,
   issPct,
   setIssPct,
   adicionais,
@@ -234,6 +289,8 @@ export function CustosView({
   provisoesSucessoes: { sucessao: SucessaoCumulada; base: number; provisao: ProvisaoItcmd }[];
   /** ITCMD inter vivos das cessões da partilha diferenciada (doação). */
   impostoCessao?: number;
+  /** Soma das tornas/cessões (diferenças positivas de quinhão) — resumo do PDF. */
+  tornaTotal?: number;
   /** Alíquota do ISS do município da serventia (%). */
   issPct: string;
   setIssPct: (v: string) => void;
@@ -323,7 +380,7 @@ export function CustosView({
       // O PDF sai COMPLETO quando há partilha apurada; o DOCX segue enxuto —
       // é a folha que o escritório edita e manda para a família.
       const completo =
-        formato === 'pdf' && caso && resultado ? await montarDossie(caso, resultado, atribuicoes) : undefined;
+        formato === 'pdf' && caso && resultado ? await montarDossie(caso, resultado, atribuicoes, tornaTotal) : undefined;
       const blob =
         formato === 'pdf'
           ? await montarOrcamentoPdf({ ...dados, completo })
