@@ -244,14 +244,30 @@ export function AcervoView({
       setBase((pct !== null ? efetivo / (pct / 100) : efetivo).toFixed(2));
     };
 
-  const aoDigitarPctNovo = (texto: string) => {
+  const aoDigitarPctNovo = (texto: string, anterior: string) => {
+    const pctAnterior = pctEfetivo(anterior);
     const pct = pctEfetivo(texto);
-    const recalcular = (base: string, campo: 'valor' | 'valorVenal') => {
-      if (!base) return;
-      setValue(campo, paraMascara(pct !== null ? ((Number(base) * pct) / 100).toFixed(2) : base));
+    const recalcular = (
+      base: string,
+      campo: 'valor' | 'valorVenal',
+      setBase: (v: string) => void,
+    ) => {
+      let b = base;
+      // Campo preenchido sem base lembrada (valor colado/lido): a certidão
+      // integral sai do próprio campo pela conta inversa com o % ANTERIOR
+      // (sem % anterior, o campo ERA o integral) — o % recalcula os DOIS
+      // venais sempre, nunca só o do óbito.
+      const atual = getValues(campo);
+      if (!b && VALOR_PTBR.test(atual.trim())) {
+        const efetivo = Number(paraDecimal(atual));
+        b = (pctAnterior !== null ? efetivo / (pctAnterior / 100) : efetivo).toFixed(2);
+        setBase(b);
+      }
+      if (!b) return;
+      setValue(campo, paraMascara(pct !== null ? ((Number(b) * pct) / 100).toFixed(2) : b));
     };
-    recalcular(baseObitoNovo, 'valor');
-    recalcular(baseAtualNovo, 'valorVenal');
+    recalcular(baseObitoNovo, 'valor', setBaseObitoNovo);
+    recalcular(baseAtualNovo, 'valorVenal', setBaseAtualNovo);
   };
 
   const lancar = (dados: NovoBem) => {
@@ -376,8 +392,10 @@ export function AcervoView({
                       value={field.value}
                       onBlur={field.onBlur}
                       onChange={(e) => {
+                        // field.value ainda é o % ANTERIOR — a conta inversa
+                        // das bases precisa dele antes do onChange trocar.
+                        aoDigitarPctNovo(e.target.value, field.value);
                         field.onChange(e.target.value);
-                        aoDigitarPctNovo(e.target.value);
                       }}
                     />
                   )}
@@ -855,14 +873,29 @@ function LinhaBem({
     };
 
   const aoDigitarPct = (texto: string) => {
+    const pctAnterior = pctEfetivo(pctVenal);
     setPctVenal(texto);
     const pct = pctEfetivo(texto);
-    const recalcular = (base: string, setCampo: (v: string) => void) => {
-      if (!base) return;
-      setCampo(paraMascara(pct !== null ? ((Number(base) * pct) / 100).toFixed(2) : base));
+    const recalcular = (
+      base: string,
+      campoAtual: string,
+      setCampo: (v: string) => void,
+      setBase: (v: string) => void,
+    ) => {
+      let b = base;
+      // Bem lido/antigo sem base lembrada: a certidão integral sai do próprio
+      // campo pela conta inversa com o % ANTERIOR (sem % anterior, o campo
+      // ERA o integral) — o % recalcula os DOIS venais, nunca só o do óbito.
+      if (!b && VALOR_PTBR.test(campoAtual.trim())) {
+        const efetivo = Number(paraDecimal(campoAtual));
+        b = (pctAnterior !== null ? efetivo / (pctAnterior / 100) : efetivo).toFixed(2);
+        setBase(b);
+      }
+      if (!b) return;
+      setCampo(paraMascara(pct !== null ? ((Number(b) * pct) / 100).toFixed(2) : b));
     };
-    recalcular(baseObito, setValor);
-    recalcular(baseAtual, setVenal);
+    recalcular(baseObito, valor, setValor, setBaseObito);
+    recalcular(baseAtual, venal, setVenal, setBaseAtual);
   };
 
   const salvar = () => {
