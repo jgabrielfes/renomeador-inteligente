@@ -225,15 +225,26 @@ export function apurarAtribuicao(
       for (const al of alocacoes) {
         if (al.cents === 0n) continue;
         const base = Rat.decimal(centsToStr(al.cents));
-        const imposto = gratuito ? base.mul(tabela.aliquotaDoacao) : null;
+        // Isenção do art. 6º, II, "a" (Lei 10.705/2000): doação de até 2.500
+        // UFESPs por DONATÁRIO no ano é ISENTA. Cada cessão aqui é um par
+        // doador→donatário, então o teto vale cessão a cessão. Acima do teto,
+        // o ITCMD incide sobre o TOTAL (é condição de isenção, não abatimento
+        // do excedente). Abaixo, o imposto é ZERO — antes vinha sempre 4% e a
+        // isenção era só um aviso na tela; agora o motor já zera por cabeça.
+        const teto =
+          gratuito && tabela.isencaoDoacaoAnualPorDonatario
+            ? Rat.decimal(tabela.isencaoDoacaoAnualPorDonatario)
+            : null;
+        const isento = teto ? !base.gt(teto) : false;
+        const imposto = !gratuito ? null : isento ? ZERO : base.mul(tabela.aliquotaDoacao);
 
         let observacao: string | undefined;
-        if (gratuito && tabela.isencaoDoacaoAnualPorDonatario) {
-          const teto = Rat.decimal(tabela.isencaoDoacaoAnualPorDonatario);
-          observacao = base.gt(teto)
-            ? `Acima do teto anual de isenção (${tabela.isencaoDoacaoAnualPorDonatario}). ` +
-              `Fracionar a cessão entre exercícios pode reduzir o imposto.`
-            : `Dentro do teto anual de isenção por donatário — conferir outras doações do mesmo doador no exercício.`;
+        if (gratuito && teto) {
+          observacao = isento
+            ? `Isento: doação de até 2.500 UFESPs por donatário no ano (art. 6º, II, "a") — ` +
+              `conferir outras doações do mesmo doador ao mesmo donatário no exercício.`
+            : `Acima do teto anual de isenção (${tabela.isencaoDoacaoAnualPorDonatario}). ` +
+              `Fracionar a cessão entre exercícios pode reduzir o imposto.`;
         }
 
         transferencias.push({

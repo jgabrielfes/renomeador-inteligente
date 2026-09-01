@@ -47,6 +47,7 @@ export function PainelCaso({
   isencoes,
   custos = null,
   impostoSucessoes = 0,
+  impostoCessao = 0,
   custosAdicionais = 0,
   custosManuais = null,
   alertasLeitura = [],
@@ -82,6 +83,8 @@ export function PainelCaso({
   custosManuais?: CustosManuais | null;
   /** ITCMD das sucessões cumuladas (fatos geradores próprios). */
   impostoSucessoes?: number;
+  /** ITCMD inter vivos das cessões da partilha diferenciada (doação). */
+  impostoCessao?: number;
   /** Alertas da leitura (herdeiros declarados sem lançamento, frações ideais). */
   alertasLeitura?: string[];
   /** Bloco de notas do caso — anotações livres, salvas com o snapshot. */
@@ -360,7 +363,13 @@ export function PainelCaso({
           {custosManuais
             ? brl(totalCustosManuais(custosManuais) + custosAdicionais)
             : provisao
-              ? brl(provisao.total + (custos?.total ?? 0) + impostoSucessoes + custosAdicionais)
+              ? brl(
+                  provisao.total +
+                    (custos?.total ?? 0) +
+                    impostoSucessoes +
+                    impostoCessao +
+                    custosAdicionais,
+                )
               : '—'}
         </div>
         {/* Modo manual (fora de SP): a discriminação é a que o profissional
@@ -402,6 +411,12 @@ export function PainelCaso({
               <div>
                 <span className="rotulo">ITCMD — sucessões cumuladas</span>
                 <span>{brl(impostoSucessoes)}</span>
+              </div>
+            )}
+            {impostoCessao > 0 && (
+              <div>
+                <span className="rotulo">ITCMD inter vivos (cessão)</span>
+                <span>{brl(impostoCessao)}</span>
               </div>
             )}
             {custos && (

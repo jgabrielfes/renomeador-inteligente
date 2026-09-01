@@ -112,10 +112,11 @@ const comTeto = apurarAtribuicao(caso, r, {
   tabela: { ...TABELA_SP_2026, isencaoDoacaoAnualPorDonatario: '92500.00' },
 });
 eq(
-  'alerta de isenção emitido',
-  comTeto.transferencias[0].observacao?.includes('Dentro do teto'),
+  'dentro do teto: observação de isento',
+  comTeto.transferencias[0].observacao?.includes('Isento'),
   true,
 );
+eq('dentro do teto: ITCMD zerado por cabeça', comTeto.transferencias[0].imposto, '0.00');
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

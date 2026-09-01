@@ -89,6 +89,8 @@ export function montarDadosOrcamento(entrada: {
   avisos: string[];
   provisaoTotal: number | null;
   sucessoes: { nome: string; dataObito: string; total: number }[];
+  /** ITCMD inter vivos das cessões da partilha diferenciada (doação). */
+  impostoCessao?: number;
   adicionais: DespesaAdicional[];
   geradoEm: string;
 }): DadosOrcamento {
@@ -108,6 +110,13 @@ export function montarDadosOrcamento(entrada: {
     linhas.push({
       rotulo: 'ITCMD provisionado (sucessão principal)',
       valor: entrada.provisaoTotal,
+    });
+  }
+  if (entrada.impostoCessao && entrada.impostoCessao > 0) {
+    linhas.push({
+      rotulo: 'ITCMD inter vivos (cessão de quinhão — doação)',
+      detalhe: '4% por cabeça; cessões isentas até 2.500 UFESPs não entram',
+      valor: entrada.impostoCessao,
     });
   }
   for (const a of entrada.adicionais) {

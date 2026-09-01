@@ -2077,6 +2077,21 @@ export default function SucessoristaClient({
   const impostoSucessoes = provisoesSucessoes.reduce((a, p) => a + p.provisao.total, 0);
 
   /**
+   * ITCMD inter vivos das cessões da partilha diferenciada (doação — art. 4º
+   * da Lei 10.705/2000): 4% do valor de cada cessão POR CABEÇA, já ZERADO nas
+   * cessões isentas (≤ 2.500 UFESPs por donatário/ano — o motor de atribuição
+   * aplica a isenção). Só a doação entra no custo; a reposição onerosa (ITBI)
+   * é municipal e não é projetada. Somado ao custo projetado do caso.
+   */
+  const impostoCessao = useMemo(() => {
+    if (!atribuicao || atribuicao.bloqueios.length > 0) return 0;
+    return atribuicao.transferencias.reduce(
+      (a, t) => a + (t.tributo === 'ITCMD_DOACAO' && t.imposto ? Number(t.imposto) : 0),
+      0,
+    );
+  }, [atribuicao]);
+
+  /**
    * PAINEL DA FAMÍLIA — o que o espelho publicado PODE mostrar, já pronto:
    * quinhão por herdeiro (só entra se o advogado liberar) e os custos
    * AGREGADOS do caso (ITCMD + cartório/justiça + adicionais). Honorários
@@ -2137,6 +2152,13 @@ export default function SucessoristaClient({
         situacao: pago ? 'PAGO' : 'PREVISTO',
       });
     }
+    if (impostoCessao > 0) {
+      linhas.push({
+        rotulo: 'ITCMD inter vivos (cessão de quinhão)',
+        valor: impostoCessao.toFixed(2),
+        situacao: 'PREVISTO',
+      });
+    }
     if (custos) {
       linhas.push({
         rotulo:
@@ -2155,7 +2177,7 @@ export default function SucessoristaClient({
       });
     }
     return linhas;
-  }, [provisao, custos, custosAdicionais, impostoSucessoes, fiscal.itcmdSituacao, ritoEfetivo, manuais]);
+  }, [provisao, custos, custosAdicionais, impostoSucessoes, impostoCessao, fiscal.itcmdSituacao, ritoEfetivo, manuais]);
 
   /**
    * ESPAÇO DO ESPÓLIO — os fatos compartilháveis, já no formato de allowlist
@@ -2417,9 +2439,9 @@ export default function SucessoristaClient({
     const custoTotal = manuais
       ? totalManual + totalAdicionais
       : provisao && custos
-        ? provisao.total + custos.total + totalAdicionais
+        ? provisao.total + custos.total + impostoSucessoes + impostoCessao + totalAdicionais
         : provisao
-          ? provisao.total + totalAdicionais
+          ? provisao.total + impostoSucessoes + impostoCessao + totalAdicionais
           : null;
     return montarArquivoCaso({
       cabecalho: {
@@ -4015,6 +4037,7 @@ export default function SucessoristaClient({
                       provisao.total +
                       (custos?.total ?? 0) +
                       impostoSucessoes +
+                      impostoCessao +
                       somaAdicionais(custosAdicionais)
                     ).toFixed(2),
                   )
@@ -4756,6 +4779,7 @@ export default function SucessoristaClient({
             issPct={fiscal.issPct ?? '5'}
             setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
             provisoesSucessoes={provisoesSucessoes}
+            impostoCessao={impostoCessao}
             adicionais={custosAdicionais}
             setAdicionais={setCustosAdicionais}
             manuais={fiscal.custosManuais ?? null}
@@ -4859,6 +4883,7 @@ export default function SucessoristaClient({
         isencoes={isencoes}
         custos={custos}
         impostoSucessoes={impostoSucessoes}
+        impostoCessao={impostoCessao}
         custosAdicionais={somaAdicionais(custosAdicionais)}
         custosManuais={manuais}
         alertasLeitura={[
