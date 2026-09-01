@@ -146,6 +146,7 @@ import { Doutrina } from './doutrina';
 import {
   alocacoesDoDireito,
   apurarCenario,
+  completarComDireito,
   direitosDoResultado,
   ehFracao,
   fracaoBonita,
@@ -1738,16 +1739,15 @@ export default function SucessoristaClient({
         );
 
   /** Abre o passo 2 com a matriz JÁ PREENCHIDA na proporção do direito — o
-   *  usuário altera só o bem que interessa (pedido do escritório). Só quando
-   *  não há nada salvo/digitado; o modo de digitação acompanha (fração), e o
-   *  alternador converte. */
+   *  usuário altera só o bem que interessa (pedido do escritório). A
+   *  completagem é LINHA A LINHA: bem sem célula digitada recebe o direito,
+   *  bem com algo digitado fica intocado (caso salvo pela metade ganha só o
+   *  que faltava). Matriz totalmente vazia também liga o modo fração. */
   const abrirPartilhaDiferenciada = () => {
-    if (Object.keys(matriz).length === 0) {
-      const prefill = prefillDoDireito();
-      if (Object.keys(prefill).length > 0) {
-        setMatriz(prefill);
-        setMatrizEmFracao(true);
-      }
+    const completa = completarComDireito(matriz, prefillDoDireito());
+    if (completa) {
+      if (Object.keys(matriz).length === 0) setMatrizEmFracao(true);
+      setMatriz(completa);
     }
     setPasso(2);
   };
@@ -4364,7 +4364,7 @@ export default function SucessoristaClient({
                                     <Input
                                       className="pct num"
                                       inputMode="decimal"
-                                      placeholder={matrizEmFracao ? '1/3' : '—'}
+                                      placeholder="—"
                                       aria-label={`Percentual ou fração do bem ${i + 1} para ${p.nome}`}
                                       value={linha[p.id] ?? ''}
                                       onChange={(e) => {
@@ -5237,10 +5237,13 @@ function PartilhaDeSucessao({
           onClick={() => {
             setDiferenciada(true);
             // Abre JÁ preenchida com a proporção do direito (frações
-            // exatas) — o usuário altera só o bem que interessa.
-            if (caso && Object.keys(alocacoes).length === 0) {
-              const prefill = alocacoesDoDireito(resultado, caso.bens);
-              if (Object.keys(prefill).length > 0) onPatch({ atribuicoesPct: prefill });
+            // exatas), linha a linha — o que já foi digitado fica intocado.
+            if (caso) {
+              const completa = completarComDireito(
+                alocacoes,
+                alocacoesDoDireito(resultado, caso.bens),
+              );
+              if (completa) onPatch({ atribuicoesPct: completa });
             }
           }}
         >

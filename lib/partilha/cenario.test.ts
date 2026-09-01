@@ -14,6 +14,7 @@ import type { Caso, Herdeiro } from './types';
 import {
   alocacoesDoDireito,
   apurarCenario,
+  completarComDireito,
   direitosDoResultado,
   fracaoBonita,
   fracaoDaCelula,
@@ -133,6 +134,27 @@ eq('fracaoBonita sem casamento limpo', fracaoBonita(33.3), null);
   const r = partilhar(caso);
   const pre = alocacoesDoDireito(r, caso.bens);
   eq('prefill herdeiro único: célula "100"', pre['casa'], { ana: '100' });
+}
+
+{
+  // Completagem LINHA A LINHA: linha já digitada fica intocada; só as
+  // linhas vazias recebem o direito. Nada a mudar devolve null.
+  const caso = casoBase();
+  const direito = alocacoesDoDireito(partilhar(caso), caso.bens);
+  const parcial = { casa: { ana: '50', bruno: '25', carla: '25' } };
+  const completa = completarComDireito(parcial, direito);
+  eq('completar: linha digitada preservada', completa?.['casa'], parcial.casa);
+  eq('completar: linha vazia recebe o direito', completa?.['carro'], {
+    ana: '1/3',
+    bruno: '1/3',
+    carla: '1/3',
+  });
+  eq('completar: tudo preenchido devolve null', completarComDireito(direito, direito), null);
+  eq(
+    'completar: linha com células só vazias conta como vazia',
+    completarComDireito({ casa: { ana: '' } }, direito)?.['casa'],
+    direito['casa'],
+  );
 }
 
 /* ---------- matriz vazia = proporção do direito, sem torna ---------- */
