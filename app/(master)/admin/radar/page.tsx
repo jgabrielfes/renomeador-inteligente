@@ -5,6 +5,7 @@
 
 
 import { requirePlataforma } from "@/lib/app";
+import { gateStandby } from "@/lib/standby";
 import { requireMaster } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { radarAtivo } from "@/lib/radar/config";
@@ -20,6 +21,7 @@ const limiteAviso = () => new Date(Date.now() - HORAS_AVISO * 3_600_000);
 
 export default async function AdminRadarPage() {
   await requireMaster();
+  await gateStandby("radar");
   await requirePlataforma("SUCESSORISTA");
 
   let dados: DadosAdminRadar = {

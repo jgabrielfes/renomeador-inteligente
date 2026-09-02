@@ -15,6 +15,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { radarAtivo } from '@/lib/radar/config';
 import { enviarEmailPortal } from '@/lib/portal/email';
 import { notificarContratacaoRadar, notificarMensagemRadar } from '@/lib/radar/notificar';
@@ -31,6 +32,8 @@ function gerarCodigo(): string {
 }
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('radar');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   if (!radarAtivo()) return Response.json({ erro: 'Radar indisponível.' }, { status: 404 });

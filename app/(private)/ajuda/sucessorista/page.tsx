@@ -13,7 +13,7 @@ import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 
 export const metadata: Metadata = {
-  title: 'Como funciona — O Sucessorista',
+  title: 'Como funciona — LexCausa',
   robots: { index: false },
 };
 
@@ -31,12 +31,12 @@ export default async function AjudaSucessoristaPage() {
   const session = await auth();
   return (
     <>
-      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="O Sucessorista · by LexCausa" />
+      <LexTopbar menu={<AvatarSessao />} ehMaster={isMaster(session)} radarAtivo={radarAtivo()} sub="LexCausa" />
       <div className="lexcausa" style={{ minHeight: '100vh' }}>
         <main className="lc-miolo produto-sucessorista">
           <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>
             <span className="lc-eyebrow">Como funciona</span>
-            <h1>O Sucessorista em cinco fases</h1>
+            <h1>LexCausa em cinco fases</h1>
             <p className="lc-sub">
               A folha do inventário é contínua — a navegação é livre e nada bloqueia
               nada. A barra das 5 fases no dashboard mostra o progresso e leva à aba

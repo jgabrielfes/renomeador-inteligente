@@ -10,6 +10,7 @@ import { LexTopbar } from '@/components/lexcausa/topbar';
 import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 import { TETO_CANDIDATURAS_POR_CASO } from '@/lib/radar/candidatura';
@@ -28,6 +29,7 @@ const PASSOS = [
 ] as const;
 
 export default async function AjudaRadarPage() {
+  await gateStandby('radar');
   await requirePlataforma('SUCESSORISTA');
   await requireSession('/ajuda/radar');
   const session = await auth();

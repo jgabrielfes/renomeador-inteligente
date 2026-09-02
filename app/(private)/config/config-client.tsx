@@ -38,8 +38,7 @@ export function PreferenciaProduto() {
     <div role="radiogroup" aria-label="Produto de entrada" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
       {[
         ['', 'Sempre mostrar o hub'],
-        ['sucessorista', 'Abrir direto O Sucessorista'],
-        ['radar', 'Abrir direto o Radar Sucessório'],
+        ['sucessorista', 'Abrir direto a ferramenta'],
       ].map(([valor, rotulo]) => (
         <label key={valor} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <input

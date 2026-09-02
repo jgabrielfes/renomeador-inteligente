@@ -28,7 +28,7 @@ export interface ProdutoLexCausa {
 export const PRODUTOS_LEXCAUSA: ProdutoLexCausa[] = [
   {
     id: 'sucessorista',
-    nome: 'O Sucessorista',
+    nome: 'LexCausa',
     classe: 'produto-sucessorista',
     tagline: 'Gestão de inventários, do primeiro atendimento ao registro.',
     descricao:

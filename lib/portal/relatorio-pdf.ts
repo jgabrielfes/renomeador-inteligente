@@ -194,7 +194,7 @@ export async function montarRelatorioComunicacaoPdf({
 
   y -= 6;
   escrever(
-    'Registro gerado pelo O Sucessorista a partir dos eventos do cofre e do Painel do Cliente. Horários no fuso do computador que gerou o relatório.',
+    'Registro gerado pelo LexCausa a partir dos eventos do cofre e do Painel do Cliente. Horários no fuso do computador que gerou o relatório.',
     corpo,
     8,
     C.tintaMedia,

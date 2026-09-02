@@ -142,7 +142,7 @@ export async function montarResultadoPdf({
   y -= 2;
   escrever(ROTULO_VIA[triagem.via], corpoNegrito, 12, C.tintaMedia);
   escrever(
-    `Orientação gratuita gerada em ${new Date(agora).toLocaleDateString('pt-BR')} pelo O Sucessorista — estimativas por faixa, para a primeira conversa com o(a) advogado(a).`,
+    `Orientação gratuita gerada em ${new Date(agora).toLocaleDateString('pt-BR')} pelo LexCausa — estimativas por faixa, para a primeira conversa com o(a) advogado(a).`,
     corpo,
     9,
     C.tintaMedia,

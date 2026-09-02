@@ -11,6 +11,7 @@
  */
 
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { radarAtivo } from '@/lib/radar/config';
 import { varrerAviso72h } from '@/lib/radar/varredura';
 
@@ -26,6 +27,8 @@ function segredoConfere(recebido: string, esperado: string): boolean {
 }
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('radar');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   const esperado = process.env.CRON_SECRET;

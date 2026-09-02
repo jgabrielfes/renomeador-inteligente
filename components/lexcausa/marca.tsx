@@ -2,7 +2,7 @@
  * Lockup da marca LexCausa — o mesmo desenho em toda a aplicação: "Lex" no
  * acento, "Causa" na tinta, serifa institucional. `href` decide para onde o
  * clique leva (landing deslogada, hub logado). A submarca de produto entra
- * pelo `sub` ("O Sucessorista · by LexCausa" fica a cargo do chamador).
+ * pelo `sub` ("LexCausa" fica a cargo do chamador).
  */
 
 import Link from 'next/link';

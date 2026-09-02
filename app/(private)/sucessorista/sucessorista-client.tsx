@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * O Sucessorista — folha de trabalho do inventário.
+ * LexCausa — folha de trabalho do inventário.
  *
  * Esqueleto do protótipo aprovado: entrada pelo cofre (etapa 0, leitura real
  * dos documentos), navegação LIVRE entre as etapas (nada bloqueia nada) e o
@@ -58,6 +58,7 @@ import type { CasoExtraido } from '@/lib/gemini-sucessorista';
 import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 
 import { porteDoAcervo } from '@/lib/porte';
+import { emStandby } from '@/lib/standby';
 import { registrarCaso, registrarDocumentoGerado } from './actions';
 import { CasoView, type ArquivoClassificado } from './caso-view';
 import { FasesCaso } from './fases-caso';
@@ -3890,7 +3891,9 @@ export default function SucessoristaClient({
       <div className="folha" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {shell ? null : menu}
         <CasosView
-          radarHref={radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null}
+          radarHref={
+            !emStandby('radar') && radarAtivo && (perfil === 'ADVOGADO' || ehMaster) ? '/radar' : null
+          }
           onImportarFamilia={
             perfil === 'ADVOGADO' || ehMaster ? (codigo) => importarDoRadar(codigo) : null
           }
@@ -3940,7 +3943,7 @@ export default function SucessoristaClient({
       <nav className="lombada" aria-label="Abas do processo">
         <button className="voltar" onClick={voltarAoPainel}>← Meus casos</button>
         <div className="marca">
-          O Sucessorista
+          LexCausa
           <small>Folha de trabalho do inventário</small>
         </div>
         {/* O perfil é da CONTA e NÃO se alterna aqui — nem para o MASTER.

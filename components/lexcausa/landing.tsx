@@ -16,8 +16,9 @@ import Link from 'next/link';
 import '@/app/lexcausa.css';
 
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
-import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
+import { PRODUTOS_LEXCAUSA } from '@/components/lexcausa/produtos';
 import { noSucessorista } from '@/components/lexcausa/sites';
+import { emStandby } from '@/lib/standby';
 
 export function LandingLexCausa() {
   return (
@@ -25,9 +26,6 @@ export function LandingLexCausa() {
       <header className="lc-topo">
         <MarcaLexCausa href="/" />
         <nav aria-label="Entrar na plataforma">
-          <Link className="lc-acao secundaria" href={noSucessorista("/familias")}>
-            Para famílias
-          </Link>
           <Link className="lc-acao secundaria" href={noSucessorista("/cadastro")}>
             Criar conta
           </Link>
@@ -42,13 +40,10 @@ export function LandingLexCausa() {
           <span className="lc-eyebrow">LexCausa</span>
           <h1>A prática sucessória, organizada.</h1>
           <p className="lc-sub">
-            Uma casa, três ofícios: <strong>O Sucessorista</strong> conduz o
-            inventário do primeiro atendimento ao registro; o{' '}
-            <strong>Radar Sucessório</strong> aproxima famílias que precisam de
-            um inventário de advogados(as) verificados(as); e as{' '}
-            <strong>Diligências</strong> resolvem o ato em outra
-            comarca com correspondentes verificados. Um único login dá acesso ao
-            que a sua conta pode usar.
+            A <strong>LexCausa</strong> conduz o inventário do primeiro
+            atendimento ao registro: a folha de trabalho inteira — composição
+            familiar, acervo, quinhões com fundamento legal, provisão de custos
+            e ITCMD, minutas do balcão e o portal da família — num único lugar.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link className="lc-acao" href={noSucessorista("/login")}>
@@ -64,7 +59,7 @@ export function LandingLexCausa() {
           <span className="lc-eyebrow">Nossos produtos</span>
           <h2>Cada etapa do ofício tem a sua ferramenta</h2>
           <div className="lc-cartoes">
-            {PRODUTOS_LEXCAUSA.map((p) => (
+            {PRODUTOS_LEXCAUSA.filter((p) => !emStandby(p.id)).map((p) => (
               <section key={p.id} className={`lc-cartao ${p.classe}`}>
                 <span className="lc-eyebrow">{p.perfis.join(' · ')}</span>
                 <h3>{p.nome}</h3>
@@ -93,27 +88,17 @@ export function LandingLexCausa() {
         </section>
 
         <section className="lc-secao" aria-label="Para famílias">
-          <div className="lc-cartao produto-radar" style={{ maxWidth: 720 }}>
-            <span className="lc-eyebrow">Para famílias — gratuito, sem cadastro</span>
-            <h3>Perdeu alguém e não sabe por onde começar?</h3>
+          <div className="lc-cartao produto-sucessorista" style={{ maxWidth: 720 }}>
+            <span className="lc-eyebrow">Recebeu um link do cofre da família?</span>
+            <h3>O escritório compartilhou o andamento com você</h3>
             <p style={{ margin: 0 }}>
-              Responda até 12 perguntas simples e veja na hora: cartório ou
-              justiça, uma estimativa do imposto e dos custos, o prazo legal e a
-              lista de documentos para separar. Sem juridiquês e sem pedir dado
-              sensível — os valores entram por faixa.
+              O próprio link que você recebeu é a sua entrada no portal da
+              família — acompanhe as fases, envie os documentos pedidos e veja o
+              que falta, sem cadastro.
             </p>
-            <div className="lc-acoes">
-              <Link className="lc-acao" href={noSucessorista("/familias")}>
-                Começar agora
-              </Link>
-              <Link className="lc-acao secundaria" href={noSucessorista("/familias/guias")}>
-                Ler os guias
-              </Link>
-            </div>
           </div>
           <p className="lc-fund" style={{ marginTop: 12 }}>
-            Recebeu do escritório um link do cofre da família? O próprio link é
-            a sua entrada — se o perdeu, <Link href={noSucessorista("/portal")}>peça um novo aqui</Link>.
+            Perdeu o link? <Link href={noSucessorista("/portal")}>Peça um novo aqui</Link>.
           </p>
         </section>
 
@@ -126,7 +111,7 @@ export function LandingLexCausa() {
             aos herdeiros. Quando todos são capazes e estão de acordo, ele pode
             ser feito em cartório, por escritura pública (CPC, art. 610) —
             costuma ser mais rápido. Havendo menor, incapaz ou desacordo, o
-            caminho é o processo judicial. O Sucessorista verifica a
+            caminho é o processo judicial. A LexCausa verifica a
             elegibilidade do rito e conduz os dois caminhos.
           </p>
           <h3>ITCMD em São Paulo</h3>
@@ -155,7 +140,6 @@ export function LandingLexCausa() {
             — ferramentas de apoio à prática sucessória. Toda saída é rascunho
             para revisão profissional.
           </span>
-          <span>{TEXTO_LEGAL_RADAR}</span>
         </div>
       </footer>
     </div>

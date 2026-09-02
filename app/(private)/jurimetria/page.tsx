@@ -12,6 +12,7 @@ import type { Metadata } from 'next';
 import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 
@@ -30,6 +31,7 @@ export default async function JurimetriaPage({
 }: {
   searchParams: Promise<{ cartorio?: string; tema?: string }>;
 }) {
+  await gateStandby('jurimetria');
   await requirePlataforma('SUCESSORISTA');
   await requireSession('/jurimetria');
   const session = await auth();

@@ -10,6 +10,7 @@
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { municipioPorIbge } from '@/lib/rede/municipios';
 import { ROTULO_TIPO_DILIGENCIA } from '@/lib/rede/diligencias';
 
@@ -20,6 +21,8 @@ const MAX_ARQUIVO = 3_500_000;
 const MAX_ARQUIVOS = 10;
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('diligencias');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   const session = await auth();

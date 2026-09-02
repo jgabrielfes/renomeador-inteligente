@@ -10,7 +10,7 @@ import { radarAtivo } from '@/lib/radar/config';
 import { FamiliasClient } from './familias-client';
 
 export const metadata: Metadata = {
-  title: 'Inventário: por onde começar? Guia gratuito para famílias — O Sucessorista',
+  title: 'Inventário: por onde começar? Guia gratuito para famílias — LexCausa',
   description:
     'Perdeu alguém e não sabe por onde começar o inventário? Responda até 12 perguntas e veja, de graça e sem cadastro: cartório ou justiça, estimativa do imposto (ITCMD) e dos custos, prazo legal e a lista de documentos para separar.',
   keywords: [

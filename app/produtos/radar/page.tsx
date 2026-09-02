@@ -11,6 +11,7 @@ import '@/app/lexcausa.css';
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 
 export const metadata: Metadata = {
   title: 'Radar Sucessório — LexCausa',
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ProdutoRadarPage() {
+  await gateStandby('radar');
   // Página institucional: vive no apex da marca (lexcausa.com.br).
   await requirePlataforma('HUB');
   return (
@@ -68,7 +70,7 @@ export default async function ProdutoRadarPage() {
                 sem preço, sem disputa. A habilitação pede OAB verificada e um
                 questionário deontológico; a assinatura é mensal por UF, jamais
                 comissão por caso. Fechou? Um código importa o caso direto para
-                O Sucessorista, com a folha pré-preenchida.
+                LexCausa, com a folha pré-preenchida.
               </p>
               <div className="lc-acoes">
                 <Link className="lc-acao" href="/login">Entrar</Link>

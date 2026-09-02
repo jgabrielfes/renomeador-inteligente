@@ -90,13 +90,13 @@ export async function PaginaSucessorista({
         passos={
           perfilConta === "NAO_ADVOGADO"
             ? [
-                { titulo: "Bem-vindo(a) ao O Sucessorista", texto: "Seus casos vivem na SUA pasta ou na SUA nuvem — crie o primeiro em “Novo caso” e tudo se salva sozinho enquanto digita." },
+                { titulo: "Bem-vindo(a) à LexCausa", texto: "Seus casos vivem na SUA pasta ou na SUA nuvem — crie o primeiro em “Novo caso” e tudo se salva sozinho enquanto digita." },
                 { titulo: "O cofre lê os documentos", texto: "Solte a pasta do caso no cofre da Página Inicial: certidões, matrículas e venais viram campos preenchidos — sempre para a sua conferência." },
                 { titulo: "A escritura do balcão", texto: "A aba Escritura monta a minuta calibrada por atos reais — Tahoma, tabelas de patrimônio e partilha, adjudicação, sobrepartilha e dois óbitos." },
                 { titulo: "Conferências que evitam nota", texto: "O conferidor de qualificação cruzada e o antecipador registral apontam divergências e exigências do RI antes de lavrar." },
               ]
             : [
-                { titulo: "Bem-vindo(a) ao O Sucessorista", texto: "Seus casos vivem na SUA pasta ou na SUA nuvem — crie o primeiro em “Novo caso” e tudo se salva sozinho enquanto digita." },
+                { titulo: "Bem-vindo(a) à LexCausa", texto: "Seus casos vivem na SUA pasta ou na SUA nuvem — crie o primeiro em “Novo caso” e tudo se salva sozinho enquanto digita." },
                 { titulo: "O cofre lê os documentos", texto: "Solte a pasta do caso no cofre da Página Inicial: a IA preenche o que tiver base clara no documento, e a folha fica em branco no resto — apoio, nunca verdade." },
                 { titulo: "As 5 fases do inventário", texto: "Composição, acervo, quinhões, cofre e espelho ITCMD — a barra do dashboard mostra o progresso e leva à aba certa; a navegação é sempre livre." },
                 { titulo: "A família participa pelo portal", texto: "O card “Painel da família” gera convites por link: qualificação e documentos chegam sozinhos, e as deliberações do espólio ficam registradas." },
@@ -123,7 +123,7 @@ export async function PaginaSucessorista({
             ehMaster={isMaster(session)}
             radarAtivo={radarAtivo()}
             naoAdvogado={perfilConta === "NAO_ADVOGADO"}
-            sub="O Sucessorista · by LexCausa"
+            sub="LexCausa"
           />
         }
         perfilConta={perfilConta}

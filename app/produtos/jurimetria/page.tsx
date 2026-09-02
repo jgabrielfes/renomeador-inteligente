@@ -9,6 +9,7 @@ import '@/app/lexcausa.css';
 
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 
 export const metadata: Metadata = {
   title: 'Jurimetria Registral — LexCausa',
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ProdutoJurimetriaPage() {
+  await gateStandby('jurimetria');
   await requirePlataforma('HUB');
   return (
     <div className="lexcausa">

@@ -101,7 +101,7 @@ export function QualificacaoConta({
         {etapa === 'perfil' && (
           <>
             <DialogHeader>
-              <DialogTitle>Como você usa O Sucessorista?</DialogTitle>
+              <DialogTitle>Como você usa LexCausa?</DialogTitle>
               <DialogDescription>
                 Primeiro acesso: escolha o perfil da sua conta. A escolha fica VINCULADA
                 ao seu login — os DOIS perfis trabalham o caso, TODAS as minutas

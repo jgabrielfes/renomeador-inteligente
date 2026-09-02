@@ -279,7 +279,7 @@ export function DiligenciasClient({
     <div className="sucessorista">
       <Toaster position="bottom-right" duration={4000} visibleToasts={1} />
       <main className="folha" style={{ margin: '0 auto', maxWidth: 860 }}>
-        <span className="eyebrow">O Sucessorista</span>
+        <span className="eyebrow">LexCausa</span>
         <h1>Diligências</h1>
         <p className="subtitulo">
           Atos a distância — retirar certidão, audiência, cartório, escritura por

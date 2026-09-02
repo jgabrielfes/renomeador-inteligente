@@ -25,6 +25,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { filtroDeData, parsePeriodo, type Periodo } from "@/lib/admin";
 import { EH_NOTAS, EH_SUCESSORISTA, appComConta, moduloDaPlataforma } from "@/lib/app";
+import { emStandby } from "@/lib/standby";
 import { requireMaster } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
@@ -120,7 +121,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         acao: "classifique bug × sugestão e a situação",
         n: feedbackAbertos,
       },
-      ...(EH_SUCESSORISTA
+      ...(EH_SUCESSORISTA && !emStandby("radar")
         ? [
             {
               href: "/admin/radar",
@@ -153,12 +154,16 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
               valor: casos,
               detalhe: plural(minutas, "minuta gerada", "minutas geradas"),
             },
-            {
-              href: "/admin/radar",
-              rotulo: "Casos publicados no Radar",
-              valor: radarPublicados,
-              detalhe: "aguardando resposta de advogado(a)",
-            },
+            ...(emStandby("radar")
+              ? []
+              : [
+                  {
+                    href: "/admin/radar",
+                    rotulo: "Casos publicados no Radar",
+                    valor: radarPublicados,
+                    detalhe: "aguardando resposta de advogado(a)",
+                  },
+                ]),
           ]
         : []),
       ...(EH_NOTAS

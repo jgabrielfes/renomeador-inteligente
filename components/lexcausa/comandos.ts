@@ -5,6 +5,8 @@
  * exportada de arquivo 'use client' não pode ser CHAMADA no servidor.
  */
 
+import { emStandby } from '@/lib/standby';
+
 export interface ComandoLexCausa {
   id: string;
   rotulo: string;
@@ -20,32 +22,42 @@ export function comandosPadrao(opcoes: {
   naoAdvogado?: boolean;
 }): ComandoLexCausa[] {
   const lista: ComandoLexCausa[] = [
-    { id: 'hub', rotulo: 'Ir ao hub de produtos', dica: 'LexCausa', href: '/?hub=1' },
-    { id: 'casos', rotulo: 'Meus casos', dica: 'O Sucessorista', href: '/s' },
-    { id: 'novo', rotulo: 'Novo inventário', dica: 'O Sucessorista', href: '/s' },
+    { id: 'hub', rotulo: 'Ir ao hub', dica: 'LexCausa', href: '/?hub=1' },
+    { id: 'casos', rotulo: 'Meus casos', dica: 'LexCausa', href: '/s' },
+    { id: 'novo', rotulo: 'Novo inventário', dica: 'LexCausa', href: '/s' },
   ];
-  // Radar é de advogado(a) verificado(a) e famílias; Diligências é dos DOIS
-  // perfis (decisão do escritório).
-  if ((!opcoes.naoAdvogado || opcoes.ehMaster) && opcoes.radarAtivo) {
+  // Ferramentas em standby (lib/standby.ts) não entram na paleta — voltam
+  // sozinhas quando reativadas. Radar ainda depende de perfil + env.
+  if ((!opcoes.naoAdvogado || opcoes.ehMaster) && opcoes.radarAtivo && !emStandby('radar')) {
     lista.push({ id: 'radar', rotulo: 'Radar Sucessório', dica: 'prospecção', href: '/radar' });
   }
-  lista.push(
-    { id: 'diligencias', rotulo: 'Diligências', dica: 'rede', href: '/diligencias' },
-    { id: 'jurimetria', rotulo: 'Jurimetria Registral', dica: 'histórico dos cartórios', href: '/jurimetria' },
-  );
+  if (!emStandby('diligencias')) {
+    lista.push({ id: 'diligencias', rotulo: 'Diligências', dica: 'rede', href: '/diligencias' });
+  }
+  if (!emStandby('jurimetria')) {
+    lista.push({ id: 'jurimetria', rotulo: 'Jurimetria Registral', dica: 'histórico dos cartórios', href: '/jurimetria' });
+  }
   if (opcoes.ehMaster) {
     lista.push({ id: 'admin', rotulo: 'Administração', dica: 'master', href: '/admin' });
   }
   lista.push(
     { id: 'config', rotulo: 'Configurações', dica: 'LexCausa', href: '/config' },
     { id: 'ajuda', rotulo: 'Ajuda e Tutoriais', dica: 'hub de ajuda', href: '/ajuda' },
-    { id: 'ajuda-s', rotulo: 'Como funciona: O Sucessorista', dica: 'ajuda', href: '/ajuda/sucessorista' },
-    { id: 'ajuda-r', rotulo: 'Como funciona: Radar Sucessório', dica: 'ajuda', href: '/ajuda/radar' },
-    { id: 'familias', rotulo: 'Área para famílias', dica: 'público', href: '/familias' },
-    { id: 'prod-s', rotulo: 'Página do produto: O Sucessorista', dica: 'institucional', href: '/produtos/sucessorista' },
-    { id: 'prod-r', rotulo: 'Página do produto: Radar Sucessório', dica: 'institucional', href: '/produtos/radar' },
-    { id: 'prod-d', rotulo: 'Página do produto: Diligências', dica: 'institucional', href: '/produtos/diligencias' },
-    { id: 'prod-j', rotulo: 'Página do produto: Jurimetria Registral', dica: 'institucional', href: '/produtos/jurimetria' },
+    { id: 'ajuda-s', rotulo: 'Como funciona: LexCausa', dica: 'ajuda', href: '/ajuda/sucessorista' },
+    { id: 'prod-s', rotulo: 'Página do produto: LexCausa', dica: 'institucional', href: '/produtos/sucessorista' },
   );
+  if (!emStandby('radar')) {
+    lista.push(
+      { id: 'ajuda-r', rotulo: 'Como funciona: Radar Sucessório', dica: 'ajuda', href: '/ajuda/radar' },
+      { id: 'familias', rotulo: 'Área para famílias', dica: 'público', href: '/familias' },
+      { id: 'prod-r', rotulo: 'Página do produto: Radar Sucessório', dica: 'institucional', href: '/produtos/radar' },
+    );
+  }
+  if (!emStandby('diligencias')) {
+    lista.push({ id: 'prod-d', rotulo: 'Página do produto: Diligências', dica: 'institucional', href: '/produtos/diligencias' });
+  }
+  if (!emStandby('jurimetria')) {
+    lista.push({ id: 'prod-j', rotulo: 'Página do produto: Jurimetria Registral', dica: 'institucional', href: '/produtos/jurimetria' });
+  }
   return lista;
 }

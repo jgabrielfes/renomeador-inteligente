@@ -10,6 +10,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { gerarToken } from '@/lib/portal/store';
 import { sanitizarRespostas } from '@/lib/familias/sanitizar';
 import { classificarVia } from '@/lib/familias/triagem';
@@ -22,6 +23,8 @@ export const dynamic = 'force-dynamic';
 const DIAS_RETENCAO = 90;
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('familias');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
 

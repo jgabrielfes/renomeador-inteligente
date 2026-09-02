@@ -22,7 +22,7 @@ export async function generateMetadata({
   const guia = guiaPorSlug(slug);
   if (!guia) return {};
   return {
-    title: `${guia.titulo} — O Sucessorista`,
+    title: `${guia.titulo} — LexCausa`,
     description: guia.descricao,
     openGraph: { title: guia.titulo, description: guia.descricao, type: 'article' },
   };

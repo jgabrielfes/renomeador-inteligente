@@ -8,5 +8,5 @@ export const MODULOS: readonly Modulo[] = ["RENOMEADOR", "NOTAS", "SUCESSORISTA"
 export const ROTULO_MODULO: Record<Modulo, string> = {
   RENOMEADOR: "Renomeador",
   NOTAS: "Resolvedor de notas",
-  SUCESSORISTA: "O Sucessorista",
+  SUCESSORISTA: "LexCausa",
 };

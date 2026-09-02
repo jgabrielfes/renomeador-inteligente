@@ -15,7 +15,7 @@ import { MinhaSolicitacaoClient } from './minha-solicitacao-client';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Minha solicitação — O Sucessorista',
+  title: 'Minha solicitação — LexCausa',
   robots: { index: false },
 };
 

@@ -10,6 +10,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+import { emStandby } from '@/lib/standby';
+
 interface Artigo {
   id: string;
   area: string;
@@ -20,20 +22,20 @@ interface Artigo {
   guia?: string;
 }
 
-const ARTIGOS: Artigo[] = [
+const ARTIGOS_TODOS: Artigo[] = [
   {
     id: 'visao-geral',
     area: 'LexCausa',
     titulo: 'Visão geral da LexCausa',
-    resumo: 'O hub, os produtos e como circular entre eles.',
+    resumo: 'O hub, a ferramenta e como circular por ela.',
     corpo: [
-      'A LexCausa é a marca-mãe: ao entrar, o HUB mostra os produtos da sua conta — O Sucessorista (gestão de inventários) e o Radar Sucessório (prospecção ética). O clique na marca, no topo, sempre volta ao hub.',
+      'A LexCausa organiza a prática sucessória: ao entrar, o HUB mostra a ferramenta e o botão "Entrar na ferramenta" abre Meus Casos, onde vivem os inventários. O clique na marca, no topo, sempre volta ao hub.',
       'A paleta de comandos (Ctrl+K ou ⌘K) busca e navega para qualquer tela. O sino "Avisos" reúne o que aguarda você; os botões Reportar e Sugestão falam com a equipe sem sair da tela.',
     ],
   },
   {
     id: 'meus-casos',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'Criar e gerenciar casos',
     resumo: 'Meus casos, pasta do processo, nuvens e o Novos negócios.',
     corpo: [
@@ -44,7 +46,7 @@ const ARTIGOS: Artigo[] = [
   },
   {
     id: 'cofre',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'Enviar documentos e leitura por IA',
     resumo: 'O cofre lê certidões e matrículas; você confere.',
     corpo: [
@@ -55,7 +57,7 @@ const ARTIGOS: Artigo[] = [
   },
   {
     id: 'fases',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'As 5 fases do inventário',
     resumo: 'Composição → acervo → quinhões → cofre → espelho ITCMD.',
     corpo: [
@@ -65,7 +67,7 @@ const ARTIGOS: Artigo[] = [
   },
   {
     id: 'custos',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'Custos, ITCMD e comparações',
     resumo: 'Provisões calibradas e a linguagem "menor custo tributário".',
     corpo: [
@@ -74,7 +76,7 @@ const ARTIGOS: Artigo[] = [
   },
   {
     id: 'minutas',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'Minutas, escritura e petições',
     resumo: 'Documentos do balcão e do foro, com seus modelos.',
     corpo: [
@@ -83,7 +85,7 @@ const ARTIGOS: Artigo[] = [
   },
   {
     id: 'portal',
-    area: 'O Sucessorista',
+    area: 'LexCausa',
     titulo: 'Portal da família e Espaço do Espólio',
     resumo: 'Convites por link, documentos que chegam sozinhos, deliberações.',
     corpo: [
@@ -121,6 +123,10 @@ const ARTIGOS: Artigo[] = [
     ],
   },
 ];
+
+// Ferramentas em standby (lib/standby.ts) somem do hub de ajuda — os artigos
+// do Radar e das Diligências voltam sozinhos quando reativados.
+const ARTIGOS: Artigo[] = ARTIGOS_TODOS.filter((a) => !emStandby(a.id));
 
 const AREAS = ['Todas', ...Array.from(new Set(ARTIGOS.map((a) => a.area)))];
 const CHAVE = 'lexcausa-trilha-v1';
@@ -261,9 +267,8 @@ export function AjudaHub() {
             })}
           </ol>
           <p className="lc-fund" style={{ margin: 0 }}>
-            Guias completos: <Link href="/ajuda/sucessorista">O Sucessorista</Link> ·{' '}
-            <Link href="/ajuda/radar">Radar Sucessório</Link>. Não achou? Use o botão
-            &ldquo;Reportar&rdquo; ou &ldquo;Sugestão&rdquo; no topo.
+            Guia completo: <Link href="/ajuda/sucessorista">LexCausa</Link>. Não achou?
+            Use o botão &ldquo;Reportar&rdquo; ou &ldquo;Sugestão&rdquo; no topo.
           </p>
         </section>
       </div>

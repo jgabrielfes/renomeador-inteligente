@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { requireMaster } from '@/lib/auth';
+import { gateStandby } from '@/lib/standby';
 import { prisma } from '@/lib/prisma';
 
 import { NavJurimetria } from '../fontes-client';
@@ -19,6 +20,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function CoberturaJurimetriaPage() {
   await requireMaster();
+  await gateStandby('jurimetria');
 
   const [grupos, cartorios, temas, semTitular, gruposPendentes] = await Promise.all([
     prisma.exigencia.groupBy({

@@ -22,9 +22,12 @@
 name: Varredura do Radar (aviso de 72h)
 
 on:
-  schedule:
-    # 12:00 UTC = 09:00 em Brasília (horário comercial, sem madrugada).
-    - cron: "0 12 * * *"
+  # STANDBY: o Radar Sucessório está fora do ar (lib/standby.ts) e a rota
+  # /api/radar/varredura responde 404. O cron diário fica PAUSADO — reativar =
+  # descomentar o schedule (e tirar 'radar' do standby).
+  # schedule:
+  #   # 12:00 UTC = 09:00 em Brasília (horário comercial, sem madrugada).
+  #   - cron: "0 12 * * *"
   workflow_dispatch: {}
 
 jobs:

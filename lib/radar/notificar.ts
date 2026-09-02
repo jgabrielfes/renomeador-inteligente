@@ -73,7 +73,7 @@ export async function notificarContratacaoRadar(opcoes: {
     titulo: 'Caso contratado pelo Radar',
     paragrafos: [
       'A família confirmou que contratou você para conduzir o inventário — obrigado por atendê-la com cuidado.',
-      `Código para importar o caso em O Sucessorista: ${opcoes.codigo}. Use a faixa "Novos negócios" do painel Meus casos (ou o botão "Converter em inventário" no funil do Radar) — a folha nasce pré-preenchida com o que a família informou.`,
+      `Código para importar o caso em LexCausa: ${opcoes.codigo}. Use a faixa "Novos negócios" do painel Meus casos (ou o botão "Converter em inventário" no funil do Radar) — a folha nasce pré-preenchida com o que a família informou.`,
       'Os honorários são combinados diretamente com ela, fora da plataforma.',
     ],
     urlPortal: `${opcoes.origin}/radar`,

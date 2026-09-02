@@ -9,7 +9,7 @@ import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { requirePlataforma } from '@/lib/app';
 
 export const metadata: Metadata = {
-  title: 'O Sucessorista — LexCausa',
+  title: 'LexCausa',
   description:
     'Gestão de inventários para a prática sucessória: composição familiar, acervo, quinhões com fundamento legal, cofre de documentos e espelho do ITCMD-SP.',
 };
@@ -28,7 +28,7 @@ export default async function ProdutoSucessoristaPage() {
   return (
     <div className="lexcausa">
       <header className="lc-topo">
-        <MarcaLexCausa href="/" sub="O Sucessorista · by LexCausa" />
+        <MarcaLexCausa href="/" sub="LexCausa" />
         <nav aria-label="Entrar na plataforma">
           <Link className="lc-acao secundaria" href="/cadastro">Criar conta</Link>
           <Link className="lc-acao" href="/login">Entrar</Link>
@@ -37,7 +37,7 @@ export default async function ProdutoSucessoristaPage() {
 
       <main className="lc-miolo produto-sucessorista">
         <section className="lc-hero">
-          <span className="lc-eyebrow">O Sucessorista</span>
+          <span className="lc-eyebrow">LexCausa</span>
           <h1>O inventário, do primeiro dia ao encerramento</h1>
           <p className="lc-sub">
             Uma folha de trabalho contínua para o caso inteiro — o que se digita
@@ -126,7 +126,7 @@ export default async function ProdutoSucessoristaPage() {
 
       <footer className="lc-noite lc-rodape">
         <div className="lc-miolo">
-          <span>O Sucessorista · by LexCausa</span>
+          <span>LexCausa</span>
           <Link href="/">← Voltar à página inicial</Link>
         </div>
       </footer>
