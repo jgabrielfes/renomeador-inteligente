@@ -158,6 +158,12 @@ export function baseDeCustaMaior(bem: Bem): number {
   );
 }
 
+// O campo "% do venal" (imóvel em ÁREA MAIOR na prefeitura) está SUPRIMIDO por
+// enquanto, a pedido do escritório: o input some do lançamento e da edição do
+// imóvel. A lógica (pctEfetivo, recálculo das bases, persistência) fica intacta
+// — reativar é só `true` aqui. Bem já lançado com percentual segue funcionando.
+const MOSTRAR_PCT_VENAL = false;
+
 /** % do venal válido (0 < pct ≤ 100) — aceita "12,5" ou "12.5"; null = sem efeito. */
 function pctEfetivo(v: string): number | null {
   const n = Number(v.trim().replace(',', '.'));
@@ -379,30 +385,32 @@ export function AcervoView({
                 <FieldLabel htmlFor="bem-ri">Registro de Imóveis (cartório)</FieldLabel>
                 <Input id="bem-ri" placeholder="ex.: 1º RI de Guarulhos/SP" {...register('registroImoveis')} />
               </Field>
-              <Field data-invalid={Boolean(errors.pctVenal)} style={{ maxWidth: 180 }}>
-                <FieldLabel htmlFor="bem-pct-venal">% do venal</FieldLabel>
-                <Controller
-                  control={control}
-                  name="pctVenal"
-                  render={({ field }) => (
-                    <Input
-                      id="bem-pct-venal"
-                      placeholder="ex.: 25"
-                      inputMode="decimal"
-                      aria-invalid={Boolean(errors.pctVenal)}
-                      value={field.value}
-                      onBlur={field.onBlur}
-                      onChange={(e) => {
-                        // field.value ainda é o % ANTERIOR — a conta inversa
-                        // das bases precisa dele antes do onChange trocar.
-                        aoDigitarPctNovo(e.target.value, field.value);
-                        field.onChange(e.target.value);
-                      }}
-                    />
-                  )}
-                />
-                <FieldError errors={[errors.pctVenal]} />
-              </Field>
+              {MOSTRAR_PCT_VENAL && (
+                <Field data-invalid={Boolean(errors.pctVenal)} style={{ maxWidth: 180 }}>
+                  <FieldLabel htmlFor="bem-pct-venal">% do venal</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="pctVenal"
+                    render={({ field }) => (
+                      <Input
+                        id="bem-pct-venal"
+                        placeholder="ex.: 25"
+                        inputMode="decimal"
+                        aria-invalid={Boolean(errors.pctVenal)}
+                        value={field.value}
+                        onBlur={field.onBlur}
+                        onChange={(e) => {
+                          // field.value ainda é o % ANTERIOR — a conta inversa
+                          // das bases precisa dele antes do onChange trocar.
+                          aoDigitarPctNovo(e.target.value, field.value);
+                          field.onChange(e.target.value);
+                        }}
+                      />
+                    )}
+                  />
+                  <FieldError errors={[errors.pctVenal]} />
+                </Field>
+              )}
             </>
           )}
           {ehFinanceiro && (
@@ -1098,15 +1106,17 @@ function LinhaBem({
                 onChange={(e) => setAquisicao(e.target.value)}
               />
             </label>
-            <label className="campo" style={{ maxWidth: 180 }}>
-              % do venal
-              <Input
-                value={pctVenal}
-                placeholder="ex.: 25"
-                inputMode="decimal"
-                onChange={(e) => aoDigitarPct(e.target.value)}
-              />
-            </label>
+            {MOSTRAR_PCT_VENAL && (
+              <label className="campo" style={{ maxWidth: 180 }}>
+                % do venal
+                <Input
+                  value={pctVenal}
+                  placeholder="ex.: 25"
+                  inputMode="decimal"
+                  onChange={(e) => aoDigitarPct(e.target.value)}
+                />
+              </label>
+            )}
           </>
         )}
         {tipoBemItcmd(codigo)?.tipo === 'FINANCEIRO' && (
