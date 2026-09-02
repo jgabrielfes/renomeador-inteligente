@@ -12,6 +12,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { AdminNav, type ItemAdminNav } from "@/components/admin/admin-nav";
 import { EH_NOTAS, EH_SUCESSORISTA, IDENTIDADE } from "@/lib/app";
+import { emStandby } from "@/lib/standby";
 
 export default function AdminLayout({
   children,
@@ -23,8 +24,11 @@ export default function AdminLayout({
     ...(EH_SUCESSORISTA
       ? [
           { href: "/admin/sucessorista", rotulo: "Casos" },
-          { href: "/admin/radar", rotulo: "Radar" },
-          { href: "/admin/jurimetria", rotulo: "Jurimetria" },
+          // Radar e Jurimetria em standby (lib/standby.ts) saem da barra.
+          ...(!emStandby("radar") ? [{ href: "/admin/radar", rotulo: "Radar" }] : []),
+          ...(!emStandby("jurimetria")
+            ? [{ href: "/admin/jurimetria", rotulo: "Jurimetria" }]
+            : []),
         ]
       : []),
     ...(EH_NOTAS ? [{ href: "/admin/notas", rotulo: "Notas" }] : []),

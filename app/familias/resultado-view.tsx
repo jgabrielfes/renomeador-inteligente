@@ -76,7 +76,7 @@ export function GerarCodigoAdvogado({ token }: { token: string }) {
       <p style={{ marginBottom: 6 }}>
         <strong>Já tem advogado(a)?</strong>{' '}
         <span className="fund">
-          Gere um código e entregue a ele(a): no O Sucessorista, o código monta o caso já
+          Gere um código e entregue a ele(a): no LexCausa, o código monta o caso já
           com o que você respondeu — a primeira reunião rende muito mais.
         </span>
       </p>

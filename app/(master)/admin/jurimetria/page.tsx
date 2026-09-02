@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { requireMaster } from '@/lib/auth';
+import { gateStandby } from '@/lib/standby';
 import { prisma } from '@/lib/prisma';
 
 import { AcoesFonte, NavJurimetria } from './fontes-client';
@@ -34,6 +35,7 @@ const ROTULO_TIPO: Record<string, string> = {
 
 export default async function JurimetriaAdminPage() {
   await requireMaster();
+  await gateStandby('jurimetria');
 
   const [fontes, gruposPendentes, publicadas, documentos, jobsPendentes] = await Promise.all([
     prisma.fonteJurimetria.findMany({ orderBy: [{ tipo: 'asc' }, { nome: 'asc' }] }),

@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 import {
@@ -20,11 +21,12 @@ import { DiligenciasClient } from './diligencias-client';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Diligências — O Sucessorista',
+  title: 'Diligências — LexCausa',
   robots: { index: false },
 };
 
 export default async function DiligenciasPage() {
+  await gateStandby('diligencias');
   await requirePlataforma('SUCESSORISTA');
   await requireSession('/diligencias');
 

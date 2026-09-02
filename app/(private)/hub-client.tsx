@@ -1,11 +1,15 @@
 'use client';
 
 /**
- * HUB da LexCausa — a primeira tela de quem entra logado no site: os cards
- * dos produtos que a conta pode usar. A PREFERÊNCIA "abrir direto" fica no
- * localStorage (`lexcausa-produto-padrao`): quem vive num produto só cai
- * nele sem passar por aqui — e o `?hub=1` (o clique na marca) é a escotilha
- * de volta, que nunca redireciona.
+ * HUB da LexCausa — a tela de entrada de quem loga: a marca, a descrição da
+ * ferramenta e o botão "Entrar na ferramenta", que abre Meus Casos (`/s`).
+ *
+ * A LexCausa voltou a ser UMA ferramenta (a prática sucessória); Radar,
+ * Diligências e Jurimetria estão em standby (lib/standby.ts). Por isso o hub
+ * deixou de ser uma vitrine de produtos e virou a porta única da plataforma —
+ * quem escolheu "abrir direto" em /config (localStorage `lexcausa-produto-
+ * padrao`) pula esta tela e cai em /s; o `?hub=1` (clique na marca) é a
+ * escotilha que nunca redireciona.
  */
 
 import { useEffect, type ReactNode } from 'react';
@@ -13,7 +17,6 @@ import Link from 'next/link';
 
 import '@/app/lexcausa.css';
 
-import { PRODUTOS_LEXCAUSA, TEXTO_LEGAL_RADAR } from '@/components/lexcausa/produtos';
 import { LexTopbar } from '@/components/lexcausa/topbar';
 import { useProgressRouter } from '@/components/navigation-progress';
 
@@ -21,43 +24,16 @@ const PREF_KEY = 'lexcausa-produto-padrao';
 
 export function HubLexCausa({
   menu,
-  perfil,
   ehMaster,
-  radarAtivo,
-  radarNovos = 0,
-  baseHub,
 }: {
   menu: ReactNode;
-  perfil: 'ADVOGADO' | 'NAO_ADVOGADO' | null;
   ehMaster: boolean;
-  radarAtivo: boolean;
-  /**
-   * Base do apex para os links de /produtos/* — `noHub('')` resolvido NO
-   * SERVIDOR (vazio no próprio apex, absoluto vindo daqui).
-   *
-   * Não dá para chamar `noHub()` aqui: ele lê `lib/app.ts`, que lê
-   * `process.env.APP` — inexistente no navegador. Importá-lo de um
-   * componente client arrasta o módulo para o bundle e a página inteira
-   * morre na avaliação. A plataforma chega por prop, sempre.
-   */
-  baseHub: string;
-  /** Casos novos no Radar desde a última visita — o aviso é AQUI, na
-   *  plataforma (e-mail de caso novo não existe por decisão do escritório). */
-  radarNovos?: number;
 }) {
   const router = useProgressRouter();
 
-  // O Sucessorista e as Diligências são dos DOIS perfis; só o Radar é
-  // restrito a advogado(a) verificado(a) — decisão do escritório. Perfil
-  // ainda não escolhido (primeiro acesso) vê tudo; a escolha acontece
-  // dentro do Sucessorista e vale dali em diante.
-  const produtos = PRODUTOS_LEXCAUSA.filter(
-    (p) => p.id !== 'radar' || perfil !== 'NAO_ADVOGADO' || ehMaster,
-  );
-
-  // Preferência "abrir direto" (editada em /config) lida em efeito DIFERIDO
-  // (convenção): o HTML do servidor e o primeiro render coincidem na
-  // hidratação. O hub só REDIRECIONA; a escolha não mora mais nos cards.
+  // "Abrir direto" (editada em /config) lida em efeito DIFERIDO (convenção):
+  // o HTML do servidor e o primeiro render coincidem na hidratação. Com uma
+  // ferramenta só, qualquer preferência salva leva a /s.
   useEffect(() => {
     const t = setTimeout(() => {
       let guardada = '';
@@ -66,9 +42,8 @@ export function HubLexCausa({
       } catch {
         /* modo privado/permissão negada: o hub simplesmente aparece */
       }
-      const destino = PRODUTOS_LEXCAUSA.find((p) => p.id === guardada)?.href;
-      if (destino && !new URLSearchParams(window.location.search).has('hub')) {
-        router.replace(destino);
+      if (guardada === 'sucessorista' && !new URLSearchParams(window.location.search).has('hub')) {
+        router.replace('/s');
       }
     }, 0);
     return () => clearTimeout(t);
@@ -77,64 +52,45 @@ export function HubLexCausa({
 
   return (
     <div className="lexcausa" style={{ minHeight: '100vh' }}>
-      <LexTopbar
-        menu={menu}
-        ehMaster={ehMaster}
-        radarAtivo={radarAtivo}
-        naoAdvogado={perfil === 'NAO_ADVOGADO'}
-      />
+      <LexTopbar menu={menu} ehMaster={ehMaster} radarAtivo={false} />
 
       <main className="lc-miolo">
         <section className="lc-hero" style={{ paddingTop: 'var(--e-6)' }}>
-          <span className="lc-eyebrow">Seus produtos</span>
-          <h1>Por onde começamos hoje?</h1>
+          <span className="lc-eyebrow">LexCausa</span>
+          <h1>A prática sucessória, organizada</h1>
+          <p className="lc-sub">
+            A folha de trabalho do inventário inteira, num lugar só: composição
+            familiar e qualificação das partes, acervo com os valores que a lei
+            pede, quinhões com fundamento legal, provisão de custos e ITCMD,
+            minutas do balcão e o portal da família — do primeiro atendimento ao
+            registro.
+          </p>
         </section>
 
         <div className="lc-cartoes">
-          {produtos.map((p) => {
-            const radarSemEnv = p.id === 'radar' && !radarAtivo;
-            return (
-              <section key={p.id} className={`lc-cartao ${p.classe}`}>
-                <h3>{p.nome}</h3>
-                <p style={{ margin: 0 }}>{p.tagline}</p>
-                {p.id === 'radar' && radarNovos > 0 && (
-                  <p style={{ margin: 0, fontWeight: 600, color: 'var(--lc-acento)' }}>
-                    {radarNovos} caso(s) novo(s) na sua região desde a sua última visita.
-                  </p>
-                )}
-                {radarSemEnv && (
-                  <p className="lc-fund" style={{ margin: 0 }}>
-                    Em ativação neste ambiente — a página do produto explica
-                    como ele funciona.
-                  </p>
-                )}
-                <div className="lc-acoes">
-                  {radarSemEnv ? (
-                    <Link className="lc-acao secundaria" href={`${baseHub}${p.landing}`}>
-                      Conhecer o produto
-                    </Link>
-                  ) : (
-                    <Link className="lc-acao" href={p.href}>
-                      Abrir {p.nome}
-                    </Link>
-                  )}
-                </div>
-              </section>
-            );
-          })}
+          <section className="lc-cartao produto-sucessorista">
+            <h3>Meus casos</h3>
+            <p style={{ margin: 0 }}>
+              Continue de onde parou — seus casos vivem na sua pasta ou na sua
+              nuvem, e tudo se salva sozinho. Cálculo de apoio: a revisão do
+              advogado responsável é obrigatória.
+            </p>
+            <div className="lc-acoes">
+              <Link className="lc-acao" href="/s">
+                Entrar na ferramenta
+              </Link>
+            </div>
+          </section>
+
           <section className="lc-cartao desabilitado">
             <span className="lc-eyebrow">Em breve</span>
-            <h3>Novos produtos LexCausa</h3>
+            <h3>Novos módulos LexCausa</h3>
             <p style={{ margin: 0 }}>
               Novas ferramentas da prática sucessória entram aqui quando
               estiverem prontas de verdade.
             </p>
           </section>
         </div>
-
-        <p className="lc-fund" style={{ marginTop: 'var(--e-6)' }}>
-          {TEXTO_LEGAL_RADAR}
-        </p>
       </main>
     </div>
   );

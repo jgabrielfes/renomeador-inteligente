@@ -4,6 +4,7 @@
 // vez, atalhos A (aprovar) / C (corrigir) / D (descartar) no client.
 
 import { requireMaster } from '@/lib/auth';
+import { gateStandby } from '@/lib/standby';
 import { prisma } from '@/lib/prisma';
 
 import { NavJurimetria } from '../fontes-client';
@@ -13,6 +14,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function RevisaoJurimetriaPage() {
   await requireMaster();
+  await gateStandby('jurimetria');
 
   const [itens, cartorios, temas, gruposPendentes] = await Promise.all([
     prisma.revisaoJurimetria.findMany({

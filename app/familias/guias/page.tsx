@@ -11,7 +11,7 @@ import { GUIAS } from '@/lib/familias/guias';
 import '../../(private)/sucessorista/sucessorista.css';
 
 export const metadata: Metadata = {
-  title: 'Guias de inventário para famílias — O Sucessorista',
+  title: 'Guias de inventário para famílias — LexCausa',
   description:
     'Guias em linguagem simples sobre inventário: cartório ou justiça, ITCMD, prazos e multas, alvará judicial e mais.',
 };

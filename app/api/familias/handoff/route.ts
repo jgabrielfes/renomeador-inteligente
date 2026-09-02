@@ -9,6 +9,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,8 @@ function gerarCodigo(): string {
 }
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('familias');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
 

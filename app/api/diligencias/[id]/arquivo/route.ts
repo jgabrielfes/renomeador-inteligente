@@ -12,6 +12,7 @@
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { conteudoDaPasta } from '@/lib/rede/diligencias';
 
 export const runtime = 'nodejs';
@@ -33,6 +34,8 @@ async function diligenciaAutorizada(id: string) {
 }
 
 export async function GET(req: Request, ctx: Ctx) {
+  const parada = foraSeStandby('diligencias');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   const { id } = await ctx.params;
@@ -54,6 +57,8 @@ export async function GET(req: Request, ctx: Ctx) {
 }
 
 export async function POST(req: Request, ctx: Ctx) {
+  const parada = foraSeStandby('diligencias');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   const { id } = await ctx.params;

@@ -522,7 +522,7 @@ export function RadarClient({
               O Radar Sucessório é o mural onde ADVOGADOS verificados respondem
               famílias — o seu balcão é a folha de trabalho do inventário e as
               Diligências.{' '}
-              <Link href="/s">Ir para O Sucessorista</Link>
+              <Link href="/s">Ir para LexCausa</Link>
             </p>
           </div>
         )}

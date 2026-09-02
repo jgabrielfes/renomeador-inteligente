@@ -98,20 +98,21 @@ export const IDENTIDADES: Record<Plataforma, IdentidadeDaPlataforma> = {
     modulo: "RENOMEADOR",
   },
   SUCESSORISTA: {
-    // Remodelagem de marca: a LEXCAUSA é a marca-mãe deste site; O
-    // Sucessorista e o Radar Sucessório são os produtos dentro dela. O
-    // `modulo` de telemetria NÃO muda — é chave de dados, não de marca.
+    // A LEXCAUSA é a marca E a ferramenta deste site: a prática sucessória
+    // organizada (folha de trabalho do inventário, provisão de custos,
+    // partilha e minutas). O `modulo` de telemetria NÃO muda — é chave de
+    // dados, não de marca. (Radar, Diligências e Jurimetria estão em standby.)
     nome: "LexCausa",
     nomeCurto: "LexCausa",
     descricao:
-      "A prática sucessória, organizada: O Sucessorista (gestão de inventários, do primeiro atendimento ao registro) e o Radar Sucessório (o encontro entre famílias e advogados). Cálculo de apoio — a revisão do advogado responsável é obrigatória.",
+      "A prática sucessória, organizada: a folha de trabalho do inventário inteira — composição familiar, acervo, quinhões com fundamento legal, provisão de custos e ITCMD, minutas e o portal da família. Cálculo de apoio — a revisão do advogado responsável é obrigatória.",
     modulo: "SUCESSORISTA",
   },
   HUB: {
     nome: "LexCausa",
     nomeCurto: "LexCausa",
     descricao:
-      "As ferramentas do escritório num lugar só: O Sucessorista para a prática sucessória, o Renomeador Inteligente para a organização documental e o Resolvedor de Notas Devolutivas para as exigências do registro.",
+      "As ferramentas do escritório num lugar só: a LexCausa para a prática sucessória, o Renomeador Inteligente para a organização documental e o Resolvedor de Notas Devolutivas para as exigências do registro.",
     // Vitrine pública: nenhuma conta, nenhum acesso medido.
     modulo: null,
   },

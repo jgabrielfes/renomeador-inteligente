@@ -11,7 +11,7 @@
 //   SUCESSORISTA — a raiz é SÓ o hub de produtos, para quem tem sessão. Quem
 //   chega deslogado vai direto para o login: a apresentação da marca virou
 //   trabalho do apex, e uma segunda landing aqui só duplicaria a porta de
-//   entrada. O Sucessorista mora em `/s` (montagem compartilhada com
+//   entrada. LexCausa mora em `/s` (montagem compartilhada com
 //   /caso/<id>/<etapa>) e o Radar Sucessório em /radar.
 //
 //   RENOMEADOR e NOTAS — `/` é o próprio módulo; as rotas `/renomeador` e
@@ -26,12 +26,9 @@
 
 import { AccessTracker } from "@/components/access-tracker";
 import { AvatarSessao } from "@/components/lexcausa/avatar-sessao";
-import { noHub } from "@/components/lexcausa/sites";
 import { UserMenu } from "@/components/user-menu";
 import { APP, moduloDaPlataforma } from "@/lib/app";
-import { auth, isMaster, requireSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { radarAtivo } from "@/lib/radar/config";
+import { isMaster, requireSession } from "@/lib/auth";
 
 import { carregarLicoes } from "./renomeador/licoes-actions";
 
@@ -43,42 +40,14 @@ export default async function Home() {
 
   if (APP === "SUCESSORISTA") {
     // Sem sessão, a raiz da ferramenta é o login — a landing da marca mora no
-    // apex. `requireSession` leva o `callbackUrl`, então quem entra volta
-    // para cá e cai no hub de produtos.
-    // requireSession devolve a sessão OU redireciona levando o callbackUrl —
-    // quem entra volta para cá e cai no hub de produtos.
+    // apex. `requireSession` leva o `callbackUrl`, então quem entra volta para
+    // cá e cai no HUB. Com a LexCausa reduzida a UMA ferramenta (Radar,
+    // Diligências e Jurimetria em standby), o hub virou a porta única, com o
+    // botão "Entrar na ferramenta" → /s; não há mais catálogo de produtos a
+    // carregar aqui.
     const session = await requireSession("/");
-    // HUB LexCausa — o perfil decide quais cards aparecem; falha de banco
-    // degrada para null (o hub mostra tudo e os gates reais ficam nas rotas).
-    // As duas cargas rodam em PARALELO (velocidade): o aviso de casos novos
-    // do Radar (o badge — e-mail de caso novo não existe, decisão do
-    // escritório) não espera a consulta do perfil terminar.
-    const [perfil, radarNovosBruto] = await Promise.all([
-      prisma.user
-        .findUnique({
-          where: { id: session.user.id },
-          select: { perfilSucessorista: true },
-        })
-        .then((u) => u?.perfilSucessorista ?? null)
-        .catch(() => null),
-      radarAtivo()
-        ? import("./radar/radar-actions").then((m) => m.casosNovosRadar())
-        : Promise.resolve(0),
-    ]);
-    const radarNovos = perfil === "NAO_ADVOGADO" ? 0 : radarNovosBruto;
     const { HubLexCausa } = await import("./hub-client");
-    return (
-      <HubLexCausa
-        menu={<AvatarSessao />}
-        perfil={perfil}
-        ehMaster={isMaster(session)}
-        radarAtivo={radarAtivo()}
-        radarNovos={radarNovos}
-        // O endereço do apex é resolvido AQUI, no servidor: `noHub()` lê
-        // `lib/app.ts`, que não existe no navegador.
-        baseHub={noHub("")}
-      />
-    );
+    return <HubLexCausa menu={<AvatarSessao />} ehMaster={isMaster(session)} />;
   }
 
   await requireSession("/");

@@ -138,7 +138,7 @@ export default async function AdminSucessoristaPage({
     <main className="flex flex-col gap-6">
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">O Sucessorista</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">LexCausa</h1>
         <p className="text-sm text-muted-foreground">
           Leitura do cofre, casos calculados, documentos gerados e o portal do
           herdeiro. Sem nomes, CPF ou valores — o porte do acervo entra como

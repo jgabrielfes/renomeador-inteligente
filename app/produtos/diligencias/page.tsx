@@ -10,6 +10,7 @@ import '@/app/lexcausa.css';
 
 import { MarcaLexCausa } from '@/components/lexcausa/marca';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 
 export const metadata: Metadata = {
   title: 'Diligências — LexCausa',
@@ -25,6 +26,7 @@ const PASSOS = [
 ] as const;
 
 export default async function ProdutoDiligenciasPage() {
+  await gateStandby('diligencias');
   // Página institucional: vive no apex da marca (lexcausa.com.br).
   await requirePlataforma('HUB');
   return (

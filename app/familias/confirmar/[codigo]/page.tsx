@@ -14,7 +14,7 @@ import '../../../(private)/sucessorista/sucessorista.css';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Confirmar publicação — O Sucessorista',
+  title: 'Confirmar publicação — LexCausa',
   robots: { index: false },
 };
 

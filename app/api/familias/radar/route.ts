@@ -21,6 +21,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { foraDaPlataforma } from '@/lib/app';
+import { foraSeStandby } from '@/lib/standby';
 import { radarAtivo } from '@/lib/radar/config';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,8 @@ export const dynamic = 'force-dynamic';
 const JA_PUBLICADO = ['publicado', 'em_conversa', 'contratado'];
 
 export async function POST(req: Request) {
+  const parada = foraSeStandby('radar');
+  if (parada) return parada;
   const fora = foraDaPlataforma('SUCESSORISTA');
   if (fora) return fora;
   if (!radarAtivo()) {

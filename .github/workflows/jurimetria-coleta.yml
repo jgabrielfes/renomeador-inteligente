@@ -22,9 +22,12 @@
 name: Jurimetria — coleta da semente pública
 
 on:
-  schedule:
-    # 06:00 UTC = 03:00 em Brasília (madrugada — fora do horário das fontes).
-    - cron: "0 6 * * *"
+  # STANDBY: a Jurimetria Registral está fora do ar (lib/standby.ts). O cron
+  # diário fica PAUSADO para não coletar dado de uma ferramenta dormente —
+  # reativar = descomentar o schedule abaixo (e tirar 'jurimetria' do standby).
+  # schedule:
+  #   # 06:00 UTC = 03:00 em Brasília (madrugada — fora do horário das fontes).
+  #   - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       sonda:

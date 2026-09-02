@@ -10,6 +10,7 @@ import { LexTopbar } from '@/components/lexcausa/topbar';
 import { TourLexCausa } from '@/components/lexcausa/tour';
 import { AvatarSessao } from '@/components/lexcausa/avatar-sessao';
 import { requirePlataforma } from '@/lib/app';
+import { gateStandby } from '@/lib/standby';
 import { auth, isMaster, requireSession } from '@/lib/auth';
 import { radarAtivo } from '@/lib/radar/config';
 import {
@@ -30,6 +31,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RadarPage() {
+  await gateStandby('radar');
   await requirePlataforma('SUCESSORISTA');
   if (!radarAtivo()) notFound();
   await requireSession('/radar');

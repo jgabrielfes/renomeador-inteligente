@@ -10,8 +10,12 @@ import Link from "next/link";
 import "@/app/lexcausa.css";
 
 import { MarcaLexCausa } from "@/components/lexcausa/marca";
+import { gateStandby } from "@/lib/standby";
 
-export default function FamiliasLayout({ children }: { children: React.ReactNode }) {
+export default async function FamiliasLayout({ children }: { children: React.ReactNode }) {
+  // A porta pública das famílias é o lado do Radar — em standby, todo o
+  // /familias/* responde 404 (o gate no layout cobre a subárvore inteira).
+  await gateStandby("familias");
   return (
     <div className="veste-familias">
       <div className="lexcausa" style={{ minHeight: 0 }}>
