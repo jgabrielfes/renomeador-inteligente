@@ -77,6 +77,40 @@ export interface ArquivoClassificado {
   file: File;
   documentoId: string | null;
   tipoDetectado: string | null;
+  /**
+   * RENOMEIO AUTOMÁTICO (pedido do escritório): nome de arquivo padronizado
+   * que a leitura sugeriu (já com a extensão original). O client troca o
+   * File em memória por um com este nome — na nuvem ele sobe UMA vez, já
+   * renomeado; na pasta local o arquivo do usuário NÃO é tocado.
+   */
+  nomeNovo?: string | null;
+  /**
+   * Anexo IMEDIATO de um arquivo que ainda vai passar pela leitura por IA:
+   * o envio à nuvem espera o nome final (evita subir duas vezes — o
+   * original e o renomeado). Liberado quando o lote volta ou falha.
+   */
+  aguardaLeitura?: boolean;
+}
+
+/**
+ * Nome de arquivo final a partir da sugestão da leitura: caracteres
+ * proibidos viram espaço, limite de 80 e a EXTENSÃO ORIGINAL volta ao fim.
+ * null = sem sugestão (o nome original fica).
+ */
+export function nomeRenomeado(sugerido: string | null | undefined, original: string): string | null {
+  if (!sugerido) return null;
+  const base = sugerido
+    .replace(/\.(pdf|jpe?g|png|webp|docx|xlsx|txt)$/i, '')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .trim();
+  if (!base) return null;
+  const m = original.match(/\.[a-z0-9]{1,5}$/i);
+  const ext = m ? m[0].toLowerCase() : '';
+  const nome = `${base}${ext}`;
+  return nome === original ? null : nome;
 }
 
 /** Leitura vazia — usada para anexar arquivos sem mexer nos campos da folha. */
@@ -197,6 +231,7 @@ type InicioRapido = z.infer<typeof esquemaInicioRapido>;
 export function CofreEntrada({
   aplicarLeitura,
   reclassificarArquivos,
+  liberarLeitura,
   irParaFamilia,
   casoId,
   perfil,
@@ -204,8 +239,10 @@ export function CofreEntrada({
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
-  /** A IA refinou depois do anexo imediato: move os arquivos já anexados. */
+  /** A IA refinou depois do anexo imediato: move (e renomeia) os anexados. */
   reclassificarArquivos: (itens: ArquivoClassificado[]) => void;
+  /** Lote sem leitura: solta os arquivos para a nuvem com o nome original. */
+  liberarLeitura?: (files: File[]) => void;
   irParaFamilia: () => void;
   /** Telemetria: id aleatório do caso e perfil ativo (sem dado pessoal). */
   casoId: string;
@@ -319,12 +356,16 @@ export function CofreEntrada({
       // leitura roda em segundo plano e depois só REFINA: move o que
       // classificar diferente e preenche a folha.
       const todos = [...pares.map((p) => p.original), ...inelegiveis];
+      // Os elegíveis à IA ficam "aguardando leitura": o envio à nuvem espera
+      // o nome padronizado voltar, para subir uma vez só, já renomeado.
+      const elegiveis = new Set(pares.map((p) => p.original));
       aplicarLeitura(
         CASO_VAZIO,
         todos.map((file) => ({
           file,
           documentoId: classificarNoCatalogo('', file.name),
           tipoDetectado: null,
+          aguardaLeitura: elegiveis.has(file),
         })),
       );
       toast.info(`${todos.length} arquivo(s) anexados ao processo`, {
@@ -411,6 +452,7 @@ export function CofreEntrada({
                 info?.documentoId ??
                 classificarNoCatalogo(info?.tipoDetectado ?? '', par.original.name),
               tipoDetectado: info?.tipoDetectado ?? null,
+              nomeNovo: nomeRenomeado(info?.nomeSugerido, par.original.name),
             };
           });
           aplicarLeitura(caso, []); // só os campos da folha — o anexo já foi feito
@@ -433,6 +475,9 @@ export function CofreEntrada({
             return;
           }
           lotesFalhos += 1;
+          // Sem leitura, sem nome novo: os arquivos seguem com o nome original
+          // e podem subir para a nuvem agora.
+          liberarLeitura?.(lote.map((par) => par.original));
           toast.error(`Lote ${rotulo} de ${lotes.length} sem leitura por IA`, {
             description: `Os arquivos dele seguem anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
           });

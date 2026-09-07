@@ -728,6 +728,14 @@ export default function SucessoristaClient({
   const [linkNuvem, setLinkNuvem] = useState<string | null>(null);
   /** Anexos já enviados à nuvem de arquivos nesta sessão (não reenviar). */
   const enviadosDriveRef = useRef(new WeakSet<File>());
+  /**
+   * Arquivos anexados na hora que AINDA vão passar pela leitura por IA: o
+   * envio à nuvem espera o nome padronizado voltar (renomeio automático),
+   * para o documento subir UMA vez, já com o nome final — nunca o original
+   * e depois uma cópia renomeada. Liberados ao reclassificar ou quando o
+   * lote falha.
+   */
+  const aguardandoLeituraRef = useRef(new Set<File>());
   const [temRascunhoLegado, setTemRascunhoLegado] = useState(false);
   const [casoAberto, setCasoAberto] = useState<{ cabecalho: CabecalhoCaso } | null>(null);
   const [salvamento, setSalvamento] = useState<{
@@ -1528,7 +1536,7 @@ export default function SucessoristaClient({
     const pendentes: File[] = [];
     for (const files of Object.values(anexosProcesso)) {
       for (const f of files) {
-        if (!enviadosDriveRef.current.has(f)) pendentes.push(f);
+        if (!enviadosDriveRef.current.has(f) && !aguardandoLeituraRef.current.has(f)) pendentes.push(f);
       }
     }
     if (pendentes.length === 0) return;
@@ -2826,6 +2834,7 @@ export default function SucessoristaClient({
       });
     }
     if (arquivos.length > 0) {
+      for (const a of arquivos) if (a.aguardaLeitura) aguardandoLeituraRef.current.add(a.file);
       setAnexosProcesso((prev) => {
         const proximos = { ...prev };
         for (const a of arquivos) {
@@ -3186,19 +3195,72 @@ export default function SucessoristaClient({
    */
   const reclassificarArquivos = (itens: ArquivoClassificado[]) => {
     if (itens.length === 0) return;
+    // A leitura voltou: os arquivos deixam de aguardar (o efeito da nuvem os
+    // pega na próxima passada — já com o nome final).
+    for (const i of itens) aguardandoLeituraRef.current.delete(i.file);
+    let renomeados = 0;
     setAnexosProcesso((prev) => {
-      const destino = new Map<File, string>(
-        itens.map((i) => [i.file, i.documentoId ?? 'outros']),
-      );
+      // Nomes já em uso no caso (fora os que estão sendo trocados), para o
+      // nome sugerido nunca colidir — repetido ganha " (2)", " (3)"…
+      const trocando = new Set(itens.map((i) => i.file));
+      const emUso = new Set<string>();
+      for (const files of Object.values(prev))
+        for (const f of files) if (!trocando.has(f)) emUso.add(f.name.toLowerCase());
+      const nomeUnico = (nome: string): string => {
+        if (!emUso.has(nome.toLowerCase())) {
+          emUso.add(nome.toLowerCase());
+          return nome;
+        }
+        const ponto = nome.lastIndexOf('.');
+        const base = ponto > 0 ? nome.slice(0, ponto) : nome;
+        const ext = ponto > 0 ? nome.slice(ponto) : '';
+        for (let n = 2; ; n++) {
+          const tentativa = `${base} (${n})${ext}`;
+          if (!emUso.has(tentativa.toLowerCase())) {
+            emUso.add(tentativa.toLowerCase());
+            return tentativa;
+          }
+        }
+      };
+      // RENOMEIO AUTOMÁTICO: o File é trocado por outro com o mesmo conteúdo
+      // e o nome padronizado (mesmo hash — o manifesto religa como
+      // "renomeado"). Na nuvem sobe só o renomeado; na pasta local o arquivo
+      // do usuário não é tocado (o nome novo vale para esta sessão e para o
+      // que sair do caso — processo montado, ZIP, nuvem).
+      const destino = new Map<File, { id: string; arquivo: File }>();
+      for (const i of itens) {
+        let arquivo = i.file;
+        if (i.nomeNovo && i.nomeNovo !== i.file.name) {
+          arquivo = new File([i.file], nomeUnico(i.nomeNovo), {
+            type: i.file.type,
+            lastModified: i.file.lastModified,
+          });
+          renomeados += 1;
+        }
+        destino.set(i.file, { id: i.documentoId ?? 'outros', arquivo });
+      }
       const proximos: AnexosProcesso = {};
       for (const [id, files] of Object.entries(prev)) {
         proximos[id] = files.filter((f) => !destino.has(f));
       }
-      for (const [file, id] of destino) {
-        proximos[id] = [...(proximos[id] ?? []), file];
+      for (const { id, arquivo } of destino.values()) {
+        proximos[id] = [...(proximos[id] ?? []), arquivo];
       }
       return proximos;
     });
+    if (renomeados > 0) {
+      toast.info(`${renomeados} arquivo(s) renomeado(s) pela leitura`, {
+        description:
+          'Nome padronizado (tipo do documento + pessoa/identificador) — confira na Página Inicial; a nuvem recebe o arquivo já com o nome novo.',
+      });
+    }
+  };
+
+  /** Lote sem leitura por IA: libera os arquivos para a nuvem com o nome original. */
+  const liberarLeitura = (files: File[]) => {
+    for (const f of files) aguardandoLeituraRef.current.delete(f);
+    // Nova referência para o efeito da nuvem repassar a lista.
+    setAnexosProcesso((prev) => ({ ...prev }));
   };
 
   /** Início rápido: só a data do óbito (+ valor estimado) acorda o painel. */
@@ -4093,6 +4155,7 @@ export default function SucessoristaClient({
             <CofreEntrada
               aplicarLeitura={aplicarLeitura}
               reclassificarArquivos={reclassificarArquivos}
+              liberarLeitura={liberarLeitura}
               irParaFamilia={() => irPara('familia')}
               casoId={casoId}
               perfil={perfil}
