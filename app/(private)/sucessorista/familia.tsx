@@ -261,7 +261,8 @@ export function FamiliaView({
       />
       </div>
 
-      <h2>Havia cônjuge ou companheiro(a)?</h2>
+      <div className="cartao">
+      <h2 style={{ marginTop: 0 }}>Havia cônjuge ou companheiro(a)?</h2>
       <div className="escolha">
         <Pilula ativo={temSobrevivente} onClick={() => set({ temSobrevivente: true })}>
           Sim
@@ -272,7 +273,7 @@ export function FamiliaView({
       </div>
 
       {temSobrevivente && (
-        <div className="cartao">
+        <div className="subcartao">
           <h2>Vínculo e regime de bens</h2>
           <div className="escolha">
             <Pilula ativo={vinculo === 'CASAMENTO'} onClick={() => set({ vinculo: 'CASAMENTO' })}>
@@ -359,8 +360,10 @@ export function FamiliaView({
           />
         </div>
       )}
+      </div>
 
-      <h2>Herdeiros</h2>
+      <div className="cartao">
+      <h2 style={{ marginTop: 0 }}>Herdeiros</h2>
       <p className="subtitulo" style={{ marginBottom: 14 }}>
         Marque quem é filho(a) também do sobrevivente — em filiação híbrida a lei diverge e
         o espelho da partilha mostrará os dois cenários. Herdeiro menor ou incapaz muda o
@@ -369,6 +372,7 @@ export function FamiliaView({
         as da declaração do ITCMD e entram prontas no item V.
       </p>
       <EditorHerdeiros estado={estado} onChange={onChange} />
+      </div>
 
       {/* O resumo "Composição familiar" foi EXCLUÍDO (pedido do escritório):
           o painel do caso já conta a mesma história em números. */}
@@ -737,8 +741,11 @@ function EditorHerdeiros({
         </div>
       </form>
 
+      {/* Herdeiros em CARDS lado a lado (pedido do escritório): cada um com a
+          linha de identificação e as perguntas do ITCMD dentro do próprio card. */}
+      <div className="cards-itens">
       {herdeiros.map((h) => (
-        <div key={h.id}>
+        <div key={h.id} className="card-item">
           <div className="linha-item">
             <span>
               <strong>{h.nome}</strong>
@@ -859,6 +866,7 @@ function EditorHerdeiros({
           )}
         </div>
       ))}
+      </div>
       <p className="fund" style={{ marginTop: 10 }}>
         Sem descendentes, lance os ASCENDENTES (pai/mãe; mortos os dois, avós por linha) e o
         motor segue os incisos do art. 1.829 — grau mais próximo exclui o mais remoto, o

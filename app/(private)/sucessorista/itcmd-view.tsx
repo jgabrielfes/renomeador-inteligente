@@ -183,6 +183,7 @@ export function ItcmdView({
   hoje,
   irParaFamilia,
   irParaAcervo,
+  embutido = false,
 }: {
   falecido: DadosFalecido;
   temSobrevivente: boolean;
@@ -199,6 +200,8 @@ export function ItcmdView({
   hoje: string;
   irParaFamilia: () => void;
   irParaAcervo: () => void;
+  /** Dentro da aba unificada "ITCMD e Custos": título em h2, sem h1. */
+  embutido?: boolean;
 }) {
   const faltaObito = !falecido.dataObito;
   const faltaCalculo = !resultado || resultado.bloqueios.length > 0;
@@ -211,7 +214,7 @@ export function ItcmdView({
 
   return (
     <section>
-      <h1>ITCMD</h1>
+      {embutido ? <h2 className="titulo-embutido">ITCMD</h2> : <h1>ITCMD</h1>}
       <Doutrina
         id="itcmd"
         resumo={`Espelho da declaração do ITCMD-SP e provisão do imposto até hoje (${formatarData(hoje)}).`}

@@ -335,7 +335,8 @@ export function AcervoView({
         checklist do ITCMD.
       </Doutrina>
 
-      <h2 style={{ marginTop: 0 }}>Bens</h2>
+      <div className="cartao">
+      <h2 style={{ marginTop: 0 }}>Lançar um bem</h2>
       <form noValidate onSubmit={handleSubmit(lancar)}>
         <div className="grade c2">
           {/* O TIPO abre o lançamento (pedido do escritório): a escolha na
@@ -357,8 +358,11 @@ export function AcervoView({
           </Field>
           <Field data-invalid={Boolean(errors.descricao)}>
             <FieldLabel htmlFor="bem-descricao">Descrição</FieldLabel>
-            <Input
+            {/* Três linhas à vista (pedido do escritório): a descrição do bem
+                costuma ser longa — matrícula, endereço, área. */}
+            <Textarea
               id="bem-descricao"
+              rows={3}
               aria-invalid={Boolean(errors.descricao)}
               {...register('descricao')}
             />
@@ -514,7 +518,10 @@ export function AcervoView({
           </Button>
         </div>
       </form>
+      </div>
 
+      {bens.length > 0 && <h2>Bens lançados</h2>}
+      <div className="cards-itens">
       {bens.map((b, i) => (
         <LinhaBem
           key={b.id}
@@ -536,6 +543,7 @@ export function AcervoView({
           onRemover={() => setBens(bens.filter((x) => x.id !== b.id))}
         />
       ))}
+      </div>
       {bens.length > 1 && (
         <p className="fund" style={{ marginTop: 6 }}>
           A numeração acima é a ordem oficial do caso: partilha, planilha e petição seguem a
@@ -596,7 +604,8 @@ export function AcervoView({
         </>
       )}
 
-      <h2>Passivo do espólio</h2>
+      <div className="cartao">
+      <h2 style={{ marginTop: 0 }}>Passivo do espólio</h2>
       <div className="grade c2">
         <label className="campo">
           Dívidas e despesas do espólio (R$)
@@ -607,6 +616,7 @@ export function AcervoView({
         Financiamentos, empréstimos e despesas abatem a massa antes da partilha — e reduzem a
         base do ITCMD.
       </p>
+      </div>
 
       {setColacoes && (
         <EditorColacoes herdeiros={herdeiros} colacoes={colacoes} setColacoes={setColacoes} />
@@ -969,7 +979,7 @@ function LinhaBem({
 
   if (!editando) {
     return (
-      <div>
+      <div className="card-item">
       <div className="linha-item">
         <span>
           <span className="numero-bem num">{numero}.</span>{' '}
@@ -1065,7 +1075,8 @@ function LinhaBem({
         </label>
         <label className="campo">
           Descrição
-          <Input
+          <Textarea
+            rows={3}
             value={descricao}
             aria-invalid={Boolean(erro && !descricao.trim())}
             onChange={(e) => setDescricao(e.target.value)}

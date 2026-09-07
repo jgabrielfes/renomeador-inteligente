@@ -60,8 +60,7 @@ import { gerarXlsx, baixarBlob, type CelulaXlsx } from '@/lib/partilha/xlsx';
 import { porteDoAcervo } from '@/lib/porte';
 import { emStandby } from '@/lib/standby';
 import { registrarCaso, registrarDocumentoGerado } from './actions';
-import { CasoView, type ArquivoClassificado } from './caso-view';
-import { FasesCaso } from './fases-caso';
+import { CofreEntrada, PainelControle, type ArquivoClassificado } from './caso-view';
 import { TarefasCaso, type TarefaCaso } from './tarefas-caso';
 import { intakeParaCaso } from '@/lib/familias/intake-para-caso';
 import { confirmarImportacaoIntake, resgatarIntake } from './familias-actions';
@@ -3959,29 +3958,20 @@ export default function SucessoristaClient({
         </div>
         {(
           [
+            // Reorganização (pedido do escritório): a Página Inicial É o cofre
+            // + catálogo de documentos; ITCMD e Custos viraram UMA aba (os ids
+            // 'itcmd' e 'custos' seguem válidos por URL); o antigo dashboard
+            // virou o "Painel de Controle" (id 'documentos', por URL) e leva
+            // dentro os Honorários como item recolhível (id 'honorarios' abre o
+            // painel com o bloco expandido). A aba de MINUTAS é a MESMA para os
+            // dois perfis; as três ferramentas de apoio seguem no agrupador.
             ['caso', '0', 'Página Inicial'],
             ['familia', 'I', 'A família'],
             ['acervo', 'II', 'O acervo'],
             ['partilha', 'III', 'Partilha'],
-            ['itcmd', 'IV', 'ITCMD'],
-            ['custos', 'V', 'Custos'],
-            ['documentos', 'VI', 'Documentos'],
-            // Abas finais por perfil: honorários e minutas (petição/proposta)
-            // são atos de advogado; a ESCRITURA é dos DOIS perfis — o banco
-            // de minutas de escritura serve advogado e não advogado (decisão
-            // do escritório). As TRÊS ferramentas de apoio (matrícula,
-            // fontes, IR/GCAP) viraram o agrupador "Ferramentas
-            // Sucessórias", SEM algarismo — os ids seguem válidos por URL.
-            // A aba de MINUTAS é a MESMA para os dois perfis (a escolha da
-            // peça — escritura, Tabelionato, petição — é interna); honorários
-            // segue sendo ato de advogado. O id 'escritura' continua válido
-            // por URL e cai na aba de Minutas com a escritura pré-escolhida.
-            ...(perfil === 'ADVOGADO'
-              ? ([
-                  ['honorarios', 'VII', 'Honorários'],
-                  ['minutas', 'VIII', 'Minutas'],
-                ] as const)
-              : ([['minutas', 'VII', 'Minutas']] as const)),
+            ['itcmd', 'IV', 'ITCMD e Custos'],
+            ['documentos', 'V', 'Painel de Controle'],
+            ['minutas', 'VI', 'Minutas'],
             ['ferramentas', '', 'Ferramentas Sucessórias'],
           ] as const
         ).map(([id, ind, rotulo]) => (
@@ -3991,6 +3981,8 @@ export default function SucessoristaClient({
             aria-current={
               abaProc === id ||
               (id === 'minutas' && abaProc === 'escritura') ||
+              (id === 'itcmd' && abaProc === 'custos') ||
+              (id === 'documentos' && abaProc === 'honorarios') ||
               (id === 'ferramentas' &&
                 (abaProc === 'matricula' || abaProc === 'fontes' || abaProc === 'fiscal'))
             }
@@ -4091,152 +4083,72 @@ export default function SucessoristaClient({
           </span>
         </div>
         {abaProc === 'caso' && (
-          <CasoView
-            tarefas={
-              <TarefasCaso
-                tarefas={tarefasCaso}
-                onChange={setTarefasCaso}
-                sugestoes={[
-                  ...(nomeConta ? [nomeConta] : []),
-                  ...(equipe?.membros.map((m) => m.nome) ?? []),
-                ].filter((n, i, a) => a.indexOf(n) === i)}
-              />
-            }
-            fases={
-              <FasesCaso
-                irPara={(aba) => irPara(aba as Aba)}
-                fases={[
-                  {
-                    aba: 'familia',
-                    rotulo: 'Composição',
-                    completa: falecido.nome.trim().length > 0 && herdeiros.length > 0,
-                    resumo:
-                      herdeiros.length > 0
-                        ? `${herdeiros.length} herdeiro(s)`
-                        : 'família e qualificação',
-                  },
-                  {
-                    aba: 'acervo',
-                    rotulo: 'Acervo',
-                    completa: bens.length > 0,
-                    resumo: bens.length > 0 ? `${bens.length} bem(ns) lançado(s)` : 'bens e dívidas',
-                  },
-                  {
-                    aba: 'partilha',
-                    rotulo: 'Quinhões',
-                    completa: resultado !== null,
-                    resumo: resultado !== null ? 'partilha calculada' : 'aguarda família e acervo',
-                  },
-                  {
-                    aba: 'documentos',
-                    rotulo: 'Cofre',
-                    completa: Object.values(anexosProcesso).some((fs) => fs.length > 0),
-                    resumo: (() => {
-                      const n = Object.values(anexosProcesso).reduce((acc, fs) => acc + fs.length, 0);
-                      return n > 0 ? `${n} documento(s)` : 'documentos do processo';
-                    })(),
-                  },
-                  {
-                    aba: 'itcmd',
-                    rotulo: 'Espelho ITCMD',
-                    completa: fiscal.itcmdSituacao === 'DECLARADO' || fiscal.itcmdSituacao === 'PAGO',
-                    resumo:
-                      fiscal.itcmdSituacao === 'PAGO'
-                        ? 'imposto pago'
-                        : fiscal.itcmdSituacao === 'DECLARADO'
-                        ? 'declarado'
-                        : 'declaração e provisão',
-                  },
-                ]}
-                acoes={
-                  perfil === 'ADVOGADO'
-                    ? [
-                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
-                        { rotulo: 'Projetar custos', aba: 'custos' },
-                        { rotulo: 'Sugerir honorários', aba: 'honorarios' },
-                        { rotulo: 'Gerar minuta', aba: 'minutas' },
-                      ]
-                    : [
-                        { rotulo: 'Calcular ITCMD', aba: 'itcmd' },
-                        { rotulo: 'Projetar custos', aba: 'custos' },
-                        { rotulo: 'Gerar minuta', aba: 'minutas' },
-                      ]
-                }
-              />
-            }
-            aplicarLeitura={aplicarLeitura}
-            reclassificarArquivos={reclassificarArquivos}
-            onInicioRapido={inicioRapido}
-            irParaFamilia={() => irPara('familia')}
-            rascunhoSalvoEm={rascunhoSalvoEm}
-            onExportarCaso={exportarCaso}
-            onImportarCaso={importarCaso}
-            onNovoCaso={novoCaso}
-            casoId={casoId}
-            perfil={perfil}
-            tema={tema}
-            setTema={setTema}
-            licoesRenomeador={licoesRenomeador}
-            rito={fiscal.rito ?? 'AUTO'}
-            setRito={(r) => setFiscal({ ...fiscal, rito: r })}
-            ritoMotor={ritoMotor}
-            equipe={equipe}
-            painelFamilia={
-              <PainelFamiliaCard
-                casoId={casoId}
-                nomeFalecido={falecido.nome || 'o inventário'}
-                nomeAdvogado={nomeConta || 'Advogado(a) responsável'}
-                rito={ritoEfetivo ?? 'EXTRAJUDICIAL'}
-                convites={Object.values(convites)}
-                quinhoes={quinhoesPainel}
-                custosVisiveis={custosVisiveisPainel}
-                espolioDados={espolioDadosPainel}
-                estado={painelFamilia}
-                onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
-                onConviteAtualizado={(c) =>
-                  setConvites((prev) => {
-                    const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
-                    return chave ? { ...prev, [chave]: c } : prev;
-                  })
-                }
-                onNovoConvite={(c) =>
-                  // Convite de mediador(a) nasce no card — chave pelo token
-                  // (os de herdeiro são chaveados pelo herdeiroId no cofre).
-                  setConvites((prev) => ({ ...prev, [c.token]: c }))
-                }
-                onEncerrado={() => setConvites({})}
-                onLevarParaPartilha={(alocacoes, tituloCenarioAplicado) => {
-                  // Consenso vira partilha: as alocações do cenário são o
-                  // MESMO formato da matriz da seção III — cópia direta. O
-                  // eco fica no caso.json (o .json transporta o consenso).
-                  setMatriz(alocacoes);
-                  setPainelFamilia((prev) => ({
-                    ...prev,
-                    consensoAplicado: {
-                      titulo: tituloCenarioAplicado,
-                      em: new Date().toISOString(),
-                    },
-                  }));
-                  irPara('partilha');
-                  toast.success('Cenário levado para a partilha', {
-                    description:
-                      'A matriz da seção III recebeu as alocações do cenário — confira o espelho e os acertos.',
-                  });
-                }}
-                onAplicarValor={(bemId, valor) =>
-                  // Sugestão de valor ACEITA pelo advogado: entra como
-                  // AVALIAÇÃO do bem (o venal do óbito segue sendo o
-                  // documento oficial; custas/ITCMD já usam o maior).
-                  setBens((prev) =>
-                    prev.map((b) =>
-                      b.id === bemId ? { ...b, valorAvaliacao: Number(valor).toFixed(2) } : b,
-                    ),
-                  )
-                }
-                irParaDocumentos={() => irPara('documentos')}
-              />
-            }
-          />
+          <section>
+            <h1>Página Inicial</h1>
+            <p className="subtitulo">
+              Solte a pasta ou os arquivos do caso: a leitura estruturada anexa, classifica cada
+              documento na categoria certa do cofre e preenche a folha — para você conferir, não
+              digitar. Abaixo, o cofre de convites aos herdeiros e o catálogo do processo.
+            </p>
+            <CofreEntrada
+              aplicarLeitura={aplicarLeitura}
+              reclassificarArquivos={reclassificarArquivos}
+              irParaFamilia={() => irPara('familia')}
+              casoId={casoId}
+              perfil={perfil}
+              licoesRenomeador={licoesRenomeador}
+            />
+            <CofreView
+              herdeiros={herdeiros}
+              nomeFalecido={falecido.nome}
+              casoId={casoId}
+              convites={convites}
+              setConvites={setConvites}
+              onImportarQualificacao={importarQualificacao}
+              irParaFamilia={() => irPara('familia')}
+            />
+            <DocumentosView
+              anexos={anexosProcesso}
+              setAnexos={setAnexosProcesso}
+              nomeCaso={falecido.nome}
+              temSobrevivente={temSobrevivente}
+              rito={ritoEfetivo}
+              convites={convites}
+              onConviteAtualizado={(c) =>
+                setConvites((prev) => {
+                  const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                  return chave ? { ...prev, [chave]: c } : prev;
+                })
+              }
+              responsaveis={responsaveisDocs}
+              onResponsavel={(docId, valor) =>
+                setResponsaveisDocs((prev) => ({ ...prev, [docId]: valor }))
+              }
+              herdeirosCaso={herdeiros.map((h) => ({ id: h.id, nome: h.nome }))}
+              onSalvarNaPasta={async (file) => {
+                // Modo pasta/Drive: o envio do cofre também vai ao armazenamento,
+                // em "Recebidos do cofre/" do caso (o manifesto religa sozinho).
+                const s = storeRef.current;
+                const aberto = casoAbertoRef.current;
+                if (!s?.salvarDocumentoRecebido || !aberto) return false;
+                enviadosDriveRef.current.add(file);
+                return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
+              }}
+              modoDrive={store?.modo === 'drive' || store?.modo === 'onedrive' || store?.modo === 'dropbox'}
+              nuvemNome={store?.modo === 'onedrive' ? 'OneDrive' : store?.modo === 'dropbox' ? 'Dropbox' : 'Google Drive'}
+              onSubirNuvem={subirParaNuvem}
+              onExcluirDrive={async (file) => {
+                // Chamado SÓ depois da autorização extra do dialog.
+                const s = storeRef.current;
+                const aberto = casoAbertoRef.current;
+                if (!s?.excluirDocumento || !aberto) return false;
+                return s.excluirDocumento(aberto.cabecalho.caseId, file.name);
+              }}
+              onMontado={(formato, itens) => registrarDoc(formato, { itens })}
+              casoId={casoId}
+              municipioSugestao={bens.find((b) => b.imovel?.municipio)?.imovel?.municipio}
+            />
+          </section>
         )}
 
         {abaProc === 'familia' && (
@@ -4697,137 +4609,236 @@ export default function SucessoristaClient({
           </>
         )}
 
-        {abaProc === 'documentos' && (
-          <section>
-            <h1>Documentos</h1>
+        {(abaProc === 'documentos' || abaProc === 'honorarios') && (
+          <PainelControle
+            tarefas={
+              <TarefasCaso
+                tarefas={tarefasCaso}
+                onChange={setTarefasCaso}
+                sugestoes={[
+                  ...(nomeConta ? [nomeConta] : []),
+                  ...(equipe?.membros.map((m) => m.nome) ?? []),
+                ].filter((n, i, a) => a.indexOf(n) === i)}
+              />
+            }
+            onInicioRapido={inicioRapido}
+            rascunhoSalvoEm={rascunhoSalvoEm}
+            onExportarCaso={exportarCaso}
+            onImportarCaso={importarCaso}
+            onNovoCaso={novoCaso}
+            tema={tema}
+            setTema={setTema}
+            rito={fiscal.rito ?? 'AUTO'}
+            setRito={(r) => setFiscal({ ...fiscal, rito: r })}
+            ritoMotor={ritoMotor}
+            equipe={equipe}
+            painelFamilia={
+              <PainelFamiliaCard
+                casoId={casoId}
+                nomeFalecido={falecido.nome || 'o inventário'}
+                nomeAdvogado={nomeConta || 'Advogado(a) responsável'}
+                rito={ritoEfetivo ?? 'EXTRAJUDICIAL'}
+                convites={Object.values(convites)}
+                quinhoes={quinhoesPainel}
+                custosVisiveis={custosVisiveisPainel}
+                espolioDados={espolioDadosPainel}
+                estado={painelFamilia}
+                onEstado={(p) => setPainelFamilia((prev) => ({ ...prev, ...p }))}
+                onConviteAtualizado={(c) =>
+                  setConvites((prev) => {
+                    const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
+                    return chave ? { ...prev, [chave]: c } : prev;
+                  })
+                }
+                onNovoConvite={(c) =>
+                  // Convite de mediador(a) nasce no card — chave pelo token
+                  // (os de herdeiro são chaveados pelo herdeiroId no cofre).
+                  setConvites((prev) => ({ ...prev, [c.token]: c }))
+                }
+                onEncerrado={() => setConvites({})}
+                onLevarParaPartilha={(alocacoes, tituloCenarioAplicado) => {
+                  // Consenso vira partilha: as alocações do cenário são o
+                  // MESMO formato da matriz da seção III — cópia direta. O
+                  // eco fica no caso.json (o .json transporta o consenso).
+                  setMatriz(alocacoes);
+                  setPainelFamilia((prev) => ({
+                    ...prev,
+                    consensoAplicado: {
+                      titulo: tituloCenarioAplicado,
+                      em: new Date().toISOString(),
+                    },
+                  }));
+                  irPara('partilha');
+                  toast.success('Cenário levado para a partilha', {
+                    description:
+                      'A matriz da seção III recebeu as alocações do cenário — confira o espelho e os acertos.',
+                  });
+                }}
+                onAplicarValor={(bemId, valor) =>
+                  // Sugestão de valor ACEITA pelo advogado: entra como
+                  // AVALIAÇÃO do bem (o venal do óbito segue sendo o
+                  // documento oficial; custas/ITCMD já usam o maior).
+                  setBens((prev) =>
+                    prev.map((b) =>
+                      b.id === bemId ? { ...b, valorAvaliacao: Number(valor).toFixed(2) } : b,
+                    ),
+                  )
+                }
+                irParaDocumentos={() => irPara('caso')}
+              />
+            }
+            honorarios={
+              perfil === 'ADVOGADO' ? (
+                // Honorários como item RECOLHÍVEL do Painel de Controle (pedido
+                // do escritório); o id 'honorarios' segue válido por URL e abre
+                // o painel com o bloco expandido.
+                <details className="cartao recolhivel" open={abaProc === 'honorarios'}>
+                  <summary>
+                    <span className="eyebrow">Honorários</span>
+                    Proposta, contrato e precificação por complexidade
+                  </summary>
+                  <div className="recolhivel-corpo">
+                    <HonorariosView
+                    familia={familia}
+                    bens={bens}
+                    dividas={dividasEspolio}
+                    resultado={resultado}
+                    provisao={provisao}
+                    valorIsento={isencoes?.valorIsento ?? 0}
+                    temPartilhaDiferenciada={bens.some((b) =>
+                      Object.values(matriz[b.id] ?? {}).some((v) => pctNum(v) > 0),
+                    )}
+                    condicoes={condicoesHonorarios}
+                    setCondicoes={setCondicoesHonorarios}
+                    onGerado={(tipo, extras) =>
+                      registrarDoc(
+                        tipo === 'PROPOSTA' ? 'PROPOSTA_HONORARIOS' : 'CONTRATO_HONORARIOS',
+                        { comIa: extras.comIa, comInstrucoes: extras.comInstrucoes },
+                      )
+                    }
+                    />
+                  </div>
+                </details>
+              ) : null
+            }
+          />
+        )}
+
+        {(abaProc === 'itcmd' || abaProc === 'custos') && (
+          <section className="fiscal-unificado">
+            <h1>ITCMD e Custos</h1>
             <p className="subtitulo">
-              O cofre de convites para os herdeiros mandarem o que falta — e o que o caso
-              exige, cruzado com o que já está na pasta.
+              O imposto e a planilha de custos do inventário, lado a lado — cada número com o
+              fundamento legal, e o total projetado no topo.
             </p>
-            {/* O cofre de convites ABRE a aba (pedido do escritório): gerar os
-                links aos herdeiros vem antes do catálogo do processo. */}
-            <CofreView
-              herdeiros={herdeiros}
-              nomeFalecido={falecido.nome}
-              casoId={casoId}
-              convites={convites}
-              setConvites={setConvites}
-              onImportarQualificacao={importarQualificacao}
-              irParaFamilia={() => irPara('familia')}
-            />
-            <DocumentosView
-              anexos={anexosProcesso}
-              setAnexos={setAnexosProcesso}
-              nomeCaso={falecido.nome}
+            {/* Cards-resumo: os MESMOS números da barra de status e do painel do
+                caso (nada recalculado aqui — só recortado). */}
+            <div className="resumo-cards num">
+              <div className="stat-card">
+                <span className="eyebrow">ITCMD (provisão)</span>
+                <strong>
+                  {manuais
+                    ? Number(fiscal.custosManuais?.itcmd) > 0
+                      ? brl(Number(fiscal.custosManuais?.itcmd).toFixed(2))
+                      : '—'
+                    : provisao
+                      ? brl(provisao.total.toFixed(2))
+                      : '—'}
+                </strong>
+                <small>{manuais ? 'informado pelo profissional' : 'Lei 10.705/2000 — até hoje'}</small>
+              </div>
+              <div className="stat-card">
+                <span className="eyebrow">Cartório e registros</span>
+                <strong>
+                  {manuais
+                    ? brl((totalManual - (Number(fiscal.custosManuais?.itcmd) || 0)).toFixed(2))
+                    : custos
+                      ? brl(custos.total.toFixed(2))
+                      : '—'}
+                </strong>
+                <small>{ritoEfetivo === 'JUDICIAL' ? 'taxa judiciária + registros' : 'escritura + registros + certidões'}</small>
+              </div>
+              <div className="stat-card">
+                <span className="eyebrow">Adicionais</span>
+                <strong>{brl(somaAdicionais(custosAdicionais).toFixed(2))}</strong>
+                <small>{custosAdicionais.length} despesa(s) lançada(s) à mão</small>
+              </div>
+              <div className="stat-card destaque">
+                <span className="eyebrow">Total projetado</span>
+                <strong>
+                  {manuais
+                    ? brl((totalManual + somaAdicionais(custosAdicionais)).toFixed(2))
+                    : provisao
+                      ? brl(
+                          (
+                            provisao.total +
+                            (custos?.total ?? 0) +
+                            impostoSucessoes +
+                            impostoCessao +
+                            somaAdicionais(custosAdicionais)
+                          ).toFixed(2),
+                        )
+                      : '—'}
+                </strong>
+                <small>
+                  {falecido.dataObito
+                    ? fiscal.itcmdSituacao === 'PAGO'
+                      ? 'ITCMD pago'
+                      : `art. 611: ${diasDesdeObito(falecido.dataObito)} dia(s)`
+                    : 'informe a data do óbito'}
+                </small>
+              </div>
+            </div>
+            <div className="cartao bloco-fiscal">
+              <ItcmdView
+                embutido
+              falecido={falecido}
               temSobrevivente={temSobrevivente}
+              nomeSobrev={nomeSobrev}
+              herdeiros={herdeiros}
+              perguntas={familia.perguntas}
+              qualificacoes={familia.qualificacoes}
+              bens={bens}
+              resultado={resultado}
+              fiscal={fiscal}
+              setFiscal={setFiscal}
+              isencoes={isencoes}
+              provisao={provisao}
+              hoje={hoje}
+              irParaFamilia={() => irPara('familia')}
+              irParaAcervo={() => irPara('acervo')}
+              />
+            </div>
+            <div className="cartao bloco-fiscal">
+              <CustosView
+                embutido
+              custos={custos}
+              provisao={provisao}
+              issPct={fiscal.issPct ?? '5'}
+              setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
+              provisoesSucessoes={provisoesSucessoes}
+              impostoCessao={impostoCessao}
+              tornaTotal={
+                atribuicao && atribuicao.bloqueios.length === 0 ? Number(atribuicao.totalTorna) : 0
+              }
+              adicionais={custosAdicionais}
+              setAdicionais={setCustosAdicionais}
+              manuais={fiscal.custosManuais ?? null}
+              setManuais={(m) => setFiscal({ ...fiscal, custosManuais: m })}
+              ufsForaDetectadas={ufsFora}
+              nomeCaso={falecido.nome}
+              dataObito={falecido.dataObito}
+              caso={caso}
+              resultado={resultado}
+              atribuicoes={matriz}
+              onOrcamento={(formato) => registrarDoc(formato)}
+              irParaFamilia={() => irPara('familia')}
+              irParaAcervo={() => irPara('acervo')}
+              avancar={() => irPara('documentos')}
               rito={ritoEfetivo}
-              convites={convites}
-              onConviteAtualizado={(c) =>
-                setConvites((prev) => {
-                  const chave = Object.keys(prev).find((k) => prev[k].token === c.token);
-                  return chave ? { ...prev, [chave]: c } : prev;
-                })
-              }
-              responsaveis={responsaveisDocs}
-              onResponsavel={(docId, valor) =>
-                setResponsaveisDocs((prev) => ({ ...prev, [docId]: valor }))
-              }
-              herdeirosCaso={herdeiros.map((h) => ({ id: h.id, nome: h.nome }))}
-              onSalvarNaPasta={async (file) => {
-                // Modo pasta/Drive: o envio do cofre também vai ao armazenamento,
-                // em "Recebidos do cofre/" do caso (o manifesto religa sozinho).
-                const s = storeRef.current;
-                const aberto = casoAbertoRef.current;
-                if (!s?.salvarDocumentoRecebido || !aberto) return false;
-                enviadosDriveRef.current.add(file);
-                return s.salvarDocumentoRecebido(aberto.cabecalho.caseId, file);
-              }}
-              modoDrive={store?.modo === 'drive' || store?.modo === 'onedrive' || store?.modo === 'dropbox'}
-              nuvemNome={store?.modo === 'onedrive' ? 'OneDrive' : store?.modo === 'dropbox' ? 'Dropbox' : 'Google Drive'}
-              onSubirNuvem={subirParaNuvem}
-              onExcluirDrive={async (file) => {
-                // Chamado SÓ depois da autorização extra do dialog.
-                const s = storeRef.current;
-                const aberto = casoAbertoRef.current;
-                if (!s?.excluirDocumento || !aberto) return false;
-                return s.excluirDocumento(aberto.cabecalho.caseId, file.name);
-              }}
-              onMontado={(formato, itens) => registrarDoc(formato, { itens })}
-              casoId={casoId}
-              municipioSugestao={bens.find((b) => b.imovel?.municipio)?.imovel?.municipio}
-            />
+              />
+            </div>
           </section>
-        )}
-
-        {abaProc === 'itcmd' && (
-          <ItcmdView
-            falecido={falecido}
-            temSobrevivente={temSobrevivente}
-            nomeSobrev={nomeSobrev}
-            herdeiros={herdeiros}
-            perguntas={familia.perguntas}
-            qualificacoes={familia.qualificacoes}
-            bens={bens}
-            resultado={resultado}
-            fiscal={fiscal}
-            setFiscal={setFiscal}
-            isencoes={isencoes}
-            provisao={provisao}
-            hoje={hoje}
-            irParaFamilia={() => irPara('familia')}
-            irParaAcervo={() => irPara('acervo')}
-          />
-        )}
-
-        {abaProc === 'custos' && (
-          <CustosView
-            custos={custos}
-            provisao={provisao}
-            issPct={fiscal.issPct ?? '5'}
-            setIssPct={(v) => setFiscal({ ...fiscal, issPct: v })}
-            provisoesSucessoes={provisoesSucessoes}
-            impostoCessao={impostoCessao}
-            tornaTotal={
-              atribuicao && atribuicao.bloqueios.length === 0 ? Number(atribuicao.totalTorna) : 0
-            }
-            adicionais={custosAdicionais}
-            setAdicionais={setCustosAdicionais}
-            manuais={fiscal.custosManuais ?? null}
-            setManuais={(m) => setFiscal({ ...fiscal, custosManuais: m })}
-            ufsForaDetectadas={ufsFora}
-            nomeCaso={falecido.nome}
-            dataObito={falecido.dataObito}
-            caso={caso}
-            resultado={resultado}
-            atribuicoes={matriz}
-            onOrcamento={(formato) => registrarDoc(formato)}
-            irParaFamilia={() => irPara('familia')}
-            irParaAcervo={() => irPara('acervo')}
-            avancar={() => irPara('documentos')}
-            rito={ritoEfetivo}
-          />
-        )}
-
-        {abaProc === 'honorarios' && (
-          <HonorariosView
-            familia={familia}
-            bens={bens}
-            dividas={dividasEspolio}
-            resultado={resultado}
-            provisao={provisao}
-            valorIsento={isencoes?.valorIsento ?? 0}
-            temPartilhaDiferenciada={bens.some((b) =>
-              Object.values(matriz[b.id] ?? {}).some((v) => pctNum(v) > 0),
-            )}
-            condicoes={condicoesHonorarios}
-            setCondicoes={setCondicoesHonorarios}
-            onGerado={(tipo, extras) =>
-              registrarDoc(
-                tipo === 'PROPOSTA' ? 'PROPOSTA_HONORARIOS' : 'CONTRATO_HONORARIOS',
-                { comIa: extras.comIa, comInstrucoes: extras.comInstrucoes },
-              )
-            }
-          />
         )}
 
         {(abaProc === 'minutas' || abaProc === 'escritura') && (
@@ -4906,7 +4917,7 @@ export default function SucessoristaClient({
         notas={notasCaso}
         setNotas={setNotasCaso}
         convites={convites}
-        onVerCofre={() => irPara('documentos')}
+        onVerCofre={() => irPara('caso')}
         aberto={painelAberto}
         onFechar={() => setPainelAberto(false)}
         recolhido={painelRecolhido}

@@ -102,13 +102,17 @@
   font-feature-settings: 'tnum';
 }
 
-/* ---------- estrutura: lombada + folha + painel ---------- */
+/* ---------- estrutura: barra de abas no TOPO + folha + painel ----------
+   Reorganização (pedido do escritório): a lombada saiu da lateral esquerda e
+   virou uma BARRA SUPERIOR recolhida — uma tira fina com a dica "Abas do
+   processo"; aproximar o mouse (ou focar por teclado) abre a barra inteira
+   com as abas em linha; sair recolhe. A folha ganha a largura toda. No
+   celular (≤860px) segue a navegação inferior fixa de sempre. */
 
 .sucessorista .processo {
-  /* Painéis laterais enxutos: mais espaço para os módulos centrais. A
-     lombada ainda comporta "O Sucessorista" (Fraunces 20px) numa linha. */
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr) 336px;
+  grid-template-columns: minmax(0, 1fr) 336px;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -118,51 +122,68 @@
      componente por componente. */
   --muted-foreground: var(--tinta-media-inversa);
   --foreground: var(--papel);
+  grid-column: 1 / -1;
+  grid-row: 1;
   background: var(--tinta);
   color: var(--papel);
-  padding: 28px 0 28px 24px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
   position: sticky;
   top: 0;
-  height: 100vh;
-  /* Zoom maior/tela baixa: a lista de itens rola dentro da própria lombada
-     em vez de cortar os últimos itens (identidade própria, fora do shadcn —
-     exceção consciente à regra do ScrollArea). */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(246, 244, 238, 0.35) transparent;
+  z-index: 40;
+  height: auto;
+  /* RECOLHIDA: só a tira de 22px com a dica; o conteúdo fica abaixo da
+     borda visível (padding-top) e o overflow esconde. */
+  max-height: 22px;
+  padding: 22px 20px 0;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: max-height 0.2s ease, padding 0.2s ease;
 }
+
+.sucessorista .lombada::before {
+  content: '▾  Abas do processo — aproxime o mouse';
+  position: absolute;
+  top: 4px;
+  left: 20px;
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-media-inversa);
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.sucessorista .lombada:hover,
+.sucessorista .lombada:focus-within {
+  max-height: 360px;
+  padding: 10px 20px 12px;
+}
+
+.sucessorista .lombada:hover::before,
+.sucessorista .lombada:focus-within::before { opacity: 0; }
 
 .sucessorista .lombada .marca {
   font-family: var(--display);
   font-weight: 700;
-  font-size: var(--t-lg);
+  font-size: var(--t-base);
   letter-spacing: 0.01em;
-  margin-bottom: 4px;
+  margin: 0 14px 0 0;
+  white-space: nowrap;
 }
 
-.sucessorista .lombada .marca small {
-  display: block;
-  font-family: var(--texto);
-  font-weight: 400;
-  font-size: var(--t-xs);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #9aa39e;
-  margin-top: 2px;
-}
+/* Na barra, o lockup é só o nome — o subtítulo fica para a folha. */
+.sucessorista .lombada .marca small { display: none; }
 
-/* Alternador de perfil (Advogado × Escrevente) — muda as minutas geradas. */
+/* Etiqueta do perfil da conta (não alterna): inline na barra. */
 .sucessorista .lombada .perfil {
   display: flex;
-  /* Empilhado: "Escrevente Notarial" não cabe lado a lado em toda largura
-     de lombada (180–220px) e vazava da coluna — em coluna sempre cabe. */
-  flex-direction: column;
+  flex-direction: row;
   gap: 4px;
-  margin: 6px 16px 14px 0;
+  margin: 0 8px 0 0;
 }
 
 .sucessorista .lombada .perfil button {
@@ -201,8 +222,9 @@
   font-family: var(--texto);
   letter-spacing: 0.04em;
   text-align: left;
-  padding: 11px 18px 11px 14px;
-  border-radius: 6px 0 0 6px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -222,8 +244,9 @@
 }
 
 .sucessorista .lombada .selo {
-  margin-top: auto;
-  padding-right: 24px;
+  /* O selo de "cálculo de apoio" saiu da barra (não cabe numa linha e a
+     folha repete o aviso em cada aba) — fica no DOM para o leitor de tela. */
+  display: none;
   font-size: var(--t-xs);
   color: var(--tinta-media-inversa);
   line-height: 1.5;
@@ -233,9 +256,9 @@
    caso aberto ela é o único caminho para a administração e para sair — antes
    isso morava no painel de ferramentas, que deixou de existir. */
 .sucessorista .lombada .sessao {
-  margin-top: 20px;
-  padding: 14px 24px 0 0;
-  border-top: 1px solid rgba(124, 133, 128, 0.25);
+  /* Empurrada para a direita da barra. */
+  margin: 0 0 0 auto;
+  padding: 0;
 }
 /* O menu é shadcn: encolhe para caber na lombada estreita, sem alinhar tudo
    à direita como faz na folha. */
@@ -470,8 +493,9 @@
   background: var(--papel-alto);
   padding: 24px 18px 36px;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  /* Abaixo da tira recolhida da barra de abas (22px). */
+  top: 22px;
+  height: calc(100vh - 22px);
   overflow-y: auto;
 }
 
@@ -1527,7 +1551,7 @@
    as três colunas só encolhem. Ele só desce abaixo da folha em telas
    estreitas de verdade (≤1024px). */
 @media (max-width: 1280px) {
-  .sucessorista .processo { grid-template-columns: 192px minmax(0, 1fr) 300px; }
+  .sucessorista .processo { grid-template-columns: minmax(0, 1fr) 300px; }
   .sucessorista .folha { padding: 32px 26px 80px; }
   /* Em folha estreita, a ficha compacta volta a 3 campos por linha. */
   .sucessorista .grade.q-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1536,12 +1560,8 @@
 /* Painel RECOLHIDO (desktop): a coluna vira uma TIRA fina na margem direita
    — só a setinha e o rótulo vertical; o clique reabre. Abaixo de 1024px o
    painel desce para baixo da folha e o recolhimento não se aplica. */
-@media (min-width: 1281px) {
-  .sucessorista .processo.painel-recolhido { grid-template-columns: 216px minmax(0, 1fr) 42px; }
-}
-
-@media (min-width: 1025px) and (max-width: 1280px) {
-  .sucessorista .processo.painel-recolhido { grid-template-columns: 192px minmax(0, 1fr) 42px; }
+@media (min-width: 1025px) {
+  .sucessorista .processo.painel-recolhido { grid-template-columns: minmax(0, 1fr) 42px; }
 }
 
 @media (min-width: 1025px) {
@@ -1573,16 +1593,12 @@
 }
 
 @media (max-width: 1024px) {
-  .sucessorista .processo { grid-template-columns: 180px minmax(0, 1fr); }
+  .sucessorista .processo { grid-template-columns: minmax(0, 1fr); }
   /* Sem coluna fixa à direita, a setinha de recolher não se aplica. */
   .sucessorista .painel .recolher-desktop { display: none; }
-  /* O painel desce para baixo da folha, mas SÓ na coluna do conteúdo:
-     ocupando as duas colunas (1/-1) ele começava em x=0 e o texto deslizava
-     por baixo da lombada fixa ao rolar. A lombada abraça as duas linhas,
-     para a coluna escura acompanhar a página inteira. */
-  .sucessorista .lombada { grid-row: 1 / span 2; }
+  /* O painel desce para baixo da folha, na única coluna. */
   .sucessorista .painel {
-    grid-column: 2;
+    grid-column: 1;
     position: static;
     height: auto;
     border-left: none;
@@ -1645,7 +1661,8 @@
 @media (max-width: 860px) {
   .sucessorista .processo { grid-template-columns: 1fr; }
 
-  /* Navegação inferior: só o "voltar" + as abas, deslizando na horizontal. */
+  /* Navegação inferior: só o "voltar" + as abas, deslizando na horizontal.
+     A barra superior recolhível do desktop não se aplica: sempre aberta. */
   .sucessorista .lombada {
     position: fixed;
     top: auto;
@@ -1654,6 +1671,7 @@
     right: 0;
     grid-row: auto;
     height: auto;
+    max-height: none;
     z-index: 45;
     flex-direction: row;
     flex-wrap: nowrap;
@@ -1664,9 +1682,9 @@
     overflow-y: hidden;
     box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.25);
   }
+  .sucessorista .lombada::before { display: none; }
   .sucessorista .lombada .marca,
   .sucessorista .lombada .perfil,
-  .sucessorista .lombada .selo,
   .sucessorista .lombada .voltar { margin: 0; padding: 8px 6px; align-self: center; white-space: nowrap; }
   .sucessorista .aba {
     border-radius: 999px;
@@ -1931,6 +1949,15 @@
   align-items: stretch;
 }
 .sucessorista .dash-pilha .cartao { margin: 0; }
+/* Painel de Controle: o cofre foi para a Página Inicial — as áreas fecham
+   sem o retângulo dele. */
+.sucessorista .dash-pilha.sem-cofre {
+  grid-template-areas:
+    'painel painel'
+    'rito rito'
+    'equipe inicio'
+    'arquivo novidades';
+}
 .sucessorista .area-cofre { grid-area: cofre; }
 .sucessorista .area-rito { grid-area: rito; }
 .sucessorista .area-painel { grid-area: painel; }
@@ -1995,6 +2022,9 @@
   .sucessorista .dash-pilha {
     grid-template-columns: 1fr;
     grid-template-areas: 'painel' 'cofre' 'rito' 'equipe' 'inicio' 'arquivo' 'novidades';
+  }
+  .sucessorista .dash-pilha.sem-cofre {
+    grid-template-areas: 'painel' 'rito' 'equipe' 'inicio' 'arquivo' 'novidades';
   }
 }
 
@@ -2453,4 +2483,114 @@
 .sucessorista .respostas-caso dd {
   margin: 0;
   font-size: var(--t-sm);
+}
+
+/* ---------- reorganização: cards, aba unificada e recolhíveis ----------
+   Família e Acervo mais horizontais: herdeiros e bens viram CARDS lado a lado
+   numa grade que se adapta à largura; a ficha de edição do bem ocupa a linha
+   inteira. Formulários e o passivo entram em .cartao. */
+
+.sucessorista .cards-itens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sucessorista .card-item {
+  border: 1px solid var(--fio);
+  border-radius: 10px;
+  background: var(--papel-alto);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+/* Dentro do card a linha-item empilha (identificação em cima, ações
+   embaixo) — sem o fio inferior da lista. */
+.sucessorista .cards-itens .linha-item {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 0;
+  border-bottom: none;
+  align-items: start;
+}
+
+.sucessorista .cards-itens .ficha { grid-column: 1 / -1; }
+
+/* Bloco interno de um card (o vínculo/regime dentro do card do cônjuge). */
+.sucessorista .subcartao {
+  border-top: 1px solid var(--fio);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.sucessorista .subcartao h2:first-child { margin-top: 0; }
+
+/* Aba unificada "ITCMD e Custos": cards-resumo no topo com os MESMOS
+   números da barra de status; cada espelho vive dentro de um .cartao. */
+.sucessorista .resumo-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 12px 0 18px;
+}
+
+.sucessorista .stat-card {
+  border: 1px solid var(--fio);
+  border-radius: 10px;
+  background: var(--papel-alto);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sucessorista .stat-card strong {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  line-height: var(--lh-titulo);
+  overflow-wrap: anywhere;
+}
+
+.sucessorista .stat-card small {
+  font-size: var(--t-xs);
+  color: var(--tinta-media);
+}
+
+.sucessorista .stat-card.destaque {
+  border-color: var(--bronze);
+  border-width: 2px;
+}
+
+.sucessorista .titulo-embutido { margin-top: 0; }
+.sucessorista .bloco-fiscal { margin-bottom: 16px; }
+/* A barra de avanço das views embutidas deixa de ser sticky dentro do card. */
+.sucessorista .bloco-fiscal > section > .rodape-acoes {
+  position: static;
+  border-top: none;
+  padding: 12px 0 0;
+}
+
+/* Item RECOLHÍVEL do Painel de Controle (Honorários). */
+.sucessorista details.recolhivel > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  font-size: var(--t-base);
+}
+.sucessorista details.recolhivel > summary::-webkit-details-marker { display: none; }
+.sucessorista details.recolhivel > summary::before { content: '▸'; color: var(--bronze); }
+.sucessorista details.recolhivel[open] > summary::before { content: '▾'; }
+.sucessorista details.recolhivel .recolhivel-corpo {
+  margin-top: 12px;
+  border-top: 1px solid var(--fio);
+  padding-top: 12px;
+}
+.sucessorista details.recolhivel .recolhivel-corpo > section > h1 {
+  font-size: var(--t-lg);
+  margin-top: 0;
 }
