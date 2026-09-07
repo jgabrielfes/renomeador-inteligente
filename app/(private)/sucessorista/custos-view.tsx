@@ -283,6 +283,7 @@ export function CustosView({
   irParaAcervo,
   avancar,
   rito = null,
+  embutido = false,
 }: {
   custos: ProjecaoCustos | null;
   provisao: ProvisaoItcmd | null;
@@ -326,6 +327,8 @@ export function CustosView({
   avancar: () => void;
   /** Rito EFETIVO do caso (escolha do dashboard, ou o motor em automático). */
   rito?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
+  /** Dentro da aba unificada "ITCMD e Custos": título em h2, sem h1. */
+  embutido?: boolean;
 }) {
   const [gerando, setGerando] = useState<'pdf' | 'docx' | null>(null);
   const manuaisAtivos = Boolean(manuais?.ativo);
@@ -397,7 +400,11 @@ export function CustosView({
 
   return (
     <section>
-      <h1>Custos do inventário</h1>
+      {embutido ? (
+        <h2 className="titulo-embutido">Custos do inventário</h2>
+      ) : (
+        <h1>Custos do inventário</h1>
+      )}
       {rito && (
         <p className="eyebrow" style={{ marginBottom: 4 }}>
           Rito {rito === 'EXTRAJUDICIAL' ? 'extrajudicial' : 'judicial'} — escolha no

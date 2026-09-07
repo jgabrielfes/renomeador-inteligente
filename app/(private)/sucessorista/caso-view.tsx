@@ -77,6 +77,40 @@ export interface ArquivoClassificado {
   file: File;
   documentoId: string | null;
   tipoDetectado: string | null;
+  /**
+   * RENOMEIO AUTOMÁTICO (pedido do escritório): nome de arquivo padronizado
+   * que a leitura sugeriu (já com a extensão original). O client troca o
+   * File em memória por um com este nome — na nuvem ele sobe UMA vez, já
+   * renomeado; na pasta local o arquivo do usuário NÃO é tocado.
+   */
+  nomeNovo?: string | null;
+  /**
+   * Anexo IMEDIATO de um arquivo que ainda vai passar pela leitura por IA:
+   * o envio à nuvem espera o nome final (evita subir duas vezes — o
+   * original e o renomeado). Liberado quando o lote volta ou falha.
+   */
+  aguardaLeitura?: boolean;
+}
+
+/**
+ * Nome de arquivo final a partir da sugestão da leitura: caracteres
+ * proibidos viram espaço, limite de 80 e a EXTENSÃO ORIGINAL volta ao fim.
+ * null = sem sugestão (o nome original fica).
+ */
+export function nomeRenomeado(sugerido: string | null | undefined, original: string): string | null {
+  if (!sugerido) return null;
+  const base = sugerido
+    .replace(/\.(pdf|jpe?g|png|webp|docx|xlsx|txt)$/i, '')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .trim();
+  if (!base) return null;
+  const m = original.match(/\.[a-z0-9]{1,5}$/i);
+  const ext = m ? m[0].toLowerCase() : '';
+  const nome = `${base}${ext}`;
+  return nome === original ? null : nome;
 }
 
 /** Leitura vazia — usada para anexar arquivos sem mexer nos campos da folha. */
@@ -187,72 +221,41 @@ const esquemaInicioRapido = z.object({
 
 type InicioRapido = z.infer<typeof esquemaInicioRapido>;
 
-export function CasoView({
+/**
+ * COFRE DE ENTRADA — o arrasto que abre a PÁGINA INICIAL: solte a pasta ou
+ * os arquivos e a leitura estruturada anexa, classifica em cada categoria do
+ * cofre, preenche a folha e refina a classificação em segundo plano. O
+ * Renomeador completo abre daqui. Só o cofre: os demais cards da antiga
+ * Página Inicial vivem no PainelControle (aba "Painel de Controle").
+ */
+export function CofreEntrada({
   aplicarLeitura,
   reclassificarArquivos,
-  onInicioRapido,
+  liberarLeitura,
   irParaFamilia,
-  rascunhoSalvoEm,
-  onExportarCaso,
-  onImportarCaso,
-  onNovoCaso,
   casoId,
   perfil,
-  tema,
-  setTema,
   licoesRenomeador = null,
-  rito = 'AUTO',
-  setRito,
-  ritoMotor = null,
-  equipe = null,
-  painelFamilia = null,
-  fases = null,
-  tarefas = null,
 }: {
   /** Mescla o resultado de UM lote lido na folha (campos vazios primeiro). */
   aplicarLeitura: (caso: CasoExtraido, arquivos: ArquivoClassificado[]) => void;
-  /** A IA refinou depois do anexo imediato: move os arquivos já anexados. */
+  /** A IA refinou depois do anexo imediato: move (e renomeia) os anexados. */
   reclassificarArquivos: (itens: ArquivoClassificado[]) => void;
-  onInicioRapido: (dataObito: string, valorEstimado: string) => void;
+  /** Lote sem leitura: solta os arquivos para a nuvem com o nome original. */
+  liberarLeitura?: (files: File[]) => void;
   irParaFamilia: () => void;
-  /** Último salvamento do rascunho local (IndexedDB) — null sem rascunho. */
-  rascunhoSalvoEm: string | null;
-  onExportarCaso: () => void;
-  onImportarCaso: (file: File) => Promise<void>;
-  onNovoCaso: () => Promise<void>;
   /** Telemetria: id aleatório do caso e perfil ativo (sem dado pessoal). */
   casoId: string;
   perfil: string;
-  /** Tema do módulo (claro/escuro) — o alternador vive neste dashboard. */
-  tema: 'claro' | 'escuro';
-  setTema: (t: 'claro' | 'escuro') => void;
   /** Regras + correções do renomeador da conta — abrem junto do overlay. */
   licoesRenomeador?: import('@/lib/lessons').LessonsState | null;
-  /** Rito escolhido (AUTO segue o motor) + o que o motor aponta. */
-  rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
-  setRito?: (r: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL') => void;
-  ritoMotor?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
-  /** Equipe da conta (card "Minha equipe") — null sem equipe. */
-  equipe?: InfoEquipe | null;
-  /** Card "Painel da família" (Painel do Cliente) — vem pronto do client,
-   *  que tem o estado do caso; este dashboard só o posiciona no grid. */
-  painelFamilia?: React.ReactNode;
-  /** Barra das 5 FASES + ações rápidas (LexCausa) — idem: vem pronta do
-   *  client, que tem o estado; o dashboard só a posiciona no topo. */
-  fases?: React.ReactNode;
-  /** Fila de TAREFAS do caso (LexCausa fase 2) — idem, vem pronta. */
-  tarefas?: React.ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputPastaRef = useRef<HTMLInputElement>(null);
   const inputCameraRef = useRef<HTMLInputElement>(null);
-  const inputCasoRef = useRef<HTMLInputElement>(null);
-  const [importando, setImportando] = useState(false);
   const [renomeadorAberto, setRenomeadorAberto] = useState(false);
   // Getter da fila do Renomeador embutido — colhido ao fechar o overlay.
   const coletaRenomeadorRef = useRef<(() => File[]) | null>(null);
-  const [confirmandoNovo, setConfirmandoNovo] = useState(false);
-  const [apagando, setApagando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [lendo, setLendo] = useState(false);
   const [progresso, setProgresso] = useState('');
@@ -262,14 +265,6 @@ export function CasoView({
     falecido: string | null;
   } | null>(null);
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<InicioRapido>({
-    resolver: zodResolver(esquemaInicioRapido),
-    defaultValues: { dataObito: '', valorEstimado: '' },
-  });
 
   /**
    * Seletor de pasta pelo File System Access API: marca a pasta RAIZ e
@@ -361,12 +356,16 @@ export function CasoView({
       // leitura roda em segundo plano e depois só REFINA: move o que
       // classificar diferente e preenche a folha.
       const todos = [...pares.map((p) => p.original), ...inelegiveis];
+      // Os elegíveis à IA ficam "aguardando leitura": o envio à nuvem espera
+      // o nome padronizado voltar, para subir uma vez só, já renomeado.
+      const elegiveis = new Set(pares.map((p) => p.original));
       aplicarLeitura(
         CASO_VAZIO,
         todos.map((file) => ({
           file,
           documentoId: classificarNoCatalogo('', file.name),
           tipoDetectado: null,
+          aguardaLeitura: elegiveis.has(file),
         })),
       );
       toast.info(`${todos.length} arquivo(s) anexados ao processo`, {
@@ -453,6 +452,7 @@ export function CasoView({
                 info?.documentoId ??
                 classificarNoCatalogo(info?.tipoDetectado ?? '', par.original.name),
               tipoDetectado: info?.tipoDetectado ?? null,
+              nomeNovo: nomeRenomeado(info?.nomeSugerido, par.original.name),
             };
           });
           aplicarLeitura(caso, []); // só os campos da folha — o anexo já foi feito
@@ -475,6 +475,9 @@ export function CasoView({
             return;
           }
           lotesFalhos += 1;
+          // Sem leitura, sem nome novo: os arquivos seguem com o nome original
+          // e podem subir para a nuvem agora.
+          liberarLeitura?.(lote.map((par) => par.original));
           toast.error(`Lote ${rotulo} de ${lotes.length} sem leitura por IA`, {
             description: `Os arquivos dele seguem anexados pelo nome; a leitura continua nos demais. Detalhe: ${mensagem.slice(0, 120)}`,
           });
@@ -558,105 +561,8 @@ export function CasoView({
   }
 
   return (
-    <section>
-      {/* Topo do dashboard: título + relógio reduzido + alternador de tema. */}
-      <div className="dash-topo">
-        <div>
-          <h1>Página Inicial</h1>
-          <p className="subtitulo" style={{ marginBottom: 0 }}>
-            O painel de entrada do inventário: solte a pasta no cofre, acompanhe as
-            novidades e comece pelo essencial — cada card abaixo é um caminho.
-          </p>
-        </div>
-        <RelogioMini />
-        <div className="tema-alternador" role="radiogroup" aria-label="Tema do módulo">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tema === 'claro'}
-            className={tema === 'claro' ? 'ativo' : ''}
-            title="Tema claro"
-            onClick={() => setTema('claro')}
-          >
-            <Sun size={15} aria-hidden />
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tema === 'escuro'}
-            className={tema === 'escuro' ? 'ativo' : ''}
-            title="Tema escuro"
-            onClick={() => setTema('escuro')}
-          >
-            <Moon size={15} aria-hidden />
-          </button>
-        </div>
-      </div>
-
-      {fases}
-      {tarefas}
-
-      <div className="dash-pilha">
-        {/* Escolha do RITO: decide a projeção de custas (escritura e atos
-              notariais × taxa judiciária), o título de encerramento do cofre
-              (traslado × formal) e o antecipador registral. AUTO segue o
-              motor de elegibilidade. */}
-          {setRito && (
-            <div className="cartao area-rito">
-              <span className="eyebrow">Rito do inventário</span>
-              <p className="fund" style={{ margin: '4px 0 8px' }}>
-                Decide a projeção de custas do item V — extrajudicial: escritura e atos
-                notariais (Tabela de Notas); judicial: taxa judiciária (Lei 11.608/2003) —
-                além do título de encerramento no cofre (traslado × formal).
-              </p>
-              <div className="escolha">
-                <Pilula ativo={rito === 'AUTO'} onClick={() => setRito('AUTO')}>
-                  Automático{ritoMotor ? ` (${ritoMotor === 'EXTRAJUDICIAL' ? 'extrajudicial' : 'judicial'})` : ''}
-                </Pilula>
-                <Pilula ativo={rito === 'EXTRAJUDICIAL'} onClick={() => setRito('EXTRAJUDICIAL')}>
-                  Extrajudicial
-                </Pilula>
-                <Pilula ativo={rito === 'JUDICIAL'} onClick={() => setRito('JUDICIAL')}>
-                  Judicial
-                </Pilula>
-              </div>
-              {rito === 'EXTRAJUDICIAL' && ritoMotor === 'JUDICIAL' && (
-                <p className="mono-alerta" style={{ marginTop: 8 }}>
-                  O motor aponta rito JUDICIAL para este caso (incapaz sem parecer do MP,
-                  testamento ou litígio — ver pontos de atenção do painel). A via
-                  extrajudicial pode não ser admitida; a projeção segue a sua escolha.
-                </p>
-              )}
-              {rito === 'JUDICIAL' && ritoMotor === 'EXTRAJUDICIAL' && (
-                <p className="fund" style={{ marginTop: 8 }}>
-                  O caso é elegível ao extrajudicial — a via judicial segue possível, e a
-                  projeção usa a taxa judiciária no lugar da escritura.
-                </p>
-              )}
-            </div>
-          )}
-
-          {painelFamilia}
-
-          {/* Equipe: contas individuais vinculadas por convite do chefe —
-              membro faz tudo no módulo, gerir a equipe é só do chefe. */}
-          <div className="area-equipe">
-            <EquipeCard inicial={equipe} />
-          </div>
-
-          <div className="cartao area-novidades">
-            <span className="eyebrow">Novidades da plataforma</span>
-            {NOVIDADES.map((n) => (
-              <div key={n.titulo} className="novidade">
-                <h4>{n.titulo}</h4>
-                <p>{n.descricao}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* O COFRE em primeiro e MAIOR destaque — a ordem visual é do
-              grid (grid-template-areas), não do DOM. */}
-          <div className="cartao destaque-cofre area-cofre">
+    <>
+          <div className="cartao destaque-cofre">
             <span className="eyebrow">Cofre de documentos</span>
             <p className="fund" style={{ margin: '4px 0 12px' }}>
               O cofre lê certidão de óbito, certidão de casamento, RG, CPF e matrículas — e
@@ -839,6 +745,230 @@ export function CasoView({
 
           </div>
 
+      {/* ---------- Renomeador Inteligente COMPLETO, embutido no cofre ----------
+          Todas as ferramentas do módulo (renomeação por IA/local, prévia,
+          agrupamento por pastas, otimização de imagens e PDFs, separador,
+          ZIP), vestidas na identidade do Sucessorista (.renomeador-tema usa a
+          mesma paleta) e com a sugestão de nomes CALIBRADA para inventário/
+          família/sucessões — somada às Regras do escritório da conta. */}
+      <Dialog
+        open={renomeadorAberto}
+        onOpenChange={(aberto) => {
+          setRenomeadorAberto(aberto);
+          if (aberto) return;
+          // Fechou o overlay: a fila do Renomeador (arquivos JÁ com os nomes
+          // propostos) cai automaticamente no caso — mesmo pipeline do
+          // arraste: anexo imediato classificado pelo nome + leitura por IA
+          // em segundo plano preenchendo a folha.
+          const arquivos = coletaRenomeadorRef.current?.() ?? [];
+          coletaRenomeadorRef.current = null;
+          if (arquivos.length === 0) return;
+          // Já há leitura rodando: anexa classificado pelo nome (sem disparar
+          // uma segunda fila de IA por cima) — nada se perde.
+          if (lendo) {
+            aplicarLeitura(
+              CASO_VAZIO,
+              preparar(arquivos).map((file) => ({
+                file,
+                documentoId: classificarNoCatalogo('', file.name),
+                tipoDetectado: null,
+              })),
+            );
+            toast.info(`${arquivos.length} arquivo(s) do Renomeador anexados ao caso`, {
+              description:
+                'Classificados pelos nomes renomeados; a leitura em andamento não foi interrompida.',
+            });
+            return;
+          }
+          toast.info(`${arquivos.length} arquivo(s) do Renomeador entrando no caso`, {
+            description:
+              'Anexados com os nomes renomeados; a leitura preenche a folha em segundo plano.',
+          });
+          void lerArquivos(preparar(arquivos));
+        }}
+      >
+        <DialogContent className="renomeador-tema flex max-h-[94vh] flex-col gap-0 p-0 sm:max-w-[min(96vw,1120px)]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Renomeador Inteligente de Documentos</DialogTitle>
+            <DialogDescription>
+              A ferramenta completa do renomeador, calibrada para documentos de
+              inventário, família e sucessões. Ao fechar, os arquivos da fila
+              entram no caso com os nomes renomeados.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            {renomeadorAberto && (
+              <RenomeadorEmbutido
+                initialLessons={licoesRenomeador}
+                embutido
+                regrasExtras={REGRAS_RENOMEADOR_SUCESSOES}
+                registrarColeta={(obter) => {
+                  coletaRenomeadorRef.current = obter;
+                }}
+                onConcluirNoCofre={() => setRenomeadorAberto(false)}
+              />
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * PAINEL DE CONTROLE — os cards de operação do caso (antiga Página Inicial,
+ * sem a barra das 5 fases): rito, painel da família, equipe, novidades,
+ * arquivo do caso, início rápido e a fila de tarefas — mais os HONORÁRIOS
+ * como item recolhível (advogado). O cofre saiu daqui para a Página Inicial.
+ */
+export function PainelControle({
+  onInicioRapido,
+  rascunhoSalvoEm,
+  onExportarCaso,
+  onImportarCaso,
+  onNovoCaso,
+  tema,
+  setTema,
+  rito = 'AUTO',
+  setRito,
+  ritoMotor = null,
+  equipe = null,
+  painelFamilia = null,
+  tarefas = null,
+  honorarios = null,
+}: {
+  onInicioRapido: (dataObito: string, valorEstimado: string) => void;
+  /** Último salvamento do rascunho local (IndexedDB) — null sem rascunho. */
+  rascunhoSalvoEm: string | null;
+  onExportarCaso: () => void;
+  onImportarCaso: (file: File) => Promise<void>;
+  onNovoCaso: () => Promise<void>;
+  /** Tema do módulo (claro/escuro) — o alternador vive neste painel. */
+  tema: 'claro' | 'escuro';
+  setTema: (t: 'claro' | 'escuro') => void;
+  /** Rito escolhido (AUTO segue o motor) + o que o motor aponta. */
+  rito?: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL';
+  setRito?: (r: 'AUTO' | 'EXTRAJUDICIAL' | 'JUDICIAL') => void;
+  ritoMotor?: 'EXTRAJUDICIAL' | 'JUDICIAL' | null;
+  /** Equipe da conta (card "Minha equipe") — null sem equipe. */
+  equipe?: InfoEquipe | null;
+  /** Card "Painel da família" — vem pronto do client, que tem o estado. */
+  painelFamilia?: React.ReactNode;
+  /** Fila de TAREFAS do caso — idem, vem pronta. */
+  tarefas?: React.ReactNode;
+  /** Honorários (só advogado): a aba inteira, como item recolhível. */
+  honorarios?: React.ReactNode;
+}) {
+  const inputCasoRef = useRef<HTMLInputElement>(null);
+  const [importando, setImportando] = useState(false);
+  const [confirmandoNovo, setConfirmandoNovo] = useState(false);
+  const [apagando, setApagando] = useState(false);
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<InicioRapido>({
+    resolver: zodResolver(esquemaInicioRapido),
+    defaultValues: { dataObito: '', valorEstimado: '' },
+  });
+
+
+  return (
+    <section>
+      <div className="dash-topo">
+        <div>
+          <h1>Painel de Controle</h1>
+          <p className="subtitulo" style={{ marginBottom: 0 }}>
+            A operação do caso num lugar só: rito, painel da família, equipe,
+            tarefas, arquivo do caso e início rápido — e os honorários logo abaixo.
+          </p>
+        </div>
+        <RelogioMini />
+        <div className="tema-alternador" role="radiogroup" aria-label="Tema do módulo">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tema === 'claro'}
+            className={tema === 'claro' ? 'ativo' : ''}
+            title="Tema claro"
+            onClick={() => setTema('claro')}
+          >
+            <Sun size={15} aria-hidden />
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tema === 'escuro'}
+            className={tema === 'escuro' ? 'ativo' : ''}
+            title="Tema escuro"
+            onClick={() => setTema('escuro')}
+          >
+            <Moon size={15} aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      {tarefas}
+
+      <div className="dash-pilha sem-cofre">
+        {/* Escolha do RITO: decide a projeção de custas (escritura e atos
+              notariais × taxa judiciária), o título de encerramento do cofre
+              (traslado × formal) e o antecipador registral. AUTO segue o
+              motor de elegibilidade. */}
+          {setRito && (
+            <div className="cartao area-rito">
+              <span className="eyebrow">Rito do inventário</span>
+              <p className="fund" style={{ margin: '4px 0 8px' }}>
+                Decide a projeção de custas do item V — extrajudicial: escritura e atos
+                notariais (Tabela de Notas); judicial: taxa judiciária (Lei 11.608/2003) —
+                além do título de encerramento no cofre (traslado × formal).
+              </p>
+              <div className="escolha">
+                <Pilula ativo={rito === 'AUTO'} onClick={() => setRito('AUTO')}>
+                  Automático{ritoMotor ? ` (${ritoMotor === 'EXTRAJUDICIAL' ? 'extrajudicial' : 'judicial'})` : ''}
+                </Pilula>
+                <Pilula ativo={rito === 'EXTRAJUDICIAL'} onClick={() => setRito('EXTRAJUDICIAL')}>
+                  Extrajudicial
+                </Pilula>
+                <Pilula ativo={rito === 'JUDICIAL'} onClick={() => setRito('JUDICIAL')}>
+                  Judicial
+                </Pilula>
+              </div>
+              {rito === 'EXTRAJUDICIAL' && ritoMotor === 'JUDICIAL' && (
+                <p className="mono-alerta" style={{ marginTop: 8 }}>
+                  O motor aponta rito JUDICIAL para este caso (incapaz sem parecer do MP,
+                  testamento ou litígio — ver pontos de atenção do painel). A via
+                  extrajudicial pode não ser admitida; a projeção segue a sua escolha.
+                </p>
+              )}
+              {rito === 'JUDICIAL' && ritoMotor === 'EXTRAJUDICIAL' && (
+                <p className="fund" style={{ marginTop: 8 }}>
+                  O caso é elegível ao extrajudicial — a via judicial segue possível, e a
+                  projeção usa a taxa judiciária no lugar da escritura.
+                </p>
+              )}
+            </div>
+          )}
+
+          {painelFamilia}
+
+          {/* Equipe: contas individuais vinculadas por convite do chefe —
+              membro faz tudo no módulo, gerir a equipe é só do chefe. */}
+          <div className="area-equipe">
+            <EquipeCard inicial={equipe} />
+          </div>
+
+          <div className="cartao area-novidades">
+            <span className="eyebrow">Novidades da plataforma</span>
+            {NOVIDADES.map((n) => (
+              <div key={n.titulo} className="novidade">
+                <h4>{n.titulo}</h4>
+                <p>{n.descricao}</p>
+              </div>
+            ))}
+          </div>
+
           <div className="cartao area-arquivo">
       <h2>Arquivo do caso (.json)</h2>
       <p className="subtitulo" style={{ marginBottom: 12 }}>
@@ -963,72 +1093,7 @@ export function CasoView({
           </div>
       </div>
 
-      {/* ---------- Renomeador Inteligente COMPLETO, embutido no cofre ----------
-          Todas as ferramentas do módulo (renomeação por IA/local, prévia,
-          agrupamento por pastas, otimização de imagens e PDFs, separador,
-          ZIP), vestidas na identidade do Sucessorista (.renomeador-tema usa a
-          mesma paleta) e com a sugestão de nomes CALIBRADA para inventário/
-          família/sucessões — somada às Regras do escritório da conta. */}
-      <Dialog
-        open={renomeadorAberto}
-        onOpenChange={(aberto) => {
-          setRenomeadorAberto(aberto);
-          if (aberto) return;
-          // Fechou o overlay: a fila do Renomeador (arquivos JÁ com os nomes
-          // propostos) cai automaticamente no caso — mesmo pipeline do
-          // arraste: anexo imediato classificado pelo nome + leitura por IA
-          // em segundo plano preenchendo a folha.
-          const arquivos = coletaRenomeadorRef.current?.() ?? [];
-          coletaRenomeadorRef.current = null;
-          if (arquivos.length === 0) return;
-          // Já há leitura rodando: anexa classificado pelo nome (sem disparar
-          // uma segunda fila de IA por cima) — nada se perde.
-          if (lendo) {
-            aplicarLeitura(
-              CASO_VAZIO,
-              preparar(arquivos).map((file) => ({
-                file,
-                documentoId: classificarNoCatalogo('', file.name),
-                tipoDetectado: null,
-              })),
-            );
-            toast.info(`${arquivos.length} arquivo(s) do Renomeador anexados ao caso`, {
-              description:
-                'Classificados pelos nomes renomeados; a leitura em andamento não foi interrompida.',
-            });
-            return;
-          }
-          toast.info(`${arquivos.length} arquivo(s) do Renomeador entrando no caso`, {
-            description:
-              'Anexados com os nomes renomeados; a leitura preenche a folha em segundo plano.',
-          });
-          void lerArquivos(preparar(arquivos));
-        }}
-      >
-        <DialogContent className="renomeador-tema flex max-h-[94vh] flex-col gap-0 p-0 sm:max-w-[min(96vw,1120px)]">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Renomeador Inteligente de Documentos</DialogTitle>
-            <DialogDescription>
-              A ferramenta completa do renomeador, calibrada para documentos de
-              inventário, família e sucessões. Ao fechar, os arquivos da fila
-              entram no caso com os nomes renomeados.
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1">
-            {renomeadorAberto && (
-              <RenomeadorEmbutido
-                initialLessons={licoesRenomeador}
-                embutido
-                regrasExtras={REGRAS_RENOMEADOR_SUCESSOES}
-                registrarColeta={(obter) => {
-                  coletaRenomeadorRef.current = obter;
-                }}
-                onConcluirNoCofre={() => setRenomeadorAberto(false)}
-              />
-            )}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+      {honorarios}
 
       {/* Rodapé discreto (pedido do escritório): o aviso do rascunho local
           saiu do card do cofre e vive aqui, em fonte menor. */}

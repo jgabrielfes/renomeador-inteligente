@@ -26,16 +26,20 @@ export function EconomiaView({
   /** Por id da oportunidade — cards sem ação ficam só informativos. */
   acoes?: Record<string, AcaoEconomia | undefined>;
 }) {
-  if (economias.length === 0) return null;
-  const total = totalEstimado(economias);
-  const garantidas = economias.filter((o) => o.aplicada).length;
+  // "Economia garantida" saiu da tela (pedido do escritório): entre as já
+  // aplicadas só fica a ISENÇÃO DE BENS do art. 6º — o sistema identificou
+  // bem isento e isso é informação, não elogio. Sugestões seguem todas.
+  const visiveis = economias.filter((o) => !o.aplicada || o.id === 'isencao-art6');
+  if (visiveis.length === 0) return null;
+  const total = totalEstimado(visiveis);
+  const garantidas = visiveis.filter((o) => o.aplicada).length;
 
   return (
     <div className="economias">
       <h2>Oportunidades de economia</h2>
       <p className="subtitulo" style={{ marginBottom: 10 }}>
         Montagens de <strong>menor custo tributário</strong> mapeadas
-        automaticamente a partir da folha — {garantidas > 0 ? `${garantidas} já garantida(s) nesta montagem e ` : ''}
+        automaticamente a partir da folha — {garantidas > 0 ? `${garantidas} isenção(ões) de bem já identificada(s) e ` : ''}
         o restante depende de decisão da família. Economia estimada somada:{' '}
         <strong className="num">{brl(total)}</strong>.
       </p>
@@ -44,10 +48,10 @@ export function EconomiaView({
         cada card — não é recomendação nem aconselhamento jurídico: a decisão é do(a)
         advogado(a) com a família.
       </p>
-      {economias.map((o) => (
+      {visiveis.map((o) => (
         <div key={o.id} className={`nota oportunidade${o.aplicada ? ' registro' : ''}`}>
           <span className="eyebrow">
-            {o.aplicada ? 'Economia garantida' : 'Sugestão'} ·{' '}
+            {o.aplicada ? 'Bem isento identificado' : 'Sugestão'} ·{' '}
             {o.horizonte === 'FUTURA' ? 'evita custo futuro' : 'neste inventário'}
             {o.economiaEstimada !== null && (
               <span className="num"> · {brl(o.economiaEstimada)}</span>
